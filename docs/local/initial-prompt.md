@@ -40,3 +40,15 @@ Checkout page:
 - The checkout page should also show the estimated delivery date based on the selected shipping method. This can be hardcoded for now, but we can later integrate with a shipping API to get real delivery dates.
 - The checkout button on the cart page should take the user to the checkout page.
 
+Theming:
+Let's add the ability for a user to pick a color theme for the page. Let's add a drop down to the top nav that lets you pick the theme. Then, let's arrange our page color styling so that it obeys the current theme. It should be easy to add additional themes in a single theme file or a set of theme files. Then, go ahead and add 10 themes, including a "default" theme which shows the current colors. Remember to include button primary, secondary, disabled, nav bar background gradient, etc. Don't forget to keep contrast between font color and background high so accessibility is still achieved.
+
+Use parallel tasks to implement the theme in each of the following pages:
+- Store Page
+- Top Nav Component, and also add the theme selector dropdown
+- Cart Page
+- Checkout Page
+- Account Page
+- Warehouse Settings Page
+
+One more parallel task to build the theme files and add the 10 themes.

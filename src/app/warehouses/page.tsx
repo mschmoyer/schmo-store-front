@@ -101,8 +101,8 @@ export default function WarehousesPage() {
     <div>
       {/* Hero Section */}
       <div style={{
-        background: 'linear-gradient(135deg, #f7fdf7 0%, #ecfdf5 50%, #f0fdf4 100%)',
-        borderBottom: '1px solid #d1fae5',
+        background: 'var(--theme-hero-gradient)',
+        borderBottom: '1px solid var(--theme-border)',
         padding: '3rem 0',
         marginBottom: '2rem'
       }}>
@@ -111,7 +111,7 @@ export default function WarehousesPage() {
             <Title order={1} style={{ 
               fontSize: '3rem',
               fontWeight: 800,
-              background: 'linear-gradient(135deg, #1f2937 0%, #374151 100%)',
+              background: 'var(--gradient-text)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               marginBottom: '1rem',
@@ -119,11 +119,12 @@ export default function WarehousesPage() {
             }}>
               Warehouses
             </Title>
-            <Text size="xl" c="dimmed" style={{ 
+            <Text size="xl" style={{ 
               fontSize: '1.25rem',
               lineHeight: 1.6,
               maxWidth: '600px',
-              margin: '0 auto'
+              margin: '0 auto',
+              color: 'var(--text-secondary)'
             }}>
               View all configured warehouses and their shipping addresses from ShipStation.
             </Text>
@@ -139,17 +140,17 @@ export default function WarehousesPage() {
             component={Link}
             href="/store"
             style={{
-              borderColor: '#22c55e',
-              color: '#22c55e',
-              transition: 'all 0.3s ease',
+              borderColor: 'var(--primary-500)',
+              color: 'var(--primary-500)',
+              transition: 'var(--transition-default)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#22c55e';
+              e.currentTarget.style.backgroundColor = 'var(--primary-500)';
               e.currentTarget.style.color = 'white';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.color = '#22c55e';
+              e.currentTarget.style.color = 'var(--primary-500)';
             }}
           >
             Back to Store
@@ -170,7 +171,7 @@ export default function WarehousesPage() {
         ) : (
           <div>
             <Group justify="space-between" align="center" mb="lg">
-              <Text size="lg" c="dimmed">
+              <Text size="lg" style={{ color: 'var(--text-secondary)' }}>
                 Found {warehouses.length} warehouse{warehouses.length !== 1 ? 's' : ''}
               </Text>
             </Group>
@@ -185,19 +186,19 @@ export default function WarehousesPage() {
                     withBorder 
                     style={{
                       height: '100%',
-                      background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-                      border: '1px solid #e9ecef',
-                      transition: 'all 0.3s ease',
+                      background: 'var(--gradient-surface)',
+                      border: '1px solid var(--border)',
+                      transition: 'var(--transition-default)',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-4px)';
-                      e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-                      e.currentTarget.style.borderColor = '#22c55e';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+                      e.currentTarget.style.borderColor = 'var(--border-accent)';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                      e.currentTarget.style.borderColor = '#e9ecef';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                      e.currentTarget.style.borderColor = 'var(--border)';
                     }}
                   >
                     <Stack gap="md">
@@ -206,19 +207,19 @@ export default function WarehousesPage() {
                         <Group gap="sm">
                           <div style={{
                             padding: '8px',
-                            borderRadius: '8px',
-                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'var(--surface-accent)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center'
                           }}>
-                            <IconBuilding size={24} color="#22c55e" />
+                            <IconBuilding size={24} color="var(--primary-500)" />
                           </div>
                           <div>
                             <Text fw={600} size="lg">
                               {warehouse.name || 'Unnamed Warehouse'}
                             </Text>
-                            <Text size="sm" c="dimmed">
+                            <Text size="sm" style={{ color: 'var(--text-muted)' }}>
                               ID: {warehouse.warehouse_id}
                             </Text>
                           </div>
@@ -234,10 +235,10 @@ export default function WarehousesPage() {
                       {warehouse.origin_address && (
                         <div>
                           <Group gap="sm" mb="xs">
-                            <IconMapPin size={16} color="#6b7280" />
+                            <IconMapPin size={16} color="var(--text-secondary)" />
                             <Text fw={500} size="sm">Origin Address</Text>
                           </Group>
-                          <Text size="sm" c="dimmed" style={{ marginLeft: '24px' }}>
+                          <Text size="sm" style={{ marginLeft: '24px', color: 'var(--text-secondary)' }}>
                             {warehouse.origin_address.company && (
                               <>
                                 <strong>{warehouse.origin_address.company}</strong>
@@ -248,8 +249,8 @@ export default function WarehousesPage() {
                           </Text>
                           {warehouse.origin_address.phone && (
                             <Group gap="xs" mt="xs" style={{ marginLeft: '24px' }}>
-                              <IconPhone size={14} color="#6b7280" />
-                              <Text size="xs" c="dimmed">
+                              <IconPhone size={14} color="var(--text-secondary)" />
+                              <Text size="xs" style={{ color: 'var(--text-muted)' }}>
                                 {warehouse.origin_address.phone}
                               </Text>
                             </Group>
@@ -262,10 +263,10 @@ export default function WarehousesPage() {
                        JSON.stringify(warehouse.return_address) !== JSON.stringify(warehouse.origin_address) && (
                         <div>
                           <Group gap="sm" mb="xs">
-                            <IconMail size={16} color="#6b7280" />
+                            <IconMail size={16} color="var(--text-secondary)" />
                             <Text fw={500} size="sm">Return Address</Text>
                           </Group>
-                          <Text size="sm" c="dimmed" style={{ marginLeft: '24px' }}>
+                          <Text size="sm" style={{ marginLeft: '24px', color: 'var(--text-secondary)' }}>
                             {warehouse.return_address.company && (
                               <>
                                 <strong>{warehouse.return_address.company}</strong>
@@ -279,7 +280,7 @@ export default function WarehousesPage() {
 
                       {/* Created Date */}
                       {warehouse.create_date && (
-                        <Text size="xs" c="dimmed">
+                        <Text size="xs" style={{ color: 'var(--text-muted)' }}>
                           Created: {new Date(warehouse.create_date).toLocaleDateString()}
                         </Text>
                       )}
@@ -298,17 +299,17 @@ export default function WarehousesPage() {
             href="/store"
             variant="outline"
             style={{
-              borderColor: '#22c55e',
-              color: '#22c55e',
-              transition: 'all 0.3s ease',
+              borderColor: 'var(--primary-500)',
+              color: 'var(--primary-500)',
+              transition: 'var(--transition-default)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#22c55e';
+              e.currentTarget.style.backgroundColor = 'var(--primary-500)';
               e.currentTarget.style.color = 'white';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.color = '#22c55e';
+              e.currentTarget.style.color = 'var(--primary-500)';
             }}
           >
             Continue Shopping
@@ -318,14 +319,14 @@ export default function WarehousesPage() {
             component={Link}
             href="/account"
             style={{
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              background: 'var(--gradient-primary)',
               border: 'none',
               fontWeight: 600,
-              transition: 'all 0.3s ease',
+              transition: 'var(--transition-default)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.3)';
+              e.currentTarget.style.boxShadow = 'var(--shadow-primary)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';

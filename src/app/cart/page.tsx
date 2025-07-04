@@ -152,7 +152,7 @@ export default function CartPage() {
         <Center>
           <Stack align="center">
             <Loader size="lg" />
-            <Text>Loading cart...</Text>
+            <Text style={{ color: 'var(--theme-text-muted)' }}>Loading cart...</Text>
           </Stack>
         </Center>
       </Container>
@@ -162,7 +162,7 @@ export default function CartPage() {
   if (!localStorageAvailable) {
     return (
       <Container size="lg" py="xl">
-        <Alert color="red" title="Storage Not Available">
+        <Alert color="red" title="Storage Not Available" style={{ backgroundColor: 'var(--theme-background-secondary)', borderColor: 'var(--theme-border)' }}>
           Your browser does not support localStorage, or it is disabled. Cart functionality will not work properly.
         </Alert>
       </Container>
@@ -180,10 +180,10 @@ export default function CartPage() {
 
       {cartItems.length === 0 ? (
         <Stack align="center" gap="lg">
-          <IconShoppingCart size={80} stroke={1} color="gray" />
+          <IconShoppingCart size={80} stroke={1} style={{ color: 'var(--theme-text-muted)' }} />
           <Stack align="center" gap="sm">
-            <Title order={2} c="dimmed">Your cart is empty</Title>
-            <Text c="dimmed" size="lg">
+            <Title order={2} style={{ color: 'var(--theme-text-muted)' }}>Your cart is empty</Title>
+            <Text style={{ color: 'var(--theme-text-muted)' }} size="lg">
               Add some products to your cart to see them here.
             </Text>
           </Stack>
@@ -194,10 +194,11 @@ export default function CartPage() {
             size="lg"
             variant="filled"
             style={{
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              background: 'var(--theme-primary-gradient)',
               border: 'none',
               fontWeight: 600,
               transition: 'all 0.3s ease',
+              color: 'var(--theme-text-on-primary)',
               ':hover': {
                 transform: 'translateY(-2px)',
                 boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)'
@@ -220,7 +221,7 @@ export default function CartPage() {
           {/* Cart Items */}
           <Stack gap="md">
             {cartItems.map((item) => (
-              <Card key={item.product_id} shadow="sm" padding="lg" radius="md" withBorder>
+              <Card key={item.product_id} shadow="sm" padding="lg" radius="md" withBorder style={{ backgroundColor: 'var(--theme-card)', borderColor: 'var(--theme-border)' }}>
                 <Group wrap="nowrap" align="flex-start">
                   <Image
                     src={item.thumbnail_url}
@@ -235,7 +236,7 @@ export default function CartPage() {
                   
                   <Stack flex={1} gap="xs">
                     <Group justify="space-between" wrap="nowrap">
-                      <Text fw={500} size="lg" lineClamp={2}>
+                      <Text fw={500} size="lg" lineClamp={2} style={{ color: 'var(--theme-text)' }}>
                         {item.name}
                       </Text>
                       <ActionIcon
@@ -251,11 +252,11 @@ export default function CartPage() {
                     
                     <Group justify="space-between" align="flex-end">
                       <Stack gap="xs">
-                        <Text size="sm" c="dimmed">
+                        <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
                           Price: ${item.price.toFixed(2)}
                         </Text>
                         <Group gap="xs" align="center">
-                          <Text size="sm" c="dimmed">Quantity:</Text>
+                          <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>Quantity:</Text>
                           <NumberInput
                             value={item.quantity}
                             onChange={(value) => updateQuantity(item.product_id, Number(value) || 1)}
@@ -268,7 +269,7 @@ export default function CartPage() {
                         </Group>
                       </Stack>
                       
-                      <Text fw={600} size="lg">
+                      <Text fw={600} size="lg" style={{ color: 'var(--theme-text)' }}>
                         ${(item.price * item.quantity).toFixed(2)}
                       </Text>
                     </Group>
@@ -281,12 +282,12 @@ export default function CartPage() {
           <Divider />
 
           {/* Cart Summary */}
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Card shadow="sm" padding="lg" radius="md" withBorder style={{ backgroundColor: 'var(--theme-card)', borderColor: 'var(--theme-border)' }}>
             <Stack gap="md">
               <Group justify="space-between" align="center">
-                <Text size="xl" fw={600}>Total:</Text>
+                <Text size="xl" fw={600} style={{ color: 'var(--theme-text)' }}>Total:</Text>
                 <Text size="xl" fw={700} style={{
-                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                  background: 'var(--theme-primary-gradient)',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   fontWeight: 800
@@ -302,23 +303,23 @@ export default function CartPage() {
                   variant="outline"
                   leftSection={<IconArrowLeft size={16} />}
                   style={{
-                    borderColor: '#22c55e',
-                    color: '#22c55e',
+                    borderColor: 'var(--theme-primary)',
+                    color: 'var(--theme-primary)',
                     transition: 'all 0.3s ease',
                     ':hover': {
-                      backgroundColor: '#22c55e',
-                      color: 'white',
+                      backgroundColor: 'var(--theme-primary)',
+                      color: 'var(--theme-text-on-primary)',
                       transform: 'translateY(-2px)'
                     }
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#22c55e';
-                    e.currentTarget.style.color = 'white';
+                    e.currentTarget.style.backgroundColor = 'var(--theme-primary)';
+                    e.currentTarget.style.color = 'var(--theme-text-on-primary)';
                     e.currentTarget.style.transform = 'translateY(-2px)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.color = '#22c55e';
+                    e.currentTarget.style.color = 'var(--theme-primary)';
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
@@ -352,9 +353,10 @@ export default function CartPage() {
                     size="md"
                     disabled={cartItems.length === 0}
                     style={{
-                      background: cartItems.length === 0 ? '#6c757d' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      background: cartItems.length === 0 ? 'var(--theme-disabled)' : 'var(--theme-primary-gradient)',
                       border: 'none',
                       fontWeight: 600,
+                      color: 'var(--theme-text-on-primary)',
                       transition: 'all 0.3s ease',
                       ':hover': {
                         transform: 'translateY(-2px)',

@@ -251,7 +251,7 @@ export default function CheckoutPage() {
         <Center>
           <Stack align="center">
             <Loader size="lg" />
-            <Text>Loading checkout...</Text>
+            <Text style={{ color: 'var(--theme-text)' }}>Loading checkout...</Text>
           </Stack>
         </Center>
       </Container>
@@ -263,14 +263,14 @@ export default function CheckoutPage() {
       <Container size="xl" py="xl">
         <Stack align="center" gap="lg">
           <Alert color="blue" title="Your cart is empty">
-            <Text size="sm" mb="md">You need items in your cart to proceed with checkout.</Text>
+            <Text size="sm" mb="md" style={{ color: 'var(--theme-text)' }}>You need items in your cart to proceed with checkout.</Text>
           </Alert>
           <Button
             component={Link}
             href="/store"
             leftSection={<IconArrowLeft size={16} />}
             style={{
-              background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              background: 'var(--gradient-primary)',
               border: 'none',
               fontWeight: 600,
             }}
@@ -285,7 +285,7 @@ export default function CheckoutPage() {
   return (
     <Container size="xl" py="xl">
       <Title order={1} mb="xl" ta="center" style={{
-        background: 'linear-gradient(135deg, #1f2937 0%, #374151 100%)',
+        background: 'var(--theme-primary-gradient)',
         WebkitBackgroundClip: 'text',
         WebkitTextFillColor: 'transparent',
         fontSize: '2.5rem',
@@ -299,8 +299,8 @@ export default function CheckoutPage() {
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Stack gap="lg">
             {/* Cart Items */}
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Title order={3} mb="md">Order Summary</Title>
+            <Card shadow="sm" padding="lg" radius="md" withBorder style={{ backgroundColor: 'var(--theme-card)', borderColor: 'var(--theme-border)' }}>
+              <Title order={3} mb="md" style={{ color: 'var(--theme-text)' }}>Order Summary</Title>
               <Stack gap="md">
                 {cartItems.map((item) => (
                   <Group key={item.product_id} wrap="nowrap" align="flex-start">
@@ -314,13 +314,13 @@ export default function CheckoutPage() {
                       style={{ flexShrink: 0 }}
                     />
                     <div style={{ flex: 1 }}>
-                      <Text fw={500} size="sm" lineClamp={2}>
+                      <Text fw={500} size="sm" lineClamp={2} style={{ color: 'var(--theme-text)' }}>
                         {item.name}
                       </Text>
-                      <Text size="xs" c="dimmed">
+                      <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
                         Quantity: {item.quantity}
                       </Text>
-                      <Text size="sm" fw={600}>
+                      <Text size="sm" fw={600} style={{ color: 'var(--theme-text)' }}>
                         {formatPrice(item.price * item.quantity)}
                       </Text>
                     </div>
@@ -331,14 +331,14 @@ export default function CheckoutPage() {
 
                 {/* Subtotal */}
                 <Group justify="space-between">
-                  <Text>Subtotal:</Text>
-                  <Text fw={600}>{formatPrice(calculateSubtotal())}</Text>
+                  <Text style={{ color: 'var(--theme-text)' }}>Subtotal:</Text>
+                  <Text fw={600} style={{ color: 'var(--theme-text)' }}>{formatPrice(calculateSubtotal())}</Text>
                 </Group>
 
                 {/* Shipping */}
                 <Group justify="space-between">
-                  <Text>Shipping:</Text>
-                  <Text fw={600}>
+                  <Text style={{ color: 'var(--theme-text)' }}>Shipping:</Text>
+                  <Text fw={600} style={{ color: 'var(--theme-text)' }}>
                     {getShippingCost() === 0 ? 'FREE' : formatPrice(getShippingCost())}
                   </Text>
                 </Group>
@@ -347,9 +347,9 @@ export default function CheckoutPage() {
 
                 {/* Total */}
                 <Group justify="space-between">
-                  <Text size="lg" fw={700}>Total:</Text>
+                  <Text size="lg" fw={700} style={{ color: 'var(--theme-text)' }}>Total:</Text>
                   <Text size="lg" fw={700} style={{
-                    background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                    background: 'var(--gradient-primary)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                   }}>
@@ -370,8 +370,8 @@ export default function CheckoutPage() {
                   {shippingOptions.map((option) => (
                     <Card key={option.id} padding="sm" withBorder style={{ 
                       cursor: 'pointer',
-                      borderColor: selectedShipping === option.id ? '#22c55e' : '#e9ecef',
-                      backgroundColor: selectedShipping === option.id ? '#f0fdf4' : 'white',
+                      borderColor: selectedShipping === option.id ? 'var(--border-focus)' : 'var(--border)',
+                      backgroundColor: selectedShipping === option.id ? 'var(--surface-accent)' : 'var(--surface)',
                     }}>
                       <Radio
                         value={option.id}
@@ -380,14 +380,14 @@ export default function CheckoutPage() {
                             <Group gap="sm">
                               {option.icon}
                               <div>
-                                <Text fw={500} size="sm">{option.name}</Text>
-                                <Text size="xs" c="dimmed">{option.description}</Text>
+                                <Text fw={500} size="sm" style={{ color: 'var(--theme-text)' }}>{option.name}</Text>
+                                <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>{option.description}</Text>
                                 <Badge variant="light" color="blue" size="xs">
                                   {option.estimatedDays}
                                 </Badge>
                               </div>
                             </Group>
-                            <Text fw={600}>
+                            <Text fw={600} style={{ color: 'var(--theme-text)' }}>
                               {option.price === 0 && calculateSubtotal() >= 50 ? 'FREE' : formatPrice(option.price)}
                             </Text>
                           </Group>
@@ -407,8 +407,8 @@ export default function CheckoutPage() {
                 component={Link}
                 href="/cart"
                 style={{
-                  borderColor: '#6b7280',
-                  color: '#6b7280',
+                  borderColor: 'var(--text-secondary)',
+                  color: 'var(--text-secondary)',
                 }}
               >
                 Back to Cart
@@ -419,10 +419,10 @@ export default function CheckoutPage() {
                 loading={isPlacingOrder}
                 onClick={handlePlaceOrder}
                 style={{
-                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                  background: 'var(--gradient-primary)',
                   border: 'none',
                   fontWeight: 600,
-                  transition: 'all 0.3s ease',
+                  transition: 'var(--transition-default)',
                 }}
               >
                 {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
@@ -434,12 +434,12 @@ export default function CheckoutPage() {
         {/* Right Column - Customer Information */}
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Title order={3} mb="md">Customer Information</Title>
+            <Title order={3} mb="md" style={{ color: 'var(--theme-text)' }}>Customer Information</Title>
             
             <Stack gap="md">
               {/* Personal Information */}
               <div>
-                <Text fw={500} mb="sm">Personal Information</Text>
+                <Text fw={500} mb="sm" style={{ color: 'var(--theme-text)' }}>Personal Information</Text>
                 <Grid>
                   <Grid.Col span={6}>
                     <TextInput
@@ -492,7 +492,7 @@ export default function CheckoutPage() {
 
               {/* Shipping Address */}
               <div>
-                <Text fw={500} mb="sm">Shipping Address</Text>
+                <Text fw={500} mb="sm" style={{ color: 'var(--theme-text)' }}>Shipping Address</Text>
                 <TextInput
                   label="Address"
                   placeholder="Enter your street address"

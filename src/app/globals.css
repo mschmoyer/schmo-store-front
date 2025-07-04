@@ -3,6 +3,82 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  
+  /* Primary Brand Colors */
+  --primary-50: #f0fdf4;
+  --primary-100: #dcfce7;
+  --primary-200: #bbf7d0;
+  --primary-300: #86efac;
+  --primary-400: #4ade80;
+  --primary-500: #22c55e;
+  --primary-600: #16a34a;
+  --primary-700: #15803d;
+  --primary-800: #166534;
+  --primary-900: #14532d;
+  
+  /* Neutral Colors */
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  
+  /* Semantic Colors */
+  --success: var(--primary-500);
+  --success-light: var(--primary-100);
+  --success-dark: var(--primary-600);
+  --error: #ef4444;
+  --error-light: #fef2f2;
+  --warning: #f59e0b;
+  --warning-light: #fffbeb;
+  --info: #3b82f6;
+  --info-light: #eff6ff;
+  
+  /* Surface Colors */
+  --surface: var(--background);
+  --surface-elevated: var(--gray-50);
+  --surface-accent: var(--primary-50);
+  
+  /* Border Colors */
+  --border: var(--gray-200);
+  --border-accent: var(--primary-300);
+  --border-focus: var(--primary-500);
+  
+  /* Text Colors */
+  --text-primary: var(--foreground);
+  --text-secondary: var(--gray-600);
+  --text-muted: var(--gray-400);
+  --text-inverse: var(--background);
+  
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+  --gradient-surface: linear-gradient(145deg, var(--background) 0%, var(--surface-elevated) 100%);
+  --gradient-hero: linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 50%, var(--primary-50) 100%);
+  --gradient-text: linear-gradient(135deg, var(--gray-800) 0%, var(--gray-700) 100%);
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 25px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.1);
+  --shadow-primary: 0 4px 12px rgba(34, 197, 94, 0.3);
+  
+  /* Transitions */
+  --transition-fast: all 0.15s ease;
+  --transition-default: all 0.3s ease;
+  --transition-slow: all 0.5s ease;
+  
+  /* Spacing */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
 }
 
 @theme inline {
@@ -16,6 +92,23 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    
+    /* Dark mode adjustments */
+    --surface: var(--gray-900);
+    --surface-elevated: var(--gray-800);
+    --surface-accent: var(--gray-800);
+    
+    --border: var(--gray-700);
+    --border-accent: var(--primary-600);
+    
+    --text-primary: var(--foreground);
+    --text-secondary: var(--gray-300);
+    --text-muted: var(--gray-500);
+    --text-inverse: var(--background);
+    
+    --gradient-surface: linear-gradient(145deg, var(--gray-900) 0%, var(--gray-800) 100%);
+    --gradient-hero: linear-gradient(135deg, var(--gray-900) 0%, var(--gray-800) 50%, var(--gray-900) 100%);
+    --gradient-text: linear-gradient(135deg, var(--gray-100) 0%, var(--gray-300) 100%);
   }
 }
 

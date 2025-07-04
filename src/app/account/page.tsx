@@ -9,8 +9,8 @@ export default function AccountPage() {
     <div>
       {/* Hero Section */}
       <div style={{
-        background: 'linear-gradient(135deg, #f7fdf7 0%, #ecfdf5 50%, #f0fdf4 100%)',
-        borderBottom: '1px solid #d1fae5',
+        background: 'var(--theme-hero-gradient)',
+        borderBottom: '1px solid var(--theme-border)',
         padding: '3rem 0',
         marginBottom: '2rem'
       }}>
@@ -19,7 +19,7 @@ export default function AccountPage() {
             <Title order={1} style={{ 
               fontSize: '3rem',
               fontWeight: 800,
-              background: 'linear-gradient(135deg, #1f2937 0%, #374151 100%)',
+              background: 'var(--gradient-text)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               marginBottom: '1rem',
@@ -27,11 +27,12 @@ export default function AccountPage() {
             }}>
               My Account
             </Title>
-            <Text size="xl" c="dimmed" style={{ 
+            <Text size="xl" style={{ 
               fontSize: '1.25rem',
               lineHeight: 1.6,
               maxWidth: '600px',
-              margin: '0 auto'
+              margin: '0 auto',
+              color: 'var(--text-secondary)'
             }}>
               Manage your account settings, view order history, and update your preferences.
             </Text>
@@ -47,17 +48,17 @@ export default function AccountPage() {
             component={Link}
             href="/store"
             style={{
-              borderColor: '#22c55e',
-              color: '#22c55e',
-              transition: 'all 0.3s ease',
+              borderColor: 'var(--primary-500)',
+              color: 'var(--primary-500)',
+              transition: 'var(--transition-default)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#22c55e';
-              e.currentTarget.style.color = 'white';
+              e.currentTarget.style.backgroundColor = 'var(--primary-500)';
+              e.currentTarget.style.color = 'var(--text-inverse)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.color = '#22c55e';
+              e.currentTarget.style.color = 'var(--primary-500)';
             }}
           >
             Back to Store
@@ -67,27 +68,27 @@ export default function AccountPage() {
         <Stack gap="lg">
           {/* Account Overview */}
           <Card shadow="sm" padding="lg" radius="md" withBorder style={{
-            background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-            border: '1px solid #e9ecef',
+            background: 'var(--gradient-surface)',
+            border: '1px solid var(--border)',
           }}>
             <Group gap="md" mb="md">
               <div style={{
                 padding: '12px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                backgroundColor: 'var(--surface-accent)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}>
-                <IconUser size={32} color="#22c55e" />
+                <IconUser size={32} color="var(--primary-500)" />
               </div>
               <div>
-                <Title order={2} style={{ margin: 0 }}>Welcome Back!</Title>
-                <Text c="dimmed">Manage your account and preferences</Text>
+                <Title order={2} style={{ margin: 0, color: 'var(--text-primary)' }}>Welcome Back!</Title>
+                <Text style={{ color: 'var(--text-secondary)' }}>Manage your account and preferences</Text>
               </div>
             </Group>
             
-            <Text c="dimmed" size="sm" mb="lg">
+            <Text size="sm" mb="lg" style={{ color: 'var(--text-secondary)' }}>
               This is a placeholder account page. In a full implementation, this would show user profile information, 
               order history, saved addresses, payment methods, and account settings.
             </Text>
@@ -101,81 +102,81 @@ export default function AccountPage() {
           }}>
             {/* Profile Settings */}
             <Card shadow="sm" padding="lg" radius="md" withBorder style={{
-              background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-              border: '1px solid #e9ecef',
-              transition: 'all 0.3s ease',
+              background: 'var(--gradient-surface)',
+              border: '1px solid var(--border)',
+              transition: 'var(--transition-default)',
               cursor: 'pointer'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-              e.currentTarget.style.borderColor = '#22c55e';
+              e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+              e.currentTarget.style.borderColor = 'var(--border-focus)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-              e.currentTarget.style.borderColor = '#e9ecef';
+              e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+              e.currentTarget.style.borderColor = 'var(--border)';
             }}
             >
               <Group gap="md" mb="sm">
-                <IconSettings size={24} color="#22c55e" />
-                <Title order={4}>Profile Settings</Title>
+                <IconSettings size={24} color="var(--primary-500)" />
+                <Title order={4} style={{ color: 'var(--text-primary)' }}>Profile Settings</Title>
               </Group>
-              <Text size="sm" c="dimmed">
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                 Update your personal information, email preferences, and account security settings.
               </Text>
             </Card>
 
             {/* Order History */}
             <Card shadow="sm" padding="lg" radius="md" withBorder style={{
-              background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-              border: '1px solid #e9ecef',
-              transition: 'all 0.3s ease',
+              background: 'var(--gradient-surface)',
+              border: '1px solid var(--border)',
+              transition: 'var(--transition-default)',
               cursor: 'pointer'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-              e.currentTarget.style.borderColor = '#22c55e';
+              e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+              e.currentTarget.style.borderColor = 'var(--border-focus)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-              e.currentTarget.style.borderColor = '#e9ecef';
+              e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+              e.currentTarget.style.borderColor = 'var(--border)';
             }}
             >
               <Group gap="md" mb="sm">
-                <IconShoppingCart size={24} color="#22c55e" />
-                <Title order={4}>Order History</Title>
+                <IconShoppingCart size={24} color="var(--primary-500)" />
+                <Title order={4} style={{ color: 'var(--text-primary)' }}>Order History</Title>
               </Group>
-              <Text size="sm" c="dimmed">
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                 View your past orders, track shipments, and reorder your favorite items.
               </Text>
             </Card>
 
             {/* Payment Methods */}
             <Card shadow="sm" padding="lg" radius="md" withBorder style={{
-              background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-              border: '1px solid #e9ecef',
-              transition: 'all 0.3s ease',
+              background: 'var(--gradient-surface)',
+              border: '1px solid var(--border)',
+              transition: 'var(--transition-default)',
               cursor: 'pointer'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-              e.currentTarget.style.borderColor = '#22c55e';
+              e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+              e.currentTarget.style.borderColor = 'var(--border-focus)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-              e.currentTarget.style.borderColor = '#e9ecef';
+              e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+              e.currentTarget.style.borderColor = 'var(--border)';
             }}
             >
               <Group gap="md" mb="sm">
-                <IconCreditCard size={24} color="#22c55e" />
-                <Title order={4}>Payment Methods</Title>
+                <IconCreditCard size={24} color="var(--primary-500)" />
+                <Title order={4} style={{ color: 'var(--text-primary)' }}>Payment Methods</Title>
               </Group>
-              <Text size="sm" c="dimmed">
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                 Manage your saved payment methods and billing addresses for faster checkout.
               </Text>
             </Card>
@@ -185,21 +186,21 @@ export default function AccountPage() {
 
           {/* Coming Soon Features */}
           <Card shadow="sm" padding="lg" radius="md" withBorder style={{
-            background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-            border: '1px solid #e9ecef',
+            background: 'var(--gradient-surface)',
+            border: '1px solid var(--border)',
           }}>
-            <Title order={3} mb="md">Coming Soon</Title>
-            <Text c="dimmed" mb="lg">
-              We're working on adding these features to enhance your account experience:
+            <Title order={3} mb="md" style={{ color: 'var(--text-primary)' }}>Coming Soon</Title>
+            <Text mb="lg" style={{ color: 'var(--text-secondary)' }}>
+              We&apos;re working on adding these features to enhance your account experience:
             </Text>
             
             <Stack gap="sm">
-              <Text size="sm">• User authentication and login system</Text>
-              <Text size="sm">• Detailed order tracking and history</Text>
-              <Text size="sm">• Saved addresses and payment methods</Text>
-              <Text size="sm">• Wishlist and favorite products</Text>
-              <Text size="sm">• Email notifications and preferences</Text>
-              <Text size="sm">• Loyalty rewards and points system</Text>
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>• User authentication and login system</Text>
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>• Detailed order tracking and history</Text>
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>• Saved addresses and payment methods</Text>
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>• Wishlist and favorite products</Text>
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>• Email notifications and preferences</Text>
+              <Text size="sm" style={{ color: 'var(--text-secondary)' }}>• Loyalty rewards and points system</Text>
             </Stack>
           </Card>
 
@@ -210,17 +211,17 @@ export default function AccountPage() {
               href="/store"
               variant="outline"
               style={{
-                borderColor: '#22c55e',
-                color: '#22c55e',
-                transition: 'all 0.3s ease',
+                borderColor: 'var(--primary-500)',
+                color: 'var(--primary-500)',
+                transition: 'var(--transition-default)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#22c55e';
-                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.backgroundColor = 'var(--primary-500)';
+                e.currentTarget.style.color = 'var(--text-inverse)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = '#22c55e';
+                e.currentTarget.style.color = 'var(--primary-500)';
               }}
             >
               Continue Shopping
@@ -230,14 +231,14 @@ export default function AccountPage() {
               component={Link}
               href="/cart"
               style={{
-                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                background: 'var(--gradient-primary)',
                 border: 'none',
                 fontWeight: 600,
-                transition: 'all 0.3s ease',
+                transition: 'var(--transition-default)',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.3)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-primary)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)';

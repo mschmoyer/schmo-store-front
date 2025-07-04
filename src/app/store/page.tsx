@@ -325,8 +325,8 @@ export default function StorePage() {
     <div>
       {/* Hero Section */}
       <div style={{
-        background: 'linear-gradient(135deg, #f7fdf7 0%, #ecfdf5 50%, #f0fdf4 100%)',
-        borderBottom: '1px solid #d1fae5',
+        background: 'var(--theme-hero-gradient)',
+        borderBottom: '1px solid var(--theme-border)',
         padding: '3rem 0',
         marginBottom: '2rem'
       }}>
@@ -335,19 +335,18 @@ export default function StorePage() {
             <Title order={1} style={{ 
               fontSize: '3rem',
               fontWeight: 800,
-              background: 'linear-gradient(135deg, #1f2937 0%, #374151 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
+              color: 'var(--theme-text)',
               marginBottom: '1rem',
               letterSpacing: '-0.5px'
             }}>
               Premium Products
             </Title>
-            <Text size="xl" c="dimmed" style={{ 
+            <Text size="xl" style={{ 
               fontSize: '1.25rem',
               lineHeight: 1.6,
               maxWidth: '600px',
-              margin: '0 auto'
+              margin: '0 auto',
+              color: 'var(--theme-text-secondary)'
             }}>
               Discover our carefully curated selection of high-quality products, 
               designed to meet your every need with style and functionality.
@@ -361,7 +360,7 @@ export default function StorePage() {
         {!error && !loading && (
           <div style={{ marginBottom: '2rem' }}>
             <Group justify="space-between" align="center">
-              <Text size="lg" c="dimmed">
+              <Text size="lg" style={{ color: 'var(--theme-text-muted)' }}>
                 Showing {products.length} of {totalProducts} products
                 {totalPages > 1 && ` (Page ${currentPage} of ${totalPages})`}
               </Text>
@@ -394,15 +393,15 @@ export default function StorePage() {
                   alignItems: 'center', 
                   marginBottom: '1.5rem',
                   padding: '1rem 0',
-                  borderBottom: '3px solid #22c55e',
-                  background: 'linear-gradient(90deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 50%, transparent 100%)',
+                  borderBottom: '3px solid var(--theme-primary)',
+                  background: 'var(--theme-background-secondary)',
                   borderRadius: '8px 8px 0 0'
                 }}>
                   <Title order={2} c="dark" style={{ 
                     margin: 0,
                     fontSize: '1.8rem',
                     fontWeight: 700,
-                    color: '#1f2937',
+                    color: 'var(--theme-text)',
                     textShadow: '0 2px 4px rgba(0,0,0,0.1)',
                     letterSpacing: '0.5px'
                   }}>
@@ -431,23 +430,23 @@ export default function StorePage() {
                           flexDirection: 'column',
                           transition: 'all 0.3s ease',
                           cursor: 'pointer',
-                          background: 'linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%)',
-                          border: '1px solid #e9ecef',
+                          background: 'var(--theme-card)',
+                          border: '1px solid var(--theme-border)',
                           ':hover': {
                             transform: 'translateY(-4px)',
                             boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
-                            borderColor: '#22c55e'
+                            borderColor: 'var(--theme-primary)'
                           }
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.transform = 'translateY(-4px)';
                           e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-                          e.currentTarget.style.borderColor = '#22c55e';
+                          e.currentTarget.style.borderColor = 'var(--theme-primary)';
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.transform = 'translateY(0)';
                           e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                          e.currentTarget.style.borderColor = '#e9ecef';
+                          e.currentTarget.style.borderColor = 'var(--theme-border)';
                         }}
                       >
                         <Card.Section style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px' }}>
@@ -463,7 +462,7 @@ export default function StorePage() {
                         </Card.Section>
 
                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                          <Text fw={500} size="lg" lineClamp={1} mt="md" mb="xs">
+                          <Text fw={500} size="lg" lineClamp={1} mt="md" mb="xs" style={{ color: 'var(--theme-text)' }}>
                             {product.name}
                           </Text>
 
@@ -474,7 +473,7 @@ export default function StorePage() {
                           )}
 
                           <Group justify="space-between" align="center" mb="md">
-                            <Text size="xl" fw={700} c="blue">
+                            <Text size="xl" fw={700} style={{ color: 'var(--theme-primary)' }}>
                               {formatPrice(product.price || 0)}
                             </Text>
                             {(() => {
@@ -539,7 +538,7 @@ export default function StorePage() {
                                 disabled={isOutOfStock}
                                 color={isOutOfStock ? "gray" : undefined}
                                 style={{
-                                  background: isOutOfStock ? '#6c757d' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                                  background: isOutOfStock ? 'var(--theme-disabled)' : 'var(--theme-primary-gradient)',
                                   border: 'none',
                                   fontWeight: 600,
                                   transition: 'all 0.3s ease',
@@ -580,7 +579,7 @@ export default function StorePage() {
           <div style={{ 
             marginTop: '3rem', 
             padding: '2rem 0',
-            borderTop: '1px solid #e9ecef'
+            borderTop: '1px solid var(--theme-border)'
           }}>
             <Group justify="center" gap="lg">
               <div style={{ textAlign: 'center' }}>
@@ -595,17 +594,17 @@ export default function StorePage() {
                   radius="md"
                   styles={{
                     control: {
-                      border: '1px solid #e9ecef',
+                      border: '1px solid var(--theme-border)',
                       '&[data-active]': {
-                        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                        borderColor: '#22c55e',
+                        background: 'var(--theme-primary-gradient)',
+                        borderColor: 'var(--theme-primary)',
                         color: 'white',
                         fontWeight: 600,
                       },
                       '&:hover:not([data-active])': {
-                        backgroundColor: '#f0fdf4',
-                        borderColor: '#22c55e',
-                        color: '#22c55e',
+                        backgroundColor: 'var(--theme-background-secondary)',
+                        borderColor: 'var(--theme-primary)',
+                        color: 'var(--theme-primary)',
                       },
                       transition: 'all 0.2s ease',
                     }

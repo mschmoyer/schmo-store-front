@@ -1,13 +1,16 @@
 'use client';
 
-import { Group, Container, Text, ActionIcon, Badge, Box } from '@mantine/core';
-import { IconShoppingCart, IconUser } from '@tabler/icons-react';
+import { Group, Container, Text, ActionIcon, Badge, Box, Select } from '@mantine/core';
+import { IconShoppingCart, IconUser, IconPalette } from '@tabler/icons-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
+import { getThemeNames, themes } from '@/lib/themes';
 
 export default function TopNav() {
   const [cartCount, setCartCount] = useState(0);
+  const { themeName, setTheme } = useTheme();
 
   useEffect(() => {
     // Get cart count from localStorage
@@ -57,8 +60,8 @@ export default function TopNav() {
   return (
     <Box
       style={{
-        borderBottom: '1px solid #e0e0e0',
-        background: 'linear-gradient(135deg, #166534 0%, #22c55e 100%)',
+        borderBottom: `1px solid var(--theme-border)`,
+        background: `var(--theme-header-gradient)`,
         position: 'sticky',
         top: 0,
         zIndex: 1000,
@@ -94,11 +97,11 @@ export default function TopNav() {
               <Text
                 size="lg"
                 fw={700}
-                c="white"
                 style={{ 
                   cursor: 'pointer',
                   textShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                  letterSpacing: '0.5px'
+                  letterSpacing: '0.5px',
+                  color: 'var(--theme-text-on-primary)'
                 }}
                 visibleFrom="sm"
               >
@@ -107,36 +110,93 @@ export default function TopNav() {
             </Group>
           </Link>
 
-          {/* Account and Cart Section */}
+          {/* Theme Selector, Account and Cart Section */}
           <Group gap="sm">
+            {/* Theme Selector */}
+            <Select
+              placeholder="Theme"
+              data={getThemeNames().map(key => ({
+                value: key,
+                label: themes[key].name
+              }))}
+              value={themeName}
+              onChange={(value) => value && setTheme(value)}
+              leftSection={<IconPalette size={16} />}
+              size="sm"
+              w={140}
+              comboboxProps={{
+                transitionProps: { transition: 'pop', duration: 200 },
+              }}
+              styles={{
+                input: {
+                  backgroundColor: 'var(--theme-card)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid var(--theme-border)',
+                  borderRadius: '8px',
+                  color: 'var(--theme-text)',
+                  '&::placeholder': {
+                    color: 'var(--theme-text-muted)',
+                    opacity: 0.7,
+                  },
+                },
+                section: {
+                  color: 'var(--theme-text)',
+                },
+                dropdown: {
+                  backgroundColor: 'var(--theme-card)',
+                  border: '1px solid var(--theme-border)',
+                  color: 'var(--theme-text)',
+                },
+                option: {
+                  color: 'var(--theme-text) !important',
+                  backgroundColor: 'transparent',
+                  '&[data-selected]': {
+                    backgroundColor: 'var(--theme-background-tertiary) !important',
+                    color: 'var(--theme-text) !important',
+                    fontWeight: '600 !important',
+                  },
+                  '&[data-hovered]': {
+                    backgroundColor: 'var(--theme-primary-dark) !important',
+                    color: 'var(--theme-text-on-primary) !important',
+                  },
+                  '&:hover': {
+                    backgroundColor: 'var(--theme-primary-dark) !important',
+                    color: 'var(--theme-text-on-primary) !important',
+                  },
+                  '&:focus': {
+                    backgroundColor: 'var(--theme-primary-dark) !important',
+                    color: 'var(--theme-text-on-primary) !important',
+                  },
+                },
+              }}
+            />
             {/* Account Icon */}
             <Link href="/account" style={{ textDecoration: 'none' }}>
               <ActionIcon
                 variant="subtle"
                 size="lg"
-                color="white"
                 style={{ 
                   cursor: 'pointer',
-                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  backgroundColor: 'var(--theme-hoverOverlay)',
                   backdropFilter: 'blur(10px)',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: `1px solid var(--theme-hoverOverlay)`,
                   borderRadius: '12px',
                   transition: 'all 0.3s ease',
                   ':hover': {
-                    backgroundColor: 'rgba(255,255,255,0.2)',
+                    backgroundColor: 'var(--theme-hoverOverlay)',
                     transform: 'translateY(-2px)'
                   }
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
-                <IconUser size={24} color="white" style={{ 
+                <IconUser size={24} color="var(--theme-text-on-primary)" style={{ 
                   filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
                 }} />
               </ActionIcon>
@@ -148,29 +208,28 @@ export default function TopNav() {
                 <ActionIcon
                   variant="subtle"
                   size="lg"
-                  color="white"
                   style={{ 
                     cursor: 'pointer',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    backgroundColor: 'var(--theme-hoverOverlay)',
                     backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    border: `1px solid var(--theme-hoverOverlay)`,
                     borderRadius: '12px',
                     transition: 'all 0.3s ease',
                     ':hover': {
-                      backgroundColor: 'rgba(255,255,255,0.2)',
+                      backgroundColor: 'var(--theme-hoverOverlay)',
                       transform: 'translateY(-2px)'
                     }
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                    e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
                     e.currentTarget.style.transform = 'translateY(-2px)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  <IconShoppingCart size={24} color="white" style={{ 
+                  <IconShoppingCart size={24} color="var(--theme-text-on-primary)" style={{ 
                     filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
                   }} />
                 </ActionIcon>
@@ -193,9 +252,10 @@ export default function TopNav() {
                       fontWeight: 'bold',
                       padding: 0,
                       zIndex: 10,
+                      backgroundColor: 'var(--theme-error)',
                       boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
                       animation: 'pulse 2s infinite',
-                      border: '2px solid white'
+                      border: '2px solid var(--theme-text-on-primary)'
                     }}
                   >
                     {cartCount > 99 ? '99+' : cartCount}
