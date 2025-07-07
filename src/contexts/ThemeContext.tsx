@@ -27,21 +27,36 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Load theme from localStorage on client side
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme && themes[savedTheme]) {
+      console.log('ThemeProvider: Loading saved theme:', savedTheme);
       setThemeName(savedTheme);
       setCurrentTheme(themes[savedTheme]);
     }
   }, []);
 
   const setTheme = (newThemeName: string) => {
+    console.log('ThemeProvider: Setting theme to:', newThemeName);
     if (themes[newThemeName]) {
       setThemeName(newThemeName);
       setCurrentTheme(themes[newThemeName]);
       localStorage.setItem('theme', newThemeName);
+    } else {
+      console.error('ThemeProvider: Theme not found:', newThemeName);
     }
   };
 
   // Apply theme CSS variables to the document root and body
   useEffect(() => {
+    // Check if we're on a store page - if so, don't override store theme
+    const pathname = window.location.pathname;
+    const isStorePage = pathname.startsWith('/store/') || 
+                        (pathname.split('/').length === 2 && pathname !== '/admin' && pathname !== '/');
+    
+    if (isStorePage) {
+      console.log('ThemeProvider: Detected store page, skipping global theme application');
+      return;
+    }
+    
+    console.log('ThemeProvider: Applying global theme:', themeName);
     const root = document.documentElement;
     const body = document.body;
     const colors = currentTheme.colors;
@@ -80,7 +95,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     body.style.backgroundColor = colors.background;
     body.style.color = colors.text;
     body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
-  }, [currentTheme]);
+  }, [currentTheme, themeName]);
 
   return (
     <ThemeContext.Provider value={{ currentTheme, themeName, setTheme }}>

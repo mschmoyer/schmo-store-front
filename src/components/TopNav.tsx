@@ -1,16 +1,40 @@
 'use client';
 
-import { Group, Container, Text, ActionIcon, Badge, Box, Select } from '@mantine/core';
-import { IconShoppingCart, IconUser, IconPalette } from '@tabler/icons-react';
+import { Group, Container, Text, ActionIcon, Badge, Box } from '@mantine/core';
+import { IconShoppingCart, IconUser } from '@tabler/icons-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { useTheme } from '@/contexts/ThemeContext';
-import { getThemeNames, themes } from '@/lib/themes';
+import { usePathname } from 'next/navigation';
 
 export default function TopNav() {
   const [cartCount, setCartCount] = useState(0);
-  const { themeName, setTheme } = useTheme();
+  const pathname = usePathname();
+  
+  // Extract store slug from pathname
+  const getStoreSlug = () => {
+    // Handle different URL patterns:
+    // /[storeSlug] -> extract storeSlug
+    // /store/[storeSlug] -> extract storeSlug  
+    // /blog/[storeSlug] -> extract storeSlug
+    const pathSegments = pathname?.split('/').filter(Boolean) || [];
+    
+    if (pathSegments.length === 1) {
+      // Direct store slug: /demo-store
+      return pathSegments[0];
+    } else if (pathSegments.length >= 2) {
+      // Nested routes: /store/demo-store, /blog/demo-store
+      if (pathSegments[0] === 'store' || pathSegments[0] === 'blog') {
+        return pathSegments[1];
+      }
+      // For admin or other routes, no store context
+      return null;
+    }
+    
+    return null;
+  };
+  
+  const storeSlug = getStoreSlug();
 
   useEffect(() => {
     // Get cart count from localStorage
@@ -71,10 +95,9 @@ export default function TopNav() {
       <Container size="xl" py="md">
         <Group justify="space-between" align="center">
           {/* Logo Section */}
-          <Link href="/store" style={{ textDecoration: 'none' }}>
+          <Link href={storeSlug ? `/store/${storeSlug}` : '/store'} style={{ textDecoration: 'none' }}>
             <Group gap="sm" align="center" style={{ 
-              transition: 'transform 0.2s ease',
-              ':hover': { transform: 'scale(1.05)' }
+              transition: 'transform 0.2s ease'
             }}>
               <div style={{ 
                 padding: '8px', 
@@ -110,68 +133,60 @@ export default function TopNav() {
             </Group>
           </Link>
 
-          {/* Theme Selector, Account and Cart Section */}
+          {/* Navigation Links */}
+          <Group gap="lg" visibleFrom="sm">
+            <Link href={storeSlug ? `/store/${storeSlug}` : '/store'} style={{ textDecoration: 'none' }}>
+              <Text
+                size="md"
+                fw={500}
+                style={{
+                  color: 'var(--theme-text-on-primary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  padding: '8px 16px',
+                  borderRadius: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                Shop
+              </Text>
+            </Link>
+            <Link href={storeSlug ? `/blog/${storeSlug}` : '/blog'} style={{ textDecoration: 'none' }}>
+              <Text
+                size="md"
+                fw={500}
+                style={{
+                  color: 'var(--theme-text-on-primary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  padding: '8px 16px',
+                  borderRadius: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                Blog
+              </Text>
+            </Link>
+          </Group>
+
+          {/* Account and Cart Section */}
           <Group gap="sm">
-            {/* Theme Selector */}
-            <Select
-              placeholder="Theme"
-              data={getThemeNames().map(key => ({
-                value: key,
-                label: themes[key].name
-              }))}
-              value={themeName}
-              onChange={(value) => value && setTheme(value)}
-              leftSection={<IconPalette size={16} />}
-              size="sm"
-              w={140}
-              comboboxProps={{
-                transitionProps: { transition: 'pop', duration: 200 },
-              }}
-              styles={{
-                input: {
-                  backgroundColor: 'var(--theme-card)',
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid var(--theme-border)',
-                  borderRadius: '8px',
-                  color: 'var(--theme-text)',
-                  '&::placeholder': {
-                    color: 'var(--theme-text-muted)',
-                    opacity: 0.7,
-                  },
-                },
-                section: {
-                  color: 'var(--theme-text)',
-                },
-                dropdown: {
-                  backgroundColor: 'var(--theme-card)',
-                  border: '1px solid var(--theme-border)',
-                  color: 'var(--theme-text)',
-                },
-                option: {
-                  color: 'var(--theme-text) !important',
-                  backgroundColor: 'transparent',
-                  '&[data-selected]': {
-                    backgroundColor: 'var(--theme-background-tertiary) !important',
-                    color: 'var(--theme-text) !important',
-                    fontWeight: '600 !important',
-                  },
-                  '&[data-hovered]': {
-                    backgroundColor: 'var(--theme-primary-dark) !important',
-                    color: 'var(--theme-text-on-primary) !important',
-                  },
-                  '&:hover': {
-                    backgroundColor: 'var(--theme-primary-dark) !important',
-                    color: 'var(--theme-text-on-primary) !important',
-                  },
-                  '&:focus': {
-                    backgroundColor: 'var(--theme-primary-dark) !important',
-                    color: 'var(--theme-text-on-primary) !important',
-                  },
-                },
-              }}
-            />
             {/* Account Icon */}
-            <Link href="/account" style={{ textDecoration: 'none' }}>
+            <Link href={storeSlug ? `/store/${storeSlug}/account` : '/account'} style={{ textDecoration: 'none' }}>
               <ActionIcon
                 variant="subtle"
                 size="lg"
@@ -181,11 +196,7 @@ export default function TopNav() {
                   backdropFilter: 'blur(10px)',
                   border: `1px solid var(--theme-hoverOverlay)`,
                   borderRadius: '12px',
-                  transition: 'all 0.3s ease',
-                  ':hover': {
-                    backgroundColor: 'var(--theme-hoverOverlay)',
-                    transform: 'translateY(-2px)'
-                  }
+                  transition: 'all 0.3s ease'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
@@ -203,7 +214,7 @@ export default function TopNav() {
             </Link>
 
             {/* Cart Icon */}
-            <Link href="/cart" style={{ textDecoration: 'none' }}>
+            <Link href={storeSlug ? `/store/${storeSlug}/cart` : '/cart'} style={{ textDecoration: 'none' }}>
               <div style={{ position: 'relative', display: 'inline-block' }}>
                 <ActionIcon
                   variant="subtle"

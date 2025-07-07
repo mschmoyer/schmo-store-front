@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/database/connection';
+import { v4 as uuidv4 } from 'uuid';
+import { CreateOrderInput } from '@/types/database';
 
 interface CartItem {
   product_id: string | number;
@@ -26,16 +29,46 @@ interface OrderRequest {
   subtotal: number;
   shippingCost: number;
   total: number;
+  storeId?: string; // Optional store identifier
 }
 
 export async function POST(request: NextRequest) {
   try {
     const orderData: OrderRequest = await request.json();
     
-    // Check if ShipEngine configuration is ready (uses same API key as ShipStation)
-    const apiKey = process.env.SHIPSTATION_API_KEY;
-    const sellerId = process.env.SHIPENGINE_SELLER_ID;
-    const warehouseId = process.env.SHIPENGINE_WAREHOUSE_ID;
+    let apiKey: string | undefined;
+    let sellerId: string | undefined;
+    let warehouseId: string | undefined;
+    
+    // Try to get store-specific integration if storeId is provided
+    if (orderData.storeId) {
+      try {
+        const integrationResult = await db.query(`
+          SELECT api_key_encrypted, configuration, is_active
+          FROM store_integrations 
+          WHERE store_id = $1 AND integration_type = 'shipengine' AND is_active = true
+        `, [orderData.storeId]);
+        
+        if (integrationResult.rows.length > 0) {
+          const integration = integrationResult.rows[0];
+          apiKey = Buffer.from(integration.api_key_encrypted, 'base64').toString('utf-8');
+          
+          // Extract configuration values
+          const config = integration.configuration || {};
+          sellerId = config.seller_id;
+          warehouseId = config.warehouse_id;
+        }
+      } catch (error) {
+        console.warn('Failed to get store-specific integration, falling back to environment variables:', error);
+      }
+    }
+    
+    // Fallback to environment variables if no store-specific config found
+    if (!apiKey) {
+      apiKey = process.env.SHIPSTATION_API_KEY;
+      sellerId = process.env.SHIPENGINE_SELLER_ID;
+      warehouseId = process.env.SHIPENGINE_WAREHOUSE_ID;
+    }
     
     console.log('Order creation - Environment check:', {
       hasApiKey: !!apiKey,
@@ -48,17 +81,17 @@ export async function POST(request: NextRequest) {
     
     if (!apiKey || apiKey === 'your_shipstation_api_key_here') {
       console.warn('ShipStation API key not configured, creating mock order');
-      return createMockOrder(orderData);
+      return await createMockOrder(orderData);
     }
     
     if (!sellerId || sellerId === 'your_seller_id_here') {
       console.warn('ShipEngine Seller ID not configured, creating mock order');
-      return createMockOrder(orderData);
+      return await createMockOrder(orderData);
     }
     
     if (!warehouseId || warehouseId === 'your_warehouse_id_here') {
       console.warn('ShipEngine Warehouse ID not configured, creating mock order');
-      return createMockOrder(orderData);
+      return await createMockOrder(orderData);
     }
     
     // Generate unique external order ID
@@ -133,13 +166,13 @@ export async function POST(request: NextRequest) {
       
       // Check if it's a billing/plan limitation
       if (response.status === 401) {
-        console.warn('ShipEngine API requires billing plan upgrade, falling back to mock order');
-        return createMockOrderWithMessage(orderData, 'ShipEngine API requires a paid plan for shipment creation');
+        console.warn('ShipEngine API requires billing plan upgrade, creating completed order locally');
+        return await createCompletedOrder(orderData, 'ShipEngine API requires a paid plan for shipment creation. Order completed locally.');
       }
       
-      // If ShipEngine fails, still create a mock order so checkout can complete
-      console.warn('ShipEngine API failed, falling back to mock order');
-      return createMockOrder(orderData);
+      // If ShipEngine fails, still create a completed order so checkout can complete
+      console.warn('ShipEngine API failed, creating completed order locally');
+      return await createCompletedOrder(orderData, 'ShipEngine API temporarily unavailable. Order completed locally.');
     }
     
     const shipmentResponse = await response.json();
@@ -164,8 +197,8 @@ export async function POST(request: NextRequest) {
     try {
       const orderData: OrderRequest = await request.json();
       console.warn('Error occurred, falling back to mock order');
-      return createMockOrder(orderData);
-    } catch (parseError) {
+      return await createMockOrder(orderData);
+    } catch {
       return NextResponse.json(
         { 
           error: 'Failed to create order',
@@ -178,7 +211,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function createMockOrder(orderData: OrderRequest) {
+async function createMockOrder(orderData: OrderRequest) {
   const mockOrderId = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   console.log('Creating mock order:', {
@@ -187,6 +220,14 @@ function createMockOrder(orderData: OrderRequest) {
     itemCount: orderData.items.length,
     total: orderData.total
   });
+  
+  // Save the order to database for dashboard metrics
+  try {
+    await createCompletedOrder(orderData, 'Mock order created successfully (ShipEngine not configured)');
+  } catch (error) {
+    console.error('Failed to save mock order to database:', error);
+    // Continue with mock response even if database save fails
+  }
   
   // Simulate estimated delivery date (5-7 business days from now)
   const deliveryDate = new Date();
@@ -200,6 +241,246 @@ function createMockOrder(orderData: OrderRequest) {
     estimatedDelivery: deliveryDate.toISOString().split('T')[0],
     orderTotal: orderData.total,
     message: 'Mock order created successfully (ShipEngine not configured)',
+    isMockOrder: true
+  });
+}
+
+async function createCompletedOrder(orderData: OrderRequest, message: string) {
+  try {
+    // Get store ID from slug if not provided
+    let storeId = orderData.storeId;
+    if (!storeId) {
+      // Try to extract store from referer URL or use a default
+      console.warn('No store ID provided, using fallback logic');
+      // For now, we'll use a default store or could extract from headers
+      // This should ideally be passed from the frontend
+      const storeResult = await db.query(
+        `SELECT id FROM stores WHERE is_active = true AND is_public = true LIMIT 1`
+      );
+      if (storeResult.rows.length > 0) {
+        storeId = storeResult.rows[0].id;
+      } else {
+        throw new Error('No active public store found');
+      }
+    }
+
+    // Generate unique order number
+    const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    const orderId = uuidv4();
+    
+    console.log('Creating completed order in database:', {
+      orderId,
+      orderNumber,
+      customerName: `${orderData.shippingAddress.firstName} ${orderData.shippingAddress.lastName}`,
+      itemCount: orderData.items.length,
+      total: orderData.total,
+      storeId
+    });
+    
+    // Start database transaction
+    await db.query('BEGIN');
+    
+    try {
+      // Create the order
+      const orderInput: CreateOrderInput = {
+        store_id: storeId,
+        customer_email: orderData.shippingAddress.email,
+        customer_first_name: orderData.shippingAddress.firstName,
+        customer_last_name: orderData.shippingAddress.lastName,
+        customer_phone: orderData.shippingAddress.phone,
+        shipping_first_name: orderData.shippingAddress.firstName,
+        shipping_last_name: orderData.shippingAddress.lastName,
+        shipping_address_line1: orderData.shippingAddress.address,
+        shipping_city: orderData.shippingAddress.city,
+        shipping_state: orderData.shippingAddress.state,
+        shipping_postal_code: orderData.shippingAddress.zipCode,
+        shipping_country: 'US',
+        subtotal: orderData.subtotal,
+        tax_amount: 0,
+        shipping_amount: orderData.shippingCost,
+        discount_amount: 0,
+        total_amount: orderData.total,
+        payment_method: 'local_completion',
+        payment_status: 'completed',
+        shipping_method: orderData.shippingMethod,
+        status: 'completed',
+        fulfillment_status: 'pending',
+        items: []
+      };
+
+      // Insert the order
+      await db.query(`
+        INSERT INTO orders (
+          id, store_id, order_number, customer_email, customer_first_name, customer_last_name,
+          customer_phone, shipping_first_name, shipping_last_name, shipping_address_line1,
+          shipping_city, shipping_state, shipping_postal_code, shipping_country,
+          subtotal, tax_amount, shipping_amount, discount_amount, total_amount,
+          payment_method, payment_status, shipping_method, status, fulfillment_status,
+          created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+        ) RETURNING id`,
+        [
+          orderId, storeId, orderNumber, orderInput.customer_email, orderInput.customer_first_name,
+          orderInput.customer_last_name, orderInput.customer_phone, orderInput.shipping_first_name,
+          orderInput.shipping_last_name, orderInput.shipping_address_line1, orderInput.shipping_city,
+          orderInput.shipping_state, orderInput.shipping_postal_code, orderInput.shipping_country,
+          orderInput.subtotal, orderInput.tax_amount, orderInput.shipping_amount, orderInput.discount_amount,
+          orderInput.total_amount, orderInput.payment_method, orderInput.payment_status, orderInput.shipping_method,
+          orderInput.status, orderInput.fulfillment_status, new Date(), new Date()
+        ]
+      );
+
+      // Calculate actual totals based on database prices
+      let actualSubtotal = 0;
+      
+      // Create order items and deduct inventory
+      for (const item of orderData.items) {
+        const orderItemId = uuidv4();
+        
+        // Get product information - check both UUID and ShipStation product ID
+        // Check if the product_id looks like a UUID (has dashes)
+        const isUUID = typeof item.product_id === 'string' && item.product_id.includes('-');
+        
+        let productResult;
+        if (isUUID) {
+          // Try UUID lookup first
+          productResult = await db.query(
+            `SELECT id, sku, name, featured_image_url, stock_quantity, base_price FROM products 
+             WHERE id = $1 AND store_id = $2`,
+            [item.product_id, storeId]
+          );
+        } else {
+          // Try ShipStation product ID lookup
+          productResult = await db.query(
+            `SELECT id, sku, name, featured_image_url, stock_quantity, base_price FROM products 
+             WHERE shipstation_product_id = $1 AND store_id = $2`,
+            [item.product_id, storeId]
+          );
+        }
+        
+        if (productResult.rows.length === 0) {
+          throw new Error(`Product ${item.product_id} not found in store ${storeId}`);
+        }
+        
+        const product = productResult.rows[0];
+        
+        // Use database price instead of cart price (cart might have outdated pricing)
+        const actualPrice = parseFloat(product.base_price);
+        const totalPrice = actualPrice * item.quantity;
+        
+        // Add to running subtotal
+        actualSubtotal += totalPrice;
+        
+        // Check inventory availability
+        if (product.stock_quantity < item.quantity) {
+          console.warn(`Insufficient inventory for product ${product.sku}. Available: ${product.stock_quantity}, Requested: ${item.quantity}`);
+          // We'll still process the order but log this for merchant attention
+        }
+        
+        // Insert order item
+        await db.query(`
+          INSERT INTO order_items (
+            id, store_id, order_id, product_id, product_sku, product_name,
+            product_image_url, unit_price, quantity, total_price, discount_amount, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            orderItemId, storeId, orderId, product.id, product.sku, product.name,
+            product.featured_image_url, actualPrice, item.quantity, totalPrice, 0, new Date()
+          ]
+        );
+        
+        // Deduct inventory
+        await db.query(
+          `UPDATE products SET stock_quantity = stock_quantity - $1, updated_at = $2 
+           WHERE id = $3 AND store_id = $4`,
+          [item.quantity, new Date(), product.id, storeId]
+        );
+        
+        // Log inventory change
+        await db.query(`
+          INSERT INTO inventory_logs (
+            id, store_id, product_id, change_type, quantity_change, quantity_after,
+            reference_type, reference_id, notes, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            uuidv4(), storeId, product.id, 'sale', -item.quantity,
+            product.stock_quantity - item.quantity, 'order', orderId,
+            `Order ${orderNumber} - Local completion due to ShipEngine 401`, new Date()
+          ]
+        );
+      }
+      
+      // Update order total with actual calculated amount
+      const actualTotal = actualSubtotal + orderData.shippingCost;
+      await db.query(
+        `UPDATE orders SET subtotal = $1, total_amount = $2, updated_at = $3 
+         WHERE id = $4 AND store_id = $5`,
+        [actualSubtotal, actualTotal, new Date(), orderId, storeId]
+      );
+      
+      console.log(`Order totals updated: subtotal=${actualSubtotal}, total=${actualTotal}`);
+      
+      // Commit transaction
+      await db.query('COMMIT');
+      
+      console.log(`Order ${orderNumber} completed successfully in database`);
+      
+      // Simulate estimated delivery date (5-7 business days from now)
+      const deliveryDate = new Date();
+      deliveryDate.setDate(deliveryDate.getDate() + 7);
+      
+      return NextResponse.json({
+        success: true,
+        orderId: orderNumber,
+        orderUuid: orderId,
+        shipmentId: `LOCAL-SHIPMENT-${Date.now()}`,
+        trackingNumber: `LOCAL${Math.random().toString().substr(2, 8).toUpperCase()}`,
+        estimatedDelivery: deliveryDate.toISOString().split('T')[0],
+        orderTotal: actualTotal,
+        message,
+        isLocalOrder: true,
+        redirectToSuccess: true
+      });
+      
+    } catch (dbError) {
+      // Rollback transaction on error
+      await db.query('ROLLBACK');
+      throw dbError;
+    }
+    
+  } catch (error) {
+    console.error('Error creating completed order:', error);
+    
+    // Fallback to mock order if database operations fail
+    return createMockOrderWithMessage(orderData, message);
+  }
+}
+
+function createMockOrderWithMessage(orderData: OrderRequest, message: string) {
+  const mockOrderId = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log('Creating mock order with message:', {
+    orderId: mockOrderId,
+    customerName: `${orderData.shippingAddress.firstName} ${orderData.shippingAddress.lastName}`,
+    itemCount: orderData.items.length,
+    total: orderData.total,
+    message
+  });
+  
+  // Simulate estimated delivery date (5-7 business days from now)
+  const deliveryDate = new Date();
+  deliveryDate.setDate(deliveryDate.getDate() + 7);
+  
+  return NextResponse.json({
+    success: true,
+    orderId: mockOrderId,
+    shipmentId: `MOCK-SHIPMENT-${Date.now()}`,
+    trackingNumber: `1Z999AA1${Math.random().toString().substr(2, 8)}`,
+    estimatedDelivery: deliveryDate.toISOString().split('T')[0],
+    orderTotal: orderData.total,
+    message,
     isMockOrder: true
   });
 }

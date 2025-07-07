@@ -1,21 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/auth/session';
+import { db } from '@/lib/database/connection';
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     
-    // Check if API key is configured
-    const apiKey = process.env.SHIPSTATION_API_KEY;
-    if (!apiKey || apiKey === 'your_shipstation_api_key_here') {
-      return NextResponse.json(
-        { 
-          error: 'ShipStation API key not configured', 
-          message: 'Please set SHIPSTATION_API_KEY in your environment variables',
-          code: 'MISSING_API_KEY'
-        }, 
-        { status: 400 }
-      );
+    // Get ShipEngine integration from database
+    const integrationResult = await db.query(`
+      SELECT api_key_encrypted, is_active
+      FROM store_integrations 
+      WHERE store_id = $1 AND integration_type = 'shipengine'
+    `, [user.storeId]);
+    
+    if (integrationResult.rows.length === 0 || !integrationResult.rows[0].is_active) {
+      return NextResponse.json({
+        error: 'ShipEngine integration not found or inactive',
+        message: 'Please configure ShipEngine integration in your store settings',
+        code: 'MISSING_INTEGRATION'
+      }, { status: 400 });
     }
+    
+    const encryptedApiKey = integrationResult.rows[0].api_key_encrypted;
+    const apiKey = Buffer.from(encryptedApiKey, 'base64').toString('utf-8');
     
     // Forward query parameters to ShipStation API
     const query = new URLSearchParams();
@@ -76,6 +84,13 @@ export async function GET(request: NextRequest) {
     
   } catch (error) {
     console.error('Error fetching inventory:', error);
+    
+    if (error instanceof Error && error.message === 'Authentication required') {
+      return NextResponse.json({
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      }, { status: 401 });
+    }
     
     return NextResponse.json(
       { 
