@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { Container, Title, Text, Badge, Group, Stack, Alert, Loader, Center, Button } from '@mantine/core';
-import { IconCalendar, IconUser, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
+import { IconCalendar, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
 import { useParams } from 'next/navigation';
 import { BlogPost } from '@/types/blog';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
-import { TopNav } from '@/components';
+import TopNav from '@/components/TopNav';
 import Link from 'next/link';
 
 interface Store {
@@ -82,7 +82,7 @@ export default function StoreBlogPostPage() {
     };
 
     fetchPost();
-  }, [store, postSlug]);
+  }, [store, postSlug, storeSlug]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -152,7 +152,7 @@ export default function StoreBlogPostPage() {
   return (
     <StoreThemeProvider themeId={store.theme_name || 'default'}>
       <div style={{ minHeight: '100vh', background: 'var(--theme-background)' }}>
-        <TopNav storeSlug={storeSlug} store={store} />
+        <TopNav />
         <Container size="lg" py="xl">
           <Stack gap="lg">
             {/* Navigation */}
@@ -195,17 +195,17 @@ export default function StoreBlogPostPage() {
                 <Group gap="xs">
                   <IconCalendar size={16} style={{ color: 'var(--theme-text-muted)' }} />
                   <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
-                    {formatDate(post.publishedAt || post.createdAt)}
+                    {formatDate(post.published_at || post.created_at)}
                   </Text>
                 </Group>
                 
                 
-                {post.category && (
+                {post.categories && post.categories.length > 0 && (
                   <Badge variant="light" style={{ 
                     backgroundColor: 'var(--theme-primary)',
                     color: 'var(--theme-text-on-primary)'
                   }}>
-                    {post.category}
+                    {post.categories[0]}
                   </Badge>
                 )}
               </Group>

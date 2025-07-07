@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       LIMIT 20
     `, [user.storeId]);
 
-    const existingBlogTitles = existingBlogsResult.rows.map(row => row.title);
+    const existingBlogTitles = existingBlogsResult.rows.map(row => String(row.title));
 
     // Analyze product categories and names
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
     
     const encryptedApiKey = integrationResult.rows[0].api_key_encrypted;
-    const apiKey = Buffer.from(encryptedApiKey, 'base64').toString('utf-8');
+    const apiKey = Buffer.from(String(encryptedApiKey), 'base64').toString('utf-8');
     
     const url = 'https://api.shipstation.com/v2/warehouses';
     

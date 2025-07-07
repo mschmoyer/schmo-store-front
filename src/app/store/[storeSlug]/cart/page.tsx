@@ -292,7 +292,7 @@ export default function StoreCartPage() {
                         variant="light"
                         color="red"
                         size="sm"
-                        onClick={() => removeItem(item.product_id)}
+                        onClick={() => removeItem(String(item.product_id))}
                         aria-label="Remove item"
                       >
                         <IconTrash size={16} />

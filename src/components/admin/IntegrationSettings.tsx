@@ -311,9 +311,9 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       
       await onUpdate(integration.integrationType, {
         apiKey: values.apiKey,
+        apiSecret: values.apiSecret, // Add API Secret at top level for ShipStation
         configuration: {
           webhookUrl: values.webhookUrl,
-          apiSecret: values.apiSecret,
           endpointUrl: values.endpointUrl,
           applicationId: values.applicationId,
           clientSecret: values.clientSecret,
@@ -436,7 +436,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
               <Stack gap="md">
                 {/* API Key and Secret for ShipStation */}
                 {integration.integrationType === 'shipstation' ? (
-                  <Stack gap="sm" style={{ maxWidth: '600px' }}>
+                  <Stack gap="md" style={{ maxWidth: '600px' }}>
                     <Text size="sm" c="dimmed">
                       Get your API credentials at{' '}
                       <a href="https://ss.shipstation.com/#/settings/api" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--mantine-color-blue-6)' }}>
@@ -464,6 +464,36 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                         Test Connection
                       </Button>
                     </Group>
+                    
+                    <Divider label="Custom Store Setup" labelPosition="center" />
+                    
+                    <Alert color="blue" variant="light" title="Configure Custom Store in ShipStation">
+                      <Stack gap="sm">
+                        <Text size="sm">
+                          After saving your API credentials, configure a Custom Store in ShipStation:
+                        </Text>
+                        <Text size="sm" fw={600}>
+                          1. Go to Settings → Stores → Setup Store Connection
+                        </Text>
+                        <Text size="sm" fw={600}>
+                          2. Select &quot;Custom Store&quot; and enter these values:
+                        </Text>
+                        <Stack gap="xs" pl="md">
+                          <Text size="sm">
+                            <strong>URL to Custom XML Page:</strong> {window.location.origin}/api/shipstation/orders
+                          </Text>
+                          <Text size="sm">
+                            <strong>Username:</strong> {form.values.apiKey || '[Your API Key]'}
+                          </Text>
+                          <Text size="sm">
+                            <strong>Password:</strong> {form.values.apiSecret || '[Your API Secret]'}
+                          </Text>
+                        </Stack>
+                        <Text size="sm" c="dimmed">
+                          This allows ShipStation to automatically import orders and send shipment notifications back to your store.
+                        </Text>
+                      </Stack>
+                    </Alert>
                   </Stack>
                 ) : (
                   <Group grow>

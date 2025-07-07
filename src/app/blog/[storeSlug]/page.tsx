@@ -14,10 +14,10 @@ import {
 } from '@mantine/core';
 import { IconRss, IconAlertCircle, IconArrowLeft } from '@tabler/icons-react';
 import { useSearchParams, useParams } from 'next/navigation';
-import { BlogPost, BlogAPIResponse } from '@/types/blog';
+import { BlogPost, BlogAPIResponse, BlogPostResponse } from '@/types/blog';
 import BlogPostList from '@/components/blog/BlogPostList';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
-import { TopNav } from '@/components';
+import TopNav from '@/components/TopNav';
 import Link from 'next/link';
 
 interface Store {
@@ -94,15 +94,15 @@ export default function StoreBlogPage() {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data: BlogAPIResponse = await response.json();
+        const data: BlogAPIResponse<BlogPostResponse> = await response.json();
         
         if (data.success && data.data) {
           setPosts(data.data.posts || []);
           setPagination(prev => ({
             ...prev,
-            page: data.data.pagination?.page || currentPage,
-            total: data.data.pagination?.total || 0,
-            totalPages: data.data.pagination?.totalPages || 0
+            page: data.data?.page || currentPage,
+            total: data.data?.total || 0,
+            totalPages: data.data?.totalPages || 0
           }));
         } else {
           throw new Error(data.error || 'Failed to fetch blog posts');
@@ -149,7 +149,7 @@ export default function StoreBlogPage() {
   return (
     <StoreThemeProvider themeId={store.theme_name || 'default'}>
       <div style={{ minHeight: '100vh', background: 'var(--theme-background)' }}>
-        <TopNav storeSlug={storeSlug} store={store} />
+        <TopNav />
         {/* Hero Section */}
         <div style={{
           background: 'var(--theme-hero-gradient)',

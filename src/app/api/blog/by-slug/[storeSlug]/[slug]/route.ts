@@ -67,23 +67,21 @@ export async function GET(
     
     // Transform the data to match BlogPost interface
     const blogPost: BlogPost = {
-      id: post.id,
-      storeId: post.store_id,
-      title: post.title,
-      slug: post.slug,
-      content: post.content,
-      excerpt: post.excerpt,
-      metaTitle: post.meta_title,
-      metaDescription: post.meta_description,
-      featuredImageUrl: post.featured_image_url,
-      status: post.status,
-      publishedAt: post.published_at,
-      scheduledAt: post.scheduled_for,
+      id: String(post.id),
+      title: String(post.title),
+      slug: String(post.slug),
+      content: String(post.content),
+      excerpt: post.excerpt ? String(post.excerpt) : undefined,
+      featured_image: post.featured_image_url ? String(post.featured_image_url) : undefined,
+      meta_title: post.meta_title ? String(post.meta_title) : undefined,
+      meta_description: post.meta_description ? String(post.meta_description) : undefined,
+      status: String(post.status) as 'draft' | 'published' | 'scheduled',
+      published_at: post.published_at ? String(post.published_at) : undefined,
+      scheduled_for: post.scheduled_for ? String(post.scheduled_for) : undefined,
       tags: Array.isArray(post.tags) ? post.tags : [],
-      category: post.category,
-      viewCount: post.view_count + 1, // Include the incremented view count
-      createdAt: post.created_at,
-      updatedAt: post.updated_at
+      view_count: Number(post.view_count) + 1, // Include the incremented view count
+      created_at: String(post.created_at),
+      updated_at: String(post.updated_at)
     };
     
     const response: BlogAPIResponse<BlogPost> = {

@@ -439,7 +439,19 @@ export const blogUtils = {
     ]);
 
     const stats = statsResult.rows[0] as StatsResult;
-    const popularPosts = popularResult.rows;
+    const popularPostsRaw = popularResult.rows as PopularPostResult[];
+
+    // Transform popular posts to match BlogPost interface (partial data only)
+    const popularPosts: BlogPost[] = popularPostsRaw.map(post => ({
+      id: String(post.id),
+      title: String(post.title),
+      slug: String(post.slug),
+      content: '', // Not needed for stats
+      status: 'published' as const,
+      view_count: Number(post.view_count),
+      created_at: '', // Not needed for stats
+      updated_at: '' // Not needed for stats
+    }));
 
     return {
       totalPosts: parseInt(stats.total_posts),

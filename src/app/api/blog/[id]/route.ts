@@ -79,11 +79,25 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
+    const { searchParams } = new URL(request.url);
     
-    // TODO: Add authentication middleware to verify admin access
-    // For now, we'll allow updates without authentication
+    // Try to get storeId from query params first
+    let storeId = searchParams.get('storeId');
     
-    const updatedPost = await blogUtils.updateBlogPost(id, body);
+    // If no storeId in params, try to get from authenticated user session
+    if (!storeId) {
+      const user = await getSessionFromRequest(request);
+      if (user?.storeId) {
+        storeId = user.storeId;
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'Store ID required. Provide storeId parameter or authenticate.' },
+          { status: 400 }
+        );
+      }
+    }
+    
+    const updatedPost = await blogUtils.updateBlogPost(storeId, id, body);
     
     if (!updatedPost) {
       const response: BlogAPIResponse<null> = {
@@ -122,11 +136,25 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const { searchParams } = new URL(request.url);
     
-    // TODO: Add authentication middleware to verify admin access
-    // For now, we'll allow deletion without authentication
+    // Try to get storeId from query params first
+    let storeId = searchParams.get('storeId');
     
-    const success = await blogUtils.deleteBlogPost(id);
+    // If no storeId in params, try to get from authenticated user session
+    if (!storeId) {
+      const user = await getSessionFromRequest(request);
+      if (user?.storeId) {
+        storeId = user.storeId;
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'Store ID required. Provide storeId parameter or authenticate.' },
+          { status: 400 }
+        );
+      }
+    }
+    
+    const success = await blogUtils.deleteBlogPost(storeId, id);
     
     if (!success) {
       const response: BlogAPIResponse<null> = {

@@ -29,7 +29,7 @@ export async function GET(
       ${whereClause}
     `, queryParams);
     
-    const total = parseInt(countResult.rows[0]?.total || '0');
+    const total = parseInt(String(countResult.rows[0]?.total || '0'));
     const totalPages = Math.ceil(total / pageSize);
     
     // Get products with pagination
@@ -68,7 +68,7 @@ export async function GET(
               [product.category_id]
             );
             if (categoryResult.rows.length > 0) {
-              categoryName = categoryResult.rows[0].name;
+              categoryName = String(categoryResult.rows[0].name);
             }
           } catch (error) {
             console.error('Error fetching category:', error);

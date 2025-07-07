@@ -148,13 +148,13 @@ export async function GET(request: NextRequest) {
       [storeId, startDate, endDate]
     );
     
-    const totalOrders = parseInt(countResult.rows[0].total);
+    const totalOrders = parseInt(String(countResult.rows[0].total));
     const totalPages = Math.ceil(totalOrders / pageSize);
     
     // Convert to orders with items
-    const orders: OrderWithItems[] = ordersResult.rows.map(row => ({
-      ...row,
-      items: row.items || []
+    const orders: OrderWithItems[] = ordersResult.rows.map((row: Record<string, unknown>) => ({
+      ...(row as unknown as OrderWithItems),
+      items: (row.items as unknown as OrderItem[]) || []
     }));
     
     // Validate orders for export
@@ -358,7 +358,7 @@ export async function POST(request: NextRequest) {
     
     // Update order with shipment information
     const updateData: OrderStatusUpdateData = {
-      order_id: order.id,
+      order_id: String(order.id),
       status: 'shipped',
       tracking_number: shipmentData.trackingNumber,
       carrier: shipmentData.carrierCode,

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
     
-    const encryptedApiKey = integrationResult.rows[0].api_key_encrypted;
+    const encryptedApiKey = String(integrationResult.rows[0].api_key_encrypted);
     const apiKey = Buffer.from(encryptedApiKey, 'base64').toString('utf-8');
     
     // Forward query parameters to ShipStation API

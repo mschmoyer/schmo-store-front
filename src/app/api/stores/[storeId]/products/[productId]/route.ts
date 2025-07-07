@@ -61,7 +61,7 @@ export async function GET(
       `, [product.sku, storeId]);
       
       if (inventoryResult.rows.length > 0 && inventoryResult.rows[0].total_available !== null) {
-        inventoryLevel = parseInt(inventoryResult.rows[0].total_available);
+        inventoryLevel = parseInt(String(inventoryResult.rows[0].total_available));
       }
     } catch (inventoryError) {
       console.warn('Failed to fetch inventory for product:', inventoryError);
@@ -76,17 +76,17 @@ export async function GET(
       description: product.short_description || product.long_description,
       customs_description: product.long_description,
       customs_value: {
-        amount: parseFloat(product.sale_price || product.base_price || '0'),
+        amount: parseFloat(String(product.sale_price || product.base_price || '0')),
         currency: 'USD'
       },
       weight: product.weight ? {
-        value: parseFloat(product.weight),
+        value: parseFloat(String(product.weight)),
         unit: product.weight_unit || 'lb'
       } : null,
       dimensions: (product.length && product.width && product.height) ? {
-        length: parseFloat(product.length),
-        width: parseFloat(product.width),
-        height: parseFloat(product.height),
+        length: parseFloat(String(product.length)),
+        width: parseFloat(String(product.width)),
+        height: parseFloat(String(product.height)),
         unit: product.dimension_unit || 'in'
       } : null,
       thumbnail_url: product.featured_image_url,
@@ -96,9 +96,9 @@ export async function GET(
       } : null,
       // Additional fields for better UX
       slug: product.slug,
-      price: parseFloat(product.sale_price || product.base_price || '0'),
-      base_price: parseFloat(product.base_price || '0'),
-      sale_price: product.sale_price ? parseFloat(product.sale_price) : null,
+      price: parseFloat(String(product.sale_price || product.base_price || '0')),
+      base_price: parseFloat(String(product.base_price || '0')),
+      sale_price: product.sale_price ? parseFloat(String(product.sale_price)) : null,
       inventory_level: inventoryLevel,
       is_featured: product.is_featured,
       gallery_images: product.gallery_images || [],

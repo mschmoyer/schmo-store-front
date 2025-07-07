@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     // Get IP address from request
     const forwarded = request.headers.get('x-forwarded-for');
     const realIp = request.headers.get('x-real-ip');
-    const ip = forwarded?.split(',')[0] || realIp || request.ip || '127.0.0.1';
+    const ip = forwarded?.split(',')[0] || realIp || '127.0.0.1';
     
     // Get user agent
     const userAgent = request.headers.get('user-agent') || '';

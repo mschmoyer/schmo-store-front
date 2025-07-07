@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateOrderInput } from '@/types/database';
+import { 
+  getShipStationCredentials, 
+  createShipStationOrder, 
+  transformToShipStationOrder 
+} from '@/lib/shipstation/legacyApi';
 
 interface CartItem {
   product_id: string | number;
@@ -39,28 +44,71 @@ export async function POST(request: NextRequest) {
     let apiKey: string | undefined;
     let sellerId: string | undefined;
     let warehouseId: string | undefined;
+    let useShipStationLegacy = false;
     
     // Try to get store-specific integration if storeId is provided
     if (orderData.storeId) {
       try {
-        const integrationResult = await db.query(`
-          SELECT api_key_encrypted, configuration, is_active
-          FROM store_integrations 
-          WHERE store_id = $1 AND integration_type = 'shipengine' AND is_active = true
-        `, [orderData.storeId]);
-        
-        if (integrationResult.rows.length > 0) {
-          const integration = integrationResult.rows[0];
-          apiKey = Buffer.from(integration.api_key_encrypted, 'base64').toString('utf-8');
+        // First check for ShipStation Legacy API integration
+        const shipStationCredentials = await getShipStationCredentials(orderData.storeId);
+        if (shipStationCredentials) {
+          console.log('Found ShipStation Legacy API integration, will use that for order creation');
+          useShipStationLegacy = true;
           
-          // Extract configuration values
-          const config = integration.configuration || {};
-          sellerId = config.seller_id;
-          warehouseId = config.warehouse_id;
+          // Create order in ShipStation Legacy API
+          const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+          const shipStationOrderData = transformToShipStationOrder(orderData, orderNumber, orderData.storeId);
+          
+          const result = await createShipStationOrder(shipStationCredentials, shipStationOrderData);
+          
+          if (result.success) {
+            console.log('ShipStation Legacy API order created successfully');
+            
+            // Also create order in our local database
+            const localOrderResult = await createCompletedOrder(
+              orderData, 
+              'Order created successfully in ShipStation Legacy API',
+              orderNumber,
+              result.data
+            );
+            
+            return localOrderResult;
+          } else {
+            console.warn('ShipStation Legacy API failed:', result.error);
+            // Fall through to try ShipEngine or create local order
+            useShipStationLegacy = false;
+          }
+        }
+        
+        // If no ShipStation Legacy or it failed, try ShipEngine
+        if (!useShipStationLegacy) {
+          const integrationResult = await db.query(`
+            SELECT api_key_encrypted, configuration, is_active
+            FROM store_integrations 
+            WHERE store_id = $1 AND integration_type = 'shipengine' AND is_active = true
+          `, [orderData.storeId]);
+          
+          if (integrationResult.rows.length > 0) {
+            const integration = integrationResult.rows[0];
+            apiKey = Buffer.from(String(integration.api_key_encrypted), 'base64').toString('utf-8');
+            
+            // Extract configuration values
+            const config = integration.configuration as Record<string, unknown> || {};
+            sellerId = config.seller_id as string;
+            warehouseId = config.warehouse_id as string;
+          }
         }
       } catch (error) {
         console.warn('Failed to get store-specific integration, falling back to environment variables:', error);
+        useShipStationLegacy = false;
       }
+    }
+    
+    // Skip ShipEngine logic if we already used ShipStation Legacy API
+    if (useShipStationLegacy) {
+      // ShipStation Legacy API was attempted but failed, fall back to local order
+      console.warn('ShipStation Legacy API failed, creating local order');
+      return await createCompletedOrder(orderData, 'ShipStation Legacy API failed, order completed locally');
     }
     
     // Fallback to environment variables if no store-specific config found
@@ -80,7 +128,7 @@ export async function POST(request: NextRequest) {
     });
     
     if (!apiKey || apiKey === 'your_shipstation_api_key_here') {
-      console.warn('ShipStation API key not configured, creating mock order');
+      console.warn('ShipEngine API key not configured, creating mock order');
       return await createMockOrder(orderData);
     }
     
@@ -245,7 +293,12 @@ async function createMockOrder(orderData: OrderRequest) {
   });
 }
 
-async function createCompletedOrder(orderData: OrderRequest, message: string) {
+async function createCompletedOrder(
+  orderData: OrderRequest, 
+  message: string, 
+  customOrderNumber?: string,
+  shipStationData?: Record<string, unknown>
+) {
   try {
     // Get store ID from slug if not provided
     let storeId = orderData.storeId;
@@ -258,14 +311,14 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
         `SELECT id FROM stores WHERE is_active = true AND is_public = true LIMIT 1`
       );
       if (storeResult.rows.length > 0) {
-        storeId = storeResult.rows[0].id;
+        storeId = String(storeResult.rows[0].id);
       } else {
         throw new Error('No active public store found');
       }
     }
 
-    // Generate unique order number
-    const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    // Use custom order number if provided (e.g., from ShipStation), otherwise generate one
+    const orderNumber = customOrderNumber || `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     const orderId = uuidv4();
     
     console.log('Creating completed order in database:', {
@@ -300,11 +353,11 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
         shipping_amount: orderData.shippingCost,
         discount_amount: 0,
         total_amount: orderData.total,
-        payment_method: 'local_completion',
+        payment_method: shipStationData ? 'shipstation_legacy' : 'local_completion',
         payment_status: 'completed',
         shipping_method: orderData.shippingMethod,
-        status: 'completed',
-        fulfillment_status: 'pending',
+        status: shipStationData ? 'awaiting_shipment' : 'completed',
+        fulfillment_status: shipStationData ? 'pending' : 'pending',
         items: []
       };
 
@@ -316,10 +369,10 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
           shipping_city, shipping_state, shipping_postal_code, shipping_country,
           subtotal, tax_amount, shipping_amount, discount_amount, total_amount,
           payment_method, payment_status, shipping_method, status, fulfillment_status,
-          created_at, updated_at
+          shipstation_order_id, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
         ) RETURNING id`,
         [
           orderId, storeId, orderNumber, orderInput.customer_email, orderInput.customer_first_name,
@@ -328,7 +381,9 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
           orderInput.shipping_state, orderInput.shipping_postal_code, orderInput.shipping_country,
           orderInput.subtotal, orderInput.tax_amount, orderInput.shipping_amount, orderInput.discount_amount,
           orderInput.total_amount, orderInput.payment_method, orderInput.payment_status, orderInput.shipping_method,
-          orderInput.status, orderInput.fulfillment_status, new Date(), new Date()
+          orderInput.status, orderInput.fulfillment_status, 
+          shipStationData?.orderId || shipStationData?.orderNumber || null,
+          new Date(), new Date()
         ]
       );
 
@@ -367,15 +422,16 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
         const product = productResult.rows[0];
         
         // Use database price instead of cart price (cart might have outdated pricing)
-        const actualPrice = parseFloat(product.base_price);
+        const actualPrice = parseFloat(String(product.base_price));
         const totalPrice = actualPrice * item.quantity;
         
         // Add to running subtotal
         actualSubtotal += totalPrice;
         
         // Check inventory availability
-        if (product.stock_quantity < item.quantity) {
-          console.warn(`Insufficient inventory for product ${product.sku}. Available: ${product.stock_quantity}, Requested: ${item.quantity}`);
+        const stockQuantity = Number(product.stock_quantity) || 0;
+        if (stockQuantity < item.quantity) {
+          console.warn(`Insufficient inventory for product ${String(product.sku)}. Available: ${stockQuantity}, Requested: ${item.quantity}`);
           // We'll still process the order but log this for merchant attention
         }
         
@@ -386,8 +442,8 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
             product_image_url, unit_price, quantity, total_price, discount_amount, created_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
-            orderItemId, storeId, orderId, product.id, product.sku, product.name,
-            product.featured_image_url, actualPrice, item.quantity, totalPrice, 0, new Date()
+            orderItemId, storeId, orderId, String(product.id), String(product.sku), String(product.name),
+            product.featured_image_url ? String(product.featured_image_url) : null, actualPrice, item.quantity, totalPrice, 0, new Date()
           ]
         );
         
@@ -395,7 +451,7 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
         await db.query(
           `UPDATE products SET stock_quantity = stock_quantity - $1, updated_at = $2 
            WHERE id = $3 AND store_id = $4`,
-          [item.quantity, new Date(), product.id, storeId]
+          [item.quantity, new Date(), String(product.id), storeId]
         );
         
         // Log inventory change
@@ -405,9 +461,9 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
             reference_type, reference_id, notes, created_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
-            uuidv4(), storeId, product.id, 'sale', -item.quantity,
-            product.stock_quantity - item.quantity, 'order', orderId,
-            `Order ${orderNumber} - Local completion due to ShipEngine 401`, new Date()
+            uuidv4(), storeId, String(product.id), 'sale', -item.quantity,
+            stockQuantity - item.quantity, 'order', orderId,
+            `Order ${orderNumber} - ${shipStationData ? 'ShipStation Legacy API' : 'Local completion'}`, new Date()
           ]
         );
       }
@@ -435,12 +491,14 @@ async function createCompletedOrder(orderData: OrderRequest, message: string) {
         success: true,
         orderId: orderNumber,
         orderUuid: orderId,
-        shipmentId: `LOCAL-SHIPMENT-${Date.now()}`,
-        trackingNumber: `LOCAL${Math.random().toString().substr(2, 8).toUpperCase()}`,
+        shipmentId: shipStationData?.shipmentId || `LOCAL-SHIPMENT-${Date.now()}`,
+        trackingNumber: shipStationData?.trackingNumber || `LOCAL${Math.random().toString().substr(2, 8).toUpperCase()}`,
         estimatedDelivery: deliveryDate.toISOString().split('T')[0],
         orderTotal: actualTotal,
         message,
-        isLocalOrder: true,
+        isLocalOrder: !shipStationData,
+        isShipStationOrder: !!shipStationData,
+        shipStationOrderId: shipStationData?.orderId || shipStationData?.orderNumber,
         redirectToSuccess: true
       });
       

@@ -314,3 +314,40 @@ This approach maintains backward compatibility with existing ShipEngine integrat
 - Maintains backward compatibility with existing ShipEngine integrations
 
 The integration is now ready for users to configure their ShipStation Legacy API credentials securely through the admin interface.
+
+### Implemented ShipStation Legacy API Order Creation
+
+- [x] Created utility functions for ShipStation Legacy API communication in `/src/lib/shipstation/legacyApi.ts` - 2025-07-07 22:30
+- [x] Updated order creation API to check for ShipStation Legacy API integration first before ShipEngine - 2025-07-07 22:30
+- [x] Implemented automatic order creation in ShipStation when users complete checkout - 2025-07-07 22:30
+- [x] Added proper order data transformation from our format to ShipStation's expected format - 2025-07-07 22:30
+- [x] Enhanced database order storage to include ShipStation order IDs and status tracking - 2025-07-07 22:30
+- [x] Implemented graceful fallback: ShipStation Legacy API → ShipEngine → Local order completion - 2025-07-07 22:30
+- [x] Added comprehensive logging and error handling for order creation process - 2025-07-07 22:30
+- [x] Fixed all TypeScript and linting issues - 2025-07-07 22:30
+
+**User Request**: "Now, when a buyer completes an order and the user has the legacy shipstation API configured, can we create an order in ShipStation using create order?"
+
+**Decision**: Successfully implemented automatic ShipStation Legacy API order creation that triggers when customers complete checkout. The implementation includes:
+
+**Order Creation Flow:**
+1. When a customer completes checkout, the system first checks for active ShipStation Legacy API integration
+2. If found, automatically creates the order in ShipStation using the `/orders/createorder` endpoint
+3. Transforms order data from our format to ShipStation's expected JSON format
+4. Uses proper Basic HTTP Authentication with encrypted API Key and Secret
+5. Stores the order locally with ShipStation order ID for tracking
+6. Falls back gracefully to ShipEngine or local order completion if ShipStation fails
+
+**Technical Implementation:**
+- **Legacy API Integration**: Uses ShipStation's `/orders/createorder` endpoint with proper JSON payload
+- **Authentication**: Basic HTTP Authentication using stored encrypted credentials
+- **Order Transformation**: Converts cart items, shipping addresses, and totals to ShipStation format
+- **Database Integration**: Stores ShipStation order ID in `orders.shipstation_order_id` column
+- **Error Handling**: Comprehensive fallback system ensures checkout always completes
+- **Inventory Management**: Properly deducts inventory and logs changes regardless of integration
+- **Status Tracking**: Orders created in ShipStation are marked as "awaiting_shipment" status
+
+**Data Flow:**
+- Buyer completes checkout → System checks for ShipStation Legacy API → Creates order in ShipStation → Stores order locally → Returns success to buyer
+
+This ensures seamless order fulfillment workflow where orders automatically appear in the merchant's ShipStation dashboard for processing and shipping.
