@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 const IntegrationUpdateSchema = z.object({
   api_key: z.string().min(1, 'API key is required'),
   api_secret: z.string().optional(), // Required for ShipStation Legacy API
-  configuration: z.object({}).optional(),
+  configuration: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   is_active: z.boolean().optional(),
   auto_sync_enabled: z.boolean().optional(),
   auto_sync_interval: z.enum(['15min', '30min', '1hour', '4hour', '24hour']).optional()

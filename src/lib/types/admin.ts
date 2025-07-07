@@ -28,7 +28,7 @@ export interface AdminAuthResponse {
 }
 
 export interface AdminLoginRequest {
-  storeSlug: string;
+  email: string;
   password: string;
 }
 

@@ -12,13 +12,14 @@ import {
 } from '@mantine/core';
 import { IconPlug, IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings } from '@/components/admin/IntegrationSettings';
+import { IntegrationConfiguration } from '@/types/database';
 
 interface Integration {
   id?: string;
   integrationType: 'shipengine' | 'shipstation' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;
   hasApiKey: boolean;
-  configuration: Record<string, unknown>;
+  configuration: IntegrationConfiguration;
   autoSyncEnabled?: boolean;
   autoSyncInterval?: '10min' | '1hour' | '1day';
 }

@@ -30,7 +30,29 @@ export interface EventMetadata {
 }
 
 // Core database types
-export interface User extends Record<string, unknown> {
+export interface UserMetadata {
+  preferences?: {
+    theme?: 'light' | 'dark' | 'auto';
+    language?: string;
+    timezone?: string;
+    email_notifications?: boolean;
+    sms_notifications?: boolean;
+  };
+  profile?: {
+    bio?: string;
+    website?: string;
+    company?: string;
+    location?: string;
+    social_links?: Record<string, string>;
+  };
+  settings?: {
+    two_factor_enabled?: boolean;
+    email_frequency?: 'immediate' | 'daily' | 'weekly' | 'never';
+    marketing_consent?: boolean;
+  };
+}
+
+export interface User {
   id: UUID;
   email: string;
   password_hash?: string;
@@ -44,6 +66,7 @@ export interface User extends Record<string, unknown> {
   avatar_url?: string;
   role: 'user' | 'admin' | 'owner';
   last_login?: Timestamp;
+  metadata?: UserMetadata;
 }
 
 export interface Store {
@@ -324,7 +347,7 @@ export interface InventoryLog {
 }
 
 // Input types for creating/updating records
-export interface CreateUserInput extends Record<string, unknown> {
+export interface CreateUserInput {
   email: string;
   password_hash?: string;
   first_name?: string;
@@ -332,9 +355,10 @@ export interface CreateUserInput extends Record<string, unknown> {
   phone?: string;
   avatar_url?: string;
   role?: 'user' | 'admin' | 'owner';
+  metadata?: UserMetadata;
 }
 
-export interface UpdateUserInput extends Record<string, unknown> {
+export interface UpdateUserInput {
   email?: string;
   first_name?: string;
   last_name?: string;
@@ -343,6 +367,7 @@ export interface UpdateUserInput extends Record<string, unknown> {
   role?: 'user' | 'admin' | 'owner';
   is_active?: boolean;
   email_verified?: boolean;
+  metadata?: UserMetadata;
 }
 
 export interface CreateStoreInput {
@@ -827,10 +852,33 @@ export interface NotificationTemplate {
   updated_at: Timestamp;
 }
 
+export interface JobPayload {
+  order_id?: UUID;
+  product_id?: UUID;
+  shipment_id?: string;
+  webhook_data?: {
+    resource_url: string;
+    resource_type: string;
+    resource_id: string;
+    [key: string]: string | number | boolean;
+  };
+  notification_data?: {
+    template_id: UUID;
+    recipient_email: string;
+    variables: Record<string, string | number>;
+  };
+  sync_data?: {
+    integration_type: string;
+    operation: string;
+    filters?: Record<string, string | number | boolean>;
+  };
+  custom_data?: Record<string, string | number | boolean>;
+}
+
 export interface JobQueue {
   id: UUID;
   job_type: 'order_notification' | 'inventory_update' | 'shipment_processing' | 'webhook_processing';
-  payload: Record<string, unknown>;
+  payload: JobPayload;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   attempts: number;
@@ -843,14 +891,40 @@ export interface JobQueue {
   updated_at: Timestamp;
 }
 
+export interface RequestBody {
+  [key: string]: string | number | boolean | string[] | number[] | boolean[] | null;
+}
+
+export interface LogRequestData {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  url?: string;
+  headers?: Record<string, string>;
+  body?: string | RequestBody;
+  query_params?: Record<string, string | number>;
+  authentication_type?: 'api_key' | 'oauth' | 'basic' | 'bearer';
+}
+
+export interface ResponseBody {
+  [key: string]: string | number | boolean | string[] | number[] | boolean[] | null;
+}
+
+export interface LogResponseData {
+  status_code?: number;
+  headers?: Record<string, string>;
+  body?: string | ResponseBody;
+  response_time_ms?: number;
+  content_type?: string;
+  content_length?: number;
+}
+
 export interface IntegrationLog {
   id: UUID;
   store_id: UUID;
   integration_type: 'shipstation' | 'shipengine' | 'stripe' | 'other';
   operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing';
   status: 'success' | 'failure' | 'warning';
-  request_data?: Record<string, unknown>;
-  response_data?: Record<string, unknown>;
+  request_data?: LogRequestData;
+  response_data?: LogResponseData;
   error_message?: string;
   execution_time_ms?: number;
   created_at: Timestamp;

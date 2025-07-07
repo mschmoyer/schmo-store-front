@@ -69,9 +69,11 @@ export async function POST(request: NextRequest) {
       'success',
       {
         request: {
-          resource_type: webhookPayload.resource_type,
-          resource_id: webhookPayload.resource_id,
-          user_agent: userAgent
+          body: JSON.stringify({
+            resource_type: webhookPayload.resource_type,
+            resource_id: webhookPayload.resource_id,
+            user_agent: userAgent
+          })
         }
       },
       'system',
@@ -108,8 +110,8 @@ export async function POST(request: NextRequest) {
         'webhook_processing',
         'success',
         {
-          request: webhookPayload,
-          response: { processed: true }
+          request: { body: JSON.stringify(webhookPayload) },
+          response: { body: JSON.stringify({ processed: true }) }
         },
         'system',
         'shipstation',
@@ -137,8 +139,8 @@ export async function POST(request: NextRequest) {
       'webhook_processing',
       'failure',
       {
-        request: webhookPayload || {},
-        response: null
+        request: { body: JSON.stringify(webhookPayload || {}) },
+        response: undefined
       },
       'system',
       'shipstation',

@@ -2,8 +2,27 @@ import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import {
   UUID,
-  IntegrationLog
+  IntegrationLog,
+  LogRequestData,
+  LogResponseData
 } from '@/lib/types/database';
+
+export interface MonitoringEventData {
+  request?: LogRequestData;
+  response?: LogResponseData;
+  metrics?: {
+    records_processed?: number;
+    success_count?: number;
+    error_count?: number;
+    bytes_transferred?: number;
+  };
+  context?: {
+    user_id?: UUID;
+    session_id?: string;
+    correlation_id?: string;
+    operation_context?: string;
+  };
+}
 
 /**
  * Monitoring and Logging Service
@@ -44,7 +63,7 @@ export class MonitoringService {
   async logIntegrationEvent(
     operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing',
     status: 'success' | 'failure' | 'warning',
-    data: Record<string, unknown>,
+    data: MonitoringEventData,
     storeId: UUID = 'system',
     integrationType: 'shipstation' | 'shipengine' | 'stripe' | 'other' = 'shipstation',
     executionTimeMs?: number,

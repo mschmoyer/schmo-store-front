@@ -351,3 +351,31 @@ The integration is now ready for users to configure their ShipStation Legacy API
 - Buyer completes checkout → System checks for ShipStation Legacy API → Creates order in ShipStation → Stores order locally → Returns success to buyer
 
 This ensures seamless order fulfillment workflow where orders automatically appear in the merchant's ShipStation dashboard for processing and shipping.
+
+### Added ShipStation Custom Store Setup Documentation
+
+- [x] Added Custom Store setup documentation to ShipStation Legacy API integration page - 2025-07-07 23:00
+- [x] Provided step-by-step instructions for configuring Custom Store connection in ShipStation - 2025-07-07 23:00
+- [x] Added dynamic URL, username, and password fields that populate from user's entered credentials - 2025-07-07 23:00
+- [x] Included clear explanation of Custom Store workflow and benefits - 2025-07-07 23:00
+- [x] Fixed ESLint quote escaping issues - 2025-07-07 23:00
+
+**User Request**: "on the integration page for shipstation legacy api, can we provide some documentation on what to provide in ShipStation to setup our custom store? starting from set up store connection, we need to input "URL to Custom XML Page", username, and password. Provide what those values should be."
+
+**Decision**: Added comprehensive Custom Store setup documentation directly in the ShipStation Legacy API integration page. The documentation includes:
+
+**Setup Instructions:**
+1. Step-by-step guidance: Settings → Stores → Setup Store Connection
+2. Selection of "Custom Store" option
+3. Required field values:
+   - **URL to Custom XML Page**: `[domain]/api/shipstation/orders` (dynamically shows current domain)
+   - **Username**: User's API Key (dynamically populated from form)
+   - **Password**: User's API Secret (dynamically populated from form)
+
+**User Experience Improvements:**
+- Documentation appears after API credentials section with clear visual separation
+- Dynamic field population shows actual values user entered
+- Clear explanation of Custom Store workflow benefits
+- Professional styling using Mantine Alert component
+
+This provides users with immediate, actionable guidance for completing their ShipStation integration setup without needing to reference external documentation.

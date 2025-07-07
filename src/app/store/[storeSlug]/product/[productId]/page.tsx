@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
 import { TopNav } from '@/components';
 import { ProductPageClient } from './ProductPageClient';
+import { Product } from '@/types/product';
 
 interface ProductPageProps {
   params: Promise<{ 
@@ -11,10 +12,18 @@ interface ProductPageProps {
   }>;
 }
 
+interface Store {
+  id: string;
+  store_name: string;
+  store_slug: string;
+  theme_name: string;
+  currency: string;
+}
+
 interface ProductData {
-  product: Record<string, unknown>;
+  product: Product;
   reviews: Record<string, unknown>;
-  store: Record<string, unknown>;
+  store: Store;
 }
 
 async function getProductData(storeSlug: string, productId: string): Promise<ProductData | null> {
@@ -149,7 +158,6 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
         images: [productImage],
         
         // Twitter-specific product metadata
-        // @ts-expect-error - These are valid Twitter Card properties
         label1: 'Price',
         data1: `$${productPrice.toFixed(2)}`,
         label2: 'Availability',
@@ -200,8 +208,6 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
       siteName: socialMetadata.openGraph.siteName,
       images: socialMetadata.openGraph.images,
       locale: socialMetadata.openGraph.locale,
-      // @ts-expect-error - OpenGraph product field is not in standard types
-      product: socialMetadata.openGraph.product,
     });
     console.log('Twitter Card:', {
       card: socialMetadata.twitter.card,
@@ -210,14 +216,6 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
       title: socialMetadata.twitter.title,
       description: socialMetadata.twitter.description,
       images: socialMetadata.twitter.images,
-      // @ts-expect-error - Twitter Card label/data fields are not in standard types
-      label1: socialMetadata.twitter.label1,
-      // @ts-expect-error - Twitter Card label/data fields are not in standard types
-      data1: socialMetadata.twitter.data1,
-      // @ts-expect-error - Twitter Card label/data fields are not in standard types
-      label2: socialMetadata.twitter.label2,
-      // @ts-expect-error - Twitter Card label/data fields are not in standard types
-      data2: socialMetadata.twitter.data2,
     });
     console.log('TikTok/Mobile Optimizations:', {
       'mobile-web-app-capable': socialMetadata.other['mobile-web-app-capable'],

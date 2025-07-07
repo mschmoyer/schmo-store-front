@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AdminUser, AdminSession, AdminContext as AdminContextType } from '@/lib/types/admin';
+import { AdminUser, AdminSession, AdminContext as AdminContextType, AdminLoginRequest } from '@/lib/types/admin';
 import { useRouter } from 'next/navigation';
 
 const AdminContext = createContext<AdminContextType | null>(null);
@@ -70,7 +70,7 @@ export function AdminProvider({ children }: AdminProviderProps) {
     verifySession();
   }, []);
   
-  const login = async (credentials: { email: string; password: string }) => {
+  const login = async (credentials: AdminLoginRequest) => {
     try {
       setIsLoading(true);
       

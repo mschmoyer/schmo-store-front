@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Title, Text, Badge, Button, Group, Stack, Grid, Image, Card, NumberInput, GridCol, CardSection } from '@mantine/core';
 import { IconShoppingCart, IconHeart, IconShare, IconMinus, IconPlus } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
+import { Product } from '@/types/product';
 
 interface CartItem {
   product_id: string | number;
@@ -17,9 +18,17 @@ interface InventoryData {
   [sku: string]: number;
 }
 
+interface Store {
+  id: string;
+  store_name: string;
+  store_slug: string;
+  theme_name: string;
+  currency: string;
+}
+
 interface ProductPageClientProps {
-  product: Record<string, unknown>;
-  store: Record<string, unknown>;
+  product: Product;
+  store: Store;
 }
 
 export function ProductPageClient({ product, store }: ProductPageClientProps) {
@@ -71,7 +80,7 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
           const data = await response.json();
           if (data.success && data.data) {
             const inventoryMap = data.data.reduce((acc: InventoryData, item: Record<string, unknown>) => {
-              acc[item.sku] = item.available || 0;
+              acc[item.sku as string] = (item.available as number) || 0;
               return acc;
             }, {});
             setInventory(inventoryMap);

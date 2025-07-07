@@ -1,3 +1,5 @@
+import { ProductStructuredData } from '@/lib/structured-data';
+
 // Core product type from ShipStation API
 export interface Product {
   product_id: string;
@@ -290,5 +292,5 @@ export interface ProductSEOMetadata {
   twitter_title: string;
   twitter_description: string;
   twitter_image: string;
-  structured_data: Record<string, unknown>;
+  structured_data: ProductStructuredData;
 }

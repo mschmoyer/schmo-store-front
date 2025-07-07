@@ -308,7 +308,7 @@ export default function StoreCartPage() {
                           <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>Quantity:</Text>
                           <NumberInput
                             value={item.quantity}
-                            onChange={(value) => updateQuantity(item.product_id, Number(value) || 1)}
+                            onChange={(value) => updateQuantity(String(item.product_id), Number(value) || 1)}
                             min={1}
                             max={99}
                             size="xs"

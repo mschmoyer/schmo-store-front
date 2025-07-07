@@ -290,18 +290,16 @@ export default function ProductAdvancedSettings({
 
   return (
     <Stack gap="md">
-      <Accordion variant="separated" defaultValue={['discount', 'shipping', 'inventory']}>
+      <Accordion variant="separated" multiple defaultValue={['discount', 'shipping', 'inventory']}>
         {/* Discount & Promotion Settings */}
         <Accordion.Item value="discount">
-          <Accordion.Control
-            icon={<IconPercentage size={16} />}
-            rightSection={
+          <Accordion.Control icon={<IconPercentage size={16} />}>
+            <Group justify="space-between" style={{ width: '100%' }}>
+              <Text>Discount & Promotion Settings</Text>
               <Badge color={getDiscountStatusColor()} variant="light" size="sm">
                 {getDiscountStatus()}
               </Badge>
-            }
-          >
-            Discount & Promotion Settings
+            </Group>
           </Accordion.Control>
           <Accordion.Panel>
             <Stack gap="md">
@@ -418,7 +416,7 @@ export default function ProductAdvancedSettings({
                       onChange={(value) => handleShippingChange('weight', value)}
                       min={0}
                       step={0.1}
-                      precision={2}
+                      decimalScale={2}
                     />
                     <Select
                       label="Weight Unit"
@@ -436,7 +434,7 @@ export default function ProductAdvancedSettings({
                       onChange={(value) => handleShippingChange('length', value)}
                       min={0}
                       step={0.1}
-                      precision={2}
+                      decimalScale={2}
                     />
                     <NumberInput
                       label="Width"
@@ -445,7 +443,7 @@ export default function ProductAdvancedSettings({
                       onChange={(value) => handleShippingChange('width', value)}
                       min={0}
                       step={0.1}
-                      precision={2}
+                      decimalScale={2}
                     />
                     <NumberInput
                       label="Height"
@@ -454,7 +452,7 @@ export default function ProductAdvancedSettings({
                       onChange={(value) => handleShippingChange('height', value)}
                       min={0}
                       step={0.1}
-                      precision={2}
+                      decimalScale={2}
                     />
                     <Select
                       label="Dimension Unit"
@@ -472,7 +470,7 @@ export default function ProductAdvancedSettings({
                       onChange={(value) => handleShippingChange('free_shipping_threshold', value)}
                       min={0}
                       step={0.01}
-                      precision={2}
+                      decimalScale={2}
                       leftSection={<IconCurrencyDollar size={16} />}
                     />
                     <NumberInput
@@ -482,7 +480,7 @@ export default function ProductAdvancedSettings({
                       onChange={(value) => handleShippingChange('shipping_cost_override', value)}
                       min={0}
                       step={0.01}
-                      precision={2}
+                      decimalScale={2}
                       leftSection={<IconCurrencyDollar size={16} />}
                     />
                   </Group>
@@ -572,15 +570,13 @@ export default function ProductAdvancedSettings({
 
         {/* Custom Fields */}
         <Accordion.Item value="custom-fields">
-          <Accordion.Control 
-            icon={<IconSettings size={16} />}
-            rightSection={
+          <Accordion.Control icon={<IconSettings size={16} />}>
+            <Group justify="space-between" style={{ width: '100%' }}>
+              <Text>Custom Fields</Text>
               <Badge variant="light" size="sm">
                 {customFields.length} fields
               </Badge>
-            }
-          >
-            Custom Fields
+            </Group>
           </Accordion.Control>
           <Accordion.Panel>
             <Stack gap="md">

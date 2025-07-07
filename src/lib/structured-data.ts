@@ -1,6 +1,93 @@
 import { EnhancedProduct } from '@/types/product';
 import { ReviewSummary, Review } from '@/types/review';
 
+export interface ProductStructuredData {
+  '@context': string;
+  '@type': 'Product';
+  name: string;
+  description: string;
+  image: string | string[];
+  url: string;
+  sku: string;
+  mpn?: string;
+  brand?: {
+    '@type': 'Brand';
+    name: string;
+  };
+  category?: string;
+  weight?: {
+    '@type': 'QuantitativeValue';
+    value: number;
+    unitCode: string;
+  };
+  width?: {
+    '@type': 'QuantitativeValue';
+    value: number;
+    unitCode: string;
+  };
+  height?: {
+    '@type': 'QuantitativeValue';
+    value: number;
+    unitCode: string;
+  };
+  depth?: {
+    '@type': 'QuantitativeValue';
+    value: number;
+    unitCode: string;
+  };
+  keywords?: string;
+  warranty?: string;
+  offers: {
+    '@type': 'Offer';
+    price: string;
+    priceCurrency: string;
+    availability: string;
+    url: string;
+    seller: {
+      '@type': 'Organization';
+      name: string;
+      url: string;
+    };
+    priceValidUntil: string;
+    itemCondition: string;
+    hasMerchantReturnPolicy: {
+      '@type': 'MerchantReturnPolicy';
+      returnPolicyCategory: string;
+      merchantReturnDays: number;
+      returnMethod: string;
+      returnFees: string;
+    };
+  };
+  additionalProperty?: Array<{
+    '@type': 'PropertyValue';
+    name: string;
+    value: string;
+  }>;
+  aggregateRating?: {
+    '@type': 'AggregateRating';
+    ratingValue: number;
+    reviewCount: number;
+    bestRating: number;
+    worstRating: number;
+  };
+  review?: Array<{
+    '@type': 'Review';
+    author: {
+      '@type': 'Person';
+      name: string;
+    };
+    reviewRating: {
+      '@type': 'Rating';
+      ratingValue: number;
+      bestRating: number;
+      worstRating: number;
+    };
+    reviewBody?: string;
+    datePublished: string;
+    name?: string;
+  }>;
+}
+
 /**
  * Generate Product JSON-LD structured data
  */
@@ -8,7 +95,7 @@ export function generateProductStructuredData(product: EnhancedProduct, reviews?
   const primaryImage = product.display_images[0];
   const additionalImages = product.display_images.slice(1);
   
-  const structuredData: Record<string, unknown> = {
+  const structuredData: ProductStructuredData = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.display_name,
@@ -60,7 +147,7 @@ export function generateProductStructuredData(product: EnhancedProduct, reviews?
     structuredData.additionalProperty = Object.entries(product.specifications).map(([key, value]) => ({
       '@type': 'PropertyValue',
       name: key,
-      value: value,
+      value: String(value),
     }));
   }
   
@@ -95,7 +182,7 @@ export function generateProductStructuredData(product: EnhancedProduct, reviews?
   if (reviews && reviews.total_reviews > 0) {
     structuredData.aggregateRating = {
       '@type': 'AggregateRating',
-      ratingValue: reviews.average_rating.toFixed(1),
+      ratingValue: Number(reviews.average_rating.toFixed(1)),
       reviewCount: reviews.total_reviews,
       bestRating: 5,
       worstRating: 1,
@@ -115,7 +202,7 @@ export function generateProductStructuredData(product: EnhancedProduct, reviews?
           bestRating: 5,
           worstRating: 1,
         },
-        reviewBody: review.content,
+        reviewBody: review.content || '',
         datePublished: review.created_at,
         name: review.title,
       }));

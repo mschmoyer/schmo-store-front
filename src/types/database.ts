@@ -235,13 +235,31 @@ export interface CreateStoreConfigInput {
 // INTEGRATIONS
 // =================
 
+export interface IntegrationConfiguration {
+  api_url?: string;
+  api_version?: string;
+  webhook_url?: string;
+  sync_orders?: boolean;
+  sync_inventory?: boolean;
+  sync_products?: boolean;
+  auto_fulfill?: boolean;
+  default_warehouse_id?: string;
+  custom_fields?: Record<string, string | number | boolean>;
+  advanced_options?: {
+    timeout_ms?: number;
+    retry_attempts?: number;
+    batch_size?: number;
+    rate_limit?: number;
+  };
+}
+
 export interface StoreIntegration {
   id: UUID;
   store_id: UUID;
   integration_type: 'shipstation' | 'stripe' | string;
   api_key_encrypted?: string;
   api_secret_encrypted?: string;
-  configuration?: Record<string, unknown>;
+  configuration?: IntegrationConfiguration;
   auto_sync_enabled: boolean;
   sync_frequency: '10min' | '1hour' | 'daily';
   last_sync_at?: Timestamp;
@@ -272,7 +290,7 @@ export interface CreateStoreIntegrationInput {
   integration_type: string;
   api_key_encrypted?: string;
   api_secret_encrypted?: string;
-  configuration?: Record<string, unknown>;
+  configuration?: IntegrationConfiguration;
   auto_sync_enabled?: boolean;
   sync_frequency?: '10min' | '1hour' | 'daily';
   is_active?: boolean;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/session';
+import { LogRequestData, LogResponseData } from '@/lib/types/database';
 
 interface TestConnectionRequest {
   username: string;
@@ -12,7 +13,11 @@ interface TestConnectionRequest {
 interface TestConnectionResponse {
   success: boolean;
   message: string;
-  details?: Record<string, unknown>;
+  details?: {
+    request?: LogRequestData;
+    response?: LogResponseData;
+    error?: string;
+  };
 }
 
 /**

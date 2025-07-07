@@ -323,8 +323,8 @@ async function triggerHealthCheck(data: { integration_type?: string; store_id?: 
       'webhook_processing',
       'success',
       {
-        request: { action: 'manual_health_check' },
-        response: { health_status: health.status, operations_last_hour: metrics.total_operations }
+        request: { body: JSON.stringify({ action: 'manual_health_check' }) },
+        response: { body: JSON.stringify({ health_status: health.status, operations_last_hour: metrics.total_operations }) }
       },
       store_id || 'system',
       integration_type as 'shipstation' | 'shipengine' | 'stripe' | 'other'

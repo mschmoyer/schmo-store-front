@@ -32,6 +32,7 @@ import {
   IconChevronDown,
   IconChevronUp
 } from '@tabler/icons-react';
+import { IntegrationConfiguration } from '@/types/database';
 
 interface Integration {
   id?: string;
@@ -39,14 +40,14 @@ interface Integration {
   isActive: boolean;
   hasApiKey: boolean;
   hasApiSecret?: boolean;
-  configuration: Record<string, unknown>;
+  configuration: IntegrationConfiguration;
   autoSyncEnabled?: boolean;
   autoSyncInterval?: '10min' | '1hour' | '1day';
 }
 
 interface IntegrationSettingsProps {
   integration: Integration;
-  onUpdate: (integrationType: string, data: Record<string, unknown>) => Promise<void>;
+  onUpdate: (integrationType: string, data: Partial<Integration>) => Promise<void>;
   loading?: boolean;
 }
 
@@ -483,10 +484,10 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                             <strong>URL to Custom XML Page:</strong> {window.location.origin}/api/shipstation/orders
                           </Text>
                           <Text size="sm">
-                            <strong>Username:</strong> {form.values.apiKey || '[Your API Key]'}
+                            <strong>Username:</strong> {String(form.values.apiKey) || '[Your API Key]'}
                           </Text>
                           <Text size="sm">
-                            <strong>Password:</strong> {form.values.apiSecret || '[Your API Secret]'}
+                            <strong>Password:</strong> {String(form.values.apiSecret) || '[Your API Secret]'}
                           </Text>
                         </Stack>
                         <Text size="sm" c="dimmed">
