@@ -23,13 +23,15 @@ interface AdminHeaderProps {
   breadcrumbs?: AdminBreadcrumb[];
   onMenuToggle?: () => void;
   menuOpened?: boolean;
+  onLogout?: () => Promise<void>;
 }
 
 export function AdminHeader({ 
   user, 
   breadcrumbs = [], 
   onMenuToggle, 
-  menuOpened = false
+  menuOpened = false,
+  onLogout // eslint-disable-line @typescript-eslint/no-unused-vars
 }: AdminHeaderProps) {
   
   return (

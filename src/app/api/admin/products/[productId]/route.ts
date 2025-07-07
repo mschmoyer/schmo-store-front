@@ -1,10 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
-import { ProductRepository } from '@/lib/database/repositories/product';
-import { UpdateProductInput } from '@/types/database';
 
-const productRepository = new ProductRepository();
+// Define types inline since we removed the schema file
+interface UpdateProductInput {
+  name?: string;
+  slug?: string;
+  description?: string;
+  short_description?: string;
+  price?: number;
+  compare_price?: number;
+  cost_price?: number;
+  sku?: string;
+  track_inventory?: boolean;
+  inventory_quantity?: number;
+  allow_backorder?: boolean;
+  weight?: number;
+  dimensions?: string;
+  category_id?: string;
+  brand?: string;
+  tags?: string[];
+  images?: string[];
+  specifications?: Record<string, unknown>;
+  features?: string[];
+  is_active?: boolean;
+  is_featured?: boolean;
+  seo_title?: string;
+  seo_description?: string;
+  seo_keywords?: string[];
+}
 
 /**
  * GET /api/admin/products/[productId]
@@ -26,13 +50,19 @@ export async function GET(
     const { productId } = await params;
     
     // Get the product with validation that it belongs to the user's store
-    const product = await productRepository.findById(productId);
-    if (!product || product.store_id !== user.storeId) {
+    const productResult = await db.query(
+      'SELECT * FROM products WHERE id = $1 AND store_id = $2',
+      [productId, user.storeId]
+    );
+    
+    if (productResult.rows.length === 0) {
       return NextResponse.json({
         success: false,
         error: 'Product not found'
       }, { status: 404 });
     }
+    
+    const product = productResult.rows[0];
 
     // Get enhanced product data with sales analytics, inventory history, and related data
     const [salesData, inventoryHistory, productAnalytics, categoryInfo] = await Promise.all([

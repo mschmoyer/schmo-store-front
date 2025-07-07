@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
     
-    const user = userResult.rows[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const user = userResult.rows[0] as any;
     
     // Verify password
     const isPasswordValid = await verifyPassword(password, user.password_hash);

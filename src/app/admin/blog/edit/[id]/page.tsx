@@ -15,7 +15,6 @@ import {
 import { IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
 import Link from 'next/link';
 import { BlogPost, BlogPostData, BlogAPIResponse } from '@/types/blog';
-import { blogUtils } from '@/lib/blog';
 import BlogPostForm from '@/components/blog/BlogPostForm';
 
 export default function EditBlogPostPage() {
@@ -37,10 +36,11 @@ export default function EditBlogPostPage() {
       setError(null);
 
       try {
-        const blogPost = await blogUtils.getBlogPostById(postId);
+        const response = await fetch(`/api/blog/${postId}`);
+        const data = await response.json();
         
-        if (blogPost) {
-          setPost(blogPost);
+        if (data.success && data.data) {
+          setPost(data.data);
         } else {
           setError('Blog post not found.');
         }

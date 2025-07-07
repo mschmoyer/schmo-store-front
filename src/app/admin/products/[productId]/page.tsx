@@ -433,7 +433,7 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
       )}
 
       {/* Main Content Tabs */}
-      <Tabs value={activeTab} onChange={setActiveTab}>
+      <Tabs value={activeTab} onChange={(value) => value && setActiveTab(value)}>
         <Tabs.List>
           <Tabs.Tab value="details" leftSection={<IconEdit size={16} />}>
             Product Details

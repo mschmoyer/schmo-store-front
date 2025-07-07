@@ -21,8 +21,7 @@ import { IconTrash, IconUpload } from '@tabler/icons-react';
 import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { BlogPostFormProps, BlogPostData } from '@/types/blog';
-import { blogUtils } from '@/lib/blog';
-import { validateBlogPost } from '@/lib/blogHelpers';
+import { generateSlug, generateExcerpt, validateBlogPost } from '@/lib/blogHelpers';
 import BlogEditor from './BlogEditor';
 
 export default function BlogPostForm({ 
@@ -90,10 +89,15 @@ export default function BlogPostForm({
   useEffect(() => {
     const loadData = async () => {
       try {
-        // TODO: Get actual store ID from context or props
-        const storeId = 'default-store';
-        const categories = await blogUtils.getBlogCategories(storeId);
-        const tags = await blogUtils.getBlogTags(storeId);
+        // Fetch categories via API
+        const categoriesResponse = await fetch('/api/blog/categories');
+        const categoriesData = await categoriesResponse.json();
+        const categories = categoriesData.success ? categoriesData.data : [];
+        
+        // Fetch tags via API
+        const tagsResponse = await fetch('/api/blog/tags');
+        const tagsData = await tagsResponse.json();
+        const tags = tagsData.success ? tagsData.data : [];
         setAvailableCategories(categories);
         setAvailableTags(tags);
       } catch (error) {
@@ -106,7 +110,7 @@ export default function BlogPostForm({
   // Auto-generate slug from title
   useEffect(() => {
     if (autoSlug && formData.title) {
-      const slug = blogUtils.generateSlug(formData.title);
+      const slug = generateSlug(formData.title);
       setFormData(prev => ({ ...prev, slug }));
     }
   }, [formData.title, autoSlug]);
@@ -114,7 +118,7 @@ export default function BlogPostForm({
   // Auto-generate excerpt from content
   useEffect(() => {
     if (formData.content && !formData.excerpt) {
-      const excerpt = blogUtils.generateExcerpt(formData.content);
+      const excerpt = generateExcerpt(formData.content);
       setFormData(prev => ({ ...prev, excerpt }));
     }
   }, [formData.content, formData.excerpt]);

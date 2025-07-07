@@ -22,7 +22,7 @@ interface Store {
 }
 
 interface StorePageProps {
-  params: { storeSlug: string };
+  params: Promise<{ storeSlug: string }>;
 }
 
 async function getStoreData(storeSlug: string): Promise<Store | null> {

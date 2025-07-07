@@ -1,10 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
-import { ProductRepository } from '@/lib/database/repositories/product';
-import { ProductFilters, CreateProductInput } from '@/types/database';
 
-const productRepository = new ProductRepository();
+// Define types inline since we removed the schema file
+interface ProductFilters {
+  search?: string;
+  category_id?: string;
+  is_active?: boolean;
+  is_featured?: boolean;
+  min_price?: number;
+  max_price?: number;
+  in_stock?: boolean;
+  tags?: string[];
+  sort_by?: 'name' | 'price' | 'created_at' | 'updated_at';
+  sort_order?: 'asc' | 'desc';
+  limit: number;
+  offset: number;
+}
+
+interface CreateProductInput {
+  name: string;
+  slug: string;
+  description?: string;
+  short_description?: string;
+  price: number;
+  compare_price?: number;
+  cost_price?: number;
+  sku?: string;
+  track_inventory: boolean;
+  inventory_quantity: number;
+  allow_backorder: boolean;
+  weight?: number;
+  dimensions?: string;
+  category_id?: string;
+  brand?: string;
+  tags?: string[];
+  images?: string[];
+  specifications?: Record<string, unknown>;
+  features?: string[];
+  is_active: boolean;
+  is_featured: boolean;
+  seo_title?: string;
+  seo_description?: string;
+  seo_keywords?: string[];
+}
 
 /**
  * GET /api/admin/products
@@ -45,8 +84,69 @@ export async function GET(request: NextRequest) {
       offset
     };
 
-    // Get products with filters
-    const { products, total } = await productRepository.findWithFilters(user.storeId, filters);
+    // Build the query with filters
+    let whereClause = 'WHERE store_id = $1';
+    const queryParams: (string | number | boolean)[] = [user.storeId];
+    let paramIndex = 2;
+
+    if (filters.search) {
+      whereClause += ` AND (name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
+      queryParams.push(`%${filters.search}%`);
+      paramIndex++;
+    }
+
+    if (filters.category_id) {
+      whereClause += ` AND category_id = $${paramIndex}`;
+      queryParams.push(filters.category_id);
+      paramIndex++;
+    }
+
+    if (filters.is_active !== undefined) {
+      whereClause += ` AND is_active = $${paramIndex}`;
+      queryParams.push(filters.is_active);
+      paramIndex++;
+    }
+
+    if (filters.is_featured !== undefined) {
+      whereClause += ` AND is_featured = $${paramIndex}`;
+      queryParams.push(filters.is_featured);
+      paramIndex++;
+    }
+
+    if (filters.min_price !== undefined) {
+      whereClause += ` AND price >= $${paramIndex}`;
+      queryParams.push(filters.min_price);
+      paramIndex++;
+    }
+
+    if (filters.max_price !== undefined) {
+      whereClause += ` AND price <= $${paramIndex}`;
+      queryParams.push(filters.max_price);
+      paramIndex++;
+    }
+
+    if (filters.in_stock === true) {
+      whereClause += ` AND (track_inventory = false OR stock_quantity > 0)`;
+    }
+
+    // Count query
+    const countQuery = `SELECT COUNT(*) as total FROM products ${whereClause}`;
+    const countResult = await db.query(countQuery, queryParams);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Products query with pagination
+    const sortBy = filters.sort_by || 'created_at';
+    const sortOrder = filters.sort_order || 'desc';
+    const productsQuery = `
+      SELECT * FROM products 
+      ${whereClause} 
+      ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    queryParams.push(filters.limit, filters.offset);
+    
+    const productsResult = await db.query(productsQuery, queryParams);
+    const products = productsResult.rows;
 
     // Get enhanced product data with stock levels and sales data
     const enhancedProducts = await Promise.all(

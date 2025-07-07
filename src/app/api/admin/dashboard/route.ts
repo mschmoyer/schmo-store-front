@@ -120,7 +120,8 @@ export async function GET(request: NextRequest) {
     
     // Process integration stats
     const integrations = integrationStats.rows.reduce((acc, row) => {
-      acc[row.integration_type] = row.is_active;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      acc[(row as any).integration_type] = (row as any).is_active;
       return acc;
     }, {} as Record<string, boolean>);
     

@@ -181,7 +181,8 @@ export async function PUT(
 }
 
 // Helper function to fetch related/recommended products
-export async function getRecommendedProducts(
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function getRecommendedProducts(
   productId: string,
   category?: string,
   limit: number = 4

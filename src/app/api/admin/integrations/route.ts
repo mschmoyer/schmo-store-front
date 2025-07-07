@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
-import { IntegrationUpdateSchema } from '@/lib/db/schema';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
+
+// Define schema inline since we removed the schema file
+const IntegrationUpdateSchema = z.object({
+  api_key: z.string().min(1, 'API key is required'),
+  configuration: z.object({}).optional(),
+  is_active: z.boolean().optional(),
+  auto_sync_enabled: z.boolean().optional(),
+  auto_sync_interval: z.enum(['15min', '30min', '1hour', '4hour', '24hour']).optional()
+});
 
 // Simple encryption for API keys (in production, use proper encryption)
 function encryptApiKey(apiKey: string): string {

@@ -5,10 +5,10 @@ import { TopNav } from '@/components';
 import { ProductPageClient } from './ProductPageClient';
 
 interface ProductPageProps {
-  params: { 
+  params: Promise<{ 
     storeSlug: string;
     productId: string; 
-  };
+  }>;
 }
 
 interface ProductData {

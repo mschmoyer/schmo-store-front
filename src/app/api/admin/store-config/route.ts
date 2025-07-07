@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
-import { StoreConfigUpdateSchema } from '@/lib/db/schema';
 import { z } from 'zod';
+
+// Define schema inline since we removed the schema file
+const StoreConfigUpdateSchema = z.object({
+  store_name: z.string().min(1, 'Store name is required').optional(),
+  store_slug: z.string().min(1, 'Store slug is required').optional(),
+  store_description: z.string().optional(),
+  hero_title: z.string().optional(),
+  hero_description: z.string().optional(),
+  theme_name: z.string().optional()
+});
 
 export async function GET(request: NextRequest) {
   try {

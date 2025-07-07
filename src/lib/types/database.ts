@@ -30,7 +30,7 @@ export interface EventMetadata {
 }
 
 // Core database types
-export interface User {
+export interface User extends Record<string, unknown> {
   id: UUID;
   email: string;
   password_hash?: string;
@@ -293,7 +293,7 @@ export interface InventoryLog {
 }
 
 // Input types for creating/updating records
-export interface CreateUserInput {
+export interface CreateUserInput extends Record<string, unknown> {
   email: string;
   password_hash?: string;
   first_name?: string;
@@ -303,7 +303,7 @@ export interface CreateUserInput {
   role?: 'user' | 'admin' | 'owner';
 }
 
-export interface UpdateUserInput {
+export interface UpdateUserInput extends Record<string, unknown> {
   email?: string;
   first_name?: string;
   last_name?: string;

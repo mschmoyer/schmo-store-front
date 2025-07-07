@@ -1,4 +1,6 @@
 import { BlogPost } from '@/types/blog';
+import slugify from 'slugify';
+import readingTime from 'reading-time';
 
 // Date formatting utilities
 export const formatDate = (dateString: string): string => {
@@ -351,3 +353,39 @@ export const sortPostsByTitle = (posts: BlogPost[], ascending: boolean = true): 
     }
   });
 };
+
+// Additional utility functions that were in blog.ts
+export function generateSlug(title: string): string {
+  return slugify(title, {
+    lower: true,
+    strict: true,
+    remove: /[*+~.()'"!:@]/g
+  });
+}
+
+export function generateExcerpt(content: string, maxLength: number = 160): string {
+  // Remove HTML tags and get plain text
+  const plainText = content
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+  
+  if (plainText.length <= maxLength) {
+    return plainText;
+  }
+  
+  // Find the last space within the limit to avoid cutting words
+  const truncated = plainText.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  
+  if (lastSpace > 0) {
+    return truncated.substring(0, lastSpace) + '...';
+  }
+  
+  return truncated + '...';
+}
+
+export function calculateReadingTime(content: string): number {
+  const stats = readingTime(content);
+  return Math.ceil(stats.minutes);
+}

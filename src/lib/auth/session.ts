@@ -44,6 +44,15 @@ export async function createSession(userData: UserSession): Promise<string> {
   return jwt;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function destroySession(_sessionToken: string): Promise<void> {
+  // For JWT tokens, we can't actually destroy them server-side
+  // The client should remove the token from storage
+  // In a production environment, you might want to maintain a blacklist
+  // or use shorter expiration times
+  return Promise.resolve();
+}
+
 export async function verifySession(sessionToken: string): Promise<UserSession | null> {
   try {
     // Verify JWT token

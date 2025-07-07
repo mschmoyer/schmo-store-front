@@ -63,14 +63,15 @@ export async function POST(request: NextRequest) {
       ORDER BY created_at DESC
     `, [storeId]);
 
-    const blogCategories = categoriesResult.rows.map((row: { name: string }) => row.name);
+    const blogCategories = categoriesResult.rows.map((row) => (row as { name: string }).name);
 
     // Generate blog post content
     const generatedBlogPost = generateBlogPost({
-      storeName: store.store_name,
-      storeSlug: store.store_slug,
+      storeName: (store as { store_name: string }).store_name,
+      storeSlug: (store as { store_slug: string }).store_slug,
       topic: topic || 'Product Spotlight',
-      products,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      products: products as any,
       blogCategories,
       productFocus
     });
@@ -80,7 +81,8 @@ export async function POST(request: NextRequest) {
       content: generatedBlogPost,
       analytics: {
         productsUsed: products.length,
-        suggestedCategory: extractCategory(topic, products),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        suggestedCategory: extractCategory(topic, products as any),
         estimatedReadTime: calculateReadTime(generatedBlogPost)
       }
     });
@@ -397,8 +399,8 @@ function generateMetaDescription(content: string): string {
 
 function generateTags(products: Product[], topic: string): string[] {
   const tags = [topic];
-  const categories = [...new Set(products.map(p => p.category_name).filter(Boolean))];
-  tags.push(...categories.filter(Boolean));
+  const categories = [...new Set(products.map(p => p.category_name).filter(Boolean))] as string[];
+  tags.push(...categories);
   tags.push('shopping', 'products', 'deals');
   return [...new Set(tags)].slice(0, 8);
 }

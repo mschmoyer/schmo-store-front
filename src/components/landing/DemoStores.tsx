@@ -68,14 +68,14 @@ export function DemoStores({
         .then(response => response.json())
         .then(data => {
           if (data.stores && Array.isArray(data.stores)) {
-            const formattedStores: DemoStore[] = data.stores.map((store: any) => ({
-              id: store.id,
-              name: store.store_name,
-              slug: store.store_slug,
-              description: store.store_description,
+            const formattedStores: DemoStore[] = data.stores.map((store: Record<string, unknown>) => ({
+              id: store.id as string,
+              name: store.store_name as string,
+              slug: store.store_slug as string,
+              description: store.store_description as string,
               isFeatured: true, // All public stores are featured for demo
               category: 'Demo',
-              theme: store.theme_name || 'Default'
+              theme: (store.theme_name as string) || 'Default'
             }));
             setDemoStores(formattedStores);
           }

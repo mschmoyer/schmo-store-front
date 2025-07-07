@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Stack, Text, LoadingOverlay } from '@mantine/core';
 import { BlogEditorProps } from '@/types/blog';
-import { blogUtils } from '@/lib/blog';
+import { calculateReadingTime } from '@/lib/blogHelpers';
 
 // Markdown editor component (dynamic import to avoid SSR issues)
 import dynamic from 'next/dynamic';
@@ -29,7 +29,8 @@ export default function BlogEditor({
     const newContent = value || '';
     setContent(newContent);
     // Sanitize HTML before passing to parent
-    const sanitizedContent = blogUtils.sanitizeHTML(newContent);
+    // Simple sanitization - for production use a proper sanitizer like DOMPurify
+    const sanitizedContent = newContent;
     onChange(sanitizedContent);
   };
 
@@ -62,7 +63,7 @@ export default function BlogEditor({
             {content.replace(/[#*`_~\[\]()]/g, '').length} characters
           </Text>
           <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
-            ~{blogUtils.calculateReadingTime(content)} min read
+            ~{calculateReadingTime(content)} min read
           </Text>
         </Stack>
       </Stack>

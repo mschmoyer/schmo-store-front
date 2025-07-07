@@ -5,10 +5,10 @@ import { BlogAPIResponse } from '@/types/blog';
 // GET /api/blog/[id] - Get a single blog post by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     
     const post = await blogUtils.getBlogPostById(id);
     
@@ -56,10 +56,10 @@ export async function GET(
 // PUT /api/blog/[id] - Update a blog post (admin only)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     
     // TODO: Add authentication middleware to verify admin access
@@ -100,10 +100,10 @@ export async function PUT(
 // DELETE /api/blog/[id] - Delete a blog post (admin only)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     
     // TODO: Add authentication middleware to verify admin access
     // For now, we'll allow deletion without authentication

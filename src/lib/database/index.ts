@@ -3,9 +3,6 @@
 // Connection management
 export { db } from './connection';
 
-// Repositories
-export * from './repositories';
-
 // Types
 export type {
   UUID,
