@@ -8,7 +8,23 @@ import { v4 as uuidv4 } from 'uuid';
 const IntegrationUpdateSchema = z.object({
   api_key: z.string().min(1, 'API key is required'),
   api_secret: z.string().optional(), // Required for ShipStation Legacy API
-  configuration: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  configuration: z.object({
+    api_url: z.string().optional(),
+    api_version: z.string().optional(),
+    webhook_url: z.string().optional(),
+    sync_orders: z.boolean().optional(),
+    sync_inventory: z.boolean().optional(),
+    sync_products: z.boolean().optional(),
+    auto_fulfill: z.boolean().optional(),
+    default_warehouse_id: z.string().optional(),
+    custom_fields: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+    advanced_options: z.object({
+      timeout_ms: z.number().optional(),
+      retry_attempts: z.number().optional(),
+      batch_size: z.number().optional(),
+      rate_limit: z.number().optional(),
+    }).optional(),
+  }).optional(),
   is_active: z.boolean().optional(),
   auto_sync_enabled: z.boolean().optional(),
   auto_sync_interval: z.enum(['15min', '30min', '1hour', '4hour', '24hour']).optional()
