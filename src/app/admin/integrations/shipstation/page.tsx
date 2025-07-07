@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Stack, 
   Title, 
@@ -99,11 +99,7 @@ export default function ShipStationIntegrationPage() {
     }
   });
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async () => {
+  const fetchConfig = useCallback(async () => {
     try {
       const token = localStorage.getItem('admin_token');
       if (!token) return;
@@ -130,7 +126,11 @@ export default function ShipStationIntegrationPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [form]);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
 
   const generateCredentials = () => {
     const newCredentials = {

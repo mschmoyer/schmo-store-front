@@ -94,10 +94,8 @@ export class DataTransformService {
       const transformedItems = await this.transformOrderItems(orderItems, products);
 
       // Calculate totals
-      const itemsTotal = transformedItems.reduce((sum, item) => sum + (item.UnitPrice * item.Quantity), 0);
       const taxAmount = order.tax_amount || 0;
       const shippingAmount = order.shipping_amount || 0;
-      const discountAmount = order.discount_amount || 0;
 
       // Build ShipStation order object
       const shipStationOrder = {
@@ -248,7 +246,10 @@ export class DataTransformService {
     WarehouseLocation?: string;
     ProductID: string;
     UPC?: string;
-    Options?: any[];
+    Options?: Array<{
+      Name: string;
+      Value: string;
+    }>;
   }>> {
     return orderItems.map((item, index) => {
       const product = products?.get(item.product_id);
@@ -319,7 +320,24 @@ export class DataTransformService {
    * @param items - Transformed items
    * @returns Dimensions object
    */
-  private calculateOrderDimensions(items: any[]): {
+  private calculateOrderDimensions(items: Array<{
+    LineItemID: string;
+    SKU: string;
+    Name: string;
+    ImageUrl: string;
+    Weight: number;
+    WeightUnits: string;
+    Quantity: number;
+    UnitPrice: number;
+    TaxAmount?: number;
+    WarehouseLocation?: string;
+    ProductID: string;
+    UPC?: string;
+    Options?: Array<{
+      Name: string;
+      Value: string;
+    }>;
+  }>): {
     Length: number;
     Width: number;
     Height: number;
@@ -577,9 +595,9 @@ export class DataTransformService {
   /**
    * Parse ShipStation XML response
    * @param xml - XML string
-   * @returns Promise<any> - Parsed object
+   * @returns Promise<Record<string, unknown>> - Parsed object
    */
-  async parseShipStationXML(xml: string): Promise<any> {
+  async parseShipStationXML(xml: string): Promise<Record<string, unknown>> {
     try {
       const result = await this.xmlParser.parseStringPromise(xml);
       return result;
@@ -592,9 +610,9 @@ export class DataTransformService {
   /**
    * Convert ShipStation XML to internal order format
    * @param xml - ShipStation XML
-   * @returns Promise<any> - Internal order object
+   * @returns Promise<Order> - Internal order object
    */
-  async convertShipStationXMLToOrder(xml: string): Promise<any> {
+  async convertShipStationXMLToOrder(xml: string): Promise<Order> {
     try {
       const parsed = await this.parseShipStationXML(xml);
       

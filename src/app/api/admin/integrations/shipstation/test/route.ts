@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAdminToken } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth/session';
 
 interface TestConnectionRequest {
   username: string;
@@ -20,13 +20,7 @@ interface TestConnectionResponse {
  */
 export async function POST(request: NextRequest) {
   try {
-    const tokenResult = await verifyAdminToken(request);
-    if (!tokenResult.success) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    await requireAuth(request);
 
     const body = await request.json();
     const {
@@ -333,13 +327,7 @@ async function testShipStationCompatibility(
  */
 export async function GET(request: NextRequest) {
   try {
-    const tokenResult = await verifyAdminToken(request);
-    if (!tokenResult.success) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    await requireAuth(request);
 
     return NextResponse.json({
       success: true,

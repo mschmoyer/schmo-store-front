@@ -213,7 +213,7 @@ export class OrderStatusService {
 
     // Build dynamic update query
     const updateFields: string[] = [];
-    const values: any[] = [];
+    const values: (string | Date | number)[] = [];
     let paramIndex = 1;
 
     // Add fields to update
@@ -463,7 +463,7 @@ export class OrderStatusService {
   private async queueCustomerNotification(
     orderId: UUID,
     notificationType: 'shipped' | 'delivered' | 'exception',
-    data: Record<string, any>
+    data: Record<string, unknown>
   ): Promise<void> {
     const jobId = uuidv4();
     
@@ -511,7 +511,7 @@ export class OrderStatusService {
         product_id: item.product_id,
         sku: item.product_sku,
         quantity_change: -item.quantity,
-        reason: reason as any,
+        reason: reason as 'sale' | 'return' | 'damage' | 'theft' | 'found' | 'adjustment' | 'shipment',
         reference_id: orderId,
         reference_type: 'order',
         notes: `Inventory adjustment for shipped order - ${reason}`
@@ -590,8 +590,8 @@ export class OrderStatusService {
     integrationType: 'shipstation' | 'shipengine' | 'stripe' | 'other',
     operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing',
     status: 'success' | 'failure' | 'warning',
-    requestData?: Record<string, any>,
-    responseData?: Record<string, any>,
+    requestData?: Record<string, unknown>,
+    responseData?: Record<string, unknown>,
     errorMessage?: string
   ): Promise<IntegrationLog> {
     const logId = uuidv4();
@@ -629,7 +629,7 @@ export class OrderStatusService {
   private async updateIntegrationLog(
     logId: UUID,
     status: 'success' | 'failure' | 'warning',
-    responseData?: Record<string, any>,
+    responseData?: Record<string, unknown>,
     executionTimeMs?: number,
     errorMessage?: string
   ): Promise<void> {

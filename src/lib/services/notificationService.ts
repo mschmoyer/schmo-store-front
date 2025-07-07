@@ -5,9 +5,39 @@ import {
   Order,
   OrderItem,
   Store,
-  NotificationTemplate,
-  ShipmentNotification
+  NotificationTemplate
 } from '@/lib/types/database';
+
+// Email template interfaces
+interface EmailTemplateVariables {
+  order_number: string;
+  order_total: string;
+  customer_name: string;
+  store_name: string;
+  store_url: string;
+  shipping_address: string;
+  contact_email: string;
+}
+
+interface ShipmentTemplateVariables extends EmailTemplateVariables {
+  order_items: Array<{ name: string; quantity: number; price: string }>;
+  tracking_number: string;
+  carrier_name: string;
+  tracking_url?: string;
+  estimated_delivery?: string;
+}
+
+interface DeliveryTemplateVariables extends EmailTemplateVariables {
+  delivered_date: string;
+  delivery_location?: string;
+}
+
+interface ExceptionTemplateVariables extends EmailTemplateVariables {
+  exception_type: string;
+  exception_description: string;
+  resolution_instructions?: string;
+  estimated_resolution?: string;
+}
 
 /**
  * Customer Notification Service
@@ -228,7 +258,13 @@ export class NotificationService {
     order: Order,
     store: Store,
     orderItems: OrderItem[],
-    trackingData: any,
+    trackingData: {
+      tracking_number: string;
+      carrier_name: string;
+      tracking_url?: string;
+      estimated_delivery?: Date;
+      service_code?: string;
+    },
     template?: NotificationTemplate
   ): Promise<{ subject: string; html: string; text: string }> {
     const variables = {
@@ -275,7 +311,13 @@ export class NotificationService {
     order: Order,
     store: Store,
     orderItems: OrderItem[],
-    deliveryData: any,
+    deliveryData: {
+      delivered_date: Date;
+      delivery_location?: string;
+      recipient_name?: string;
+      signature_required?: boolean;
+      proof_of_delivery_url?: string;
+    },
     template?: NotificationTemplate
   ): Promise<{ subject: string; html: string; text: string }> {
     const variables = {
@@ -322,7 +364,13 @@ export class NotificationService {
     order: Order,
     store: Store,
     orderItems: OrderItem[],
-    exceptionData: any,
+    exceptionData: {
+      exception_type: string;
+      exception_description: string;
+      resolution_instructions?: string;
+      contact_carrier_url?: string;
+      estimated_resolution_date?: Date;
+    },
     template?: NotificationTemplate
   ): Promise<{ subject: string; html: string; text: string }> {
     const variables = {
@@ -356,7 +404,7 @@ export class NotificationService {
    * @param variables - Template variables
    * @returns EmailContent
    */
-  private getDefaultShipmentTemplate(variables: any): { subject: string; html: string; text: string } {
+  private getDefaultShipmentTemplate(variables: ShipmentTemplateVariables): { subject: string; html: string; text: string } {
     const subject = `Your order #${variables.order_number} has shipped! 📦`;
     
     const html = `
@@ -407,7 +455,7 @@ export class NotificationService {
               
               <div class="item-list">
                 <h4>Items Shipped:</h4>
-                ${variables.order_items.map((item: any) => `
+                ${variables.order_items.map((item) => `
                   <div class="item">
                     <strong>${item.name}</strong> - Qty: ${item.quantity} - ${item.price}
                   </div>
@@ -449,7 +497,7 @@ export class NotificationService {
       - Total: ${variables.order_total}
       
       Items Shipped:
-      ${variables.order_items.map((item: any) => `- ${item.name} (Qty: ${item.quantity}) - ${item.price}`).join('\n')}
+      ${variables.order_items.map((item) => `- ${item.name} (Qty: ${item.quantity}) - ${item.price}`).join('\n')}
       
       Shipping Address: ${variables.shipping_address}
       
@@ -469,7 +517,7 @@ export class NotificationService {
    * @param variables - Template variables
    * @returns EmailContent
    */
-  private getDefaultDeliveryTemplate(variables: any): { subject: string; html: string; text: string } {
+  private getDefaultDeliveryTemplate(variables: DeliveryTemplateVariables): { subject: string; html: string; text: string } {
     const subject = `Your order #${variables.order_number} has been delivered! 🎉`;
     
     const html = `
@@ -561,7 +609,7 @@ export class NotificationService {
    * @param variables - Template variables
    * @returns EmailContent
    */
-  private getDefaultExceptionTemplate(variables: any): { subject: string; html: string; text: string } {
+  private getDefaultExceptionTemplate(variables: ExceptionTemplateVariables): { subject: string; html: string; text: string } {
     const subject = `Update on your order #${variables.order_number}`;
     
     const html = `
@@ -646,7 +694,7 @@ export class NotificationService {
    * @param variables - Variables to replace
    * @returns string
    */
-  private replaceVariables(template: string, variables: any): string {
+  private replaceVariables(template: string, variables: EmailTemplateVariables | ShipmentTemplateVariables | DeliveryTemplateVariables | ExceptionTemplateVariables): string {
     return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
       return variables[key] || match;
     });
@@ -775,7 +823,7 @@ export class NotificationService {
     orderId: UUID,
     notificationType: string,
     success: boolean,
-    error?: any
+    error?: Error | string
   ): Promise<void> {
     try {
       await db.query(`

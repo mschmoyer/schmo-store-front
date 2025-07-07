@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAdminToken } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth/session';
 import { db } from '@/lib/database';
 
 interface ShipStationConfig {
@@ -20,25 +20,12 @@ interface ShipStationConfig {
  */
 export async function GET(request: NextRequest) {
   try {
-    const tokenResult = await verifyAdminToken(request);
-    if (!tokenResult.success) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const userId = tokenResult.decoded?.userId;
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid user' },
-        { status: 401 }
-      );
-    }
+    const user = await requireAuth(request);
+    const userId = user.userId;
 
     // Get user's store ID
     const storeResult = await db.query(
-      'SELECT id FROM stores WHERE user_id = $1',
+      'SELECT id FROM stores WHERE owner_id = $1',
       [userId]
     );
 
@@ -49,7 +36,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const storeId = storeResult.rows[0].id;
+    const storeId = String(storeResult.rows[0].id);
 
     // Get ShipStation integration config
     const configResult = await db.query(
@@ -90,16 +77,16 @@ export async function GET(request: NextRequest) {
     const configData = config.configuration as Record<string, unknown>;
 
     const shipstationConfig: ShipStationConfig = {
-      id: config.id,
-      isActive: config.is_active,
+      id: String(config.id),
+      isActive: Boolean(config.is_active),
       username: (configData.username as string) || '',
       password: (configData.password as string) || '',
       apiKey: (configData.apiKey as string) || '',
       apiSecret: (configData.apiSecret as string) || '',
       endpointUrl: (configData.endpointUrl as string) || '',
       storeId: storeId,
-      autoSyncEnabled: config.auto_sync_enabled || false,
-      autoSyncInterval: config.auto_sync_interval || '1hour'
+      autoSyncEnabled: Boolean(config.auto_sync_enabled),
+      autoSyncInterval: (config.auto_sync_interval as '1hour' | '10min' | '1day') || '1hour'
     };
 
     return NextResponse.json({
@@ -121,21 +108,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const tokenResult = await verifyAdminToken(request);
-    if (!tokenResult.success) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const userId = tokenResult.decoded?.userId;
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid user' },
-        { status: 401 }
-      );
-    }
+    const user = await requireAuth(request);
+    const userId = user.userId;
 
     const body = await request.json();
     const {
@@ -180,7 +154,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const storeId = storeResult.rows[0].id;
+    const storeId = String(storeResult.rows[0].id);
 
     // Configuration object to store
     const configuration = {
@@ -280,25 +254,12 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const tokenResult = await verifyAdminToken(request);
-    if (!tokenResult.success) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const userId = tokenResult.decoded?.userId;
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid user' },
-        { status: 401 }
-      );
-    }
+    const user = await requireAuth(request);
+    const userId = user.userId;
 
     // Get user's store ID
     const storeResult = await db.query(
-      'SELECT id FROM stores WHERE user_id = $1',
+      'SELECT id FROM stores WHERE owner_id = $1',
       [userId]
     );
 
@@ -309,7 +270,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const storeId = storeResult.rows[0].id;
+    const storeId = String(storeResult.rows[0].id);
 
     // Delete ShipStation integration
     await db.query(

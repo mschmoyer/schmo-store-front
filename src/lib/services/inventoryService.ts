@@ -5,8 +5,7 @@ import {
   Product,
   Order,
   OrderItem,
-  InventoryAdjustment,
-  IntegrationLog
+  InventoryAdjustment
 } from '@/lib/types/database';
 
 /**
@@ -386,7 +385,7 @@ export class InventoryService {
               product_id: adj.product_id,
               sku: adj.sku,
               quantity_change: quantityChange,
-              reason: adj.reason as any,
+              reason: adj.reason as 'sale' | 'return' | 'damage' | 'theft' | 'found' | 'adjustment' | 'shipment',
               reference_type: 'manual',
               notes: adj.notes || `Manual adjustment: ${adj.adjustment_type} ${adj.quantity}`
             });
@@ -586,8 +585,8 @@ export class InventoryService {
     storeId: string,
     operation: 'inventory_sync' | 'stock_adjustment' | 'low_stock_alert',
     status: 'success' | 'failure' | 'warning',
-    requestData?: Record<string, any>,
-    responseData?: Record<string, any>,
+    requestData?: Record<string, unknown>,
+    responseData?: Record<string, unknown>,
     executionTimeMs?: number,
     errorMessage?: string
   ): Promise<void> {

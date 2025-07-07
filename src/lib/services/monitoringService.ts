@@ -44,7 +44,7 @@ export class MonitoringService {
   async logIntegrationEvent(
     operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing',
     status: 'success' | 'failure' | 'warning',
-    data: Record<string, any>,
+    data: Record<string, unknown>,
     storeId: UUID = 'system',
     integrationType: 'shipstation' | 'shipengine' | 'stripe' | 'other' = 'shipstation',
     executionTimeMs?: number,
@@ -459,7 +459,7 @@ export class MonitoringService {
     integration_type: string;
     operation: string;
     message: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
   }): Promise<void> {
     try {
       // Log the alert
@@ -509,14 +509,14 @@ export class MonitoringService {
     level: string;
     type: string;
     message: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
     created_at: Date;
   }>> {
     try {
       const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
       
       let whereClause = 'WHERE created_at >= $1';
-      const params: any[] = [cutoffTime];
+      const params: (Date | string)[] = [cutoffTime];
       let paramIndex = 2;
 
       if (storeId) {
@@ -623,7 +623,14 @@ export class MonitoringService {
    * @param dailyStats - Daily statistics
    * @returns Trend analysis
    */
-  private calculateTrends(dailyStats: any[]): {
+  private calculateTrends(dailyStats: Array<{
+    date: string;
+    success_count: number;
+    failure_count: number;
+    total_count: number;
+    avg_execution_time: number;
+    success_rate: number;
+  }>): {
     success_rate_trend: 'improving' | 'stable' | 'declining';
     response_time_trend: 'improving' | 'stable' | 'declining';
     volume_trend: 'increasing' | 'stable' | 'decreasing';

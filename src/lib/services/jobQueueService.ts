@@ -44,7 +44,7 @@ export class JobQueueService {
    */
   async addJob(
     jobType: 'order_notification' | 'inventory_update' | 'shipment_processing' | 'webhook_processing',
-    payload: Record<string, any>,
+    payload: Record<string, unknown>,
     priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium',
     scheduledAt?: Date
   ): Promise<UUID> {
@@ -179,7 +179,7 @@ export class JobQueueService {
    * @param payload - Job payload
    * @returns Promise<boolean> - Success status
    */
-  private async processOrderNotificationJob(payload: Record<string, any>): Promise<boolean> {
+  private async processOrderNotificationJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
       const { order_id, notification_type, ...data } = payload;
 
@@ -209,7 +209,7 @@ export class JobQueueService {
    * @param payload - Job payload
    * @returns Promise<boolean> - Success status
    */
-  private async processInventoryUpdateJob(payload: Record<string, any>): Promise<boolean> {
+  private async processInventoryUpdateJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
       const { order_id, shipment_data } = payload;
 
@@ -230,7 +230,7 @@ export class JobQueueService {
    * @param payload - Job payload
    * @returns Promise<boolean> - Success status
    */
-  private async processShipmentProcessingJob(payload: Record<string, any>): Promise<boolean> {
+  private async processShipmentProcessingJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
       const { webhook_payload } = payload;
 
@@ -251,7 +251,7 @@ export class JobQueueService {
    * @param payload - Job payload
    * @returns Promise<boolean> - Success status
    */
-  private async processWebhookProcessingJob(payload: Record<string, any>): Promise<boolean> {
+  private async processWebhookProcessingJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
       const { webhook_type, webhook_data } = payload;
 
@@ -325,7 +325,7 @@ export class JobQueueService {
   ): Promise<void> {
     try {
       const updateFields: string[] = ['status = $2', 'updated_at = $3'];
-      const values: any[] = [jobId, status, new Date()];
+      const values: (string | Date | number | null)[] = [jobId, status, new Date()];
       let paramIndex = 4;
 
       if (errorMessage !== undefined) {

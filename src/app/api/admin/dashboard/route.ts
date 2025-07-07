@@ -157,13 +157,13 @@ export async function GET(request: NextRequest) {
         isPublic: storeInfo.rows[0]?.is_public || false,
         createdAt: storeInfo.rows[0]?.created_at
       },
-      siteVisitors: parseInt(visitorStats.rows[0]?.total_unique_visitors || '0'),
+      siteVisitors: parseInt(String(visitorStats.rows[0]?.total_unique_visitors || '0')),
       lowStockCount: lowStockProducts.rows.length,
       revenue: {
-        totalRevenue: parseFloat(revenueStats.rows[0]?.total_revenue || '0'),
-        monthlyRevenue: parseFloat(revenueStats.rows[0]?.monthly_revenue || '0'),
-        totalOrders: parseInt(revenueStats.rows[0]?.total_orders || '0'),
-        monthlyOrders: parseInt(revenueStats.rows[0]?.monthly_orders || '0')
+        totalRevenue: parseFloat(String(revenueStats.rows[0]?.total_revenue || '0')),
+        monthlyRevenue: parseFloat(String(revenueStats.rows[0]?.monthly_revenue || '0')),
+        totalOrders: parseInt(String(revenueStats.rows[0]?.total_orders || '0')),
+        monthlyOrders: parseInt(String(revenueStats.rows[0]?.monthly_orders || '0'))
       }
     };
     

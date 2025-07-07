@@ -311,7 +311,7 @@ async function getOverallStatus(integrationType: string, storeId?: string) {
 /**
  * Trigger health check
  */
-async function triggerHealthCheck(data: any) {
+async function triggerHealthCheck(data: { integration_type?: string; store_id?: string }) {
   try {
     const { integration_type = 'shipstation', store_id } = data;
     
@@ -327,7 +327,7 @@ async function triggerHealthCheck(data: any) {
         response: { health_status: health.status, operations_last_hour: metrics.total_operations }
       },
       store_id || 'system',
-      integration_type as any
+      integration_type as 'shipstation' | 'shipengine' | 'stripe' | 'other'
     );
 
     return NextResponse.json({
@@ -349,7 +349,7 @@ async function triggerHealthCheck(data: any) {
 /**
  * Retry failed jobs
  */
-async function retryFailedJobs(data: any) {
+async function retryFailedJobs(data: { job_ids?: string[]; retry_all?: boolean; maxRetries?: number; batchSize?: number }) {
   try {
     const { job_ids, retry_all = false } = data;
     
@@ -384,7 +384,7 @@ async function retryFailedJobs(data: any) {
 /**
  * Cleanup old jobs
  */
-async function cleanupOldJobs(data: any) {
+async function cleanupOldJobs(data: { older_than_days?: number; daysOld?: number }) {
   try {
     const { older_than_days = 30 } = data;
     
@@ -406,7 +406,7 @@ async function cleanupOldJobs(data: any) {
 /**
  * Test notification system
  */
-async function testNotification(data: any) {
+async function testNotification(data: { order_id?: string; notification_type?: string; orderId?: string; notificationType?: string }) {
   try {
     const { order_id, notification_type = 'shipped' } = data;
     
@@ -448,7 +448,7 @@ async function testNotification(data: any) {
 /**
  * Trigger inventory sync
  */
-async function triggerInventorySync(data: any) {
+async function triggerInventorySync(data: { store_id?: string; products?: string[]; storeId?: string }) {
   try {
     const { store_id, products } = data;
     
@@ -462,8 +462,12 @@ async function triggerInventorySync(data: any) {
     let result;
     
     if (products && Array.isArray(products)) {
-      // Sync specific products
-      result = await inventoryService.syncInventoryWithExternalSystem(store_id, products);
+      // Convert product SKUs to expected format for sync
+      const productData = products.map(sku => ({
+        sku,
+        available_quantity: 0, // Will be updated during sync
+      }));
+      result = await inventoryService.syncInventoryWithExternalSystem(store_id, productData);
     } else {
       // Trigger full inventory sync job
       const jobId = await jobQueueService.addJob(
