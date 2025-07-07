@@ -123,7 +123,15 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     setError(null);
     
     try {
-      const response = await fetch(`/api/admin/products/${id}`);
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
+      const response = await fetch(`/api/admin/products/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
+      });
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -158,7 +166,16 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
    */
   const fetchCategories = async () => {
     try {
-      const response = await fetch('/api/admin/categories');
+      if (!session?.sessionToken) {
+        console.error('No authentication token available for categories');
+        return;
+      }
+
+      const response = await fetch('/api/admin/categories', {
+        headers: {
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
+      });
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -180,10 +197,15 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     setFormErrors({});
     
     try {
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
       const response = await fetch(`/api/admin/products/${productId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify(updatedProduct)
       });
@@ -238,8 +260,15 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     if (!productId) return;
     
     try {
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
       const response = await fetch(`/api/admin/products/${productId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
       });
       
       if (!response.ok) {

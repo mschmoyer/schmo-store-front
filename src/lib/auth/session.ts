@@ -100,7 +100,17 @@ export async function getSessionFromCookies(cookieHeader: string): Promise<UserS
 
 // Middleware function to verify user session
 export async function requireAuth(request: Request): Promise<UserSession> {
-  const user = await getSessionFromRequest(request);
+  // Try Authorization header first (Bearer token)
+  let user = await getSessionFromRequest(request);
+  
+  // If no Bearer token, try cookies
+  if (!user) {
+    const cookieHeader = request.headers.get('cookie');
+    if (cookieHeader) {
+      user = await getSessionFromCookies(cookieHeader);
+    }
+  }
+  
   if (!user) {
     throw new Error('Authentication required');
   }
