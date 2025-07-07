@@ -171,7 +171,7 @@ export function ProductInfo({
       </Box>
       
       {/* Rating and Reviews */}
-      {product.review_count > 0 && (
+      {(product?.review_count ?? 0) > 0 && (
         <Group gap="sm">
           <StarRating 
             value={product.average_rating || 0} 

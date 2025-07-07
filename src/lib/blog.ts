@@ -108,7 +108,7 @@ export const blogUtils = {
     // Get total count
     const countQuery = `SELECT COUNT(*) as count FROM blog_posts WHERE ${whereClause}`;
     const countResult = await db.query(countQuery, params);
-    const total = parseInt((countResult.rows[0] as CountResult).count);
+    const total = parseInt((countResult.rows[0] as unknown as CountResult).count);
 
     // Get paginated posts
     const postsQuery = `
@@ -125,12 +125,15 @@ export const blogUtils = {
     params.push(limit, offset);
 
     const result = await db.query(postsQuery, params);
-    const posts = result.rows.map((row: BlogPostRow) => ({
-      ...row,
-      categories: row.categories ? [row.categories] : [],
-      tags: row.tags || [],
-      reading_time: this.calculateReadingTime(row.content)
-    }));
+    const posts = result.rows.map((row) => {
+      const blogRow = row as unknown as BlogPostRow;
+      return {
+        ...blogRow,
+        categories: blogRow.categories ? [blogRow.categories] : [],
+        tags: blogRow.tags || [],
+        reading_time: this.calculateReadingTime(blogRow.content)
+      };
+    });
 
     const totalPages = Math.ceil(total / limit);
 
@@ -157,7 +160,7 @@ export const blogUtils = {
     const result = await db.query(query, [storeId, slug]);
     if (result.rows.length === 0) return null;
 
-    const row = result.rows[0] as BlogPostRow;
+    const row = result.rows[0] as unknown as BlogPostRow;
     return {
       ...row,
       categories: row.categories ? [row.categories] : [],
@@ -180,7 +183,7 @@ export const blogUtils = {
     const result = await db.query(query, [storeId, id]);
     if (result.rows.length === 0) return null;
 
-    const row = result.rows[0] as BlogPostRow;
+    const row = result.rows[0] as unknown as BlogPostRow;
     return {
       ...row,
       categories: row.categories ? [row.categories] : [],
@@ -220,7 +223,7 @@ export const blogUtils = {
     ];
 
     const result = await db.query(query, params);
-    const row = result.rows[0] as BlogPostRow;
+    const row = result.rows[0] as unknown as BlogPostRow;
     
     return {
       ...row,
@@ -316,7 +319,7 @@ export const blogUtils = {
     const result = await db.query(query, params);
     if (result.rows.length === 0) return null;
 
-    const row = result.rows[0] as BlogPostRow;
+    const row = result.rows[0] as unknown as BlogPostRow;
     return {
       ...row,
       categories: row.categories ? [row.categories] : [],
@@ -396,7 +399,7 @@ export const blogUtils = {
       ORDER BY category
     `;
     const result = await db.query(query, [storeId]);
-    return result.rows.map((row: CategoryResult) => row.category);
+    return result.rows.map((row) => (row as unknown as CategoryResult).category);
   },
 
   // Get blog tags
@@ -408,7 +411,7 @@ export const blogUtils = {
       ORDER BY tag
     `;
     const result = await db.query(query, [storeId]);
-    return result.rows.map((row: TagResult) => row.tag);
+    return result.rows.map((row) => (row as unknown as TagResult).tag);
   },
 
   // Get blog statistics
@@ -438,8 +441,8 @@ export const blogUtils = {
       db.query(popularQuery, [storeId])
     ]);
 
-    const stats = statsResult.rows[0] as StatsResult;
-    const popularPostsRaw = popularResult.rows as PopularPostResult[];
+    const stats = statsResult.rows[0] as unknown as StatsResult;
+    const popularPostsRaw = popularResult.rows as unknown as PopularPostResult[];
 
     // Transform popular posts to match BlogPost interface (partial data only)
     const popularPosts: BlogPost[] = popularPostsRaw.map(post => ({
@@ -488,7 +491,7 @@ export const blogUtils = {
   },
 
   // Get related posts
-  async getRelatedPosts(storeId: string, currentPost: BlogPost, limit: number = 3): Promise<BlogPost[]> {
+  async getRelatedPosts(storeId: string, currentPost: BlogPost, limit: number = 3): Promise<Partial<BlogPost>[]> {
     const query = `
       SELECT 
         id, title, slug, excerpt, featured_image_url as featured_image,
@@ -511,12 +514,15 @@ export const blogUtils = {
       limit
     ]);
 
-    return result.rows.map((row: PopularPostResult) => ({
-      ...row,
-      categories: row.categories ? [row.categories] : [],
-      tags: row.tags || [],
-      reading_time: 0 // Not calculating for related posts to save performance
-    }));
+    return result.rows.map((row) => {
+      const postRow = row as unknown as PopularPostResult;
+      return {
+        ...postRow,
+        categories: (postRow as unknown as Record<string, unknown>).categories ? [(postRow as unknown as Record<string, unknown>).categories as string] : [],
+        tags: (postRow as unknown as Record<string, unknown>).tags as string[] || [],
+        reading_time: 0 // Not calculating for related posts to save performance
+      };
+    });
   }
 };
 

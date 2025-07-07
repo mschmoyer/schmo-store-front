@@ -30,7 +30,7 @@ export function ProductBreadcrumbs({ product }: ProductBreadcrumbsProps) {
     items.push({
       title: category,
       href: `/store?category=${encodeURIComponent(category)}`,
-      icon: null
+      icon: <></>
     });
   }
   
@@ -38,7 +38,7 @@ export function ProductBreadcrumbs({ product }: ProductBreadcrumbsProps) {
   items.push({
     title: product.display_name,
     href: '',
-    icon: null
+    icon: <></>
   });
   
   return (

@@ -50,7 +50,7 @@ export async function getShipStationConfig(storeId: string): Promise<ShipStation
       [storeId]
     );
     
-    return result.rows[0] || null;
+    return (result.rows[0] as unknown as ShipStationConfig) || null;
   } catch (error) {
     console.error('Error fetching ShipStation config:', error);
     throw new Error('Failed to fetch ShipStation configuration');
@@ -69,7 +69,7 @@ export async function getShipStationConfigByUsername(username: string): Promise<
       [username]
     );
     
-    return result.rows[0] || null;
+    return (result.rows[0] as unknown as ShipStationConfig) || null;
   } catch (error) {
     console.error('Error fetching ShipStation config by username:', error);
     throw new Error('Failed to fetch ShipStation configuration');
@@ -159,7 +159,7 @@ export async function getOrdersForExport(
       [storeId, startDateISO, endDateISO]
     );
     
-    const totalCount = parseInt(countResult.rows[0]?.total_count || '0');
+    const totalCount = parseInt((countResult.rows[0] as Record<string, unknown>)?.total_count as string || '0');
     const totalPages = Math.ceil(totalCount / pageSize);
     
     // Get orders with customer and order items
@@ -226,7 +226,7 @@ export async function getOrdersForExport(
         country: row.shipping_country,
         phone: row.customer_phone
       },
-      items: row.items.filter((item: { id: string | null }) => item.id !== null) // Remove null items from LEFT JOIN
+      items: (row.items as Array<{ id: string | null }>).filter((item: { id: string | null }) => item.id !== null) // Remove null items from LEFT JOIN
     }));
     
     return {
@@ -351,7 +351,7 @@ export async function getOrderByNumber(storeId: string, orderNumber: string): Pr
       [storeId, orderNumber]
     );
     
-    return result.rows[0] || null;
+    return (result.rows[0] as unknown as ShipStationConfig) || null;
   } catch (error) {
     console.error('Error getting order by number:', error);
     throw new Error('Failed to get order by number');

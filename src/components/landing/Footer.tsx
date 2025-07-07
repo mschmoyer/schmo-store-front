@@ -114,10 +114,10 @@ export function Footer() {
                     {section.links.map((link, linkIndex) => (
                       <Anchor
                         key={linkIndex}
-                        component={link.external ? 'a' : Link}
+                        component={link.external ? "a" : (Link as unknown as "a")}
                         href={link.href}
-                        target={link.external ? '_blank' : undefined}
-                        rel={link.external ? 'noopener noreferrer' : undefined}
+                        target={link.external ? "_blank" : undefined}
+                        rel={link.external ? "noopener noreferrer" : undefined}
                         className={`${rebelTheme.classes.text.muted} ${rebelTheme.classes.link.secondary} transition-colors text-sm`}
                       >
                         {link.label}

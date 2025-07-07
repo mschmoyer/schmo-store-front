@@ -78,15 +78,15 @@ export default function RichTextEditor({
         )}
 
         {/* Markdown Editor */}
-        <Box style={{ position: 'relative' }} data-color-mode="auto">
+        <Box style={{ position: 'relative' }}>
           <MDEditor
             value={content}
             onChange={handleChange}
             preview="edit"
             hideToolbar={readOnly}
-            visibleDragBar={false}
+            visibleDragbar={false}
             height={height}
-            data-color-mode="auto"
+            data-color-mode="light"
             style={{
               backgroundColor: 'var(--mantine-color-body)',
               borderRadius: '8px',

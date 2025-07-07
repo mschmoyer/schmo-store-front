@@ -46,9 +46,9 @@ export default function BlogEditor({
             onChange={handleChange}
             preview="edit"
             hideToolbar={readOnly}
-            visibleDragBar={false}
+            visibleDragbar={false}
             height={height}
-            data-color-mode="auto"
+            data-color-mode="light"
             style={{
               backgroundColor: 'var(--theme-background)',
               borderRadius: '8px',

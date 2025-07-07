@@ -308,13 +308,6 @@ export default function BlogPostForm({
                   value={formData.categories}
                   onChange={(values) => handleInputChange('categories', values)}
                   searchable
-                  creatable
-                  getCreateLabel={(query) => `+ Create "${query}"`}
-                  onCreate={(query) => {
-                    const item = query;
-                    setAvailableCategories(prev => [...prev, item]);
-                    return item;
-                  }}
                   styles={{
                     input: {
                       backgroundColor: 'var(--theme-background-secondary)',
@@ -335,13 +328,6 @@ export default function BlogPostForm({
                   value={formData.tags}
                   onChange={(values) => handleInputChange('tags', values)}
                   searchable
-                  creatable
-                  getCreateLabel={(query) => `+ Create "${query}"`}
-                  onCreate={(query) => {
-                    const item = query;
-                    setAvailableTags(prev => [...prev, item]);
-                    return item;
-                  }}
                   styles={{
                     input: {
                       backgroundColor: 'var(--theme-background-secondary)',
@@ -441,8 +427,8 @@ export default function BlogPostForm({
                     { value: 'published', label: 'Published' },
                     { value: 'scheduled', label: 'Scheduled' }
                   ]}
-                  value={formData.status}
-                  onChange={(value) => handleInputChange('status', value)}
+                  value={formData.status || undefined}
+                  onChange={(value) => handleInputChange('status', value || undefined)}
                   styles={{
                     input: {
                       backgroundColor: 'var(--theme-background-secondary)',
@@ -459,7 +445,7 @@ export default function BlogPostForm({
                   label="Scheduled For (Optional)"
                   placeholder="Select date and time"
                   value={formData.scheduled_for ? new Date(formData.scheduled_for) : null}
-                  onChange={(date) => handleInputChange('scheduled_for', date?.toISOString() || '')}
+                  onChange={(date) => handleInputChange('scheduled_for', date || '')}
                   disabled={formData.status !== 'scheduled'}
                   styles={{
                     input: {

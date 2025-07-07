@@ -59,7 +59,7 @@ export function useSlugGeneration() {
         setState(prev => ({
           ...prev,
           isGenerating: false,
-          generatedSlug: data.slug,
+          generatedSlug: data.slug as string,
           suggestions: data.suggestions || [],
         }));
         return data.slug;

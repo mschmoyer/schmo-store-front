@@ -28,6 +28,13 @@ export function AdminProvider({ children }: AdminProviderProps) {
   
   // Verify session on mount
   useEffect(() => {
+    const localForceLogout = () => {
+      setUser(null);
+      setSession(null);
+      localStorage.removeItem('admin_token');
+      router.push('/admin/login');
+    };
+
     const verifySession = async () => {
       try {
         const token = localStorage.getItem('admin_token');
@@ -56,19 +63,19 @@ export function AdminProvider({ children }: AdminProviderProps) {
           }
         } else {
           localStorage.removeItem('admin_token');
-          forceLogout();
+          localForceLogout();
         }
       } catch (error) {
         console.error('Session verification failed:', error);
         localStorage.removeItem('admin_token');
-        forceLogout();
+        localForceLogout();
       } finally {
         setIsLoading(false);
       }
     };
     
     verifySession();
-  }, []);
+  }, [router]);
   
   const login = async (credentials: AdminLoginRequest) => {
     try {

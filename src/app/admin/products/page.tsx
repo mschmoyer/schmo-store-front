@@ -240,7 +240,7 @@ export default function ProductsAdminPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentPage, itemsPerPage, searchQuery, categoryFilter, statusFilter, stockFilter, sortBy, sortOrder]);
+  }, [currentPage, itemsPerPage, searchQuery, categoryFilter, statusFilter, stockFilter, sortBy, sortOrder, session?.sessionToken]);
   
   /**
    * Toggle product active status

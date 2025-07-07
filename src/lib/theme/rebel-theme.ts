@@ -84,6 +84,7 @@ export const rebelTheme = {
       body: 'text-gray-700',
       muted: 'text-gray-600',
       light: 'text-gray-500',
+      white: 'text-white',
     },
     
     // Link styles

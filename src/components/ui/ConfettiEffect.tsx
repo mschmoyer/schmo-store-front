@@ -37,22 +37,6 @@ export default function ConfettiEffect({
   const [isActive, setIsActive] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    if (active && !isActive) {
-      setIsActive(true);
-      fireConfetti();
-    }
-  }, [active, isActive, fireConfetti]);
-
-  useEffect(() => {
-    return () => {
-      const timeout = timeoutRef.current;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-  }, []);
-
   const fireConfetti = useCallback(() => {
     const end = Date.now() + duration;
 
@@ -80,6 +64,22 @@ export default function ConfettiEffect({
 
     frame();
   }, [duration, particleCount, startVelocity, spread, origin, colors, shapes, gravity, drift, ticks, scalar, zIndex]);
+
+  useEffect(() => {
+    if (active && !isActive) {
+      setIsActive(true);
+      fireConfetti();
+    }
+  }, [active, isActive, fireConfetti]);
+
+  useEffect(() => {
+    const timeout = timeoutRef.current;
+    return () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, []);
 
   return null; // This component doesn't render anything visible
 }

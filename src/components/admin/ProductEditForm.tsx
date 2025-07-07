@@ -179,10 +179,13 @@ export default function ProductEditForm({
       // Transform form data to save user-entered values as overrides
       const saveData = {
         ...formData,
-        // Save user entries as overrides
-        override_name: formData.name || null,
-        override_description: formData.long_description || null,
-        override_price: formData.base_price || null,
+        // Convert null values to undefined for TypeScript compatibility
+        sale_price: formData.sale_price || undefined,
+        cost_price: formData.cost_price || undefined,
+        // Save user entries as overrides (convert null to undefined for TypeScript)
+        override_name: formData.name || undefined,
+        override_description: formData.long_description || undefined,
+        override_price: formData.base_price || undefined,
         // Keep the original values from integration data intact
         name: product.name,
         long_description: product.long_description,
@@ -202,7 +205,7 @@ export default function ProductEditForm({
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
-      .trim('-');
+      .replace(/^-+|-+$/g, '');
     
     handleFieldChange('slug', slug);
   };
@@ -315,28 +318,28 @@ export default function ProductEditForm({
                 description={product.base_price ? `Integration: $${product.base_price}` : undefined}
                 min={0}
                 step={0.01}
-                precision={2}
+                decimalScale={2}
                 leftSection="$"
               />
               <NumberInput
                 label="Sale Price"
                 placeholder="0.00 (optional)"
-                value={formData.sale_price}
+                value={formData.sale_price || undefined}
                 onChange={(value) => handleFieldChange('sale_price', value)}
                 error={validationErrors.sale_price}
                 min={0}
                 step={0.01}
-                precision={2}
+                decimalScale={2}
                 leftSection="$"
               />
               <NumberInput
                 label="Cost Price"
                 placeholder="0.00 (optional)"
-                value={formData.cost_price}
+                value={formData.cost_price || undefined}
                 onChange={(value) => handleFieldChange('cost_price', value)}
                 min={0}
                 step={0.01}
-                precision={2}
+                decimalScale={2}
                 leftSection="$"
               />
             </Group>

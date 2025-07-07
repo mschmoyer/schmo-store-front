@@ -5,26 +5,33 @@ import { useWizard, WizardProvider } from '@/hooks/useWizard';
 import { WIZARD_STEPS } from '@/types/wizard';
 import StepIndicator from './StepIndicator';
 import StepNavigation from './StepNavigation';
-import AccountStep from './steps/AccountStep';
-import StoreConfigStep from './steps/StoreConfigStep';
-import SuccessStep from './steps/SuccessStep';
+// TODO: Import step components when they are created
+// import AccountStep from './steps/AccountStep';
+// import StoreConfigStep from './steps/StoreConfigStep';
+// import SuccessStep from './steps/SuccessStep';
+
+// Placeholder step components
+const PlaceholderStep = () => <div>Step placeholder - component not implemented yet</div>;
 
 // Step Components Map
 const stepComponents = {
-  [WIZARD_STEPS.ACCOUNT]: AccountStep,
-  [WIZARD_STEPS.STORE]: StoreConfigStep,
-  [WIZARD_STEPS.SUCCESS]: SuccessStep,
+  [WIZARD_STEPS.ACCOUNT]: PlaceholderStep,
+  [WIZARD_STEPS.STORE]: PlaceholderStep,
+  [WIZARD_STEPS.SUCCESS]: PlaceholderStep,
 };
 
 function WizardContent() {
-  const { state, nextStep, prevStep } = useWizard();
+  const { state } = useWizard();
+  // TODO: Uncomment when step components are implemented
+  // const { nextStep, prevStep } = useWizard();
   const CurrentStepComponent = stepComponents[state.currentStep as keyof typeof stepComponents];
 
   if (!CurrentStepComponent) {
     return <Text color="red">Unknown step</Text>;
   }
 
-  const canProceed = !state.loading && Object.keys(state.errors).length === 0;
+  // TODO: Uncomment when step components are implemented
+  // const canProceed = !state.loading && Object.keys(state.errors).length === 0;
 
   return (
     <Container size="md" py="xl">
@@ -86,12 +93,7 @@ function WizardContent() {
 
           {/* Current Step Content */}
           <Box mb="xl">
-            <CurrentStepComponent
-              onNext={nextStep}
-              onPrev={prevStep}
-              isLoading={state.loading}
-              canProceed={canProceed}
-            />
+            <CurrentStepComponent />
           </Box>
 
           {/* Navigation */}

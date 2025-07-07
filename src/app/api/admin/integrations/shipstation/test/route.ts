@@ -17,6 +17,9 @@ interface TestConnectionResponse {
     request?: LogRequestData;
     response?: LogResponseData;
     error?: string;
+    testResults?: Record<string, boolean>;
+    failedTests?: string[];
+    nextSteps?: string[];
   };
 }
 

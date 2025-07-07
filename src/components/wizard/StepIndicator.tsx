@@ -1,13 +1,13 @@
 'use client';
 
 import { Box, Group, Text, Progress, ThemeIcon, UnstyledButton } from '@mantine/core';
-import { IconCheck, IconUser, IconStore, IconTrophy } from '@tabler/icons-react';
+import { IconCheck, IconUser, IconBuildingStore, IconTrophy } from '@tabler/icons-react';
 import { useWizard } from '@/hooks/useWizard';
 import { WIZARD_STEPS } from '@/types/wizard';
 
 const stepIcons = {
   [WIZARD_STEPS.ACCOUNT]: IconUser,
-  [WIZARD_STEPS.STORE]: IconStore,
+  [WIZARD_STEPS.STORE]: IconBuildingStore,
   [WIZARD_STEPS.SUCCESS]: IconTrophy,
 };
 
@@ -40,7 +40,7 @@ export default function StepIndicator({ onStepClick }: StepIndicatorProps) {
             backgroundColor: 'var(--theme-background-secondary)',
           }}
           styles={{
-            bar: {
+            section: {
               background: 'var(--theme-primary-gradient)',
               transition: 'width 0.3s ease',
             },

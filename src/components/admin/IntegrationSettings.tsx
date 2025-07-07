@@ -45,9 +45,14 @@ interface Integration {
   autoSyncInterval?: '10min' | '1hour' | '1day';
 }
 
+interface IntegrationUpdateData extends Partial<Integration> {
+  apiKey?: string;
+  apiSecret?: string;
+}
+
 interface IntegrationSettingsProps {
   integration: Integration;
-  onUpdate: (integrationType: string, data: Partial<Integration>) => Promise<void>;
+  onUpdate: (integrationType: string, data: IntegrationUpdateData) => Promise<void>;
   loading?: boolean;
 }
 
@@ -61,11 +66,11 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
   const form = useForm({
     initialValues: {
       apiKey: '',
-      webhookUrl: integration.configuration?.webhookUrl || '',
-      apiSecret: integration.configuration?.apiSecret || '',
-      endpointUrl: integration.configuration?.endpointUrl || '',
-      applicationId: integration.configuration?.applicationId || '',
-      clientSecret: integration.configuration?.clientSecret || '',
+      webhookUrl: integration.configuration?.webhook_url || '',
+      apiSecret: '',  // API secret is stored separately, not in configuration
+      endpointUrl: integration.configuration?.api_url || '',
+      applicationId: String(integration.configuration?.custom_fields?.application_id || ''),
+      clientSecret: String(integration.configuration?.custom_fields?.client_secret || ''),
       isActive: integration.isActive,
       autoSyncEnabled: integration.autoSyncEnabled || false,
       autoSyncInterval: integration.autoSyncInterval || '1hour',
@@ -311,17 +316,19 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       const supportsSync = config.supportsSyncing;
       
       await onUpdate(integration.integrationType, {
-        apiKey: values.apiKey,
-        apiSecret: values.apiSecret, // Add API Secret at top level for ShipStation
+        apiKey: String(values.apiKey || ''),
+        apiSecret: String(values.apiSecret || ''), // Add API Secret at top level for ShipStation
         configuration: {
-          webhookUrl: values.webhookUrl,
-          endpointUrl: values.endpointUrl,
-          applicationId: values.applicationId,
-          clientSecret: values.clientSecret,
+          webhook_url: String(values.webhookUrl || ''),
+          api_url: String(values.endpointUrl || ''),
+          custom_fields: {
+            application_id: String(values.applicationId || ''),
+            client_secret: String(values.clientSecret || ''),
+          },
         },
-        isActive: values.isActive,
-        autoSyncEnabled: values.autoSyncEnabled,
-        autoSyncInterval: values.autoSyncInterval,
+        isActive: Boolean(values.isActive),
+        autoSyncEnabled: Boolean(values.autoSyncEnabled),
+        autoSyncInterval: values.autoSyncInterval as '10min' | '1hour' | '1day',
       });
       
       notifications.show({
