@@ -101,11 +101,11 @@ export default function DesignPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          name: values.name,
-          description: values.description,
+          store_name: values.name,
+          store_description: values.description,
           hero_title: values.heroTitle,
           hero_description: values.heroDescription,
-          theme_id: values.themeId,
+          theme_name: values.themeId,
         })
       });
       

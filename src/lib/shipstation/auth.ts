@@ -7,6 +7,17 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/database';
 
 /**
+ * Simple decryption functions (should match the encryption in integrations route)
+ */
+function decryptApiKey(encryptedKey: string): string {
+  return Buffer.from(encryptedKey, 'base64').toString('utf-8');
+}
+
+function decryptApiSecret(encryptedSecret: string): string {
+  return Buffer.from(encryptedSecret, 'base64').toString('utf-8');
+}
+
+/**
  * ShipStation credentials interface
  */
 interface ShipStationCredentials {
@@ -56,42 +67,53 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
       };
     }
     
-    // Look up credentials in database
+    // Look up credentials in database using encrypted API key as username
+    // For ShipStation, the username should be the API key and password should be API secret
     const result = await db.query(
       `SELECT 
         i.id,
         i.store_id,
         i.is_active,
-        i.configuration
-      FROM integrations i
+        i.configuration,
+        i.api_key_encrypted,
+        i.api_secret_encrypted
+      FROM store_integrations i
       WHERE i.integration_type = 'shipstation' 
-        AND i.is_active = true
-        AND i.configuration->>'username' = $1
-        AND i.configuration->>'password' = $2`,
-      [username, password]
+        AND i.is_active = true`,
+      []
     );
     
-    if (result.rows.length === 0) {
-      return {
-        success: false,
-        error: 'Invalid credentials'
-      };
+    // Check each integration to find matching credentials
+    for (const integration of result.rows) {
+      try {
+        const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
+        const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
+        
+        // For ShipStation, username should be API key and password should be API secret
+        if (username === decryptedApiKey && password === decryptedApiSecret) {
+          return {
+            success: true,
+            storeId: integration.store_id,
+            credentials: {
+              username,
+              password,
+              apiKey: decryptedApiKey,
+              apiSecret: decryptedApiSecret,
+              storeId: integration.store_id,
+              isActive: integration.is_active
+            }
+          };
+        }
+      } catch (error) {
+        // Skip this integration if decryption fails
+        console.error('Failed to decrypt credentials for integration:', integration.id);
+        continue;
+      }
     }
     
-    const integration = result.rows[0];
-    const config = integration.configuration as Record<string, string>;
-    
     return {
-      success: true,
-      storeId: integration.store_id,
-      credentials: {
-        username,
-        password,
-        apiKey: config.apiKey,
-        apiSecret: config.apiSecret,
-        storeId: integration.store_id,
-        isActive: integration.is_active
-      }
+      success: false,
+      error: 'Invalid credentials'
     };
     
   } catch (error) {
@@ -126,36 +148,45 @@ export async function authenticateShipStationAPIKey(request: NextRequest): Promi
         i.id,
         i.store_id,
         i.is_active,
-        i.configuration
-      FROM integrations i
+        i.configuration,
+        i.api_key_encrypted,
+        i.api_secret_encrypted
+      FROM store_integrations i
       WHERE i.integration_type = 'shipstation' 
-        AND i.is_active = true
-        AND i.configuration->>'apiKey' = $1
-        AND i.configuration->>'apiSecret' = $2`,
-      [apiKey, apiSecret]
+        AND i.is_active = true`,
+      []
     );
     
-    if (result.rows.length === 0) {
-      return {
-        success: false,
-        error: 'Invalid API credentials'
-      };
+    // Check each integration to find matching API credentials
+    for (const integration of result.rows) {
+      try {
+        const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
+        const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
+        
+        if (apiKey === decryptedApiKey && apiSecret === decryptedApiSecret) {
+          return {
+            success: true,
+            storeId: integration.store_id,
+            credentials: {
+              username: decryptedApiKey, // Use API key as username
+              password: decryptedApiSecret, // Use API secret as password
+              apiKey: decryptedApiKey,
+              apiSecret: decryptedApiSecret,
+              storeId: integration.store_id,
+              isActive: integration.is_active
+            }
+          };
+        }
+      } catch (error) {
+        // Skip this integration if decryption fails
+        console.error('Failed to decrypt API credentials for integration:', integration.id);
+        continue;
+      }
     }
     
-    const integration = result.rows[0];
-    const config = integration.configuration as Record<string, string>;
-    
     return {
-      success: true,
-      storeId: integration.store_id,
-      credentials: {
-        username: config.username,
-        password: config.password,
-        apiKey,
-        apiSecret,
-        storeId: integration.store_id,
-        isActive: integration.is_active
-      }
+      success: false,
+      error: 'Invalid API credentials'
     };
     
   } catch (error) {
@@ -204,8 +235,10 @@ export async function getShipStationConfig(storeId: string): Promise<ShipStation
         i.id,
         i.store_id,
         i.is_active,
-        i.configuration
-      FROM integrations i
+        i.configuration,
+        i.api_key_encrypted,
+        i.api_secret_encrypted
+      FROM store_integrations i
       WHERE i.store_id = $1 
         AND i.integration_type = 'shipstation' 
         AND i.is_active = true`,
@@ -217,16 +250,23 @@ export async function getShipStationConfig(storeId: string): Promise<ShipStation
     }
     
     const integration = result.rows[0];
-    const config = integration.configuration as Record<string, string>;
     
-    return {
-      username: config.username,
-      password: config.password,
-      apiKey: config.apiKey,
-      apiSecret: config.apiSecret,
-      storeId: integration.store_id,
-      isActive: integration.is_active
-    };
+    try {
+      const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
+      const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
+      
+      return {
+        username: decryptedApiKey, // API key as username
+        password: decryptedApiSecret, // API secret as password
+        apiKey: decryptedApiKey,
+        apiSecret: decryptedApiSecret,
+        storeId: integration.store_id,
+        isActive: integration.is_active
+      };
+    } catch (error) {
+      console.error('Failed to decrypt ShipStation credentials:', error);
+      return null;
+    }
     
   } catch (error) {
     console.error('Error getting ShipStation config:', error);
@@ -256,28 +296,9 @@ export async function verifyShipStationCredentials(credentials: Partial<ShipStat
       };
     }
     
-    // Test credentials by looking them up
-    const result = await db.query(
-      `SELECT COUNT(*) as count
-      FROM integrations i
-      WHERE i.integration_type = 'shipstation' 
-        AND i.configuration->>'username' = $1
-        AND i.configuration->>'password' = $2
-        AND i.configuration->>'apiKey' = $3
-        AND i.configuration->>'apiSecret' = $4`,
-      [credentials.username, credentials.password, credentials.apiKey, credentials.apiSecret]
-    );
-    
-    const count = parseInt(result.rows[0].count);
-    
-    if (count > 0) {
-      return {
-        success: true
-      };
-    }
-    
+    // For verification, we'll just validate the format - actual authentication happens during requests
     return {
-      success: true // Allow new credentials to be saved
+      success: true // Allow credentials to be saved, they'll be tested during authentication
     };
     
   } catch (error) {
@@ -341,6 +362,12 @@ export function getRequestIP(request: NextRequest): string {
  */
 export async function logAuthAttempt(request: NextRequest, result: AuthResult, method: string): Promise<void> {
   try {
+    // Skip logging if we don't have a store_id (authentication failures)
+    if (!result.storeId) {
+      console.log(`Authentication failed: ${result.error || 'Unknown error'}`);
+      return;
+    }
+
     const ip = getRequestIP(request);
     const userAgent = request.headers.get('user-agent') || '';
     
@@ -356,7 +383,7 @@ export async function logAuthAttempt(request: NextRequest, result: AuthResult, m
         created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
       [
-        result.storeId || null,
+        result.storeId,
         'shipstation',
         'authentication',
         result.success ? 'success' : 'failure',
