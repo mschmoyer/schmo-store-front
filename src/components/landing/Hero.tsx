@@ -4,6 +4,7 @@ import { Container, Title, Text, Button, Group, Stack } from '@mantine/core';
 import { IconShoppingCart, IconRocket } from '@tabler/icons-react';
 import Link from 'next/link';
 import { trackHeroCTAClick } from '@/lib/analytics';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 interface HeroProps {
   title?: string;
@@ -35,7 +36,7 @@ export function Hero({
 }: HeroProps) {
   return (
     <section 
-      className="relative bg-gradient-to-br from-red-50 to-gray-100 dark:from-gray-900 dark:to-red-900 py-20 sm:py-24 md:py-32"
+      className={`relative ${rebelTheme.sections.hero} py-20 sm:py-24 md:py-32`}
       data-section="hero"
     >
       <Container size="lg" className="relative z-10">
@@ -45,14 +46,14 @@ export function Hero({
               <Title
                 order={1}
                 size="h1"
-                className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 dark:text-white leading-tight"
+                className={`text-4xl sm:text-5xl md:text-6xl font-bold ${rebelTheme.classes.text.heading} leading-tight`}
                 mb="md"
               >
                 {title}
               </Title>
               <Text
                 size="xl"
-                className="text-gray-600 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed"
+                className={`${rebelTheme.classes.text.body} max-w-3xl mx-auto leading-relaxed`}
               >
                 {subtitle}
               </Text>
@@ -65,9 +66,8 @@ export function Hero({
                 size="xl"
                 radius="md"
                 variant={primaryCTA.variant === 'primary' ? 'filled' : 'outline'}
-                color="red"
                 leftSection={<IconRocket size={20} />}
-                className="bg-red-600 hover:bg-red-700 text-white px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
+                className={`${rebelTheme.classes.button.primary} px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200`}
                 onClick={() => trackHeroCTAClick(primaryCTA.text, primaryCTA.href)}
               >
                 {primaryCTA.text}
@@ -79,9 +79,8 @@ export function Hero({
                 size="xl"
                 radius="md"
                 variant="outline"
-                color="red"
                 leftSection={<IconShoppingCart size={20} />}
-                className="border-2 border-red-600 hover:border-red-700 text-red-600 hover:text-red-700 dark:text-red-400 dark:border-red-500 dark:hover:border-red-400 px-8 py-4 text-lg font-semibold transition-all duration-200"
+                className={`${rebelTheme.classes.button.outline.secondary} px-8 py-4 text-lg font-semibold transition-all duration-200`}
                 onClick={() => trackHeroCTAClick(secondaryCTA.text, secondaryCTA.href)}
               >
                 {secondaryCTA.text}
@@ -89,7 +88,7 @@ export function Hero({
             </Group>
 
             <div className="mt-12 text-center">
-              <Text size="sm" className="text-gray-500 dark:text-gray-400">
+              <Text size="sm" className={rebelTheme.classes.text.muted}>
                 No credit card required • Keep 100% of your margins • Start rebelling in under 5 minutes
               </Text>
             </div>
@@ -99,8 +98,8 @@ export function Hero({
       
       {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-red-200 dark:bg-red-800 rounded-full opacity-20 blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gray-300 dark:bg-gray-700 rounded-full opacity-20 blur-3xl"></div>
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-orange-200 rounded-full opacity-20 blur-3xl"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-amber-200 rounded-full opacity-20 blur-3xl"></div>
       </div>
     </section>
   );

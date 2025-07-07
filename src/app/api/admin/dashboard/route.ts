@@ -139,14 +139,14 @@ export async function GET(request: NextRequest) {
     `, [user.storeId]);
     
     const stats = {
-      totalProducts: parseInt(productStats.rows[0]?.total_products || '0'),
-      visibleProducts: parseInt(productStats.rows[0]?.visible_products || '0'),
-      hiddenProducts: parseInt(productStats.rows[0]?.hidden_products || '0'),
-      productsWithDiscounts: parseInt(productStats.rows[0]?.products_with_discounts || '0'),
-      totalBlogPosts: parseInt(blogStats.rows[0]?.total_posts || '0'),
-      publishedBlogPosts: parseInt(blogStats.rows[0]?.published_posts || '0'),
-      draftBlogPosts: parseInt(blogStats.rows[0]?.draft_posts || '0'),
-      totalCategories: parseInt(categoryStats.rows[0]?.total_categories || '0'),
+      totalProducts: parseInt(String(productStats.rows[0]?.total_products || '0')),
+      visibleProducts: parseInt(String(productStats.rows[0]?.visible_products || '0')),
+      hiddenProducts: parseInt(String(productStats.rows[0]?.hidden_products || '0')),
+      productsWithDiscounts: parseInt(String(productStats.rows[0]?.products_with_discounts || '0')),
+      totalBlogPosts: parseInt(String(blogStats.rows[0]?.total_posts || '0')),
+      publishedBlogPosts: parseInt(String(blogStats.rows[0]?.published_posts || '0')),
+      draftBlogPosts: parseInt(String(blogStats.rows[0]?.draft_posts || '0')),
+      totalCategories: parseInt(String(categoryStats.rows[0]?.total_categories || '0')),
       integrations: {
         shipengine: integrations.shipengine || false,
         stripe: integrations.stripe || false,

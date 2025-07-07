@@ -3,6 +3,7 @@
 import { Container, Group, Text, Stack, Anchor, Divider, SimpleGrid } from '@mantine/core';
 import { IconBrandTwitter, IconBrandFacebook, IconBrandLinkedin, IconMail } from '@tabler/icons-react';
 import Link from 'next/link';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 interface FooterLink {
   label: string;
@@ -68,17 +69,17 @@ export function Footer() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-gray-900 text-white py-12 mt-auto">
+    <footer className={`${rebelTheme.sections.footer} py-12 mt-auto`}>
       <Container size="lg">
         <Stack gap="xl">
           {/* Main Footer Content */}
           <div>
             <Group justify="space-between" align="flex-start" className="mb-8">
               <div className="max-w-sm">
-                <Text size="xl" fw={700} className="mb-2">
+                <Text size="xl" fw={700} className={`mb-2 ${rebelTheme.classes.text.heading}`}>
                   Schmo Store
                 </Text>
-                <Text size="sm" className="text-gray-300 leading-relaxed">
+                <Text size="sm" className={`${rebelTheme.classes.text.body} leading-relaxed`}>
                   The easiest way to turn your ShipStation inventory into a beautiful, 
                   professional online store. Start selling in minutes.
                 </Text>
@@ -91,7 +92,7 @@ export function Footer() {
                     href={social.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-gray-400 hover:text-white transition-colors"
+                    className={`${rebelTheme.classes.text.muted} ${rebelTheme.classes.link.primary} transition-colors`}
                   >
                     <social.icon size={20} />
                   </Anchor>
@@ -106,7 +107,7 @@ export function Footer() {
             >
               {footerData.map((section, index) => (
                 <div key={index}>
-                  <Text size="sm" fw={600} className="mb-3 text-gray-200">
+                  <Text size="sm" fw={600} className={`mb-3 ${rebelTheme.classes.text.heading}`}>
                     {section.title}
                   </Text>
                   <Stack gap="xs">
@@ -117,7 +118,7 @@ export function Footer() {
                         href={link.href}
                         target={link.external ? '_blank' : undefined}
                         rel={link.external ? 'noopener noreferrer' : undefined}
-                        className="text-gray-400 hover:text-white transition-colors text-sm"
+                        className={`${rebelTheme.classes.text.muted} ${rebelTheme.classes.link.secondary} transition-colors text-sm`}
                       >
                         {link.label}
                       </Anchor>
@@ -132,12 +133,12 @@ export function Footer() {
 
           {/* Bottom Footer */}
           <Group justify="space-between" align="center">
-            <Text size="sm" className="text-gray-400">
+            <Text size="sm" className={rebelTheme.classes.text.muted}>
               © {currentYear} Schmo Store. All rights reserved.
             </Text>
             
             <Group gap="lg">
-              <Text size="sm" className="text-gray-400">
+              <Text size="sm" className={rebelTheme.classes.text.muted}>
                 Built with ❤️ for entrepreneurs
               </Text>
             </Group>

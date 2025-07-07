@@ -15,7 +15,10 @@ import {
   Textarea,
   Modal,
   GridCol,
-  CardSection
+  CardSection,
+  Divider,
+  Paper,
+  ThemeIcon
 } from '@mantine/core';
 import {
   IconBrain,
@@ -28,11 +31,14 @@ import {
   IconMail,
   IconInfoCircle,
   IconCheck,
-  IconSparkles
+  IconSparkles,
+  IconX,
+  IconColorSwatch
 } from '@tabler/icons-react';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useAdmin } from '@/contexts/AdminContext';
+import { type GeneratedStoreDetails } from '@/lib/prompts/store-details';
 
 interface AIFeature {
   id: string;
@@ -144,6 +150,59 @@ export default function AIPage() {
   const [opened, { open, close }] = useDisclosure(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [generatedStoreDetails, setGeneratedStoreDetails] = useState<GeneratedStoreDetails | null>(null);
+  const [resultsOpened, { open: openResults, close: closeResults }] = useDisclosure(false);
+  const [isApplying, setIsApplying] = useState(false);
+
+  const handleApplyStoreDetails = async () => {
+    if (!generatedStoreDetails || !user?.storeId) return;
+
+    setIsApplying(true);
+    try {
+      const response = await fetch('/api/admin/store-config', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          storeId: generatedStoreDetails.storeId || user.storeId,
+          storeName: generatedStoreDetails.storeName,
+          storeDescription: generatedStoreDetails.storeDescription,
+          heroTitle: generatedStoreDetails.heroTitle,
+          heroDescription: generatedStoreDetails.heroDescription,
+          theme: generatedStoreDetails.selectedTheme,
+          metaTitle: generatedStoreDetails.metaTitle,
+          metaDescription: generatedStoreDetails.metaDescription,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to apply store details');
+      }
+
+      notifications.show({
+        title: 'Success!',
+        message: 'Store details applied successfully',
+        color: 'green',
+        icon: <IconCheck size={16} />
+      });
+
+      closeResults();
+      setGeneratedStoreDetails(null);
+      setBusinessDescription('');
+    } catch (error) {
+      console.error('Error applying store details:', error);
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to apply store details. Please try again.',
+        color: 'red',
+        icon: <IconInfoCircle size={16} />
+      });
+    } finally {
+      setIsApplying(false);
+    }
+  };
 
   const handleFeatureClick = (feature: AIFeature) => {
     setSelectedFeature(feature);
@@ -151,7 +210,7 @@ export default function AIPage() {
   };
 
   const handleGenerate = async (featureId: string) => {
-    if (!user?.store?.id) {
+    if (!user?.storeId) {
       notifications.show({
         title: 'Error',
         message: 'Store information not found',
@@ -161,18 +220,31 @@ export default function AIPage() {
       return;
     }
 
+    if (featureId === 'store-details-generator' && !businessDescription.trim()) {
+      notifications.show({
+        title: 'Business Description Required',
+        message: 'Please describe your business to generate store details',
+        color: 'orange',
+        icon: <IconInfoCircle size={16} />
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setGeneratedContent('');
+    setGeneratedStoreDetails(null);
 
     try {
+      const requestBody = featureId === 'store-details-generator' 
+        ? { businessDescription: businessDescription.trim() }
+        : { storeId: user.storeId };
+
       const response = await fetch(`/api/admin/ai/${featureId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          storeId: user.store.id
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -180,7 +252,14 @@ export default function AIPage() {
       }
 
       const data = await response.json();
-      setGeneratedContent(data.content);
+      
+      if (featureId === 'store-details-generator') {
+        setGeneratedStoreDetails(data.data);
+        close();
+        openResults();
+      } else {
+        setGeneratedContent(data.content);
+      }
       
       notifications.show({
         title: 'Success!',
@@ -340,6 +419,20 @@ export default function AIPage() {
           <Stack gap="md">
             <Text>{selectedFeature.description}</Text>
             
+            {selectedFeature?.id === 'store-details-generator' && (
+              <div>
+                <Text fw={500} mb="xs">Describe Your Business:</Text>
+                <Textarea
+                  placeholder="Tell us about your business, products, target audience, and what makes you unique. This will help AI generate personalized store details..."
+                  value={businessDescription}
+                  onChange={(e) => setBusinessDescription(e.currentTarget.value)}
+                  minRows={4}
+                  maxRows={6}
+                  mb="md"
+                />
+              </div>
+            )}
+
             <div>
               <Text fw={500} mb="xs">Benefits:</Text>
               <Stack gap="xs">
@@ -359,7 +452,7 @@ export default function AIPage() {
               size="md"
               color={selectedFeature.color}
             >
-              {isGenerating ? 'Generating...' : 'Generate Now'}
+              {isGenerating ? 'Generating...' : (selectedFeature.id === 'store-details-generator' ? 'Generate with AI' : 'Generate Now')}
             </Button>
 
             {generatedContent && (
@@ -382,6 +475,104 @@ export default function AIPage() {
                 </Group>
               </div>
             )}
+          </Stack>
+        )}
+      </Modal>
+
+      {/* Store Details Results Modal */}
+      <Modal
+        opened={resultsOpened}
+        onClose={closeResults}
+        title={
+          <Group gap="sm">
+            <IconSparkles size={24} color="var(--mantine-color-blue-6)" />
+            <Text fw={500}>Generated Store Details</Text>
+          </Group>
+        }
+        size="xl"
+      >
+        {generatedStoreDetails && (
+          <Stack gap="lg">
+            <Alert color="blue" icon={<IconInfoCircle size={16} />}>
+              Review the generated content below and click &quot;Apply to Store&quot; to update your store settings.
+            </Alert>
+
+            <Paper withBorder p="md" radius="md">
+              <Stack gap="md">
+                <div>
+                  <Text fw={500} mb="xs">Store Name:</Text>
+                  <Text size="lg">{generatedStoreDetails.storeName}</Text>
+                </div>
+                
+                <Divider />
+                
+                <div>
+                  <Text fw={500} mb="xs">Hero Title:</Text>
+                  <Text size="lg">{generatedStoreDetails.heroTitle}</Text>
+                </div>
+                
+                <div>
+                  <Text fw={500} mb="xs">Hero Description:</Text>
+                  <Text>{generatedStoreDetails.heroDescription}</Text>
+                </div>
+                
+                <Divider />
+                
+                <div>
+                  <Text fw={500} mb="xs">Store Description:</Text>
+                  <Text>{generatedStoreDetails.storeDescription}</Text>
+                </div>
+                
+                <div>
+                  <Text fw={500} mb="xs">Selected Theme:</Text>
+                  <Group gap="xs">
+                    <ThemeIcon color="blue" size="sm" variant="light">
+                      <IconColorSwatch size={14} />
+                    </ThemeIcon>
+                    <Text tt="capitalize">{generatedStoreDetails.selectedTheme}</Text>
+                  </Group>
+                </div>
+                
+                <Divider />
+                
+                <div>
+                  <Text fw={500} mb="xs">SEO Meta Title:</Text>
+                  <Text size="sm" c="dimmed">{generatedStoreDetails.metaTitle}</Text>
+                </div>
+                
+                <div>
+                  <Text fw={500} mb="xs">SEO Meta Description:</Text>
+                  <Text size="sm" c="dimmed">{generatedStoreDetails.metaDescription}</Text>
+                </div>
+                
+                <Divider />
+                
+                <div>
+                  <Text fw={500} mb="xs">AI Reasoning:</Text>
+                  <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap' }}>
+                    {generatedStoreDetails.reasoning}
+                  </Text>
+                </div>
+              </Stack>
+            </Paper>
+
+            <Group justify="flex-end">
+              <Button 
+                variant="light" 
+                onClick={closeResults}
+                leftSection={<IconX size={16} />}
+              >
+                Reject
+              </Button>
+              <Button 
+                onClick={handleApplyStoreDetails}
+                loading={isApplying}
+                leftSection={<IconCheck size={16} />}
+                color="green"
+              >
+                {isApplying ? 'Applying...' : 'Apply to Store'}
+              </Button>
+            </Group>
           </Stack>
         )}
       </Modal>

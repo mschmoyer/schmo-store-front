@@ -26,6 +26,7 @@
     "@mantine/hooks": "^8.1.2",
     "@mantine/notifications": "^8.1.2",
     "@tabler/icons-react": "^3.34.0",
+    "@types/xml2js": "^0.4.14",
     "@uiw/react-markdown-preview": "^5.1.4",
     "@uiw/react-md-editor": "^4.0.7",
     "bcryptjs": "^3.0.2",
@@ -36,6 +37,7 @@
     "jsonwebtoken": "^9.0.2",
     "next": "15.3.5",
     "node-cron": "^4.2.0",
+    "openai": "^5.8.2",
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-confetti": "^6.4.0",
@@ -48,6 +50,7 @@
     "sharp": "^0.34.2",
     "slugify": "^1.6.6",
     "uuid": "^11.1.0",
+    "xml2js": "^0.6.2",
     "zod": "^3.25.73"
   },
   "devDependencies": {
@@ -67,6 +70,7 @@
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.0",
     "@types/uuid": "^10.0.0",
+    "@types/xml2js": "^0.4.11",
     "eslint": "^9",
     "eslint-config-next": "15.3.5",
     "jest": "^30.0.4",

@@ -3,10 +3,11 @@
 import { Container, Group, Button } from '@mantine/core';
 import Link from 'next/link';
 import { RebelCartLogo } from '@/components/ui/RebelCartLogo';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 export function Header() {
   return (
-    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
+    <header className={`${rebelTheme.classes.card.background} border-b ${rebelTheme.classes.card.border} sticky top-0 z-50`}>
       <Container size="lg">
         <Group justify="space-between" className="py-4">
           <Link href="/" className="flex items-center">
@@ -18,7 +19,7 @@ export function Header() {
               component={Link}
               href="/demo-stores"
               variant="subtle"
-              className="text-gray-700 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400"
+              className={`${rebelTheme.classes.link.primary} hover:!bg-orange-50`}
             >
               Demo Stores
             </Button>
@@ -27,8 +28,7 @@ export function Header() {
               component={Link}
               href="/login"
               variant="outline"
-              color="red"
-              className="border-red-600 text-red-600 hover:bg-red-50 dark:border-red-500 dark:text-red-400 dark:hover:bg-red-950"
+              className={rebelTheme.classes.button.outline.primary}
             >
               Login
             </Button>
@@ -36,8 +36,7 @@ export function Header() {
             <Button
               component={Link}
               href="/create-store"
-              color="red"
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className={rebelTheme.classes.button.primary}
             >
               Create Your Storefront
             </Button>

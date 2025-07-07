@@ -18,6 +18,7 @@ import { useForm } from '@mantine/form';
 import { IconLogin2, IconAlertCircle } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 interface LoginFormData {
   email: string;
@@ -74,10 +75,11 @@ export default function LoginPage() {
   };
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center py-12">
+    <div className={`min-h-screen ${rebelTheme.sections.hero} flex items-center justify-center py-12`}>
       <Container size={420} my={40}>
         <Title
           ta="center"
+          className={`${rebelTheme.classes.text.heading} font-bold`}
           style={{
             fontFamily: 'var(--font-geist-sans)',
             fontWeight: 900,
@@ -85,11 +87,11 @@ export default function LoginPage() {
         >
           Sign In
         </Title>
-        <Text c="dimmed" size="sm" ta="center" mt={5}>
+        <Text size="sm" ta="center" mt={5} className={rebelTheme.classes.text.body}>
           Access your store admin dashboard
         </Text>
         
-        <Paper withBorder shadow="md" p={30} mt={30} radius="md">
+        <Paper withBorder shadow="md" p={30} mt={30} radius="md" className={`${rebelTheme.classes.card.background} ${rebelTheme.classes.card.border} ${rebelTheme.classes.card.shadow}`}>
           <form onSubmit={form.onSubmit(handleSubmit)}>
             {error && (
               <Alert
@@ -97,6 +99,7 @@ export default function LoginPage() {
                 color="red"
                 mb="md"
                 variant="light"
+                className="!border-red-200 !bg-red-50 !text-red-800"
               >
                 {error}
               </Alert>
@@ -124,15 +127,16 @@ export default function LoginPage() {
               mt="xl"
               loading={isLoading}
               leftSection={<IconLogin2 style={{ width: rem(16), height: rem(16) }} />}
+              className={rebelTheme.classes.button.primary}
             >
               Sign In
             </Button>
           </form>
           
           <Group justify="center" mt="lg">
-            <Text size="sm" c="dimmed">
+            <Text size="sm" className={rebelTheme.classes.text.muted}>
               Don&apos;t have a store?{' '}
-              <Anchor component={Link} href="/create-store" size="sm">
+              <Anchor component={Link} href="/create-store" size="sm" className={rebelTheme.classes.link.primary}>
                 Create one here
               </Anchor>
             </Text>

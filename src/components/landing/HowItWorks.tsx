@@ -2,6 +2,7 @@
 
 import { Container, Title, Text, Stack, Group, ThemeIcon, Timeline } from '@mantine/core';
 import { IconPlug, IconPalette, IconRocket, IconCheck } from '@tabler/icons-react';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 const steps = [
   {
@@ -14,7 +15,7 @@ const steps = [
     icon: <IconPalette size={20} />,
     title: "Customize Your Store",
     description: "Choose from our professional themes and customize your store's appearance to match your brand in minutes.",
-    color: "purple"
+    color: "orange"
   },
   {
     icon: <IconRocket size={20} />,
@@ -26,20 +27,20 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="py-20 bg-gray-50 dark:bg-gray-800" data-section="how-it-works">
+    <section className={`py-20 ${rebelTheme.sections.howItWorks}`} data-section="how-it-works">
       <Container size="lg">
         <Stack gap="xl">
           <div className="text-center max-w-3xl mx-auto">
             <Title
               order={2}
               size="h2"
-              className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4"
+              className={`text-3xl sm:text-4xl font-bold ${rebelTheme.classes.text.heading} mb-4`}
             >
               How It Works
             </Title>
             <Text
               size="lg"
-              className="text-gray-600 dark:text-gray-300 leading-relaxed"
+              className={`${rebelTheme.classes.text.body} leading-relaxed`}
             >
               Get your professional online store up and running in just three simple steps. 
               No technical expertise needed.
@@ -49,7 +50,7 @@ export function HowItWorks() {
           <div className="mt-12 max-w-4xl mx-auto">
             {/* Desktop Timeline */}
             <div className="hidden md:block">
-              <Timeline active={3} bulletSize={60} lineWidth={2} color="blue">
+              <Timeline active={3} bulletSize={60} lineWidth={2} color="orange">
                 {steps.map((step, index) => (
                   <Timeline.Item
                     key={index}
@@ -64,13 +65,13 @@ export function HowItWorks() {
                       </ThemeIcon>
                     }
                     title={
-                      <Text size="xl" fw={600} className="text-gray-900 dark:text-white">
+                      <Text size="xl" fw={600} className={rebelTheme.classes.text.heading}>
                         {step.title}
                       </Text>
                     }
                     className="mb-8"
                   >
-                    <Text size="md" className="text-gray-600 dark:text-gray-300 mt-2 max-w-lg">
+                    <Text size="md" className={`${rebelTheme.classes.text.body} mt-2 max-w-lg`}>
                       {step.description}
                     </Text>
                   </Timeline.Item>
@@ -81,7 +82,7 @@ export function HowItWorks() {
             {/* Mobile Cards */}
             <div className="md:hidden space-y-6">
               {steps.map((step, index) => (
-                <div key={index} className="bg-white dark:bg-gray-900 rounded-lg p-6 shadow-sm">
+                <div key={index} className={`${rebelTheme.classes.card.background} rounded-lg p-6 ${rebelTheme.classes.card.shadow} ${rebelTheme.classes.card.border} border`}>
                   <Group gap="md" align="flex-start">
                     <ThemeIcon 
                       size="xl" 
@@ -92,10 +93,10 @@ export function HowItWorks() {
                       {step.icon}
                     </ThemeIcon>
                     <div className="flex-1">
-                      <Title order={3} size="h4" className="text-gray-900 dark:text-white mb-2">
+                      <Title order={3} size="h4" className={`${rebelTheme.classes.text.heading} mb-2`}>
                         {step.title}
                       </Title>
-                      <Text size="sm" className="text-gray-600 dark:text-gray-300">
+                      <Text size="sm" className={rebelTheme.classes.text.body}>
                         {step.description}
                       </Text>
                     </div>
@@ -110,7 +111,7 @@ export function HowItWorks() {
               <ThemeIcon size="sm" radius="xl" color="green">
                 <IconCheck size={12} />
               </ThemeIcon>
-              <Text size="sm" className="text-gray-500 dark:text-gray-400">
+              <Text size="sm" className={rebelTheme.classes.text.muted}>
                 Average setup time: 5 minutes
               </Text>
             </Group>

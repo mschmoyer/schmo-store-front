@@ -1,21 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
+import { requireAuth } from '@/lib/auth/session';
+import { OpenAIService } from '@/lib/services/openai';
+import { 
+  buildStoreDetailsPrompt, 
+  STORE_DETAILS_SYSTEM_PROMPT, 
+  STORE_DETAILS_FUNCTION_SCHEMA,
+  type StoreDetailsPromptData,
+  type GeneratedStoreDetails
+} from '@/lib/prompts/store-details';
+import { getThemeNames } from '@/lib/themes';
 
 export async function POST(request: NextRequest) {
   try {
-    const { storeId } = await request.json();
+    // Authenticate user first
+    const user = await requireAuth(request);
+    const { businessDescription } = await request.json();
 
-    if (!storeId) {
+    if (!businessDescription) {
       return NextResponse.json(
-        { error: 'Store ID is required' },
+        { error: 'Business description is required' },
         { status: 400 }
       );
     }
 
-    // Get store information
+    // Get store information using authenticated user's store ID
     const storeResult = await db.query(`
       SELECT * FROM stores WHERE id = $1
-    `, [storeId]);
+    `, [user.storeId]);
 
     if (storeResult.rows.length === 0) {
       return NextResponse.json(
@@ -37,45 +49,57 @@ export async function POST(request: NextRequest) {
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.store_id = $1 AND p.is_active = true
       ORDER BY p.created_at DESC
-      LIMIT 20
-    `, [storeId]);
+      LIMIT 30
+    `, [user.storeId]);
 
     const products = productsResult.rows;
 
-    // Analyze product categories
+    // Analyze product categories and names
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const categories = [...new Set(products.map(p => (p as any).category_name).filter(Boolean))];
-    const priceRange = products.length > 0 ? {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      min: Math.min(...products.map(p => parseFloat((p as any).base_price || '0'))),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      max: Math.max(...products.map(p => parseFloat((p as any).base_price || '0')))
-    } : { min: 0, max: 0 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const productNames = products.map(p => (p as any).name).filter(Boolean);
+    const availableThemes = getThemeNames();
 
-    // Generate AI-powered store details based on products
-    const generatedContent = generateStoreDetails({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      storeName: (store as any).store_name,
+    // Prepare prompt data
+    const promptData: StoreDetailsPromptData = {
+      businessDescription,
+      availableThemes,
+      productNames,
+      categories,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       storeSlug: (store as any).store_slug,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      currentDescription: (store as any).store_description,
+      existingStoreName: (store as any).store_name,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      currentHeroTitle: (store as any).hero_title,
+      existingDescription: (store as any).store_description,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      currentHeroDescription: (store as any).hero_description,
-      categories,
-      priceRange,
-      productCount: products.length
-    });
+      existingHeroTitle: (store as any).hero_title,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      existingHeroDescription: (store as any).hero_description,
+    };
+
+    // Generate AI-powered store details
+    const openAIService = OpenAIService.getInstance();
+    const userPrompt = buildStoreDetailsPrompt(promptData);
+    
+    const generatedDetails = await openAIService.generateWithFunctionCalling<GeneratedStoreDetails>(
+      STORE_DETAILS_SYSTEM_PROMPT,
+      userPrompt,
+      STORE_DETAILS_FUNCTION_SCHEMA,
+      'generate_store_details'
+    );
 
     return NextResponse.json({
       success: true,
-      content: generatedContent,
+      data: {
+        ...generatedDetails,
+        storeId: user.storeId  // Include the authenticated user's store ID
+      },
       analytics: {
         productsAnalyzed: products.length,
         categoriesFound: categories.length,
-        priceRange
+        themesAvailable: availableThemes.length
       }
     });
 
@@ -88,118 +112,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-interface StoreAnalysis {
-  storeName: string;
-  storeSlug: string;
-  currentDescription: string;
-  currentHeroTitle: string;
-  currentHeroDescription: string;
-  categories: string[];
-  priceRange: { min: number; max: number };
-  productCount: number;
-}
-
-function generateStoreDetails(analysis: StoreAnalysis): string {
-  const { storeName, categories, priceRange, productCount } = analysis;
-  
-  // Determine store focus based on product analysis
-  const primaryCategories = categories.slice(0, 3);
-  const hasVariety = categories.length > 3;
-  
-  // Generate price positioning
-  let pricePositioning = 'affordable';
-  if (priceRange.max > 100) pricePositioning = 'premium';
-  else if (priceRange.max > 50) pricePositioning = 'mid-range';
-
-  // Generate store identity
-  const storeIdentity = categories.length > 0 ? 
-    `specializing in ${primaryCategories.join(', ')}${hasVariety ? ' and more' : ''}` :
-    'offering a curated selection of quality products';
-
-  // Generate optimized content
-  const heroTitle = generateHeroTitle(storeName, primaryCategories);
-  const heroDescription = generateHeroDescription(storeName, storeIdentity, pricePositioning);
-  const storeDescription = generateStoreDescription(storeName, categories, productCount, pricePositioning);
-  const metaTitle = generateMetaTitle(storeName, primaryCategories);
-  const metaDescription = generateMetaDescription(storeName, storeIdentity, pricePositioning);
-
-  return `
-**🎯 GENERATED STORE DETAILS**
-
-**Hero Title:**
-${heroTitle}
-
-**Hero Description:**
-${heroDescription}
-
-**Store Description:**
-${storeDescription}
-
-**Meta Title (SEO):**
-${metaTitle}
-
-**Meta Description (SEO):**
-${metaDescription}
-
----
-
-**📊 Analysis Summary:**
-- Products Analyzed: ${productCount}
-- Categories Found: ${categories.length}
-- Primary Categories: ${primaryCategories.join(', ')}
-- Price Range: $${priceRange.min.toFixed(2)} - $${priceRange.max.toFixed(2)}
-- Price Positioning: ${pricePositioning}
-
-**💡 Recommendations:**
-1. Consider highlighting your ${primaryCategories[0] || 'main'} category prominently
-2. Your ${pricePositioning} pricing strategy appeals to value-conscious customers
-3. ${hasVariety ? 'Your diverse product range offers great cross-selling opportunities' : 'Consider expanding into complementary product categories'}
-4. Add customer testimonials to build trust and credibility
-
-**🚀 Next Steps:**
-- Review and customize the generated content to match your brand voice
-- Update your store settings with the new copy
-- A/B test different versions to see what resonates with customers
-- Consider adding category-specific landing pages
-`.trim();
-}
-
-function generateHeroTitle(storeName: string, categories: string[]): string {
-  const templates = [
-    `Discover Amazing ${categories[0] || 'Products'} at ${storeName}`,
-    `${storeName} - Your Destination for ${categories[0] || 'Quality Products'}`,
-    `Shop Premium ${categories[0] || 'Items'} | ${storeName}`,
-    `${storeName}: Where Quality Meets ${categories[0] || 'Value'}`,
-    `Find Your Perfect ${categories[0] || 'Product'} at ${storeName}`
-  ];
-  
-  return templates[Math.floor(Math.random() * templates.length)];
-}
-
-function generateHeroDescription(storeName: string, identity: string, positioning: string): string {
-  const templates = [
-    `Welcome to ${storeName}, your trusted online destination ${identity}. We offer ${positioning} prices, fast shipping, and exceptional customer service.`,
-    `Discover ${positioning} quality at ${storeName}. We're ${identity} with a commitment to customer satisfaction and reliable delivery.`,
-    `Shop with confidence at ${storeName}. Our ${positioning} selection ${identity} ensures you'll find exactly what you're looking for.`,
-    `${storeName} brings you the best value ${identity}. Experience ${positioning} shopping with unmatched quality and service.`
-  ];
-  
-  return templates[Math.floor(Math.random() * templates.length)];
-}
-
-function generateStoreDescription(storeName: string, categories: string[], productCount: number, positioning: string): string {
-  const categoryText = categories.length > 0 ? 
-    `spanning ${categories.join(', ')}` : 
-    'across multiple categories';
-    
-  return `${storeName} is your premier online marketplace offering ${positioning} products ${categoryText}. With over ${productCount} carefully curated items, we provide exceptional value and quality to customers worldwide. Our commitment to customer satisfaction, fast shipping, and competitive pricing makes us the trusted choice for discerning shoppers. Whether you're looking for everyday essentials or special finds, ${storeName} delivers the shopping experience you deserve.`;
-}
-
-function generateMetaTitle(storeName: string, categories: string[]): string {
-  const category = categories[0] || 'Products';
-  return `${storeName} - ${category} Store | Shop Online with Fast Shipping`;
-}
-
-function generateMetaDescription(storeName: string, identity: string, positioning: string): string {
-  return `Shop at ${storeName} ${identity}. ${positioning} prices, fast shipping, and excellent customer service. Browse our collection and find your perfect products today.`;
-}

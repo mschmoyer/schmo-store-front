@@ -35,7 +35,7 @@ import {
 
 interface Integration {
   id?: string;
-  integrationType: 'shipengine' | 'stripe' | 'square' | 'paypal';
+  integrationType: 'shipstation-v2' | 'shipstation-v1' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;
   hasApiKey: boolean;
   configuration: Record<string, unknown>;
@@ -60,17 +60,28 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     initialValues: {
       apiKey: '',
       webhookUrl: integration.configuration?.webhookUrl || '',
+      apiSecret: integration.configuration?.apiSecret || '',
+      endpointUrl: integration.configuration?.endpointUrl || '',
+      applicationId: integration.configuration?.applicationId || '',
+      clientSecret: integration.configuration?.clientSecret || '',
       isActive: integration.isActive,
       autoSyncEnabled: integration.autoSyncEnabled || false,
       autoSyncInterval: integration.autoSyncInterval || '1hour',
     },
     validate: {
       apiKey: (value) => (!value ? 'API key is required' : null),
+      apiSecret: (value) => {
+        // Only require API secret for ShipStation Legacy API
+        if (integration.integrationType === 'shipstation-v1' && !value) {
+          return 'API secret is required for ShipStation Legacy API';
+        }
+        return null;
+      },
     },
   });
   
   const integrationConfig = {
-    shipengine: {
+    'shipstation-v2': {
       name: 'ShipStation',
       description: 'Connect your ShipStation account to manage products and inventory',
       color: 'blue',
@@ -80,6 +91,30 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       docsUrl: 'https://docs.shipstation.com/',
       fields: [],
       supportsSyncing: true
+    },
+    'shipstation-v1': {
+      name: 'ShipStation Legacy API',
+      description: 'Custom Store integration for automated order fulfillment via ShipStation',
+      color: 'orange',
+      icon: IconPlug,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: 'Enter your ShipStation API key',
+      docsUrl: 'https://help.shipstation.com/hc/en-us/articles/360025856371',
+      fields: [
+        {
+          key: 'apiSecret',
+          label: 'API Secret',
+          placeholder: 'Enter your ShipStation API secret',
+          description: 'Your ShipStation API secret for authentication'
+        },
+        {
+          key: 'endpointUrl',
+          label: 'Endpoint URL',
+          placeholder: 'https://yourstore.com/api/shipstation/orders',
+          description: 'URL that ShipStation will use to pull orders and send notifications'
+        }
+      ],
+      supportsSyncing: false
     },
     stripe: {
       name: 'Stripe',
@@ -280,6 +315,10 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
         apiKey: values.apiKey,
         configuration: {
           webhookUrl: values.webhookUrl,
+          apiSecret: values.apiSecret,
+          endpointUrl: values.endpointUrl,
+          applicationId: values.applicationId,
+          clientSecret: values.clientSecret,
         },
         isActive: values.isActive,
         autoSyncEnabled: values.autoSyncEnabled,
@@ -422,15 +461,22 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                   {...form.getInputProps('isActive', { type: 'checkbox' })}
                 />
                 
-                {config.fields.map((field) => (
-                  <TextInput
-                    key={field.key}
-                    label={field.label}
-                    placeholder={field.placeholder}
-                    description={field.description}
-                    {...form.getInputProps(field.key)}
-                  />
-                ))}
+                {config.fields.map((field) => {
+                  // Use PasswordInput for sensitive fields like secrets
+                  const isSecret = field.key.toLowerCase().includes('secret');
+                  const InputComponent = isSecret ? PasswordInput : TextInput;
+                  
+                  return (
+                    <InputComponent
+                      key={field.key}
+                      label={field.label}
+                      placeholder={field.placeholder}
+                      description={field.description}
+                      required={integration.integrationType === 'shipstation-v1' && field.key === 'apiSecret'}
+                      {...form.getInputProps(field.key)}
+                    />
+                  );
+                })}
                 
                 
                 {config.supportsSyncing && integration.isActive && integration.hasApiKey && (

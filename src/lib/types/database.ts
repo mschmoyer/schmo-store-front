@@ -136,6 +136,37 @@ export interface Order {
   updated_at: Timestamp;
   shipped_at?: Timestamp;
   delivered_at?: Timestamp;
+  // ShipStation Integration fields
+  shipstation_order_id?: string;
+  shipstation_order_key?: string;
+  shipstation_order_status?: string;
+  tracking_number?: string;
+  tracking_url?: string;
+  carrier?: string;
+  carrier_code?: string;
+  service_code?: string;
+  package_code?: string;
+  estimated_delivery_date?: Timestamp;
+  actual_delivery_date?: Timestamp;
+  shipment_cost?: number;
+  shipment_weight?: number;
+  shipment_dimensions?: {
+    length: number;
+    width: number;
+    height: number;
+    units: string;
+  };
+  label_url?: string;
+  form_url?: string;
+  insurance_cost?: number;
+  confirmation_delivery?: boolean;
+  signature_required?: boolean;
+  adult_signature?: boolean;
+  delivery_confirmation?: string;
+  customs_items?: CustomsItem[];
+  international_options?: InternationalOptions;
+  advanced_options?: AdvancedOptions;
+  shipment_notifications?: ShipmentNotification[];
 }
 
 export interface OrderItem {
@@ -627,6 +658,203 @@ export type AnalyticsEventType =
   | 'order_completed'
   | 'search'
   | 'custom';
+
+// ShipStation Integration Types
+export interface CustomsItem {
+  description: string;
+  quantity: number;
+  value: number;
+  harmonized_tariff_code?: string;
+  country_of_origin?: string;
+}
+
+export interface InternationalOptions {
+  contents?: string;
+  customs_items?: CustomsItem[];
+  non_delivery?: string;
+}
+
+export interface AdvancedOptions {
+  warehouse_id?: string;
+  non_machinable?: boolean;
+  saturday_delivery?: boolean;
+  contains_alcohol?: boolean;
+  store_id?: string;
+  custom_field1?: string;
+  custom_field2?: string;
+  custom_field3?: string;
+  source?: string;
+  merge_option?: string;
+  parent_id?: string;
+  bill_to_party?: string;
+  bill_to_account?: string;
+  bill_to_postal_code?: string;
+  bill_to_country_code?: string;
+  bill_to_my_other_account?: string;
+}
+
+export interface ShipmentNotification {
+  id: UUID;
+  order_id: UUID;
+  notification_type: 'shipped' | 'delivered' | 'exception' | 'in_transit' | 'out_for_delivery';
+  sent_at: Timestamp;
+  email_sent: boolean;
+  email_error?: string;
+  tracking_number?: string;
+  carrier?: string;
+  tracking_url?: string;
+  message?: string;
+  created_at: Timestamp;
+}
+
+export interface ShipmentData {
+  shipment_id: string;
+  order_id: string;
+  user_id?: string;
+  order_number: string;
+  create_date: string;
+  ship_date?: string;
+  shipment_cost?: number;
+  insurance_cost?: number;
+  tracking_number?: string;
+  is_return_label?: boolean;
+  batch_number?: string;
+  carrier_code?: string;
+  service_code?: string;
+  package_code?: string;
+  confirmation?: string;
+  warehouse_id?: string;
+  voided?: boolean;
+  void_date?: string;
+  marketplace_notified?: boolean;
+  notify_error_message?: string;
+  ship_to?: Address;
+  weight?: {
+    value: number;
+    units: string;
+  };
+  dimensions?: {
+    length: number;
+    width: number;
+    height: number;
+    units: string;
+  };
+  insurance_options?: {
+    provider: string;
+    insure_shipment: boolean;
+    insured_value: number;
+  };
+  international_options?: InternationalOptions;
+  advanced_options?: AdvancedOptions;
+  label_data?: string;
+  form_data?: string;
+}
+
+export interface ShipStationWebhookPayload {
+  resource_url: string;
+  resource_type: 'ITEM_ORDER_NOTIFY' | 'ITEM_SHIP_NOTIFY' | 'ITEM_DELIVERED_NOTIFY';
+  resource_id: string;
+  order_id?: string;
+  shipment_id?: string;
+  tracking_number?: string;
+  carrier_code?: string;
+  service_code?: string;
+  package_code?: string;
+  ship_date?: string;
+  delivered_date?: string;
+  exception_date?: string;
+  exception_description?: string;
+  tracking_status?: string;
+  estimated_delivery_date?: string;
+  actual_delivery_date?: string;
+  shipment_cost?: number;
+  weight?: number;
+  dimensions?: {
+    length: number;
+    width: number;
+    height: number;
+    units: string;
+  };
+  label_url?: string;
+  form_url?: string;
+  delivery_confirmation?: string;
+  signature_required?: boolean;
+  adult_signature?: boolean;
+  ship_to?: Address;
+  created_at: string;
+}
+
+export interface OrderStatusUpdateData {
+  order_id: UUID;
+  shipstation_order_id?: string;
+  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
+  tracking_number?: string;
+  tracking_url?: string;
+  carrier?: string;
+  carrier_code?: string;
+  service_code?: string;
+  shipped_at?: Timestamp;
+  delivered_at?: Timestamp;
+  estimated_delivery_date?: Timestamp;
+  actual_delivery_date?: Timestamp;
+  shipment_cost?: number;
+  label_url?: string;
+  form_url?: string;
+  notes?: string;
+  updated_by?: string;
+}
+
+export interface InventoryAdjustment {
+  product_id: UUID;
+  sku: string;
+  quantity_change: number;
+  reason: 'sale' | 'return' | 'damage' | 'theft' | 'found' | 'adjustment' | 'shipment';
+  reference_id?: UUID;
+  reference_type?: 'order' | 'shipment' | 'return' | 'manual';
+  notes?: string;
+}
+
+export interface NotificationTemplate {
+  id: UUID;
+  store_id: UUID;
+  template_type: 'order_confirmation' | 'shipment_notification' | 'delivery_notification' | 'exception_notification';
+  subject: string;
+  html_content: string;
+  text_content?: string;
+  variables?: Record<string, string>;
+  is_active: boolean;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface JobQueue {
+  id: UUID;
+  job_type: 'order_notification' | 'inventory_update' | 'shipment_processing' | 'webhook_processing';
+  payload: Record<string, unknown>;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  attempts: number;
+  max_attempts: number;
+  error_message?: string;
+  scheduled_at?: Timestamp;
+  started_at?: Timestamp;
+  completed_at?: Timestamp;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface IntegrationLog {
+  id: UUID;
+  store_id: UUID;
+  integration_type: 'shipstation' | 'shipengine' | 'stripe' | 'other';
+  operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing';
+  status: 'success' | 'failure' | 'warning';
+  request_data?: Record<string, unknown>;
+  response_data?: Record<string, unknown>;
+  error_message?: string;
+  execution_time_ms?: number;
+  created_at: Timestamp;
+}
 
 export interface CouponValidationResult {
   isValid: boolean;

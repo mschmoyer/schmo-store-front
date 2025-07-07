@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     
     const { integrationType, ...updateData } = body;
     
-    if (!integrationType || !['shipengine', 'stripe'].includes(integrationType)) {
+    if (!integrationType || !['shipstation-v2', 'shipstation-v1', 'stripe', 'square', 'paypal'].includes(integrationType)) {
       return NextResponse.json({
         success: false,
         error: 'Invalid integration type'

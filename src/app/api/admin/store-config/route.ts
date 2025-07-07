@@ -13,6 +13,17 @@ const StoreConfigUpdateSchema = z.object({
   theme_name: z.string().optional()
 });
 
+const AIStoreDetailsSchema = z.object({
+  storeId: z.string(),
+  storeName: z.string(),
+  storeDescription: z.string(),
+  heroTitle: z.string(),
+  heroDescription: z.string(),
+  theme: z.string(),
+  metaTitle: z.string(),
+  metaDescription: z.string()
+});
+
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request);
@@ -156,6 +167,101 @@ export async function PUT(request: NextRequest) {
     
   } catch (error) {
     console.error('Update store config error:', error);
+    
+    if (error instanceof Error && error.message === 'Authentication required') {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid request data',
+        details: error.errors
+      }, { status: 400 });
+    }
+    
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error'
+    }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const user = await requireAuth(request);
+    const body = await request.json();
+    
+    // Validate request body for AI-generated store details
+    const aiData = AIStoreDetailsSchema.parse(body);
+    
+    // Ensure the user can only update their own store
+    if (aiData.storeId !== user.storeId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Unauthorized'
+      }, { status: 403 });
+    }
+    
+    // Update store with AI-generated details
+    const result = await db.query(`
+      UPDATE stores 
+      SET 
+        store_name = $1, 
+        store_description = $2, 
+        hero_title = $3, 
+        hero_description = $4, 
+        theme_name = $5,
+        meta_title = $6,
+        meta_description = $7,
+        updated_at = NOW()
+      WHERE id = $8
+      RETURNING id, store_name, store_slug, store_description, hero_title, hero_description, theme_name, meta_title, meta_description, created_at, updated_at
+    `, [
+      aiData.storeName,
+      aiData.storeDescription,
+      aiData.heroTitle,
+      aiData.heroDescription,
+      aiData.theme,
+      aiData.metaTitle,
+      aiData.metaDescription,
+      user.storeId
+    ]);
+    
+    if (result.rows.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'Store not found'
+      }, { status: 404 });
+    }
+    
+    const store = result.rows[0];
+    
+    return NextResponse.json({
+      success: true,
+      data: {
+        store: {
+          id: store.id,
+          name: store.store_name,
+          slug: store.store_slug,
+          description: store.store_description,
+          heroTitle: store.hero_title,
+          heroDescription: store.hero_description,
+          themeId: store.theme_name,
+          metaTitle: store.meta_title,
+          metaDescription: store.meta_description,
+          createdAt: store.created_at,
+          updatedAt: store.updated_at
+        }
+      },
+      message: 'Store details applied successfully'
+    });
+    
+  } catch (error) {
+    console.error('Apply AI store details error:', error);
     
     if (error instanceof Error && error.message === 'Authentication required') {
       return NextResponse.json({

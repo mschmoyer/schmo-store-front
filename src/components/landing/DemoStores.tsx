@@ -4,6 +4,7 @@ import { Container, Title, Text, SimpleGrid, Card, Button, Badge, Stack, Group }
 import { IconExternalLink, IconEye } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 interface DemoStore {
   id: string;
@@ -96,7 +97,7 @@ export function DemoStores({
 
   if (loading) {
     return (
-      <section className="py-20 bg-white dark:bg-gray-900" data-section="demo-stores">
+      <section className={`py-20 ${rebelTheme.sections.demoStores}`} data-section="demo-stores">
         <Container size="lg">
           <div className="text-center">
             <Text c="dimmed">Loading demo stores...</Text>
@@ -111,20 +112,20 @@ export function DemoStores({
   }
 
   return (
-    <section className="py-20 bg-white dark:bg-gray-900" data-section="demo-stores">
+    <section className={`py-20 ${rebelTheme.sections.demoStores}`} data-section="demo-stores">
       <Container size="lg">
         <Stack gap="xl">
           <div className="text-center max-w-3xl mx-auto">
             <Title
               order={2}
               size="h2"
-              className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4"
+              className={`text-3xl sm:text-4xl font-bold ${rebelTheme.classes.text.heading} mb-4`}
             >
               See It In Action
             </Title>
             <Text
               size="lg"
-              className="text-gray-600 dark:text-gray-300 leading-relaxed"
+              className={`${rebelTheme.classes.text.body} leading-relaxed`}
             >
               Explore our demo stores to see how different businesses use Schmo Store to showcase 
               their products and drive sales.
@@ -143,22 +144,22 @@ export function DemoStores({
                 padding="lg" 
                 radius="md" 
                 withBorder 
-                className="h-full transition-all duration-200 hover:shadow-lg"
+                className={`h-full transition-all duration-200 ${rebelTheme.classes.card.background} ${rebelTheme.classes.card.shadow}`}
               >
                 <Card.Section>
-                  <div className="relative h-48 bg-gray-100 dark:bg-gray-800">
+                  <div className="relative h-48 bg-gray-100">
                     {/* Placeholder for store screenshot */}
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-center">
-                        <IconEye size={48} className="text-gray-400 mx-auto mb-2" />
-                        <Text size="sm" className="text-gray-500">
+                        <IconEye size={48} className={`${rebelTheme.classes.text.light} mx-auto mb-2`} />
+                        <Text size="sm" className={rebelTheme.classes.text.muted}>
                           Store Preview
                         </Text>
                       </div>
                     </div>
                     {store.isFeatured && (
                       <Badge 
-                        color="yellow" 
+                        color="orange" 
                         variant="filled"
                         className="absolute top-2 right-2 z-10"
                       >
@@ -171,20 +172,20 @@ export function DemoStores({
                 <Stack gap="md" className="mt-4">
                   <div>
                     <Group justify="space-between" align="flex-start">
-                      <Title order={3} size="h4" className="text-gray-900 dark:text-white">
+                      <Title order={3} size="h4" className={rebelTheme.classes.text.heading}>
                         {store.name}
                       </Title>
                       <Badge variant="light" size="sm">
                         {store.category}
                       </Badge>
                     </Group>
-                    <Text size="sm" className="text-gray-600 dark:text-gray-300 mt-2">
+                    <Text size="sm" className={`${rebelTheme.classes.text.body} mt-2`}>
                       {store.description}
                     </Text>
                   </div>
 
                   <Group justify="space-between" align="center">
-                    <Text size="xs" className="text-gray-500">
+                    <Text size="xs" className={rebelTheme.classes.text.muted}>
                       Theme: {store.theme}
                     </Text>
                     <Button
@@ -193,7 +194,7 @@ export function DemoStores({
                       variant="outline"
                       size="sm"
                       leftSection={<IconExternalLink size={16} />}
-                      className="flex-shrink-0"
+                      className={`flex-shrink-0 ${rebelTheme.classes.button.outline.tertiary}`}
                     >
                       View Demo
                     </Button>
@@ -209,7 +210,7 @@ export function DemoStores({
               href="/demo-stores"
               variant="outline"
               size="lg"
-              className="border-2"
+              className={`border-2 ${rebelTheme.classes.button.outline.primaryDark}`}
             >
               View All Demo Stores
             </Button>

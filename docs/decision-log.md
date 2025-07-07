@@ -48,6 +48,22 @@
 
 - [x] Remove mock data from API route and show proper error messages - 2025-07-04
 - [x] Fix duplicate TopNav showing twice on pages - 2025-07-04
+
+## 2025-07-07
+
+### Created Heroku Deployment Implementation Plan
+
+- [x] Create comprehensive Heroku deployment guide in docs/local/heroku-deployment-plan.md - 2025-07-07
+- [x] Create Procfile for Heroku process definition - 2025-07-07
+- [x] Update next.config.ts for production optimization - 2025-07-07
+- [x] Create .env.example with all required environment variables - 2025-07-07
+- [x] Create health check endpoint at /api/health - 2025-07-07
+- [x] Run lint to ensure code quality - 2025-07-07
+- [x] Check dev.log for any errors after completion - 2025-07-07
+
+**User Request**: "Let's write a new implementation plan in docs/local that details how we host this site on Heroku. We already have an account and "heroku" commands work on the command line. We also have postgres installed at Heroku so we are ready to create a database. We have not created a new app for this project yet so we will need to do that."
+
+**Decision**: Created a comprehensive Heroku deployment implementation plan covering all aspects of deploying the Next.js 15 storefront to Heroku with PostgreSQL database. The plan includes 10 phases covering initial setup, environment configuration, database migration, application configuration, deployment process, domain setup, performance optimization, monitoring, troubleshooting, and security considerations. Added supporting configuration files including Procfile, optimized next.config.ts, comprehensive .env.example, and health check endpoint.
 - [x] Filter out products without thumbnail_url from display - 2025-07-04
 
 **User Request**: "let's get rid of the mock entirely. instead of falling back it should show the user the errors encountered in a nice user friendly error display", "add to todos: the top nav shows twice on the store page", "add to todos: don't show any product that is missing a thumbnail_url"
@@ -226,3 +242,46 @@
 - [x] Created proper database result type interfaces (BlogPostRow, CountResult, CategoryResult, etc.) - 2025-07-07 20:30
 - [x] Fixed method signatures to match expected parameters - 2025-07-07 20:30
 - [x] Verified server runs without errors after all fixes - 2025-07-07 20:30
+
+### Created ShipStation Legacy API Integration Implementation Plan
+
+- [x] Created comprehensive implementation plan document - 2025-07-07 21:00
+- [x] Documented database schema with encryption for API keys - 2025-07-07 21:00
+- [x] Designed backend services and API client architecture - 2025-07-07 21:00
+- [x] Planned admin interface for configuration management - 2025-07-07 21:00
+- [x] Outlined order processing integration workflow - 2025-07-07 21:00
+- [x] Detailed security requirements and encryption strategy - 2025-07-07 21:00
+- [x] Created 5-week implementation timeline with phases - 2025-07-07 21:00
+
+**User Request**: "Let's write one new integration for 'ShipStation Legacy API' which we will use to simply generate orders. Write a new implementation plan in docs/local that details setting up this integration in the admin page and using this integration to post the new orders our shopper's generate. The integration should request the key and secret and use them as documented... You need to encrypt and store these keys in the DB."
+
+**Decision**: Updated to use ShipStation Custom Store Development approach instead of direct API integration. The revised plan includes:
+- XML-based bidirectional communication (GET for orders, POST for shipments)
+- Basic HTTP Authentication with bcrypt password hashing
+- Custom endpoint at `/api/shipstation/orders` for ShipStation to call
+- XML builder/parser services for order export and shipment notifications
+- Admin interface for credential generation and configuration
+- Automatic order status updates when shipments are created
+- Comprehensive testing strategy and security measures
+- 5-week implementation timeline with clear phases
+
+This approach is superior as it provides automatic order synchronization and shipment tracking without manual API calls.
+
+### Implemented ShipStation Legacy API Integration in Admin Interface
+
+- [x] Added "ShipStation Legacy API" as new integration option in admin/integrations page - 2025-07-07 21:45
+- [x] Updated integration type enums to use 'shipstation-v1' and 'shipstation-v2' for clarity - 2025-07-07 21:45
+- [x] Enhanced IntegrationSettings component to support ShipStation Legacy API fields - 2025-07-07 21:45
+- [x] Added API Key, API Secret, and Endpoint URL configuration fields - 2025-07-07 21:45
+- [x] Updated admin integrations API to accept new integration types - 2025-07-07 21:45
+- [x] Implemented proper form validation for required fields - 2025-07-07 21:45
+- [x] Added secure password input for API secret field - 2025-07-07 21:45
+- [x] Fixed TypeScript and linting issues - 2025-07-07 21:45
+
+**User Request**: "the new legacy shipstation integration should be another integration in the admin/integrations page, not a top level nav item. it should be called 'ShipStation Legacy API'" and "we should call shipengine 'shipstation-v2' and shipstation 'shipstation-v1' in the internal enums"
+
+**Decision**: Implemented ShipStation Legacy API as a new integration card on the existing `/admin/integrations` page under the "Shipping & Fulfillment" section. Updated internal enum naming to be more descriptive:
+- `shipengine` → `shipstation-v2` (modern ShipStation integration)
+- `shipstation` → `shipstation-v1` (legacy Custom Store integration)
+
+The integration appears alongside the existing ShipStation integration, allowing users to choose between the modern API approach (v2) and the legacy Custom Store approach (v1) based on their needs. Both integrations are properly configured with their respective fields, validation, and documentation links.

@@ -3,6 +3,7 @@
 import { Container, Title, Text, Button, Group, Stack } from '@mantine/core';
 import { IconRocket, IconArrowRight } from '@tabler/icons-react';
 import Link from 'next/link';
+import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 interface CTASectionProps {
   title?: string;
@@ -38,18 +39,18 @@ export function CTASection({
   variant = 'gradient'
 }: CTASectionProps) {
   const bgClass = variant === 'gradient' 
-    ? 'bg-gradient-to-r from-red-600 to-gray-800'
+    ? rebelTheme.sections.cta
     : variant === 'minimal' 
-      ? 'bg-white dark:bg-gray-900'
-      : 'bg-gray-50 dark:bg-gray-800';
+      ? rebelTheme.classes.card.background
+      : 'bg-gray-50';
 
   const textClass = variant === 'gradient' 
-    ? 'text-white'
-    : 'text-gray-900 dark:text-white';
+    ? rebelTheme.classes.text.white
+    : rebelTheme.classes.text.heading;
 
   const subtitleClass = variant === 'gradient' 
-    ? 'text-red-100'
-    : 'text-gray-600 dark:text-gray-300';
+    ? 'text-orange-100'
+    : rebelTheme.classes.text.body;
 
   return (
     <section className={`py-20 ${bgClass}`} data-section="cta">
@@ -78,12 +79,11 @@ export function CTASection({
               size="xl"
               radius="md"
               variant={variant === 'gradient' ? 'white' : 'filled'}
-              color={variant === 'gradient' ? undefined : 'red'}
               leftSection={primaryCTA.icon}
               className={`px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 ${
                 variant === 'gradient' 
-                  ? 'text-red-600 hover:text-red-700' 
-                  : 'bg-red-600 hover:bg-red-700 text-white'
+                  ? '!text-orange-600 hover:!text-orange-700 !bg-white' 
+                  : rebelTheme.classes.button.primary
               }`}
             >
               {primaryCTA.text}
@@ -95,12 +95,11 @@ export function CTASection({
               size="xl"
               radius="md"
               variant="outline"
-              color={variant === 'gradient' ? undefined : 'red'}
               leftSection={secondaryCTA.icon}
               className={`px-8 py-4 text-lg font-semibold transition-all duration-200 ${
                 variant === 'gradient' 
-                  ? 'border-white text-white hover:bg-white hover:text-red-600' 
-                  : 'border-2 border-red-600 hover:border-red-700 text-red-600 hover:text-red-700 dark:text-red-400 dark:border-red-500 dark:hover:border-red-400'
+                  ? '!border-white !text-white hover:!bg-white hover:!text-orange-600' 
+                  : rebelTheme.classes.button.outline.secondary
               }`}
             >
               {secondaryCTA.text}
