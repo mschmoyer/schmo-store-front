@@ -25,6 +25,21 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   
+  // Force HTTPS in production
+  async redirects() {
+    if (process.env.NODE_ENV === 'production') {
+      return [
+        {
+          source: '/(.*)',
+          has: [{ type: 'header', key: 'x-forwarded-proto', value: 'http' }],
+          destination: 'https://rebel-shops-6fbb5f3f808e.herokuapp.com/:path*',
+          permanent: true,
+        },
+      ];
+    }
+    return [];
+  },
+
   // Configure headers for security
   async headers() {
     return [
