@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-interface RebelCartLogoProps {
+interface RebelShopLogoProps {
   size?: number;
   className?: string;
   showText?: boolean;
@@ -10,13 +10,13 @@ interface RebelCartLogoProps {
   darkBackground?: boolean;
 }
 
-export function RebelCartLogo({ 
+export function RebelShopLogo({ 
   size = 32, 
   className = '', 
   showText = true,
   color = 'default',
   darkBackground = false
-}: RebelCartLogoProps) {
+}: RebelShopLogoProps) {
   // Always use dark red (#dc2626) for the logo, regardless of background
   const logoColor = '#dc2626';
   const textColor = darkBackground ? '#ffffff' : color === 'white' ? '#ffffff' : '#000000';
@@ -122,7 +122,7 @@ export function RebelCartLogo({
               })
             }}
           >
-            RebelCart
+            RebelShop
           </span>
           <span 
             className="text-xs font-medium opacity-80 leading-tight"

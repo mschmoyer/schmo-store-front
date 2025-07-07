@@ -9,19 +9,19 @@ interface LandingPageMetaProps {
 }
 
 export const generateLandingPageMeta = ({
-  title = "RebelCart - Take Back Your Margins | Low-Cost Ecommerce Platform",
-  description = "Build your shop, power it with your favorite shipping app, and keep your profits. RebelCart: The affordable ecommerce solution that rebels against expensive software fees.",
+  title = "RebelShop - Take Back Your Margins | Low-Cost Ecommerce Platform",
+  description = "Build your shop, power it with your favorite shipping app, and keep your profits. RebelShop: The affordable ecommerce solution that rebels against expensive software fees.",
   keywords = "low cost ecommerce, online store, shipping platform, margins, profitable ecommerce, affordable storefront, rebel cart, ship efficiently, keep profits",
   ogImage = "/landing/og-image.jpg",
-  canonicalUrl = "https://rebelcart.com"
+  canonicalUrl = "https://rebelshops.com"
 }: LandingPageMetaProps = {}): Metadata => {
   return {
     title,
     description,
     keywords,
-    authors: [{ name: "RebelCart Team" }],
-    creator: "RebelCart",
-    publisher: "RebelCart",
+    authors: [{ name: "RebelShop Team" }],
+    creator: "RebelShop",
+    publisher: "RebelShop",
     robots: "index, follow",
     alternates: {
       canonical: canonicalUrl,

@@ -56,7 +56,7 @@ interface ExceptionTemplateVariables extends EmailTemplateVariables {
  */
 export class NotificationService {
   private readonly DEFAULT_FROM_EMAIL = 'noreply@rebelcart.com';
-  private readonly DEFAULT_FROM_NAME = 'RebelCart';
+  private readonly DEFAULT_FROM_NAME = 'RebelShop';
 
   /**
    * Send shipment notification email to customer

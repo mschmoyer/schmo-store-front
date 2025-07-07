@@ -23,7 +23,7 @@ interface HeroProps {
 
 export function Hero({
   title = "Build your shop, power it with your favorite shipping app, and take back your margins",
-  subtitle = "RebelCart: The low-cost ecommerce solution that lets you keep your profits. Connect any shipping platform, create stunning stores, and ship efficiently without expensive software fees.",
+  subtitle = "RebelShop: The low-cost ecommerce solution that lets you keep your profits. Connect any shipping platform, create stunning stores, and ship efficiently without expensive software fees.",
   primaryCTA = {
     text: "Create Your Storefront",
     href: "/create-store",

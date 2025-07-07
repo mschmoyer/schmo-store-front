@@ -6,7 +6,7 @@ import { IconMinus, IconPlus, IconShoppingCart, IconCheck } from '@tabler/icons-
 import { notifications } from '@mantine/notifications';
 import Link from 'next/link';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
-import { RebelCartFooter } from '@/components/store/RebelCartFooter';
+import { RebelShopFooter } from '@/components/store/RebelShopFooter';
 
 interface Product {
   product_id: string;
@@ -720,7 +720,7 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
       </Container>
       
       {/* RebelCart Footer */}
-      <RebelCartFooter />
+      <RebelShopFooter />
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 import { Container, Group, Button } from '@mantine/core';
 import Link from 'next/link';
-import { RebelCartLogo } from '@/components/ui/RebelCartLogo';
+import { RebelShopLogo } from '@/components/ui/RebelShopLogo';
 import { rebelTheme } from '@/lib/theme/rebel-theme';
 
 export function Header() {
@@ -11,7 +11,7 @@ export function Header() {
       <Container size="lg">
         <Group justify="space-between" className="py-4">
           <Link href="/" className="flex items-center">
-            <RebelCartLogo size={40} />
+            <RebelShopLogo size={40} />
           </Link>
           
           <Group gap="md">

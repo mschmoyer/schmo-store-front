@@ -115,7 +115,7 @@ export class DataTransformService {
           CustomField1: store.store_name,
           CustomField2: store.id,
           CustomField3: '',
-          Source: 'RebelCart',
+          Source: 'RebelShop',
           
           // Customer information
           Customer: {
@@ -199,9 +199,9 @@ export class DataTransformService {
             ContainsAlcohol: false,
             StoreId: store.id,
             CustomField1: store.store_name,
-            CustomField2: `RebelCart Order ${order.order_number}`,
+            CustomField2: `RebelShop Order ${order.order_number}`,
             CustomField3: '',
-            Source: 'RebelCart',
+            Source: 'RebelShop',
             MergeOption: null,
             ParentId: null,
             BillToParty: null,

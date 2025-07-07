@@ -288,10 +288,10 @@ export default function AdminDashboard() {
         <Group justify="space-between" align="flex-start" mb="xs">
           <div>
             <Title order={1} mb="xs">
-              RebelCart Dashboard
+              RebelShop Dashboard
             </Title>
             <Text c="dimmed">
-              Welcome to {stats.store.name}. Keep your margins high and ship efficiently with RebelCart.
+              Welcome to {stats.store.name}. Keep your margins high and ship efficiently with RebelShop.
             </Text>
           </div>
           

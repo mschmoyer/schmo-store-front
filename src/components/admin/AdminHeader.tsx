@@ -10,7 +10,7 @@ import {
   Select
 } from '@mantine/core';
 import { AdminBreadcrumb } from '@/lib/types/admin';
-import { RebelCartLogo } from '@/components/ui/RebelCartLogo';
+import { RebelShopLogo } from '@/components/ui/RebelShopLogo';
 
 interface AdminHeaderProps {
   user: {
@@ -57,7 +57,7 @@ export function AdminHeader({
         />
         
         <div className="flex items-center gap-8">
-          <RebelCartLogo 
+          <RebelShopLogo 
             size={32} 
             showText={true} 
             color="white"
