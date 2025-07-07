@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
 
     if (existingResult.rows.length > 0) {
       // Update existing configuration
-      configId = existingResult.rows[0].id;
+      configId = String(existingResult.rows[0].id);
       
       await db.query(
         `UPDATE integrations 
@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
         ]
       );
       
-      configId = insertResult.rows[0].id;
+      configId = String(insertResult.rows[0].id);
     }
 
     // Return the updated configuration

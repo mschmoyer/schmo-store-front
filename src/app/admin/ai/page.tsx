@@ -150,6 +150,7 @@ export default function AIPage() {
   const [opened, { open, close }] = useDisclosure(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
+  const [blogPostPrompt, setBlogPostPrompt] = useState('');
   const [businessDescription, setBusinessDescription] = useState('');
   const [generatedStoreDetails, setGeneratedStoreDetails] = useState<GeneratedStoreDetails | null>(null);
   const [resultsOpened, { open: openResults, close: closeResults }] = useDisclosure(false);
@@ -157,24 +158,28 @@ export default function AIPage() {
 
   const handleApplyStoreDetails = async () => {
     if (!generatedStoreDetails || !user?.storeId) return;
+    
+    const payload = {
+      storeId: generatedStoreDetails.storeId || user.storeId,
+      storeName: generatedStoreDetails.storeName,
+      storeDescription: generatedStoreDetails.storeDescription,
+      heroTitle: generatedStoreDetails.heroTitle,
+      heroDescription: generatedStoreDetails.heroDescription,
+      theme: generatedStoreDetails.selectedTheme,
+      metaTitle: generatedStoreDetails.metaTitle,
+      metaDescription: generatedStoreDetails.metaDescription,
+    };
 
     setIsApplying(true);
     try {
+      const token = localStorage.getItem('admin_token');
       const response = await fetch('/api/admin/store-config', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          storeId: generatedStoreDetails.storeId || user.storeId,
-          storeName: generatedStoreDetails.storeName,
-          storeDescription: generatedStoreDetails.storeDescription,
-          heroTitle: generatedStoreDetails.heroTitle,
-          heroDescription: generatedStoreDetails.heroDescription,
-          theme: generatedStoreDetails.selectedTheme,
-          metaTitle: generatedStoreDetails.metaTitle,
-          metaDescription: generatedStoreDetails.metaDescription,
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -230,6 +235,16 @@ export default function AIPage() {
       return;
     }
 
+    if (featureId === 'blog-post-generator' && !blogPostPrompt.trim()) {
+      notifications.show({
+        title: 'Blog Post Prompt Required',
+        message: 'Please describe what kind of blog post you want to create',
+        color: 'orange',
+        icon: <IconInfoCircle size={16} />
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setGeneratedContent('');
     setGeneratedStoreDetails(null);
@@ -237,12 +252,16 @@ export default function AIPage() {
     try {
       const requestBody = featureId === 'store-details-generator' 
         ? { businessDescription: businessDescription.trim() }
+        : featureId === 'blog-post-generator'
+        ? { userPrompt: blogPostPrompt.trim() }
         : { storeId: user.storeId };
 
+      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/api/admin/ai/${featureId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(requestBody)
       });
@@ -257,6 +276,12 @@ export default function AIPage() {
         setGeneratedStoreDetails(data.data);
         close();
         openResults();
+      } else if (featureId === 'blog-post-generator') {
+        // Redirect to edit page for blog posts
+        if (data.redirectUrl) {
+          window.location.href = data.redirectUrl;
+          return;
+        }
       } else {
         setGeneratedContent(data.content);
       }
@@ -359,7 +384,9 @@ export default function AIPage() {
                       style={{ 
                         height: '100%',
                         cursor: feature.status === 'available' ? 'pointer' : 'default',
-                        opacity: feature.status === 'coming-soon' ? 0.7 : 1
+                        opacity: feature.status === 'coming-soon' ? 0.7 : 1,
+                        display: 'flex',
+                        flexDirection: 'column'
                       }}
                       onClick={() => feature.status === 'available' && handleFeatureClick(feature)}
                     >
@@ -377,7 +404,7 @@ export default function AIPage() {
                         {feature.description}
                       </Text>
 
-                      <Stack gap="xs" mb="md">
+                      <Stack gap="xs" mb="md" style={{ flex: 1 }}>
                         {feature.benefits.slice(0, 3).map((benefit, index) => (
                           <Group key={index} gap="xs">
                             <IconCheck size={14} color="var(--mantine-color-green-6)" />
@@ -392,6 +419,7 @@ export default function AIPage() {
                         fullWidth
                         disabled={feature.status !== 'available'}
                         leftSection={feature.status === 'available' ? <IconRocket size={16} /> : null}
+                        style={{ marginTop: 'auto' }}
                       >
                         {feature.status === 'available' ? 'Try Now' : 'Coming Soon'}
                       </Button>
@@ -433,6 +461,20 @@ export default function AIPage() {
               </div>
             )}
 
+            {selectedFeature?.id === 'blog-post-generator' && (
+              <div>
+                <Text fw={500} mb="xs">Blog Post Idea:</Text>
+                <Textarea
+                  placeholder="Describe what kind of blog post you want to create. For example: 'Write a buying guide for our sticker collection', 'Create a seasonal post about summer trends', or 'Write about how to use our products creatively'..."
+                  value={blogPostPrompt}
+                  onChange={(e) => setBlogPostPrompt(e.currentTarget.value)}
+                  minRows={4}
+                  maxRows={6}
+                  mb="md"
+                />
+              </div>
+            )}
+
             <div>
               <Text fw={500} mb="xs">Benefits:</Text>
               <Stack gap="xs">
@@ -452,7 +494,7 @@ export default function AIPage() {
               size="md"
               color={selectedFeature.color}
             >
-              {isGenerating ? 'Generating...' : (selectedFeature.id === 'store-details-generator' ? 'Generate with AI' : 'Generate Now')}
+              {isGenerating ? 'Generating...' : (selectedFeature.id === 'store-details-generator' ? 'Generate Store Details' : selectedFeature.id === 'blog-post-generator' ? 'Generate Blog Post' : 'Generate Now')}
             </Button>
 
             {generatedContent && (

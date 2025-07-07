@@ -44,6 +44,7 @@ export interface AdminContext {
   login: (credentials: AdminLoginRequest) => Promise<boolean>;
   logout: () => Promise<void>;
   verify: () => Promise<boolean>;
+  forceLogout: () => void;
 }
 
 export interface AdminDashboardStats {

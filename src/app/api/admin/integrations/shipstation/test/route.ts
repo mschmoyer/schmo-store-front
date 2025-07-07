@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: false,
       message: 'Internal server error during connection test',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: { error: error instanceof Error ? error.message : 'Unknown error' }
     });
   }
 }
@@ -130,7 +130,7 @@ async function testBasicAuth(username: string, password: string): Promise<TestCo
     return {
       success: false,
       message: 'Error validating authentication credentials',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: { error: error instanceof Error ? error.message : 'Unknown error' }
     };
   }
 }
@@ -184,7 +184,7 @@ async function testApiCredentials(apiKey: string, apiSecret: string): Promise<Te
     return {
       success: false,
       message: 'Error validating API credentials',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: { error: error instanceof Error ? error.message : 'Unknown error' }
     };
   }
 }
@@ -233,7 +233,7 @@ async function testEndpointUrl(endpointUrl: string): Promise<TestConnectionRespo
     return {
       success: false,
       message: 'Invalid endpoint URL format',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: { error: error instanceof Error ? error.message : 'Unknown error' }
     };
   }
 }
@@ -317,7 +317,7 @@ async function testShipStationCompatibility(
     return {
       success: false,
       message: 'Error during ShipStation compatibility test',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: { error: error instanceof Error ? error.message : 'Unknown error' }
     };
   }
 }

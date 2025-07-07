@@ -83,17 +83,6 @@ export async function getSessionFromRequest(request: Request): Promise<UserSessi
     return await verifySession(token);
   }
   
-  // Also check for session cookie
-  const cookieHeader = request.headers.get('cookie');
-  if (cookieHeader) {
-    const cookies = cookieHeader.split(';').map(c => c.trim());
-    const sessionCookie = cookies.find(c => c.startsWith('session='));
-    if (sessionCookie) {
-      const token = sessionCookie.split('=')[1];
-      return await verifySession(token);
-    }
-  }
-  
   return null;
 }
 

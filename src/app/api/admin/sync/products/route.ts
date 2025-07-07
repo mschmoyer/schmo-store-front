@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
     
     const encryptedApiKey = integrationResult.rows[0].api_key_encrypted;
-    const apiKey = Buffer.from(encryptedApiKey, 'base64').toString('utf-8');
+    const apiKey = Buffer.from(String(encryptedApiKey), 'base64').toString('utf-8');
     
     // Fetch all products from ShipStation (ShipEngine v2 API) with pagination
     let allProducts: Array<{
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       );
       
       if (existingCategory.rows.length > 0) {
-        return existingCategory.rows[0].id;
+        return String(existingCategory.rows[0].id);
       }
       
       // Create new category
@@ -116,10 +116,17 @@ export async function POST(request: NextRequest) {
         [storeId, cleanCategoryName, cleanCategoryName.toLowerCase().replace(/[^a-z0-9]/g, '-')]
       );
       
-      return newCategory.rows[0].id;
+      return String(newCategory.rows[0].id);
     }
     
     // Ensure "Other" category exists for this store
+    if (!user.storeId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Store not found'
+      }, { status: 400 });
+    }
+    
     await getOrCreateCategory('Other', user.storeId);
     
     // Save products to database

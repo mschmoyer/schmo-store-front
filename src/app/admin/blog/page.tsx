@@ -73,7 +73,17 @@ export default function AdminBlogPage() {
         if (filters.status) queryParams.set('status', filters.status);
         if (filters.search) queryParams.set('search', filters.search);
 
-        const response = await fetch(`/api/blog/admin?${queryParams.toString()}`);
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+          setError('Authentication required. Please log in.');
+          return;
+        }
+
+        const response = await fetch(`/api/blog/admin?${queryParams.toString()}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         const data: BlogAPIResponse<BlogPostResponse> = await response.json();
 
         if (data.success && data.data) {
@@ -102,7 +112,17 @@ export default function AdminBlogPage() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('/api/blog/stats');
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+          console.error('No admin token found for stats request');
+          return;
+        }
+
+        const response = await fetch('/api/blog/stats', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         const data: BlogAPIResponse<BlogStats> = await response.json();
         
         if (data.success && data.data) {
@@ -120,8 +140,22 @@ export default function AdminBlogPage() {
     if (!selectedPost) return;
 
     try {
+      const token = localStorage.getItem('admin_token');
+      if (!token) {
+        notifications.show({
+          title: 'Error',
+          message: 'Authentication required. Please log in.',
+          color: 'red',
+          autoClose: 5000,
+        });
+        return;
+      }
+
       const response = await fetch(`/api/blog/${selectedPost.id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       const data: BlogAPIResponse<null> = await response.json();

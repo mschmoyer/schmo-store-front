@@ -130,11 +130,11 @@ export async function PUT(request: NextRequest) {
       WHERE id = $6
       RETURNING id, store_name, store_slug, store_description, hero_title, hero_description, theme_name, created_at, updated_at
     `, [
-      updateData.name,
-      updateData.description,
+      updateData.store_name,
+      updateData.store_description,
       updateData.hero_title,
       updateData.hero_description,
-      updateData.theme_id,
+      updateData.theme_name,
       user.storeId
     ]);
     
@@ -206,7 +206,6 @@ export async function PATCH(request: NextRequest) {
       }, { status: 403 });
     }
     
-    // Update store with AI-generated details
     const result = await db.query(`
       UPDATE stores 
       SET 

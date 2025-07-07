@@ -6,6 +6,7 @@ import { IconCalendar, IconUser, IconArrowLeft, IconAlertCircle } from '@tabler/
 import { useParams } from 'next/navigation';
 import { BlogPost } from '@/types/blog';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
+import { TopNav } from '@/components';
 import Link from 'next/link';
 
 interface Store {
@@ -56,7 +57,7 @@ export default function StoreBlogPostPage() {
       setError(null);
 
       try {
-        const response = await fetch(`/api/blog/slug/${postSlug}?store_id=${store.id}`);
+        const response = await fetch(`/api/blog/by-slug/${storeSlug}/${postSlug}`);
         
         if (!response.ok) {
           if (response.status === 404) {
@@ -151,6 +152,7 @@ export default function StoreBlogPostPage() {
   return (
     <StoreThemeProvider themeId={store.theme_name || 'default'}>
       <div style={{ minHeight: '100vh', background: 'var(--theme-background)' }}>
+        <TopNav storeSlug={storeSlug} store={store} />
         <Container size="lg" py="xl">
           <Stack gap="lg">
             {/* Navigation */}
@@ -193,18 +195,10 @@ export default function StoreBlogPostPage() {
                 <Group gap="xs">
                   <IconCalendar size={16} style={{ color: 'var(--theme-text-muted)' }} />
                   <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
-                    {formatDate(post.publish_date)}
+                    {formatDate(post.publishedAt || post.createdAt)}
                   </Text>
                 </Group>
                 
-                {post.author_name && (
-                  <Group gap="xs">
-                    <IconUser size={16} style={{ color: 'var(--theme-text-muted)' }} />
-                    <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
-                      {post.author_name}
-                    </Text>
-                  </Group>
-                )}
                 
                 {post.category && (
                   <Badge variant="light" style={{ 
@@ -236,7 +230,41 @@ export default function StoreBlogPostPage() {
               lineHeight: 1.7,
               fontSize: '1.1rem'
             }}>
-              <div dangerouslySetInnerHTML={{ __html: post.content }} />
+              <div 
+                dangerouslySetInnerHTML={{ __html: post.content }} 
+                style={{
+                  '& h1': { fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem', marginTop: '2rem' },
+                  '& h2': { fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.75rem', marginTop: '1.5rem' },
+                  '& h3': { fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem', marginTop: '1.25rem' },
+                  '& h4': { fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem', marginTop: '1rem' },
+                  '& p': { marginBottom: '1rem' },
+                  '& ul': { marginBottom: '1rem', paddingLeft: '1.5rem' },
+                  '& ol': { marginBottom: '1rem', paddingLeft: '1.5rem' },
+                  '& li': { marginBottom: '0.25rem' },
+                  '& blockquote': { 
+                    borderLeft: '4px solid var(--theme-primary)', 
+                    paddingLeft: '1rem', 
+                    marginLeft: '0', 
+                    fontStyle: 'italic',
+                    marginBottom: '1rem'
+                  },
+                  '& strong': { fontWeight: 'bold' },
+                  '& em': { fontStyle: 'italic' },
+                  '& code': { 
+                    backgroundColor: 'var(--theme-surface)', 
+                    padding: '0.125rem 0.25rem', 
+                    borderRadius: '0.25rem',
+                    fontSize: '0.9em'
+                  },
+                  '& pre': { 
+                    backgroundColor: 'var(--theme-surface)', 
+                    padding: '1rem', 
+                    borderRadius: '0.5rem',
+                    overflow: 'auto',
+                    marginBottom: '1rem'
+                  }
+                } as React.CSSProperties}
+              />
             </div>
 
             {/* Post Footer */}

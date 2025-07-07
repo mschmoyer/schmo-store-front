@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { blogUtils } from '@/lib/blog';
 import { BlogAPIResponse } from '@/types/blog';
+import { getSessionFromRequest } from '@/lib/auth/session';
 
 // GET /api/blog/[id] - Get a single blog post by ID
 export async function GET(
@@ -9,8 +10,25 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const { searchParams } = new URL(request.url);
     
-    const post = await blogUtils.getBlogPostById(id);
+    // Try to get storeId from query params first (for public access)
+    let storeId = searchParams.get('storeId');
+    
+    // If no storeId in params, try to get from authenticated user session
+    if (!storeId) {
+      const user = await getSessionFromRequest(request);
+      if (user?.storeId) {
+        storeId = user.storeId;
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'Store ID required. Provide storeId parameter or authenticate.' },
+          { status: 400 }
+        );
+      }
+    }
+    
+    const post = await blogUtils.getBlogPostById(storeId, id);
     
     if (!post) {
       const response: BlogAPIResponse<null> = {

@@ -17,6 +17,7 @@ import { useSearchParams, useParams } from 'next/navigation';
 import { BlogPost, BlogAPIResponse } from '@/types/blog';
 import BlogPostList from '@/components/blog/BlogPostList';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
+import { TopNav } from '@/components';
 import Link from 'next/link';
 
 interface Store {
@@ -81,7 +82,7 @@ export default function StoreBlogPage() {
         const queryParams = new URLSearchParams();
         queryParams.set('page', currentPage.toString());
         queryParams.set('limit', pagination.limit.toString());
-        queryParams.set('store_id', store.id); // Filter by store
+        queryParams.set('storeId', store.id); // Filter by store
 
         if (currentCategory) queryParams.set('category', currentCategory);
         if (currentTag) queryParams.set('tag', currentTag);
@@ -148,6 +149,7 @@ export default function StoreBlogPage() {
   return (
     <StoreThemeProvider themeId={store.theme_name || 'default'}>
       <div style={{ minHeight: '100vh', background: 'var(--theme-background)' }}>
+        <TopNav storeSlug={storeSlug} store={store} />
         {/* Hero Section */}
         <div style={{
           background: 'var(--theme-hero-gradient)',

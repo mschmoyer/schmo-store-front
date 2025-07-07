@@ -18,32 +18,6 @@ interface ProductFilters {
   offset: number;
 }
 
-interface CreateProductInput {
-  name: string;
-  slug: string;
-  description?: string;
-  short_description?: string;
-  price: number;
-  compare_price?: number;
-  cost_price?: number;
-  sku?: string;
-  track_inventory: boolean;
-  inventory_quantity: number;
-  allow_backorder: boolean;
-  weight?: number;
-  dimensions?: string;
-  category_id?: string;
-  brand?: string;
-  tags?: string[];
-  images?: string[];
-  specifications?: Record<string, unknown>;
-  features?: string[];
-  is_active: boolean;
-  is_featured: boolean;
-  seo_title?: string;
-  seo_description?: string;
-  seo_keywords?: string[];
-}
 
 /**
  * GET /api/admin/products
@@ -132,7 +106,7 @@ export async function GET(request: NextRequest) {
     // Count query
     const countQuery = `SELECT COUNT(*) as total FROM products ${whereClause}`;
     const countResult = await db.query(countQuery, queryParams);
-    const total = parseInt(countResult.rows[0].total);
+    const total = parseInt(String(countResult.rows[0]?.total || '0'));
 
     // Products query with pagination
     const sortBy = filters.sort_by || 'created_at';
@@ -177,17 +151,20 @@ export async function GET(request: NextRequest) {
 
         const sales = salesData.rows[0];
         
+        const stockQuantity = Number(product.stock_quantity) || 0;
+        const lowStockThreshold = Number(product.low_stock_threshold) || 0;
+        
         return {
           ...product,
-          stock_status: product.track_inventory ? 
-            (product.stock_quantity > product.low_stock_threshold ? 'in_stock' : 
-             product.stock_quantity > 0 ? 'low_stock' : 'out_of_stock') : 
+          stock_status: Boolean(product.track_inventory) ? 
+            (stockQuantity > lowStockThreshold ? 'in_stock' : 
+             stockQuantity > 0 ? 'low_stock' : 'out_of_stock') : 
             'not_tracked',
           sales_data: {
-            total_sales: parseInt(sales.total_sales || '0'),
-            total_revenue: parseFloat(sales.total_revenue || '0'),
-            total_orders: parseInt(sales.total_orders || '0'),
-            last_sale_date: sales.last_sale_date
+            total_sales: parseInt(String(sales?.total_sales || '0')),
+            total_revenue: parseFloat(String(sales?.total_revenue || '0')),
+            total_orders: parseInt(String(sales?.total_orders || '0')),
+            last_sale_date: sales?.last_sale_date
           },
           recent_inventory_changes: inventoryData.rows
         };
@@ -207,7 +184,7 @@ export async function GET(request: NextRequest) {
       WHERE store_id = $1
     `, [user.storeId]);
 
-    const stats = statsQuery.rows[0];
+    const stats = statsQuery.rows[0] || {};
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(total / limit);
@@ -227,12 +204,12 @@ export async function GET(request: NextRequest) {
           hasPrev
         },
         statistics: {
-          total: parseInt(stats.total_products || '0'),
-          active: parseInt(stats.active_products || '0'),
-          inStock: parseInt(stats.in_stock_products || '0'),
-          outOfStock: parseInt(stats.out_of_stock_products || '0'),
-          lowStock: parseInt(stats.low_stock_products || '0'),
-          totalValue: parseFloat(stats.total_inventory_value || '0')
+          total: parseInt(String(stats.total_products || '0')),
+          active: parseInt(String(stats.active_products || '0')),
+          inStock: parseInt(String(stats.in_stock_products || '0')),
+          outOfStock: parseInt(String(stats.out_of_stock_products || '0')),
+          lowStock: parseInt(String(stats.low_stock_products || '0')),
+          totalValue: parseFloat(String(stats.total_inventory_value || '0'))
         }
       }
     });
@@ -283,70 +260,71 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if SKU already exists in this store
-    const existingProduct = await productRepository.findBySku(body.sku, user.storeId);
-    if (existingProduct) {
-      return NextResponse.json({
-        success: false,
-        error: 'A product with this SKU already exists'
-      }, { status: 409 });
+    if (body.sku) {
+      const skuCheckResult = await db.query(
+        'SELECT id FROM products WHERE sku = $1 AND store_id = $2',
+        [body.sku, user.storeId]
+      );
+      if (skuCheckResult.rows.length > 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'A product with this SKU already exists'
+        }, { status: 409 });
+      }
     }
 
     // Check if slug already exists in this store
-    const existingSlug = await productRepository.findBySlug(body.slug, user.storeId);
-    if (existingSlug) {
+    const slugCheckResult = await db.query(
+      'SELECT id FROM products WHERE slug = $1 AND store_id = $2',
+      [body.slug, user.storeId]
+    );
+    if (slugCheckResult.rows.length > 0) {
       return NextResponse.json({
         success: false,
         error: 'A product with this slug already exists'
       }, { status: 409 });
     }
 
-    // Prepare product data
-    const productData: CreateProductInput = {
-      store_id: user.storeId,
-      sku: body.sku,
-      name: body.name,
-      slug: body.slug,
-      short_description: body.short_description,
-      long_description: body.long_description,
-      description_html: body.description_html,
-      base_price: parseFloat(body.base_price),
-      sale_price: body.sale_price ? parseFloat(body.sale_price) : undefined,
-      cost_price: body.cost_price ? parseFloat(body.cost_price) : undefined,
-      track_inventory: body.track_inventory ?? true,
-      stock_quantity: body.stock_quantity ? parseInt(body.stock_quantity) : 0,
-      low_stock_threshold: body.low_stock_threshold ? parseInt(body.low_stock_threshold) : 10,
-      allow_backorder: body.allow_backorder ?? false,
-      weight: body.weight ? parseFloat(body.weight) : undefined,
-      weight_unit: body.weight_unit || 'lb',
-      length: body.length ? parseFloat(body.length) : undefined,
-      width: body.width ? parseFloat(body.width) : undefined,
-      height: body.height ? parseFloat(body.height) : undefined,
-      dimension_unit: body.dimension_unit || 'in',
-      category_id: body.category_id,
-      tags: body.tags || [],
-      featured_image_url: body.featured_image_url,
-      gallery_images: body.gallery_images || [],
-      meta_title: body.meta_title,
-      meta_description: body.meta_description,
-      requires_shipping: body.requires_shipping ?? true,
-      shipping_class: body.shipping_class,
-      is_active: body.is_active ?? false, // Default to inactive for new products
-      is_featured: body.is_featured ?? false,
-      is_digital: body.is_digital ?? false,
-      override_name: body.override_name,
-      override_description: body.override_description,
-      override_price: body.override_price ? parseFloat(body.override_price) : undefined,
-      override_images: body.override_images || [],
-      discount_type: body.discount_type,
-      discount_value: body.discount_value ? parseFloat(body.discount_value) : undefined,
-      published_at: body.is_active ? new Date() : undefined
-    };
+    // Create the product directly with database query
+    const insertResult = await db.query(`
+      INSERT INTO products (
+        store_id, sku, name, slug, short_description, description, 
+        base_price, compare_price, cost_price, track_inventory, stock_quantity,
+        allow_backorder, weight, category_id, tags, featured_image_url, gallery_images,
+        is_active, is_featured, published_at, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+      ) RETURNING *
+    `, [
+      user.storeId,
+      body.sku || null,
+      body.name,
+      body.slug,
+      body.short_description || null,
+      body.description || null,
+      parseFloat(body.price),
+      body.compare_price ? parseFloat(body.compare_price) : null,
+      body.cost_price ? parseFloat(body.cost_price) : null,
+      body.track_inventory ?? true,
+      body.inventory_quantity ? parseInt(body.inventory_quantity) : 0,
+      body.allow_backorder ?? false,
+      body.weight ? parseFloat(body.weight) : null,
+      body.category_id || null,
+      JSON.stringify(body.tags || []),
+      body.featured_image_url || null,
+      JSON.stringify(body.images || []),
+      body.is_active ?? false,
+      body.is_featured ?? false,
+      body.is_active ? new Date() : null,
+      new Date(),
+      new Date()
+    ]);
 
-    // Create the product
-    const newProduct = await productRepository.create(productData);
+    const newProduct = insertResult.rows[0];
 
     // Log initial inventory if tracking is enabled
-    if (productData.track_inventory && productData.stock_quantity > 0) {
+    const initialQuantity = body.inventory_quantity ? parseInt(body.inventory_quantity) : 0;
+    if ((body.track_inventory ?? true) && initialQuantity > 0) {
       await db.query(`
         INSERT INTO inventory_logs (
           store_id, product_id, change_type, quantity_change, quantity_after, notes
@@ -355,8 +333,8 @@ export async function POST(request: NextRequest) {
         user.storeId,
         newProduct.id,
         'initial_stock',
-        productData.stock_quantity,
-        productData.stock_quantity,
+        initialQuantity,
+        initialQuantity,
         'Initial stock when product was created'
       ]);
     }

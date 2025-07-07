@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify password
-    const isPasswordValid = await verifyPassword(body.password, user.password_hash);
+    const isPasswordValid = await verifyPassword(body.password, String(user.password_hash));
     
     if (!isPasswordValid) {
       return NextResponse.json(
@@ -59,13 +59,13 @@ export async function POST(req: NextRequest) {
 
     // Create session token
     const sessionToken = await createSession({
-      userId: user.id,
-      email: user.email,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      storeId: user.store_id,
-      storeSlug: user.store_slug,
-      storeName: user.store_name
+      userId: String(user.id),
+      email: String(user.email),
+      firstName: String(user.first_name),
+      lastName: String(user.last_name),
+      storeId: user.store_id ? String(user.store_id) : undefined,
+      storeSlug: user.store_slug ? String(user.store_slug) : undefined,
+      storeName: user.store_name ? String(user.store_name) : undefined
     });
 
     // Create response with token

@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { blogUtils } from '@/lib/blog';
 import { BlogFilters, BlogAPIResponse, BlogPostResponse } from '@/types/blog';
+import { requireAuth } from '@/lib/auth/session';
 
 // GET /api/blog/admin - List all blog posts for admin (including drafts and scheduled)
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Add authentication middleware to verify admin access
-    // For now, we'll allow access without authentication
+    // Require authentication for admin access
+    const user = await requireAuth(request);
+    const storeId = user.storeId;
+    
+    if (!storeId) {
+      return NextResponse.json(
+        { success: false, error: 'No store associated with user account' },
+        { status: 400 }
+      );
+    }
     
     const { searchParams } = new URL(request.url);
     
@@ -23,7 +32,7 @@ export async function GET(request: NextRequest) {
     };
     
     // Get blog posts (including all statuses for admin)
-    const result = await blogUtils.getBlogPosts(filters, { page, limit });
+    const result = await blogUtils.getBlogPosts(storeId, filters, { page, limit });
     
     const response: BlogAPIResponse<BlogPostResponse> = {
       success: true,

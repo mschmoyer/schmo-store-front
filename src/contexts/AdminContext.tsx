@@ -56,10 +56,12 @@ export function AdminProvider({ children }: AdminProviderProps) {
           }
         } else {
           localStorage.removeItem('admin_token');
+          forceLogout();
         }
       } catch (error) {
         console.error('Session verification failed:', error);
         localStorage.removeItem('admin_token');
+        forceLogout();
       } finally {
         setIsLoading(false);
       }
@@ -115,8 +117,15 @@ export function AdminProvider({ children }: AdminProviderProps) {
       setUser(null);
       setSession(null);
       localStorage.removeItem('admin_token');
-      router.push('/');
+      router.push('/admin/login');
     }
+  };
+
+  const forceLogout = () => {
+    setUser(null);
+    setSession(null);
+    localStorage.removeItem('admin_token');
+    router.push('/admin/login');
   };
   
   const verify = async () => {
@@ -149,7 +158,8 @@ export function AdminProvider({ children }: AdminProviderProps) {
     isLoading,
     login,
     logout,
-    verify
+    verify,
+    forceLogout
   };
   
   return (

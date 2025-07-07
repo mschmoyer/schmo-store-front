@@ -15,7 +15,7 @@ import { IntegrationSettings } from '@/components/admin/IntegrationSettings';
 
 interface Integration {
   id?: string;
-  integrationType: 'shipstation-v2' | 'shipstation-v1' | 'stripe' | 'square' | 'paypal';
+  integrationType: 'shipengine' | 'shipstation' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;
   hasApiKey: boolean;
   configuration: Record<string, unknown>;
@@ -48,7 +48,7 @@ export default function IntegrationsPage() {
             const existingIntegrations = data.data.integrations;
             const allIntegrations: Integration[] = [
               {
-                integrationType: 'shipstation-v2',
+                integrationType: 'shipengine',
                 isActive: false,
                 hasApiKey: false,
                 configuration: {},
@@ -56,7 +56,7 @@ export default function IntegrationsPage() {
                 autoSyncInterval: '1hour'
               },
               {
-                integrationType: 'shipstation-v1',
+                integrationType: 'shipstation',
                 isActive: false,
                 hasApiKey: false,
                 configuration: {},
@@ -218,7 +218,7 @@ export default function IntegrationsPage() {
         </Text>
         <Stack gap="lg">
           {integrations
-            .filter(integration => ['shipstation-v2', 'shipstation-v1'].includes(integration.integrationType))
+            .filter(integration => ['shipengine', 'shipstation'].includes(integration.integrationType))
             .map((integration) => (
               <IntegrationSettings
                 key={integration.integrationType}

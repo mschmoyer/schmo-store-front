@@ -35,9 +35,10 @@ import {
 
 interface Integration {
   id?: string;
-  integrationType: 'shipstation-v2' | 'shipstation-v1' | 'stripe' | 'square' | 'paypal';
+  integrationType: 'shipengine' | 'shipstation' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;
   hasApiKey: boolean;
+  hasApiSecret?: boolean;
   configuration: Record<string, unknown>;
   autoSyncEnabled?: boolean;
   autoSyncInterval?: '10min' | '1hour' | '1day';
@@ -72,7 +73,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       apiKey: (value) => (!value ? 'API key is required' : null),
       apiSecret: (value) => {
         // Only require API secret for ShipStation Legacy API
-        if (integration.integrationType === 'shipstation-v1' && !value) {
+        if (integration.integrationType === 'shipstation' && !value) {
           return 'API secret is required for ShipStation Legacy API';
         }
         return null;
@@ -81,7 +82,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
   });
   
   const integrationConfig = {
-    'shipstation-v2': {
+    shipengine: {
       name: 'ShipStation',
       description: 'Connect your ShipStation account to manage products and inventory',
       color: 'blue',
@@ -92,26 +93,20 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       fields: [],
       supportsSyncing: true
     },
-    'shipstation-v1': {
+    shipstation: {
       name: 'ShipStation Legacy API',
-      description: 'Custom Store integration for automated order fulfillment via ShipStation',
+      description: 'Legacy ShipStation API using Basic HTTP Authentication (API Key + Secret)',
       color: 'orange',
       icon: IconPlug,
-      apiKeyLabel: 'API Key',
-      apiKeyPlaceholder: 'Enter your ShipStation API key',
+      apiKeyLabel: 'ShipStation API Key',
+      apiKeyPlaceholder: 'Enter your ShipStation API Key (used as username)',
       docsUrl: 'https://help.shipstation.com/hc/en-us/articles/360025856371',
       fields: [
         {
           key: 'apiSecret',
-          label: 'API Secret',
-          placeholder: 'Enter your ShipStation API secret',
-          description: 'Your ShipStation API secret for authentication'
-        },
-        {
-          key: 'endpointUrl',
-          label: 'Endpoint URL',
-          placeholder: 'https://yourstore.com/api/shipstation/orders',
-          description: 'URL that ShipStation will use to pull orders and send notifications'
+          label: 'ShipStation API Secret',
+          placeholder: 'Enter your ShipStation API Secret (used as password)',
+          description: 'Your ShipStation API Secret - find both API Key and Secret at https://ss.shipstation.com/#/settings/api'
         }
       ],
       supportsSyncing: false
@@ -197,7 +192,10 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
         },
         body: JSON.stringify({
           integrationType: integration.integrationType,
-          apiKey: form.values.apiKey
+          apiKey: form.values.apiKey,
+          ...(integration.integrationType === 'shipstation' && {
+            apiSecret: form.values.apiSecret
+          })
         })
       });
       
@@ -436,24 +434,57 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
             
             <form onSubmit={form.onSubmit(handleSubmit)}>
               <Stack gap="md">
-                <Group grow>
-                  <PasswordInput
-                    label={config.apiKeyLabel}
-                    placeholder={config.apiKeyPlaceholder}
-                    required
-                    {...form.getInputProps('apiKey')}
-                  />
-                  <Box pt="xl">
-                    <Button
-                      variant="light"
-                      onClick={handleTest}
-                      loading={testing}
-                      disabled={!form.values.apiKey}
-                    >
-                      Test Connection
-                    </Button>
-                  </Box>
-                </Group>
+                {/* API Key and Secret for ShipStation */}
+                {integration.integrationType === 'shipstation' ? (
+                  <Stack gap="sm" style={{ maxWidth: '600px' }}>
+                    <Text size="sm" c="dimmed">
+                      Get your API credentials at{' '}
+                      <a href="https://ss.shipstation.com/#/settings/api" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--mantine-color-blue-6)' }}>
+                        ShipStation Settings
+                      </a>
+                    </Text>
+                    <PasswordInput
+                      label={config.apiKeyLabel}
+                      required
+                      {...form.getInputProps('apiKey')}
+                    />
+                    <Group align="flex-end" gap="md">
+                      <PasswordInput
+                        label="ShipStation API Secret"
+                        required
+                        style={{ flex: 1 }}
+                        {...form.getInputProps('apiSecret')}
+                      />
+                      <Button
+                        variant="light"
+                        onClick={handleTest}
+                        loading={testing}
+                        disabled={!form.values.apiKey || !form.values.apiSecret}
+                      >
+                        Test Connection
+                      </Button>
+                    </Group>
+                  </Stack>
+                ) : (
+                  <Group grow>
+                    <PasswordInput
+                      label={config.apiKeyLabel}
+                      placeholder={config.apiKeyPlaceholder}
+                      required
+                      {...form.getInputProps('apiKey')}
+                    />
+                    <Box pt="xl">
+                      <Button
+                        variant="light"
+                        onClick={handleTest}
+                        loading={testing}
+                        disabled={!form.values.apiKey}
+                      >
+                        Test Connection
+                      </Button>
+                    </Box>
+                  </Group>
+                )}
                 
                 <Switch
                   label={`Enable ${config.name} integration`}
@@ -461,7 +492,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                   {...form.getInputProps('isActive', { type: 'checkbox' })}
                 />
                 
-                {config.fields.map((field) => {
+                {config.fields.filter(field => field.key !== 'apiSecret').map((field) => {
                   // Use PasswordInput for sensitive fields like secrets
                   const isSecret = field.key.toLowerCase().includes('secret');
                   const InputComponent = isSecret ? PasswordInput : TextInput;
@@ -472,7 +503,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                       label={field.label}
                       placeholder={field.placeholder}
                       description={field.description}
-                      required={integration.integrationType === 'shipstation-v1' && field.key === 'apiSecret'}
+                      required={integration.integrationType === 'shipstation' && field.key === 'apiSecret'}
                       {...form.getInputProps(field.key)}
                     />
                   );

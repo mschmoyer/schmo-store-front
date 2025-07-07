@@ -117,7 +117,7 @@ const STOCK_STATUS_LABELS = {
  * @returns JSX.Element
  */
 export default function ProductsAdminPage() {
-  const { } = useAdmin();
+  const { session, isAuthenticated } = useAdmin();
   
   // State management
   const [products, setProducts] = useState<ProductWithSales[]>([]);
@@ -197,7 +197,15 @@ export default function ProductsAdminPage() {
         }
       });
       
-      const response = await fetch(`/api/admin/products?${queryParams.toString()}`);
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
+      const response = await fetch(`/api/admin/products?${queryParams.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -239,10 +247,15 @@ export default function ProductsAdminPage() {
    */
   const toggleProductStatus = async (productId: string, currentStatus: boolean) => {
     try {
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
       const response = await fetch(`/api/admin/products/${productId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({
           is_active: !currentStatus
@@ -299,10 +312,15 @@ export default function ProductsAdminPage() {
         }
       }
       
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
       const response = await fetch('/api/admin/products/bulk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({
           action,
@@ -340,8 +358,15 @@ export default function ProductsAdminPage() {
    */
   const handleExport = async () => {
     try {
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
       const response = await fetch(`/api/admin/products/export?format=${exportFormat}`, {
         method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
       });
       
       if (!response.ok) {
@@ -395,8 +420,15 @@ export default function ProductsAdminPage() {
       const formData = new FormData();
       formData.append('file', importFile);
       
+      if (!session?.sessionToken) {
+        throw new Error('No authentication token available');
+      }
+
       const response = await fetch('/api/admin/products/import', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.sessionToken}`
+        },
         body: formData
       });
       
@@ -491,20 +523,22 @@ export default function ProductsAdminPage() {
   
   // Fetch data on component mount and when filters change
   useEffect(() => {
-    fetchProducts(currentPage);
-  }, [fetchProducts, currentPage]);
+    if (isAuthenticated && session?.sessionToken) {
+      fetchProducts(currentPage);
+    }
+  }, [fetchProducts, currentPage, isAuthenticated, session?.sessionToken]);
   
   // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchQuery !== '') {
+      if (searchQuery !== '' && isAuthenticated && session?.sessionToken) {
         setCurrentPage(1);
         fetchProducts(1);
       }
     }, 500);
     
     return () => clearTimeout(timer);
-  }, [searchQuery, fetchProducts]);
+  }, [searchQuery, fetchProducts, isAuthenticated, session?.sessionToken]);
   
   
   if (loading && !refreshing) {

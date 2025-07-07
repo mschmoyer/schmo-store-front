@@ -14,8 +14,7 @@ import {
   IconCategory,
   IconExternalLink,
   IconLogout,
-  IconBrain,
-  IconShip
+  IconBrain
 } from '@tabler/icons-react';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -82,13 +81,6 @@ export function AdminNav({ onNavClick }: AdminNavProps) {
       icon: IconPlug,
       href: '/admin/integrations',
       color: 'teal',
-      enabled: true
-    },
-    {
-      label: 'ShipStation',
-      icon: IconShip,
-      href: '/admin/integrations/shipstation',
-      color: 'blue',
       enabled: true
     },
     {

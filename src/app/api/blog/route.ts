@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { blogUtils } from '@/lib/blog';
 import { BlogFilters, BlogAPIResponse, BlogPostResponse } from '@/types/blog';
+import { requireAuth, getSessionFromRequest } from '@/lib/auth/session';
 
 // GET /api/blog - List published blog posts with filtering and pagination
 export async function GET(request: NextRequest) {
@@ -19,9 +20,21 @@ export async function GET(request: NextRequest) {
       search: searchParams.get('search') || undefined,
     };
     
-    // TODO: Extract storeId from request context or authentication
-    // For now, using a placeholder - this route needs to be store-specific
-    const storeId = 'placeholder-store-id';
+    // Try to get storeId from query params first (for public access)
+    let storeId = searchParams.get('storeId');
+    
+    // If no storeId in params, try to get from authenticated user session
+    if (!storeId) {
+      const user = await getSessionFromRequest(request);
+      if (user?.storeId) {
+        storeId = user.storeId;
+      } else {
+        return NextResponse.json(
+          { success: false, error: 'Store ID required. Provide storeId parameter or authenticate.' },
+          { status: 400 }
+        );
+      }
+    }
     
     // Get blog posts
     const result = await blogUtils.getBlogPosts(storeId, filters, { page, limit });
@@ -50,11 +63,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     
-    // TODO: Add authentication middleware to verify admin access
-    // For now, we'll allow creation without authentication
+    // Require authentication for creating blog posts
+    const user = await requireAuth(request);
+    const storeId = user.storeId;
     
-    // TODO: Extract storeId from request context or authentication
-    const storeId = 'placeholder-store-id';
+    if (!storeId) {
+      return NextResponse.json(
+        { success: false, error: 'No store associated with user account' },
+        { status: 400 }
+      );
+    }
     
     const newPost = await blogUtils.createBlogPost(storeId, body);
     

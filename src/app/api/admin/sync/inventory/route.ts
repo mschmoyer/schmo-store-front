@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
     
     const encryptedApiKey = integrationResult.rows[0].api_key_encrypted;
-    const apiKey = Buffer.from(encryptedApiKey, 'base64').toString('utf-8');
+    const apiKey = Buffer.from(String(encryptedApiKey), 'base64').toString('utf-8');
     
     // Fetch all inventory from ShipStation (ShipEngine v2 API) with pagination
     let allInventory: Array<{

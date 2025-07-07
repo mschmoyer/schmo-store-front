@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       'generate_store_details'
     );
 
+    
     return NextResponse.json({
       success: true,
       data: {

@@ -3,8 +3,9 @@ import { requireAuth } from '@/lib/auth/session';
 import { z } from 'zod';
 
 const TestIntegrationSchema = z.object({
-  integrationType: z.enum(['shipengine', 'stripe']),
+  integrationType: z.enum(['shipengine', 'shipstation', 'stripe']),
   apiKey: z.string().min(1, 'API key is required'),
+  apiSecret: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -13,12 +14,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Validate request body
-    const { integrationType, apiKey } = TestIntegrationSchema.parse(body);
+    const { integrationType, apiKey, apiSecret } = TestIntegrationSchema.parse(body);
     
     let testResult;
     
     if (integrationType === 'shipengine') {
       testResult = await testShipEngineConnection(apiKey);
+    } else if (integrationType === 'shipstation') {
+      if (!apiSecret) {
+        return NextResponse.json({
+          success: false,
+          error: 'API Secret is required for ShipStation Legacy API'
+        }, { status: 400 });
+      }
+      testResult = await testShipStationConnection(apiKey, apiSecret);
     } else if (integrationType === 'stripe') {
       testResult = await testStripeConnection(apiKey);
     } else {
@@ -174,6 +183,135 @@ async function testShipEngineConnection(apiKey: string) {
     return {
       success: false,
       error: 'Failed to connect to ShipEngine API',
+      data: {
+        details: error instanceof Error ? error.message : 'Unknown error',
+        type: 'network_error'
+      }
+    };
+  }
+}
+
+async function testShipStationConnection(apiKey: string, apiSecret: string) {
+  try {
+    // Log masked credentials for debugging
+    const maskedKey = apiKey.length > 8 ? 
+      apiKey.substring(0, 4) + '...' + apiKey.substring(apiKey.length - 4) : 
+      '****';
+    const maskedSecret = apiSecret.length > 8 ? 
+      apiSecret.substring(0, 4) + '...' + apiSecret.substring(apiSecret.length - 4) : 
+      '****';
+    console.log(`Testing ShipStation Legacy API with key: ${maskedKey}, secret: ${maskedSecret}`);
+    
+    // Validate API credentials format
+    if (!apiKey || apiKey.length < 8) {
+      return {
+        success: false,
+        error: 'Invalid API Key format. ShipStation API Keys should be at least 8 characters.',
+        data: {
+          apiKeyLength: apiKey.length,
+          expectedMinLength: 8
+        }
+      };
+    }
+    
+    if (!apiSecret || apiSecret.length < 8) {
+      return {
+        success: false,
+        error: 'Invalid API Secret format. ShipStation API Secrets should be at least 8 characters.',
+        data: {
+          apiSecretLength: apiSecret.length,
+          expectedMinLength: 8
+        }
+      };
+    }
+    
+    // Create Basic Auth header as documented
+    const credentials = `${apiKey}:${apiSecret}`;
+    const encodedCredentials = Buffer.from(credentials).toString('base64');
+    const authHeader = `Basic ${encodedCredentials}`;
+    
+    console.log('Testing ShipStation API with /accounts/listtags endpoint...');
+    
+    // Test ShipStation Legacy API with List Account Tags endpoint
+    const response = await fetch('https://ssapi.shipstation.com/accounts/listtags', {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log(`ShipStation Legacy API response: ${response.status} ${response.statusText}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('ShipStation Legacy API success:', data);
+      return {
+        success: true,
+        data: {
+          message: 'ShipStation Legacy API connection successful',
+          details: 'API Key and Secret verified and working with Basic HTTP Authentication',
+          apiKeyUsed: maskedKey,
+          apiSecretUsed: maskedSecret,
+          endpointTested: 'https://ssapi.shipstation.com/accounts/listtags',
+          tagsFound: Array.isArray(data) ? data.length : 'Unknown',
+          note: 'Connected successfully to ShipStation Legacy API v1'
+        }
+      };
+    }
+    
+    // Handle different error cases
+    let errorData;
+    try {
+      errorData = await response.json();
+      console.log('ShipStation Legacy API error response:', errorData);
+    } catch {
+      console.log('Could not parse ShipStation error response as JSON');
+      try {
+        const errorText = await response.text();
+        console.log('ShipStation error response text:', errorText);
+        errorData = { rawError: errorText };
+      } catch {
+        errorData = {};
+      }
+    }
+    
+    // Return specific error messages
+    let errorMessage = 'ShipStation Legacy API connection failed';
+    let suggestion = 'Check your API Key and Secret at https://ss.shipstation.com/#/settings/api';
+    
+    if (response.status === 401) {
+      errorMessage = 'Invalid API Key or Secret. Authentication failed.';
+      suggestion = 'Verify your API Key and Secret are correct. Find them at https://ss.shipstation.com/#/settings/api';
+    } else if (response.status === 403) {
+      errorMessage = 'API credentials do not have permission to access this resource.';
+      suggestion = 'Ensure your ShipStation account has the necessary permissions.';
+    } else if (response.status === 429) {
+      errorMessage = 'Rate limit exceeded. Please try again later.';
+      suggestion = 'Wait a few minutes before testing again.';
+    } else if (response.status === 404) {
+      errorMessage = 'ShipStation API endpoint not found.';
+      suggestion = 'This may indicate a service issue. Contact ShipStation support.';
+    }
+    
+    return {
+      success: false,
+      error: errorData?.message || errorMessage,
+      data: {
+        status: response.status,
+        statusText: response.statusText,
+        apiKeyUsed: maskedKey,
+        apiSecretUsed: maskedSecret,
+        endpointTested: 'https://ssapi.shipstation.com/accounts/listtags',
+        errorDetails: errorData,
+        suggestion: suggestion
+      }
+    };
+  } catch (error) {
+    console.error('ShipStation Legacy API test error:', error);
+    return {
+      success: false,
+      error: 'Failed to connect to ShipStation Legacy API',
       data: {
         details: error instanceof Error ? error.message : 'Unknown error',
         type: 'network_error'
