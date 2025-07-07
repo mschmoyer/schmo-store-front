@@ -1,6 +1,6 @@
 {
   "name": "schmo-store-front",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -31,6 +31,7 @@
     "@uiw/react-md-editor": "^4.0.7",
     "bcryptjs": "^3.0.2",
     "canvas-confetti": "^1.9.3",
+    "critters": "^0.0.23",
     "dayjs": "^1.11.13",
     "dompurify": "^3.2.6",
     "jose": "^6.0.11",

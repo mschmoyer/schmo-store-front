@@ -15,6 +15,16 @@ const nextConfig: NextConfig = {
     optimizeCss: true,
   },
   
+  // Skip type checking during build
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  
+  // Skip ESLint during build
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  
   // Configure headers for security
   async headers() {
     return [

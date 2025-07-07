@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { Container, Paper, Title, Text, Button, Group, ThemeIcon, Box } from '@mantine/core';
 import { IconCheck, IconArrowRight, IconBuildingStore } from '@tabler/icons-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Confetti from 'react-confetti';
 import { useViewportSize } from '@mantine/hooks';
 
-export default function StoreCreationSuccess() {
+function StoreSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { width, height } = useViewportSize();
@@ -152,5 +152,13 @@ export default function StoreCreationSuccess() {
         </Container>
       </div>
     </>
+  );
+}
+
+export default function StoreCreationSuccess() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <StoreSuccessContent />
+    </Suspense>
   );
 }
