@@ -4,9 +4,9 @@ import {
   Order,
   OrderItem,
   Store,
-  Product,
-  Address
-} from '@/lib/types/database';
+  Product
+} from '@/types/database';
+import { Address } from '@/lib/types/database';
 
 /**
  * Data Transformation Service
@@ -101,7 +101,7 @@ export class DataTransformService {
       const shipStationOrder = {
         Order: {
           OrderNumber: order.order_number,
-          OrderKey: order.shipstation_order_key || order.order_number,
+          OrderKey: order.shipstation_order_id || order.order_number,
           OrderDate: this.formatDate(order.created_at),
           PaymentDate: order.payment_status === 'paid' ? this.formatDate(order.created_at) : null,
           ShipByDate: order.shipped_at ? this.formatDate(order.shipped_at) : null,
@@ -114,7 +114,7 @@ export class DataTransformService {
           ShippingAmount: this.formatMoney(shippingAmount),
           CustomField1: store.store_name,
           CustomField2: store.id,
-          CustomField3: order.notes || '',
+          CustomField3: '',
           Source: 'RebelCart',
           
           // Customer information
@@ -200,7 +200,7 @@ export class DataTransformService {
             StoreId: store.id,
             CustomField1: store.store_name,
             CustomField2: `RebelCart Order ${order.order_number}`,
-            CustomField3: order.notes || '',
+            CustomField3: '',
             Source: 'RebelCart',
             MergeOption: null,
             ParentId: null,
@@ -266,7 +266,7 @@ export class DataTransformService {
         TaxAmount: 0, // Tax is calculated at order level
         WarehouseLocation: '',
         ProductID: item.product_id,
-        UPC: product?.barcode || '',
+        UPC: '',
         Options: []
       };
     });
@@ -621,7 +621,7 @@ export class DataTransformService {
       // Implementation depends on specific ShipStation XML structure
       
       console.log('Converted ShipStation XML to internal format');
-      return parsed;
+      return parsed as unknown as Order;
       
     } catch (error) {
       console.error('Error converting ShipStation XML to order:', error);

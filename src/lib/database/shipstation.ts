@@ -230,7 +230,7 @@ export async function getOrdersForExport(
     }));
     
     return {
-      orders,
+      orders: orders as unknown as Order[],
       totalPages,
       currentPage: page
     };
@@ -270,7 +270,7 @@ export async function getShipmentNotifications(orderId: string): Promise<Shipmen
       [orderId]
     );
     
-    return result.rows;
+    return result.rows as unknown as ShipmentNotification[];
   } catch (error) {
     console.error('Error getting shipment notifications:', error);
     throw new Error('Failed to get shipment notifications');
@@ -289,7 +289,7 @@ export async function getAllShipStationConfigs(storeId: string): Promise<ShipSta
       [storeId]
     );
     
-    return result.rows;
+    return result.rows as unknown as ShipStationConfig[];
   } catch (error) {
     console.error('Error getting all ShipStation configs:', error);
     throw new Error('Failed to get ShipStation configurations');
@@ -351,7 +351,7 @@ export async function getOrderByNumber(storeId: string, orderNumber: string): Pr
       [storeId, orderNumber]
     );
     
-    return (result.rows[0] as unknown as ShipStationConfig) || null;
+    return (result.rows[0] as unknown as Order) || null;
   } catch (error) {
     console.error('Error getting order by number:', error);
     throw new Error('Failed to get order by number');
