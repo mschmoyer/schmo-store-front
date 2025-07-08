@@ -23,47 +23,47 @@ const footerData: FooterSection[] = [
       { label: 'Features', href: '#features' },
       { label: 'How It Works', href: '#how-it-works' },
       { label: 'Demo Stores', href: '/demo-stores' },
-      { label: 'Pricing', href: '/pricing' },
-      { label: 'Integrations', href: '/integrations' },
+      // { label: 'Pricing', href: '/pricing' },
+      // { label: 'Integrations', href: '/integrations' },
     ],
   },
   {
     title: 'Support',
     links: [
-      { label: 'Help Center', href: '/help' },
+      // { label: 'Help Center', href: '/help' },
       { label: 'Contact Us', href: '/contact' },
       { label: 'Setup Guide', href: '/setup' },
-      { label: 'API Documentation', href: '/docs' },
-      { label: 'Status Page', href: '/status' },
+      // { label: 'API Documentation', href: '/docs' },
+      // { label: 'Status Page', href: '/status' },
     ],
   },
   {
     title: 'Company',
     links: [
       { label: 'About', href: '/about' },
-      { label: 'Blog', href: '/blog' },
-      { label: 'Careers', href: '/careers' },
-      { label: 'Press', href: '/press' },
-      { label: 'Partners', href: '/partners' },
+      // { label: 'Blog', href: '/blog' },
+      // { label: 'Careers', href: '/careers' },
+      // { label: 'Press', href: '/press' },
+      // { label: 'Partners', href: '/partners' },
     ],
   },
   {
     title: 'Legal',
     links: [
-      { label: 'Privacy Policy', href: '/legal/privacy' },
+      // { label: 'Privacy Policy', href: '/legal/privacy' },
       { label: 'Terms of Service', href: '/legal/terms' },
-      { label: 'Cookie Policy', href: '/legal/cookies' },
-      { label: 'GDPR', href: '/legal/gdpr' },
+      // { label: 'Cookie Policy', href: '/legal/cookies' },
+      // { label: 'GDPR', href: '/legal/gdpr' },
     ],
   },
 ];
 
-const socialLinks = [
-  { icon: IconBrandTwitter, href: 'https://twitter.com/schmostore', label: 'Twitter' },
-  { icon: IconBrandFacebook, href: 'https://facebook.com/schmostore', label: 'Facebook' },
-  { icon: IconBrandLinkedin, href: 'https://linkedin.com/company/schmostore', label: 'LinkedIn' },
-  { icon: IconMail, href: 'mailto:hello@schmostore.com', label: 'Email' },
-];
+// const socialLinks = [
+//   { icon: IconBrandTwitter, href: 'https://twitter.com/schmostore', label: 'Twitter' },
+//   { icon: IconBrandFacebook, href: 'https://facebook.com/schmostore', label: 'Facebook' },
+//   { icon: IconBrandLinkedin, href: 'https://linkedin.com/company/schmostore', label: 'LinkedIn' },
+//   { icon: IconMail, href: 'mailto:hello@schmostore.com', label: 'Email' },
+// ];
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
@@ -77,7 +77,7 @@ export function Footer() {
             <Group justify="space-between" align="flex-start" className="mb-8">
               <div className="max-w-sm">
                 <Text size="xl" fw={700} className={`mb-2 ${rebelTheme.classes.text.heading}`}>
-                  Schmo Store
+                  Rebel Shops
                 </Text>
                 <Text size="sm" className={`${rebelTheme.classes.text.body} leading-relaxed`}>
                   The easiest way to turn your ShipStation inventory into a beautiful, 
@@ -85,19 +85,19 @@ export function Footer() {
                 </Text>
               </div>
               
-              <Group gap="md">
-                {socialLinks.map((social, index) => (
-                  <Anchor
-                    key={index}
-                    href={social.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`${rebelTheme.classes.text.muted} ${rebelTheme.classes.link.primary} transition-colors`}
-                  >
-                    <social.icon size={20} />
-                  </Anchor>
-                ))}
-              </Group>
+              {/*<Group gap="md">*/}
+              {/*  {socialLinks.map((social, index) => (*/}
+              {/*    <Anchor*/}
+              {/*      key={index}*/}
+              {/*      href={social.href}*/}
+              {/*      target="_blank"*/}
+              {/*      rel="noopener noreferrer"*/}
+              {/*      className={`${rebelTheme.classes.text.muted} ${rebelTheme.classes.link.primary} transition-colors`}*/}
+              {/*    >*/}
+              {/*      <social.icon size={20} />*/}
+              {/*    </Anchor>*/}
+              {/*  ))}*/}
+              {/*</Group>*/}
             </Group>
 
             <SimpleGrid
@@ -134,7 +134,7 @@ export function Footer() {
           {/* Bottom Footer */}
           <Group justify="space-between" align="center">
             <Text size="sm" className={rebelTheme.classes.text.muted}>
-              © {currentYear} Schmo Store. All rights reserved.
+              © {currentYear} RebelShops. All rights reserved.
             </Text>
             
             <Group gap="lg">

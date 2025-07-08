@@ -27,6 +27,7 @@ interface OrderWithItems extends Order {
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
+  let authenticatedStoreId: string | null = null;
   
   try {
     // Authenticate request
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
     }
     
     const { storeId } = authResult;
+    authenticatedStoreId = storeId;
     if (!storeId) {
       return new NextResponse(
         formatShipStationError('Store not found'),
@@ -120,8 +122,8 @@ export async function GET(request: NextRequest) {
             'product_name', oi.product_name,
             'product_sku', oi.product_sku,
             'quantity', oi.quantity,
-            'price', oi.price,
-            'total', oi.total,
+            'price', oi.unit_price,
+            'total', oi.total_price,
             'created_at', oi.created_at
           )
         ) as items
@@ -223,30 +225,31 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('ShipStation order export error:', error);
     
-    // Log error
-    if (request.url) {
-      const { searchParams } = new URL(request.url);
-      const storeId = searchParams.get('store_id');
-      
-      await db.query(
-        `INSERT INTO integration_logs (
-          store_id,
-          integration_type,
-          operation,
-          status,
-          error_message,
-          execution_time_ms,
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
-        [
-          storeId,
-          'shipstation',
-          'order_export',
-          'failure',
-          error instanceof Error ? error.message : 'Unknown error',
-          Date.now() - startTime
-        ]
-      );
+    // Log error only if we have an authenticated store_id
+    if (authenticatedStoreId) {
+      try {
+        await db.query(
+          `INSERT INTO integration_logs (
+            store_id,
+            integration_type,
+            operation,
+            status,
+            error_message,
+            execution_time_ms,
+            created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+          [
+            authenticatedStoreId,
+            'shipstation',
+            'order_export',
+            'failure',
+            error instanceof Error ? error.message : 'Unknown error',
+            Date.now() - startTime
+          ]
+        );
+      } catch (logError) {
+        console.error('Failed to log ShipStation error:', logError);
+      }
     }
     
     return new NextResponse(

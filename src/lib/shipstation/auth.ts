@@ -67,8 +67,7 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
       };
     }
     
-    // Look up credentials in database using encrypted API key as username
-    // For ShipStation, the username should be the API key and password should be API secret
+    // Look up credentials in database - support both API key/secret AND username/password authentication
     const result = await db.query(
       `SELECT 
         i.id,
@@ -76,7 +75,10 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
         i.is_active,
         i.configuration,
         i.api_key_encrypted,
-        i.api_secret_encrypted
+        i.api_secret_encrypted,
+        i.shipstation_username,
+        i.shipstation_password_hash,
+        i.shipstation_auth_enabled
       FROM store_integrations i
       WHERE i.integration_type = 'shipstation' 
         AND i.is_active = true`,
@@ -86,23 +88,50 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
     // Check each integration to find matching credentials
     for (const integration of result.rows) {
       try {
-        const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
-        const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
-        
-        // For ShipStation, username should be API key and password should be API secret
-        if (username === decryptedApiKey && password === decryptedApiSecret) {
-          return {
-            success: true,
-            storeId: integration.store_id,
-            credentials: {
-              username,
-              password,
-              apiKey: decryptedApiKey,
-              apiSecret: decryptedApiSecret,
-              storeId: integration.store_id,
-              isActive: integration.is_active
+        // Method 1: Try ShipStation username/password authentication (preferred)
+        if (integration.shipstation_auth_enabled && integration.shipstation_username && integration.shipstation_password_hash) {
+          if (username === integration.shipstation_username) {
+            // For now, we'll use simple comparison - in production, use proper password hashing (bcrypt)
+            const hashedPassword = Buffer.from(password).toString('base64');
+            if (hashedPassword === integration.shipstation_password_hash) {
+              const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
+              const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
+              
+              return {
+                success: true,
+                storeId: integration.store_id,
+                credentials: {
+                  username,
+                  password,
+                  apiKey: decryptedApiKey,
+                  apiSecret: decryptedApiSecret,
+                  storeId: integration.store_id,
+                  isActive: integration.is_active
+                }
+              };
             }
-          };
+          }
+        }
+        
+        // Method 2: Fall back to API key/secret as username/password (legacy)
+        if (integration.api_key_encrypted && integration.api_secret_encrypted) {
+          const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
+          const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
+          
+          if (username === decryptedApiKey && password === decryptedApiSecret) {
+            return {
+              success: true,
+              storeId: integration.store_id,
+              credentials: {
+                username,
+                password,
+                apiKey: decryptedApiKey,
+                apiSecret: decryptedApiSecret,
+                storeId: integration.store_id,
+                isActive: integration.is_active
+              }
+            };
+          }
         }
       } catch (error) {
         // Skip this integration if decryption fails
