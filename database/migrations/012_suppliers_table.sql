@@ -41,9 +41,17 @@ CREATE INDEX IF NOT EXISTS idx_suppliers_name ON public.suppliers(store_id, name
 CREATE INDEX IF NOT EXISTS idx_suppliers_active ON public.suppliers(store_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_suppliers_email ON public.suppliers(email);
 
--- Add unique constraint for supplier name per store
-ALTER TABLE public.suppliers ADD CONSTRAINT unique_supplier_name_per_store 
-    UNIQUE(store_id, name);
+-- Add unique constraint for supplier name per store (if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'unique_supplier_name_per_store'
+    ) THEN
+        ALTER TABLE public.suppliers ADD CONSTRAINT unique_supplier_name_per_store 
+            UNIQUE(store_id, name);
+    END IF;
+END $$;
 
 -- Create trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_suppliers_updated_at()
@@ -54,6 +62,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS trigger_suppliers_updated_at ON public.suppliers;
 CREATE TRIGGER trigger_suppliers_updated_at
     BEFORE UPDATE ON public.suppliers
     FOR EACH ROW
@@ -82,3 +91,8 @@ FROM public.stores s
 WHERE NOT EXISTS (
     SELECT 1 FROM public.suppliers sup WHERE sup.store_id = s.id
 );
+
+-- Record migration
+INSERT INTO schema_migrations (version, description) 
+VALUES ('012', 'Suppliers table for purchase order management')
+ON CONFLICT (version) DO NOTHING;
