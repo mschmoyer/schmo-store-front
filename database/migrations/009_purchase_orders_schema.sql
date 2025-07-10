@@ -220,7 +220,7 @@ CREATE OR REPLACE FUNCTION update_purchase_order_status(
 RETURNS BOOLEAN AS $$
 DECLARE
     old_status VARCHAR(50);
-    update_success BOOLEAN := FALSE;
+    rows_updated INTEGER := 0;
 BEGIN
     -- Get current status
     SELECT status INTO old_status
@@ -242,10 +242,10 @@ BEGIN
         actual_delivery = CASE WHEN new_status = 'delivered' THEN CURRENT_DATE ELSE actual_delivery END
     WHERE id = po_id;
     
-    GET DIAGNOSTICS update_success = FOUND;
+    GET DIAGNOSTICS rows_updated = ROW_COUNT;
     
     -- Create status history record
-    IF update_success THEN
+    IF rows_updated > 0 THEN
         INSERT INTO public.purchase_order_status_history (
             purchase_order_id,
             old_status,
@@ -261,7 +261,7 @@ BEGIN
         );
     END IF;
     
-    RETURN update_success;
+    RETURN rows_updated > 0;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -302,7 +302,7 @@ DECLARE
     item_sku VARCHAR(255);
     store_id_param UUID;
     current_stock INTEGER;
-    update_success BOOLEAN := FALSE;
+    rows_updated INTEGER := 0;
 BEGIN
     -- Get the SKU and store_id from the purchase order item
     SELECT poi.product_sku, po.store_id
@@ -345,7 +345,7 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP
     WHERE store_id = store_id_param AND sku = item_sku;
     
-    GET DIAGNOSTICS update_success = FOUND;
+    GET DIAGNOSTICS rows_updated = ROW_COUNT;
     
     RETURN TRUE;
 END;
