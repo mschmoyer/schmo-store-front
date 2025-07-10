@@ -1,7 +1,6 @@
 'use client';
 
 import { Container, Group, Text, Stack, Anchor, Divider, SimpleGrid } from '@mantine/core';
-import { IconBrandTwitter, IconBrandFacebook, IconBrandLinkedin, IconMail } from '@tabler/icons-react';
 import Link from 'next/link';
 import { rebelTheme } from '@/lib/theme/rebel-theme';
 

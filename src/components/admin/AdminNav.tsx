@@ -14,7 +14,9 @@ import {
   IconCategory,
   IconExternalLink,
   IconLogout,
-  IconBrain
+  IconBrain,
+  IconPackage,
+  IconTicket
 } from '@tabler/icons-react';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -63,6 +65,20 @@ export function AdminNav({ onNavClick }: AdminNavProps) {
       enabled: true
     },
     {
+      label: 'Inventory',
+      icon: IconPackage,
+      href: '/admin/inventory',
+      color: 'teal',
+      enabled: true
+    },
+    {
+      label: 'Coupons & Discounts',
+      icon: IconTicket,
+      href: '/admin/coupons',
+      color: 'purple',
+      enabled: true
+    },
+    {
       label: 'Categories',
       icon: IconCategory,
       href: '/admin/categories',
@@ -80,7 +96,7 @@ export function AdminNav({ onNavClick }: AdminNavProps) {
       label: 'Integrations',
       icon: IconPlug,
       href: '/admin/integrations',
-      color: 'teal',
+      color: 'cyan',
       enabled: true
     },
     {
@@ -102,7 +118,7 @@ export function AdminNav({ onNavClick }: AdminNavProps) {
       icon: IconChartLine,
       href: '/admin/analytics',
       color: 'cyan',
-      enabled: false // Page not implemented yet
+      enabled: true
     },
     {
       label: 'Settings',

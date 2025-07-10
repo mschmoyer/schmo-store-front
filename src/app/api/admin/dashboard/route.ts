@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
       draftBlogPosts: parseInt(String(blogStats.rows[0]?.draft_posts || '0')),
       totalCategories: parseInt(String(categoryStats.rows[0]?.total_categories || '0')),
       integrations: {
-        shipengine: integrations.shipengine || false,
+        shipstation: integrations.shipstation || false,
         stripe: integrations.stripe || false,
       },
       // New dashboard data

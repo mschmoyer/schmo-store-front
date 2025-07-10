@@ -7,7 +7,6 @@ import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { generateLandingPageMeta } from "@/components/seo/LandingPageMeta";
-import { initializeDatabase } from "@/lib/database/connection";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,9 +19,6 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = generateLandingPageMeta();
-
-// Initialize database connection on app start
-initializeDatabase().catch(console.error);
 
 export default function RootLayout({
   children,

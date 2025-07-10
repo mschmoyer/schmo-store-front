@@ -572,15 +572,15 @@ export default function AdminDashboard() {
               </div>
             </Group>
             <Badge 
-              color={stats.integrations.shipengine ? 'green' : 'red'} 
+              color={stats.integrations.shipstation ? 'green' : 'red'} 
               variant="light"
               leftSection={
-                stats.integrations.shipengine 
+                stats.integrations.shipstation 
                   ? <IconCheck style={{ width: rem(12), height: rem(12) }} />
                   : <IconX style={{ width: rem(12), height: rem(12) }} />
               }
             >
-              {stats.integrations.shipengine ? 'Active' : 'Inactive'}
+              {stats.integrations.shipstation ? 'Active' : 'Inactive'}
             </Badge>
           </Group>
           
@@ -710,11 +710,11 @@ export default function AdminDashboard() {
             <Stack gap="md">
               <Group>
                 <ThemeIcon 
-                  color={stats.integrations.shipengine ? 'green' : 'gray'} 
+                  color={stats.integrations.shipstation ? 'green' : 'gray'} 
                   variant="light" 
                   size="sm"
                 >
-                  {stats.integrations.shipengine 
+                  {stats.integrations.shipstation 
                     ? <IconCheck style={{ width: rem(12), height: rem(12) }} />
                     : <IconX style={{ width: rem(12), height: rem(12) }} />
                   }

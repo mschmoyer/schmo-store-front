@@ -76,7 +76,7 @@ export async function GET(
       description: product.short_description || product.long_description,
       customs_description: product.long_description,
       customs_value: {
-        amount: parseFloat(String(product.sale_price || product.base_price || '0')),
+        amount: parseFloat(String(product.override_price || product.sale_price || product.base_price || '0')),
         currency: 'USD'
       },
       weight: product.weight ? {
@@ -96,9 +96,11 @@ export async function GET(
       } : null,
       // Additional fields for better UX
       slug: product.slug,
-      price: parseFloat(String(product.sale_price || product.base_price || '0')),
+      price: parseFloat(String(product.override_price || product.sale_price || product.base_price || '0')),
+      display_price: parseFloat(String(product.override_price || product.sale_price || product.base_price || '0')),
       base_price: parseFloat(String(product.base_price || '0')),
       sale_price: product.sale_price ? parseFloat(String(product.sale_price)) : null,
+      override_price: product.override_price ? parseFloat(String(product.override_price)) : null,
       inventory_level: inventoryLevel,
       is_featured: product.is_featured,
       gallery_images: product.gallery_images || [],

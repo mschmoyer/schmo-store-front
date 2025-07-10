@@ -13,6 +13,21 @@ interface ShipStationConfig {
   storeId?: string;
   autoSyncEnabled: boolean;
   autoSyncInterval: '10min' | '1hour' | '1day';
+  shipFromAddress?: {
+    name: string;
+    phone: string;
+    email?: string;
+    company_name?: string;
+    address_line1: string;
+    address_line2?: string;
+    address_line3?: string;
+    city_locality: string;
+    state_province: string;
+    postal_code: string;
+    country_code: string;
+    address_residential_indicator: 'yes' | 'no' | 'unknown';
+    instructions?: string;
+  };
 }
 
 /**
@@ -46,9 +61,14 @@ export async function GET(request: NextRequest) {
         configuration,
         auto_sync_enabled,
         auto_sync_interval,
+        api_key_encrypted,
+        api_secret_encrypted,
+        shipstation_username,
+        shipstation_password_hash,
+        shipstation_auth_enabled,
         created_at,
         updated_at
-      FROM integrations 
+      FROM store_integrations 
       WHERE store_id = $1 AND integration_type = 'shipstation'`,
       [storeId]
     );
@@ -76,17 +96,51 @@ export async function GET(request: NextRequest) {
     const config = configResult.rows[0];
     const configData = config.configuration as Record<string, unknown>;
 
+    // Decrypt API credentials if they exist
+    let decryptedApiKey = '';
+    let decryptedApiSecret = '';
+    
+    if (config.api_key_encrypted && config.api_secret_encrypted) {
+      try {
+        decryptedApiKey = Buffer.from(config.api_key_encrypted, 'base64').toString('utf-8');
+        decryptedApiSecret = Buffer.from(config.api_secret_encrypted, 'base64').toString('utf-8');
+      } catch (error) {
+        console.error('Error decrypting API credentials:', error);
+      }
+    }
+
+    // Generate current credentials for display (they should match stored ones)
+    let displayUsername = config.shipstation_username || '';
+    let displayPassword = '';
+    
+    if (decryptedApiKey && storeId) {
+      try {
+        const credentialsResult = await db.query(
+          `SELECT 
+            generate_shipstation_username_deterministic($1, $2) as username,
+            generate_shipstation_password_deterministic($1, $2) as password`,
+          [storeId, decryptedApiKey]
+        );
+        
+        displayUsername = credentialsResult.rows[0].username;
+        displayPassword = credentialsResult.rows[0].password;
+      } catch (error) {
+        console.error('Error generating display credentials:', error);
+      }
+    }
+
     const shipstationConfig: ShipStationConfig = {
       id: String(config.id),
       isActive: Boolean(config.is_active),
-      username: (configData.username as string) || '',
-      password: (configData.password as string) || '',
-      apiKey: (configData.apiKey as string) || '',
-      apiSecret: (configData.apiSecret as string) || '',
+      username: displayUsername, // Generated custom store username
+      password: displayPassword, // Generated custom store password
+      apiKey: decryptedApiKey,
+      apiSecret: decryptedApiSecret,
       endpointUrl: (configData.endpointUrl as string) || '',
       storeId: storeId,
       autoSyncEnabled: Boolean(config.auto_sync_enabled),
-      autoSyncInterval: (config.auto_sync_interval as '1hour' | '10min' | '1day') || '1hour'
+      autoSyncInterval: (config.auto_sync_interval as '1hour' | '10min' | '1day') || '1hour',
+      shipFromAddress: configData.shipFromAddress as ShipStationConfig['shipFromAddress']
     };
 
     return NextResponse.json({
@@ -114,19 +168,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       isActive,
-      username,
-      password,
       apiKey,
       apiSecret,
       endpointUrl,
       autoSyncEnabled,
-      autoSyncInterval
+      autoSyncInterval,
+      shipFromAddress
     } = body as ShipStationConfig;
 
-    // Validate required fields
-    if (!username || !password || !apiKey || !apiSecret || !endpointUrl) {
+    // Validate required fields - only need API key/secret now
+    if (!apiKey || !apiSecret || !endpointUrl) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: 'Missing required fields: apiKey, apiSecret, endpointUrl' },
         { status: 400 }
       );
     }
@@ -143,7 +196,7 @@ export async function POST(request: NextRequest) {
 
     // Get user's store ID
     const storeResult = await db.query(
-      'SELECT id FROM stores WHERE user_id = $1',
+      'SELECT id FROM stores WHERE owner_id = $1',
       [userId]
     );
 
@@ -156,18 +209,33 @@ export async function POST(request: NextRequest) {
 
     const storeId = String(storeResult.rows[0].id);
 
+    // Generate deterministic custom store credentials
+    const credentialsResult = await db.query(
+      `SELECT 
+        generate_shipstation_username_deterministic($1, $2) as username,
+        generate_shipstation_password_deterministic($1, $2) as password`,
+      [storeId, apiKey]
+    );
+
+    const generatedUsername = credentialsResult.rows[0].username;
+    const generatedPassword = credentialsResult.rows[0].password;
+    const hashedPassword = Buffer.from(generatedPassword).toString('base64');
+
+    // Simple encryption for API credentials (base64 for now)
+    const encryptedApiKey = Buffer.from(apiKey).toString('base64');
+    const encryptedApiSecret = Buffer.from(apiSecret).toString('base64');
+
     // Configuration object to store
     const configuration = {
-      username,
-      password,
-      apiKey,
-      apiSecret,
-      endpointUrl
+      endpointUrl,
+      customStoreUsername: generatedUsername,
+      lastGenerated: new Date().toISOString(),
+      shipFromAddress: shipFromAddress || null
     };
 
     // Check if configuration already exists
     const existingResult = await db.query(
-      'SELECT id FROM integrations WHERE store_id = $1 AND integration_type = $2',
+      'SELECT id FROM store_integrations WHERE store_id = $1 AND integration_type = $2',
       [storeId, 'shipstation']
     );
 
@@ -178,34 +246,48 @@ export async function POST(request: NextRequest) {
       configId = String(existingResult.rows[0].id);
       
       await db.query(
-        `UPDATE integrations 
+        `UPDATE store_integrations 
          SET is_active = $1, 
              configuration = $2, 
              auto_sync_enabled = $3, 
-             auto_sync_interval = $4, 
+             auto_sync_interval = $4,
+             api_key_encrypted = $5,
+             api_secret_encrypted = $6,
+             shipstation_username = $7,
+             shipstation_password_hash = $8,
+             shipstation_auth_enabled = true,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5`,
+         WHERE id = $9`,
         [
           isActive,
           JSON.stringify(configuration),
           autoSyncEnabled,
           autoSyncInterval,
+          encryptedApiKey,
+          encryptedApiSecret,
+          generatedUsername,
+          hashedPassword,
           configId
         ]
       );
     } else {
       // Create new configuration
       const insertResult = await db.query(
-        `INSERT INTO integrations (
+        `INSERT INTO store_integrations (
           store_id, 
           integration_type, 
           is_active, 
           configuration, 
           auto_sync_enabled, 
           auto_sync_interval,
+          api_key_encrypted,
+          api_secret_encrypted,
+          shipstation_username,
+          shipstation_password_hash,
+          shipstation_auth_enabled,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id`,
         [
           storeId,
@@ -213,31 +295,36 @@ export async function POST(request: NextRequest) {
           isActive,
           JSON.stringify(configuration),
           autoSyncEnabled,
-          autoSyncInterval
+          autoSyncInterval,
+          encryptedApiKey,
+          encryptedApiSecret,
+          generatedUsername,
+          hashedPassword
         ]
       );
       
       configId = String(insertResult.rows[0].id);
     }
 
-    // Return the updated configuration
+    // Return the updated configuration with generated credentials
     const updatedConfig: ShipStationConfig = {
       id: configId,
       isActive,
-      username,
-      password,
+      username: generatedUsername, // Generated custom store username
+      password: generatedPassword, // Generated custom store password (plain text for display)
       apiKey,
       apiSecret,
       endpointUrl,
       storeId,
       autoSyncEnabled,
-      autoSyncInterval
+      autoSyncInterval,
+      shipFromAddress
     };
 
     return NextResponse.json({
       success: true,
       data: updatedConfig,
-      message: 'ShipStation configuration saved successfully'
+      message: 'ShipStation configuration saved successfully. Custom store credentials have been automatically generated.'
     });
 
   } catch (error) {

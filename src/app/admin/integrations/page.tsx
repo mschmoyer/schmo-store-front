@@ -16,7 +16,7 @@ import { IntegrationConfiguration } from '@/types/database';
 
 interface Integration {
   id?: string;
-  integrationType: 'shipengine' | 'shipstation' | 'stripe' | 'square' | 'paypal';
+  integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;
   hasApiKey: boolean;
   configuration: IntegrationConfiguration;
@@ -48,14 +48,6 @@ export default function IntegrationsPage() {
             // Ensure we have all integrations, even if not configured
             const existingIntegrations = data.data.integrations;
             const allIntegrations: Integration[] = [
-              {
-                integrationType: 'shipengine',
-                isActive: false,
-                hasApiKey: false,
-                configuration: {},
-                autoSyncEnabled: false,
-                autoSyncInterval: '1hour'
-              },
               {
                 integrationType: 'shipstation',
                 isActive: false,
@@ -90,8 +82,13 @@ export default function IntegrationsPage() {
               }
             ];
             
-            // Update with existing data
+            // Update with existing data (skip any shipengine integrations)
             existingIntegrations.forEach((existing: Integration) => {
+              // Skip shipengine integrations since we no longer support them
+              if (existing.integrationType === 'shipengine') {
+                return;
+              }
+              
               const index = allIntegrations.findIndex(
                 int => int.integrationType === existing.integrationType
               );
@@ -219,7 +216,7 @@ export default function IntegrationsPage() {
         </Text>
         <Stack gap="lg">
           {integrations
-            .filter(integration => ['shipengine', 'shipstation'].includes(integration.integrationType))
+            .filter(integration => ['shipstation'].includes(integration.integrationType))
             .map((integration) => (
               <IntegrationSettings
                 key={integration.integrationType}

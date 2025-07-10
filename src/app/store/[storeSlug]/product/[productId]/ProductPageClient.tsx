@@ -141,7 +141,7 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
       const cartItem: CartItem = {
         product_id: product.product_id,
         name: product.name,
-        price: product.customs_value?.amount || 29.99,
+        price: product.display_price || product.price || product.customs_value?.amount || 29.99,
         quantity,
         thumbnail_url: product.thumbnail_url || '/placeholder-product.svg'
       };

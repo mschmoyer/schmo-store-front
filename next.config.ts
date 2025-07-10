@@ -15,6 +15,27 @@ const nextConfig: NextConfig = {
     optimizeCss: true,
   },
   
+  // Webpack configuration to exclude database modules from client-side bundling
+  webpack: (config: any, { isServer }: { isServer: boolean }) => {
+    if (!isServer) {
+      // Exclude database-related modules from client-side bundle
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        net: false,
+        tls: false,
+        fs: false,
+        dns: false,
+        pg: false,
+        'pg-native': false,
+        'pg-connection-string': false,
+      };
+    }
+    return config;
+  },
+  
+  // Server-side only packages for Turbopack
+  serverExternalPackages: ['pg', 'pg-native', 'pg-connection-string'],
+  
   // Skip type checking during build
   typescript: {
     ignoreBuildErrors: true,

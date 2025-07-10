@@ -133,9 +133,9 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
             };
           }
         }
-      } catch (error) {
+      } catch (decryptError) {
         // Skip this integration if decryption fails
-        console.error('Failed to decrypt credentials for integration:', integration.id);
+        console.error('Failed to decrypt credentials for integration:', integration.id, decryptError);
         continue;
       }
     }
@@ -206,9 +206,9 @@ export async function authenticateShipStationAPIKey(request: NextRequest): Promi
             }
           };
         }
-      } catch (error) {
+      } catch (decryptError) {
         // Skip this integration if decryption fails
-        console.error('Failed to decrypt API credentials for integration:', integration.id);
+        console.error('Failed to decrypt API credentials for integration:', integration.id, decryptError);
         continue;
       }
     }

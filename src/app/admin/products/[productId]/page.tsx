@@ -100,7 +100,7 @@ interface ProductEditPageProps {
  */
 export default function ProductEditPage({ params }: ProductEditPageProps) {
   const router = useRouter();
-  const { } = useAdmin();
+  const { session } = useAdmin();
   
   // State management
   const [product, setProduct] = useState<EnhancedProduct | null>(null);
@@ -306,9 +306,29 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
   /**
    * Open product preview in new tab
    */
-  const handlePreview = () => {
+  const handlePreview = async () => {
     if (product) {
-      window.open(`/store/${product.store_id}/product/${product.id}`, '_blank');
+      try {
+        // First, get the store slug from the store API
+        const storeResponse = await fetch(`/api/stores/public?id=${product.store_id}`);
+        if (storeResponse.ok) {
+          const storeData = await storeResponse.json();
+          if (storeData.success && storeData.data) {
+            const storeSlug = storeData.data.store_slug;
+            window.open(`/store/${storeSlug}/product/${product.id}`, '_blank');
+          } else {
+            console.warn('Store data not found, fallback to store ID');
+            window.open(`/store/${product.store_id}/product/${product.id}`, '_blank');
+          }
+        } else {
+          console.warn('Store API failed, fallback to store ID');
+          window.open(`/store/${product.store_id}/product/${product.id}`, '_blank');
+        }
+      } catch (error) {
+        console.error('Error fetching store slug:', error);
+        // Fallback: try to open with store ID
+        window.open(`/store/${product.store_id}/product/${product.id}`, '_blank');
+      }
     }
   };
 

@@ -943,3 +943,89 @@ export interface PaginationParams {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }
+
+// Purchase Order Types
+export interface Supplier {
+  id: UUID;
+  store_id: UUID;
+  name: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  address?: Address;
+  tax_id?: string;
+  payment_terms?: string;
+  notes?: string;
+  is_active: boolean;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface PurchaseOrder {
+  id: UUID;
+  store_id: UUID;
+  supplier_id: UUID;
+  purchase_order_number: string;
+  status: 'draft' | 'pending' | 'approved' | 'sent' | 'received' | 'partially_received' | 'cancelled';
+  order_date: Timestamp;
+  expected_delivery_date?: Timestamp;
+  received_date?: Timestamp;
+  subtotal: number;
+  tax_amount: number;
+  shipping_amount: number;
+  total_amount: number;
+  currency: string;
+  payment_status: 'pending' | 'paid' | 'partial' | 'overdue';
+  payment_terms?: string;
+  notes?: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  created_by?: UUID;
+  approved_by?: UUID;
+  approved_at?: Timestamp;
+}
+
+export interface PurchaseOrderItem {
+  id: UUID;
+  purchase_order_id: UUID;
+  product_id?: UUID;
+  sku?: string;
+  product_name: string;
+  description?: string;
+  quantity_ordered: number;
+  quantity_received: number;
+  unit_cost: number;
+  total_cost: number;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface CreateSupplierInput {
+  store_id: UUID;
+  name: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  address?: Address;
+  tax_id?: string;
+  payment_terms?: string;
+  notes?: string;
+}
+
+export interface CreatePurchaseOrderInput {
+  store_id: UUID;
+  supplier_id: UUID;
+  purchase_order_number: string;
+  order_date: Timestamp;
+  expected_delivery_date?: Timestamp;
+  payment_terms?: string;
+  notes?: string;
+  items: Array<{
+    product_id?: UUID;
+    sku?: string;
+    product_name: string;
+    description?: string;
+    quantity_ordered: number;
+    unit_cost: number;
+  }>;
+}

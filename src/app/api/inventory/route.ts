@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const integrationResult = await db.query(`
       SELECT api_key_encrypted, is_active
       FROM store_integrations 
-      WHERE store_id = $1 AND integration_type = 'shipengine'
+      WHERE store_id = $1 AND integration_type = 'shipstation'
     `, [user.storeId]);
     
     if (integrationResult.rows.length === 0 || !integrationResult.rows[0].is_active) {

@@ -3,10 +3,10 @@ import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateOrderInput } from '@/types/database';
 import { 
-  getShipStationCredentials, 
-  createShipStationOrder, 
-  transformToShipStationOrder 
-} from '@/lib/shipstation/legacyApi';
+  getShipStationV2Credentials, 
+  createShipment, 
+  transformToV2Shipment 
+} from '@/lib/shipstation/v2Api';
 
 interface CartItem {
   product_id: string | number;
@@ -33,210 +33,106 @@ interface OrderRequest {
   shippingMethod: string;
   subtotal: number;
   shippingCost: number;
+  discountAmount?: number;
   total: number;
   storeId?: string; // Optional store identifier
+  appliedCoupon?: {
+    code: string;
+    couponId: string;
+    discountAmount: number;
+    description: string;
+  } | null;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const orderData: OrderRequest = await request.json();
     
-    let apiKey: string | undefined;
-    let sellerId: string | undefined;
-    let warehouseId: string | undefined;
     let useShipStationLegacy = false;
     
     // Try to get store-specific integration if storeId is provided
     if (orderData.storeId) {
       try {
-        // First check for ShipStation Legacy API integration
-        const shipStationCredentials = await getShipStationCredentials(orderData.storeId);
+        // Check for ShipStation V2 API integration
+        const shipStationCredentials = await getShipStationV2Credentials(orderData.storeId);
         if (shipStationCredentials) {
-          console.log('Found ShipStation Legacy API integration, will use that for order creation');
-          useShipStationLegacy = true;
+          console.log('Found ShipStation V2 API integration, will use that for shipment creation');
+          useShipStationLegacy = true; // Using this flag to indicate ShipStation processing
           
-          // Create order in ShipStation Legacy API
+          // Test credentials first
+          const { testShipStationV2Credentials } = await import('@/lib/shipstation/v2Api');
+          const testResult = await testShipStationV2Credentials(shipStationCredentials);
+          console.log('ShipStation V2 API credentials test:', testResult);
+          
+          if (!testResult.success) {
+            console.error('ShipStation V2 API credentials test failed:', testResult.error);
+            return NextResponse.json(
+              { 
+                success: false,
+                error: 'ShipStation API credentials invalid',
+                message: `Credentials test failed: ${testResult.error}`,
+                code: 'INVALID_CREDENTIALS'
+              }, 
+              { status: 401 }
+            );
+          }
+          
+          // Create shipment in ShipStation V2 API
           const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-          const shipStationOrderData = transformToShipStationOrder(orderData, orderNumber, orderData.storeId);
+          const shipmentData = await transformToV2Shipment(orderData, orderNumber, shipStationCredentials);
           
-          const result = await createShipStationOrder(shipStationCredentials, shipStationOrderData);
+          const result = await createShipment(shipStationCredentials, shipmentData);
           
           if (result.success) {
-            console.log('ShipStation Legacy API order created successfully');
+            console.log('ShipStation V2 shipment created successfully:', result.data);
             
             // Also create order in our local database
             const localOrderResult = await createCompletedOrder(
               orderData, 
-              'Order created successfully in ShipStation Legacy API',
+              'Shipment created successfully in ShipStation V2 API',
               orderNumber,
               result.data
             );
             
             return localOrderResult;
           } else {
-            console.warn('ShipStation Legacy API failed:', result.error);
-            // Fall through to try ShipEngine or create local order
-            useShipStationLegacy = false;
+            console.error('ShipStation V2 shipment creation failed:', result.error);
+            // Fail the order creation since shipment creation failed
+            return NextResponse.json(
+              { 
+                success: false,
+                error: 'Order failed - shipment creation unsuccessful',
+                message: `Failed to create shipment: ${result.error}`,
+                code: 'SHIPMENT_CREATION_FAILED'
+              }, 
+              { status: 500 }
+            );
           }
         }
         
-        // If no ShipStation Legacy or it failed, try ShipEngine
+        // If no ShipStation V2 integration found, we can't proceed with shipment creation
         if (!useShipStationLegacy) {
-          const integrationResult = await db.query(`
-            SELECT api_key_encrypted, configuration, is_active
-            FROM store_integrations 
-            WHERE store_id = $1 AND integration_type = 'shipengine' AND is_active = true
-          `, [orderData.storeId]);
-          
-          if (integrationResult.rows.length > 0) {
-            const integration = integrationResult.rows[0];
-            apiKey = Buffer.from(String(integration.api_key_encrypted), 'base64').toString('utf-8');
-            
-            // Extract configuration values
-            const config = integration.configuration as Record<string, unknown> || {};
-            sellerId = config.seller_id as string;
-            warehouseId = config.warehouse_id as string;
-          }
+          console.warn('No ShipStation integration found, creating local order only');
+          return await createCompletedOrder(orderData, 'No ShipStation integration configured - order completed locally');
         }
       } catch (error) {
-        console.warn('Failed to get store-specific integration, falling back to environment variables:', error);
-        useShipStationLegacy = false;
+        console.error('Failed to get store-specific integration:', error);
+        // Return error instead of falling back, since we want to fail fast if ShipStation is configured but fails
+        return NextResponse.json(
+          { 
+            success: false,
+            error: 'Order failed - integration error',
+            message: `Integration error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            code: 'INTEGRATION_ERROR'
+          }, 
+          { status: 500 }
+        );
       }
     }
     
-    // Skip ShipEngine logic if we already used ShipStation Legacy API
-    if (useShipStationLegacy) {
-      // ShipStation Legacy API was attempted but failed, fall back to local order
-      console.warn('ShipStation Legacy API failed, creating local order');
-      return await createCompletedOrder(orderData, 'ShipStation Legacy API failed, order completed locally');
-    }
-    
-    // Fallback to environment variables if no store-specific config found
-    if (!apiKey) {
-      apiKey = process.env.SHIPSTATION_API_KEY;
-      sellerId = process.env.SHIPENGINE_SELLER_ID;
-      warehouseId = process.env.SHIPENGINE_WAREHOUSE_ID;
-    }
-    
-    console.log('Order creation - Environment check:', {
-      hasApiKey: !!apiKey,
-      apiKeyValue: apiKey ? `${apiKey.substring(0, 6)}...` : 'undefined',
-      hasSellerId: !!sellerId,
-      sellerIdValue: sellerId || 'undefined',
-      hasWarehouseId: !!warehouseId,
-      warehouseIdValue: warehouseId || 'undefined'
-    });
-    
-    if (!apiKey || apiKey === 'your_shipstation_api_key_here') {
-      console.warn('ShipEngine API key not configured, creating mock order');
-      return await createMockOrder(orderData);
-    }
-    
-    if (!sellerId || sellerId === 'your_seller_id_here') {
-      console.warn('ShipEngine Seller ID not configured, creating mock order');
-      return await createMockOrder(orderData);
-    }
-    
-    if (!warehouseId || warehouseId === 'your_warehouse_id_here') {
-      console.warn('ShipEngine Warehouse ID not configured, creating mock order');
-      return await createMockOrder(orderData);
-    }
-    
-    // Generate unique external order ID
-    const externalOrderId = `ORDER-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    console.log('Creating ShipEngine order:', {
-      externalOrderId,
-      customerName: `${orderData.shippingAddress.firstName} ${orderData.shippingAddress.lastName}`,
-      itemCount: orderData.items.length,
-      total: orderData.total
-    });
-    
-    // Prepare ShipEngine shipment data
-    const shipmentData = {
-      shipments: [{
-        ship_to: {
-          name: `${orderData.shippingAddress.firstName} ${orderData.shippingAddress.lastName}`,
-          email: orderData.shippingAddress.email,
-          phone: orderData.shippingAddress.phone,
-          address_line1: orderData.shippingAddress.address,
-          city_locality: orderData.shippingAddress.city,
-          state_province: orderData.shippingAddress.state,
-          postal_code: orderData.shippingAddress.zipCode,
-          country_code: "US"
-        },
-        warehouse_id: warehouseId,
-        external_order_id: externalOrderId,
-        order_source_code: "schmo-store",
-        // Add package information
-        packages: [{
-          weight: {
-            value: Math.max(1, orderData.items.reduce((total, item) => total + item.quantity, 0)),
-            unit: "pound"
-          },
-          dimensions: {
-            length: 12,
-            width: 9,
-            height: 3,
-            unit: "inch"
-          }
-        }],
-        // Add items for reference
-        items: orderData.items.map(item => ({
-          name: item.name,
-          quantity: item.quantity,
-          sku: item.product_id.toString(),
-          external_order_item_id: `${externalOrderId}-${item.product_id}`,
-          unit_price: {
-            currency: "USD",
-            amount: item.price
-          }
-        }))
-      }]
-    };
-    
-    console.log('ShipEngine API request:', JSON.stringify(shipmentData, null, 2));
-    
-    // Make request to ShipEngine API
-    const response = await fetch('https://api.shipengine.com/v1/shipments', {
-      method: 'POST',
-      headers: {
-        'API-Key': apiKey,
-        'Content-Type': 'application/json',
-        'seller-id': sellerId
-      },
-      body: JSON.stringify(shipmentData)
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`ShipEngine API error: ${response.status} - ${errorText}`);
-      
-      // Check if it's a billing/plan limitation
-      if (response.status === 401) {
-        console.warn('ShipEngine API requires billing plan upgrade, creating completed order locally');
-        return await createCompletedOrder(orderData, 'ShipEngine API requires a paid plan for shipment creation. Order completed locally.');
-      }
-      
-      // If ShipEngine fails, still create a completed order so checkout can complete
-      console.warn('ShipEngine API failed, creating completed order locally');
-      return await createCompletedOrder(orderData, 'ShipEngine API temporarily unavailable. Order completed locally.');
-    }
-    
-    const shipmentResponse = await response.json();
-    console.log('ShipEngine response:', shipmentResponse);
-    
-    // Return success response with shipment info
-    return NextResponse.json({
-      success: true,
-      orderId: externalOrderId,
-      shipmentId: shipmentResponse.shipments?.[0]?.shipment_id,
-      trackingNumber: shipmentResponse.shipments?.[0]?.tracking_number,
-      labelUrl: shipmentResponse.shipments?.[0]?.label_download?.href,
-      estimatedDelivery: shipmentResponse.shipments?.[0]?.ship_date,
-      orderTotal: orderData.total,
-      message: 'Order created successfully in ShipEngine'
-    });
+    // This should not be reached since we handle ShipStation V2 above
+    console.warn('Unexpected code path - all ShipStation processing should have returned earlier');
+    return await createCompletedOrder(orderData, 'Order completed locally');
     
   } catch (error) {
     console.error('Error creating order:', error);
@@ -271,7 +167,7 @@ async function createMockOrder(orderData: OrderRequest) {
   
   // Save the order to database for dashboard metrics
   try {
-    await createCompletedOrder(orderData, 'Mock order created successfully (ShipEngine not configured)');
+    await createCompletedOrder(orderData, 'Mock order created successfully (ShipStation not configured)');
   } catch (error) {
     console.error('Failed to save mock order to database:', error);
     // Continue with mock response even if database save fails
@@ -288,7 +184,7 @@ async function createMockOrder(orderData: OrderRequest) {
     trackingNumber: `1Z999AA1${Math.random().toString().substr(2, 8)}`,
     estimatedDelivery: deliveryDate.toISOString().split('T')[0],
     orderTotal: orderData.total,
-    message: 'Mock order created successfully (ShipEngine not configured)',
+    message: 'Mock order created successfully (ShipStation not configured)',
     isMockOrder: true
   });
 }
@@ -353,7 +249,7 @@ async function createCompletedOrder(
         shipping_amount: orderData.shippingCost,
         discount_amount: 0,
         total_amount: orderData.total,
-        payment_method: shipStationData ? 'shipstation_legacy' : 'local_completion',
+        payment_method: shipStationData ? 'shipstation_v2' : 'local_completion',
         payment_status: 'completed',
         shipping_method: orderData.shippingMethod,
         status: shipStationData ? 'awaiting_shipment' : 'completed',
@@ -382,7 +278,7 @@ async function createCompletedOrder(
           orderInput.subtotal, orderInput.tax_amount, orderInput.shipping_amount, orderInput.discount_amount,
           orderInput.total_amount, orderInput.payment_method, orderInput.payment_status, orderInput.shipping_method,
           orderInput.status, orderInput.fulfillment_status, 
-          shipStationData?.orderId || shipStationData?.orderNumber || null,
+          shipStationData?.shipment_id || shipStationData?.external_shipment_id || null,
           new Date(), new Date()
         ]
       );
@@ -463,20 +359,56 @@ async function createCompletedOrder(
           [
             uuidv4(), storeId, String(product.id), 'sale', -item.quantity,
             stockQuantity - item.quantity, 'order', orderId,
-            `Order ${orderNumber} - ${shipStationData ? 'ShipStation Legacy API' : 'Local completion'}`, new Date()
+            `Order ${orderNumber} - ${shipStationData ? 'ShipStation V2 API' : 'Local completion'}`, new Date()
           ]
         );
       }
       
-      // Update order total with actual calculated amount
-      const actualTotal = actualSubtotal + orderData.shippingCost;
+      // Update order total with actual calculated amount (including coupon discount)
+      const discountAmount = orderData.discountAmount || 0;
+      const actualTotal = actualSubtotal + orderData.shippingCost - discountAmount;
       await db.query(
-        `UPDATE orders SET subtotal = $1, total_amount = $2, updated_at = $3 
-         WHERE id = $4 AND store_id = $5`,
-        [actualSubtotal, actualTotal, new Date(), orderId, storeId]
+        `UPDATE orders SET subtotal = $1, total_amount = $2, discount_amount = $3, updated_at = $4 
+         WHERE id = $5 AND store_id = $6`,
+        [actualSubtotal, actualTotal, discountAmount, new Date(), orderId, storeId]
       );
       
-      console.log(`Order totals updated: subtotal=${actualSubtotal}, total=${actualTotal}`);
+      console.log(`Order totals updated: subtotal=${actualSubtotal}, total=${actualTotal}, discount=${discountAmount}`);
+      
+      // Save coupon usage if coupon was applied
+      if (orderData.appliedCoupon) {
+        try {
+          console.log('Recording coupon usage:', orderData.appliedCoupon);
+          
+          // Insert coupon usage record
+          await db.query(`
+            INSERT INTO coupon_usage (
+              id, store_id, coupon_id, order_id, customer_email, discount_amount, used_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              uuidv4(),
+              storeId,
+              orderData.appliedCoupon.couponId,
+              orderId,
+              orderData.shippingAddress.email,
+              orderData.appliedCoupon.discountAmount,
+              new Date()
+            ]
+          );
+          
+          // Update coupon usage count
+          await db.query(`
+            UPDATE coupons SET current_uses = current_uses + 1, updated_at = $1 
+            WHERE id = $2 AND store_id = $3`,
+            [new Date(), orderData.appliedCoupon.couponId, storeId]
+          );
+          
+          console.log(`Coupon usage recorded: ${orderData.appliedCoupon.code} - $${orderData.appliedCoupon.discountAmount}`);
+        } catch (couponError) {
+          console.error('Error recording coupon usage:', couponError);
+          // Don't fail the order if coupon tracking fails
+        }
+      }
       
       // Commit transaction
       await db.query('COMMIT');
@@ -498,7 +430,7 @@ async function createCompletedOrder(
         message,
         isLocalOrder: !shipStationData,
         isShipStationOrder: !!shipStationData,
-        shipStationOrderId: shipStationData?.orderId || shipStationData?.orderNumber,
+        shipStationShipmentId: shipStationData?.shipment_id || shipStationData?.external_shipment_id,
         redirectToSuccess: true
       });
       

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Container, Title, Button, Card, Group, Text, Image, NumberInput, ActionIcon, Stack, Alert, Divider, Badge, Loader, Center } from '@mantine/core';
-import { IconTrash, IconShoppingCart, IconArrowLeft } from '@tabler/icons-react';
+import { Container, Title, Button, Card, Group, Text, Image, NumberInput, ActionIcon, Stack, Alert, Divider, Badge, Loader, Center, TextInput } from '@mantine/core';
+import { IconTrash, IconShoppingCart, IconArrowLeft, IconTicket, IconCheck, IconX } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
@@ -31,6 +32,15 @@ export default function StoreCartPage() {
   const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const [localStorageAvailable, setLocalStorageAvailable] = useState(false);
+  
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    description: string;
+  } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
 
   // Fetch store information
   useEffect(() => {
@@ -52,6 +62,64 @@ export default function StoreCartPage() {
       fetchStore();
     }
   }, [storeSlug]);
+
+  // Refresh cart prices when store is loaded (run once)
+  useEffect(() => {
+    const refreshCartPrices = async () => {
+      if (!store?.id || cartItems.length === 0) return;
+
+      try {
+        // Fetch current product data to get updated prices
+        const productPromises = cartItems.map(async (item) => {
+          try {
+            const response = await fetch(`/api/stores/${store.id}/products/${item.product_id}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.data.product) {
+                const product = data.data.product;
+                const currentPrice = product.display_price || product.price || product.override_price || product.sale_price || product.base_price || item.price;
+                return { ...item, price: currentPrice };
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to refresh price for product:', item.product_id, error);
+          }
+          return item; // Return original item if price refresh fails
+        });
+
+        const updatedItems = await Promise.all(productPromises);
+        
+        // Check if any prices actually changed
+        const pricesChanged = updatedItems.some((updated, index) => 
+          updated.price !== cartItems[index].price
+        );
+
+        if (pricesChanged) {
+          setCartItems(updatedItems);
+          try {
+            localStorage.setItem('cart', JSON.stringify(updatedItems));
+            // Trigger cart update event for TopNav
+            window.dispatchEvent(new CustomEvent('cartUpdated', { detail: updatedItems }));
+          } catch (error) {
+            console.error('Error saving updated cart:', error);
+          }
+          
+          notifications.show({
+            title: 'Prices Updated',
+            message: 'Cart prices have been refreshed with current pricing.',
+            color: 'blue'
+          });
+        }
+      } catch (error) {
+        console.error('Error refreshing cart prices:', error);
+      }
+    };
+
+    // Only run if we have both store and cart items, and haven't refreshed yet
+    if (store?.id && cartItems.length > 0) {
+      refreshCartPrices();
+    }
+  }, [store?.id]); // Only depend on store.id to run once when store loads
 
   // Check if localStorage is available
   useEffect(() => {
@@ -178,8 +246,77 @@ export default function StoreCartPage() {
     saveCartToStorage([]);
   };
 
-  const calculateTotal = () => {
+  const calculateSubtotal = () => {
     return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+  };
+
+  const calculateTotal = () => {
+    const subtotal = calculateSubtotal();
+    const discount = appliedCoupon?.discountAmount || 0;
+    return Math.max(0, subtotal - discount);
+  };
+
+  // Coupon functions
+  const validateCoupon = async () => {
+    if (!couponCode.trim() || !store) return;
+    
+    setCouponLoading(true);
+    try {
+      const response = await fetch(`/api/store/${store.id}/coupons/validate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          couponCode: couponCode.trim(),
+          cartItems,
+          orderTotal: calculateSubtotal()
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success && result.data.valid) {
+        setAppliedCoupon({
+          code: couponCode.trim(),
+          discountAmount: result.data.discountAmount,
+          description: result.data.discount.description
+        });
+        setCouponCode('');
+        notifications.show({
+          title: 'Coupon Applied!',
+          message: `You saved $${result.data.discountAmount.toFixed(2)}`,
+          color: 'green',
+          icon: <IconCheck size="1rem" />
+        });
+      } else {
+        notifications.show({
+          title: 'Invalid Coupon',
+          message: result.data.error || 'This coupon code is not valid',
+          color: 'red',
+          icon: <IconX size="1rem" />
+        });
+      }
+    } catch (error) {
+      console.error('Error validating coupon:', error);
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to validate coupon. Please try again.',
+        color: 'red',
+        icon: <IconX size="1rem" />
+      });
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    notifications.show({
+      title: 'Coupon Removed',
+      message: 'The coupon has been removed from your order',
+      color: 'blue'
+    });
   };
 
   const totalItems = cartItems.reduce((total, item) => total + item.quantity, 0);
@@ -333,17 +470,96 @@ export default function StoreCartPage() {
           {/* Cart Summary */}
           <Card shadow="sm" padding="lg" radius="md" withBorder style={{ backgroundColor: 'var(--theme-card)', borderColor: 'var(--theme-border)' }}>
             <Stack gap="md">
-              <Group justify="space-between" align="center">
-                <Text size="xl" fw={600} style={{ color: 'var(--theme-text)' }}>Total:</Text>
-                <Text size="xl" fw={700} style={{
-                  background: 'var(--theme-primary-gradient)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  fontWeight: 800
-                }}>
-                  ${calculateTotal().toFixed(2)}
+              {/* Coupon Section */}
+              <Stack gap="sm">
+                <Text size="md" fw={500} style={{ color: 'var(--theme-text)' }}>
+                  Have a coupon code?
                 </Text>
-              </Group>
+                
+                {!appliedCoupon ? (
+                  <Group gap="sm">
+                    <TextInput
+                      placeholder="Enter coupon code"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.currentTarget.value.toUpperCase())}
+                      leftSection={<IconTicket size={16} />}
+                      style={{ flex: 1 }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          validateCoupon();
+                        }
+                      }}
+                    />
+                    <Button
+                      onClick={validateCoupon}
+                      loading={couponLoading}
+                      disabled={!couponCode.trim()}
+                      size="sm"
+                    >
+                      Apply
+                    </Button>
+                  </Group>
+                ) : (
+                  <Alert
+                    color="green"
+                    variant="light"
+                    icon={<IconCheck size={16} />}
+                    withCloseButton
+                    onClose={removeCoupon}
+                  >
+                    <Group justify="space-between">
+                      <Stack gap={2}>
+                        <Text size="sm" fw={500}>
+                          Coupon &quot;{appliedCoupon.code}&quot; applied
+                        </Text>
+                        <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
+                          {appliedCoupon.description}
+                        </Text>
+                      </Stack>
+                      <Text size="sm" fw={600} style={{ color: 'green' }}>
+                        -${appliedCoupon.discountAmount.toFixed(2)}
+                      </Text>
+                    </Group>
+                  </Alert>
+                )}
+              </Stack>
+
+              <Divider />
+
+              {/* Order Summary */}
+              <Stack gap="xs">
+                <Group justify="space-between">
+                  <Text size="md" style={{ color: 'var(--theme-text)' }}>Subtotal:</Text>
+                  <Text size="md" style={{ color: 'var(--theme-text)' }}>
+                    ${calculateSubtotal().toFixed(2)}
+                  </Text>
+                </Group>
+                
+                {appliedCoupon && (
+                  <Group justify="space-between">
+                    <Text size="md" style={{ color: 'green' }}>
+                      Discount ({appliedCoupon.code}):
+                    </Text>
+                    <Text size="md" style={{ color: 'green' }}>
+                      -${appliedCoupon.discountAmount.toFixed(2)}
+                    </Text>
+                  </Group>
+                )}
+                
+                <Divider />
+                
+                <Group justify="space-between" align="center">
+                  <Text size="xl" fw={600} style={{ color: 'var(--theme-text)' }}>Total:</Text>
+                  <Text size="xl" fw={700} style={{
+                    background: 'var(--theme-primary-gradient)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontWeight: 800
+                  }}>
+                    ${calculateTotal().toFixed(2)}
+                  </Text>
+                </Group>
+              </Stack>
               
               <Group justify="space-between" mt="md">
                 <Button

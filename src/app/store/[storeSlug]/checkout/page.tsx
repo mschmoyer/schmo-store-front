@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Container, Title, Grid, Card, Group, Text, Image, Button, Stack, Alert, Divider, TextInput, Select, Radio, Badge, Center, Loader, GridCol, Box } from '@mantine/core';
-import { IconArrowLeft, IconCheck, IconTruck, IconClock, IconShoppingCart } from '@tabler/icons-react';
+import { Container, Title, Grid, Card, Group, Text, Image, Button, Stack, Alert, Divider, TextInput, Select, Radio, Badge, Center, Loader, GridCol, Box, ActionIcon } from '@mantine/core';
+import { IconArrowLeft, IconCheck, IconTruck, IconClock, IconShoppingCart, IconTrash } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -93,6 +93,16 @@ export default function CheckoutPage() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    description: string;
+    couponId: string;
+  } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
 
   // Fetch store information
   useEffect(() => {
@@ -115,7 +125,7 @@ export default function CheckoutPage() {
     }
   }, [storeSlug]);
 
-  // Load cart data from localStorage
+  // Load cart data and coupon from localStorage
   useEffect(() => {
     const loadCartData = () => {
       if (typeof window !== 'undefined') {
@@ -136,6 +146,19 @@ export default function CheckoutPage() {
                 price: typeof item.price === 'string' ? parseFloat(item.price) : item.price
               }));
               setCartItems(validatedCart);
+            }
+          }
+
+          // Load applied coupon from localStorage
+          const savedCoupon = localStorage.getItem('appliedCoupon');
+          if (savedCoupon) {
+            try {
+              const parsedCoupon = JSON.parse(savedCoupon);
+              setAppliedCoupon(parsedCoupon);
+              setCouponCode(parsedCoupon.code);
+            } catch (couponError) {
+              console.error('Error parsing saved coupon:', couponError);
+              localStorage.removeItem('appliedCoupon');
             }
           }
         } catch (error) {
@@ -165,7 +188,10 @@ export default function CheckoutPage() {
   };
 
   const calculateTotal = () => {
-    return calculateSubtotal() + getShippingCost();
+    const subtotal = calculateSubtotal();
+    const shipping = getShippingCost();
+    const discount = appliedCoupon?.discountAmount || 0;
+    return Math.max(0, subtotal + shipping - discount);
   };
 
   const validateForm = (): boolean => {
@@ -194,6 +220,72 @@ export default function CheckoutPage() {
     }
   };
 
+  const validateCoupon = async () => {
+    if (!couponCode.trim() || !store?.id) return;
+
+    setCouponLoading(true);
+
+    try {
+      const response = await fetch(`/api/store/${store.id}/coupons/validate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          couponCode: couponCode.trim(),
+          cartItems,
+          orderTotal: calculateSubtotal()
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.data.valid) {
+        const newAppliedCoupon = {
+          code: couponCode.trim(),
+          discountAmount: data.data.discountAmount,
+          description: data.data.discount?.description || 'Discount applied',
+          couponId: data.data.couponId || 'unknown'
+        };
+        
+        setAppliedCoupon(newAppliedCoupon);
+        localStorage.setItem('appliedCoupon', JSON.stringify(newAppliedCoupon));
+        
+        notifications.show({
+          title: 'Coupon Applied!',
+          message: `${data.data.discount?.description || 'Discount'} - $${data.data.discountAmount.toFixed(2)} off`,
+          color: 'green'
+        });
+      } else {
+        notifications.show({
+          title: 'Invalid Coupon',
+          message: data.data.error || 'This coupon code is not valid.',
+          color: 'red'
+        });
+      }
+    } catch (error) {
+      console.error('Error validating coupon:', error);
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to validate coupon. Please try again.',
+        color: 'red'
+      });
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    localStorage.removeItem('appliedCoupon');
+    notifications.show({
+      title: 'Coupon Removed',
+      message: 'Coupon discount has been removed.',
+      color: 'blue'
+    });
+  };
+
   const handlePlaceOrder = async () => {
     if (!validateForm()) {
       notifications.show({
@@ -214,8 +306,15 @@ export default function CheckoutPage() {
         shippingMethod: selectedShipping,
         subtotal: calculateSubtotal(),
         shippingCost: getShippingCost(),
+        discountAmount: appliedCoupon?.discountAmount || 0,
         total: calculateTotal(),
-        storeId: store?.id
+        storeId: store?.id,
+        appliedCoupon: appliedCoupon ? {
+          code: appliedCoupon.code,
+          couponId: appliedCoupon.couponId,
+          discountAmount: appliedCoupon.discountAmount,
+          description: appliedCoupon.description
+        } : null
       };
 
       console.log('Submitting order:', orderData);
@@ -655,6 +754,72 @@ export default function CheckoutPage() {
 
                     <Divider />
 
+                    {/* Coupon Code Section */}
+                    <Stack gap="xs">
+                      <Text fw={500} style={{ color: 'var(--theme-text)' }}>Coupon Code</Text>
+                      {!appliedCoupon ? (
+                        <Group gap="xs">
+                          <TextInput
+                            placeholder="Enter coupon code"
+                            value={couponCode}
+                            onChange={(e) => setCouponCode(e.target.value)}
+                            style={{ flex: 1 }}
+                            styles={{
+                              input: {
+                                backgroundColor: 'var(--theme-background-secondary)',
+                                borderColor: 'var(--theme-border)',
+                                color: 'var(--theme-text)',
+                                '&::placeholder': { color: 'var(--theme-text-muted)' }
+                              }
+                            }}
+                          />
+                          <Button
+                            variant="outline"
+                            onClick={validateCoupon}
+                            loading={couponLoading}
+                            disabled={!couponCode.trim()}
+                            style={{
+                              borderColor: 'var(--theme-primary)',
+                              color: 'var(--theme-primary)',
+                              backgroundColor: 'transparent'
+                            }}
+                          >
+                            Apply
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Group justify="space-between" p="sm" style={{
+                          backgroundColor: 'var(--theme-success-light)',
+                          borderRadius: '8px',
+                          border: '1px solid var(--theme-success)'
+                        }}>
+                          <div>
+                            <Text size="sm" fw={500} style={{ color: 'var(--theme-success)' }}>
+                              {appliedCoupon.code}
+                            </Text>
+                            <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
+                              {appliedCoupon.description}
+                            </Text>
+                          </div>
+                          <Group gap="xs">
+                            <Text size="sm" fw={600} style={{ color: 'var(--theme-success)' }}>
+                              -{formatPrice(appliedCoupon.discountAmount)}
+                            </Text>
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              size="sm"
+                              onClick={removeCoupon}
+                            >
+                              <IconTrash size={14} />
+                            </ActionIcon>
+                          </Group>
+                        </Group>
+                      )}
+                    </Stack>
+
+                    <Divider />
+
                     {/* Pricing Summary */}
                     <Stack gap="xs">
                       <Group justify="space-between">
@@ -670,6 +835,15 @@ export default function CheckoutPage() {
                           {getShippingCost() === 0 ? 'FREE' : formatPrice(getShippingCost())}
                         </Text>
                       </Group>
+
+                      {appliedCoupon && (
+                        <Group justify="space-between">
+                          <Text style={{ color: 'var(--theme-text)' }}>Discount:</Text>
+                          <Text fw={600} style={{ color: 'var(--theme-success)' }}>
+                            -{formatPrice(appliedCoupon.discountAmount)}
+                          </Text>
+                        </Group>
+                      )}
 
                       <Divider />
 

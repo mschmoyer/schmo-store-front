@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Order Integration - Current /admin/inventory</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            color: #334155;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #64748b;
+            font-size: 16px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #64748b;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-success {
+            background: #059669;
+            color: white;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: #3b82f6;
+            border: 1px solid #3b82f6;
+        }
+
+        .btn-outline:hover {
+            background: #3b82f6;
+            color: white;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+        }
+
+        .stat-card h3 {
+            font-size: 12px;
+            font-weight: 500;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .stat-card .icon {
+            float: right;
+            margin-top: -8px;
+            padding: 8px;
+            border-radius: 6px;
+            background: #f1f5f9;
+        }
+
+        /* AI Recommendations */
+        .ai-recommendations {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #0ea5e9;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .ai-recommendations h3 {
+            color: #0369a1;
+            margin-bottom: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ai-recommendations p {
+            color: #0284c7;
+            margin-bottom: 16px;
+        }
+
+        .ai-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .ai-actions .btn {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        /* Tabs */
+        .tabs {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .tab-list {
+            display: flex;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+        }
+
+        .tab-item {
+            padding: 16px 24px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            color: #64748b;
+        }
+
+        .tab-item.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+            background: white;
+        }
+
+        .tab-item:hover:not(.active) {
+            color: #1e293b;
+            background: #f1f5f9;
+        }
+
+        .tab-content {
+            padding: 24px;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-group label {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 120px;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        /* Table */
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th,
+        .table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+
+        .table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .table td {
+            color: #64748b;
+        }
+
+        .table tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        /* Status Badges */
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-in-stock { background: #dcfce7; color: #166534; }
+        .status-low-stock { background: #fef3c7; color: #92400e; }
+        .status-out-of-stock { background: #fee2e2; color: #991b1b; }
+        .status-pending { background: #fef3c7; color: #92400e; }
+        .status-approved { background: #dbeafe; color: #1e40af; }
+        .status-shipped { background: #e0f2fe; color: #0369a1; }
+        .status-delivered { background: #dcfce7; color: #166534; }
+
+        /* Product Info */
+        .product-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .product-image {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .product-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .product-details h4 {
+            font-weight: 500;
+            margin-bottom: 2px;
+            color: #1e293b;
+        }
+
+        .product-details p {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 6px 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #f1f5f9;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+
+        .action-btn.primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .action-btn.primary:hover {
+            background: #2563eb;
+        }
+
+        .action-btn.success {
+            background: #059669;
+            color: white;
+        }
+
+        .action-btn.success:hover {
+            background: #047857;
+        }
+
+        /* Enhanced Purchase Order Features */
+        .po-quick-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .po-suggestions {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 16px;
+        }
+
+        .po-suggestions h4 {
+            color: #1e293b;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .suggestion-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .suggestion-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .suggestion-item:hover {
+            background: #f8fafc;
+        }
+
+        .suggestion-info {
+            flex: 1;
+        }
+
+        .suggestion-info h5 {
+            font-weight: 500;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }
+
+        .suggestion-info p {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .suggestion-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Forecast Warning */
+        .forecast-warning {
+            color: #f59e0b;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .forecast-high-confidence {
+            color: #059669;
+        }
+
+        .forecast-medium-confidence {
+            color: #f59e0b;
+        }
+
+        .forecast-low-confidence {
+            color: #dc2626;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #64748b;
+            padding: 4px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .filters {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .header-actions {
+                flex-direction: column;
+            }
+            
+            .ai-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header with integrated PO actions -->
+        <div class="header">
+            <h1>Inventory Management</h1>
+            <p>Manage your stock levels, forecasting, and purchase orders with AI-powered insights</p>
+            <div class="header-actions">
+                <button class="btn btn-outline" onclick="syncShipStation()">
+                    🔄 Sync ShipStation
+                </button>
+                <button class="btn btn-primary" onclick="openSmartPOModal()">
+                    🤖 Smart Purchase Order
+                </button>
+                <button class="btn btn-secondary" onclick="openCreatePOModal()">
+                    📝 Create Purchase Order
+                </button>
+            </div>
+        </div>
+
+        <!-- Enhanced Stats with PO metrics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="icon">📦</div>
+                <h3>Total Products</h3>
+                <div class="value">247</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">💰</div>
+                <h3>Total Value</h3>
+                <div class="value">$45,280</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">⚠️</div>
+                <h3>Low Stock</h3>
+                <div class="value">12</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">🚨</div>
+                <h3>Out of Stock</h3>
+                <div class="value">3</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">🚛</div>
+                <h3>Pending Orders</h3>
+                <div class="value">8</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">📈</div>
+                <h3>This Month's POs</h3>
+                <div class="value">$12,450</div>
+            </div>
+        </div>
+
+        <!-- AI Recommendations (Enhanced) -->
+        <div class="ai-recommendations">
+            <h3>🤖 AI Recommendations</h3>
+            <p>Based on your sales velocity and current stock levels, we recommend creating purchase orders for the following items:</p>
+            <div class="ai-actions">
+                <button class="btn btn-primary" onclick="createSmartPO('headphones')">Order Wireless Headphones (45 units)</button>
+                <button class="btn btn-primary" onclick="createSmartPO('cables')">Order USB Cables (30 units)</button>
+                <button class="btn btn-secondary" onclick="showAllRecommendations()">View All Recommendations</button>
+                <button class="btn btn-outline" onclick="dismissRecommendations()">Dismiss</button>
+            </div>
+        </div>
+
+        <!-- Enhanced Tabs -->
+        <div class="tabs">
+            <div class="tab-list">
+                <div class="tab-item active" onclick="showTab('inventory')">
+                    📦 Inventory Grid
+                </div>
+                <div class="tab-item" onclick="showTab('purchase-orders')">
+                    📄 Purchase Orders
+                </div>
+                <div class="tab-item" onclick="showTab('suppliers')">
+                    🏢 Suppliers
+                </div>
+                <div class="tab-item" onclick="showTab('reports')">
+                    📊 Reports
+                </div>
+                <div class="tab-item" onclick="showTab('alerts')">
+                    🔔 Alerts
+                </div>
+            </div>
+
+            <!-- Inventory Tab (Enhanced) -->
+            <div class="tab-content">
+                <div id="inventory" class="tab-panel active">
+                    <!-- Filters -->
+                    <div class="filters">
+                        <div class="filter-group">
+                            <label>Search</label>
+                            <input type="text" placeholder="Search by name or SKU...">
+                        </div>
+                        <div class="filter-group">
+                            <label>Supplier</label>
+                            <select>
+                                <option>All Suppliers</option>
+                                <option>TechCorp</option>
+                                <option>HomeGoods Inc</option>
+                                <option>Electronics Plus</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Stock Status</label>
+                            <select>
+                                <option>All Items</option>
+                                <option>In Stock</option>
+                                <option>Low Stock</option>
+                                <option>Out of Stock</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Actions</label>
+                            <button class="btn btn-outline">Export CSV</button>
+                        </div>
+                    </div>
+
+                    <!-- Smart Purchase Order Suggestions -->
+                    <div class="po-suggestions">
+                        <h4>🎯 Smart Reorder Suggestions</h4>
+                        <div class="suggestion-item">
+                            <div class="suggestion-info">
+                                <h5>Wireless Headphones</h5>
+                                <p>Current: 8 units • Forecast: 45 units needed in 30 days • High confidence</p>
+                            </div>
+                            <div class="suggestion-actions">
+                                <button class="btn btn-success" onclick="quickReorder('headphones')">Quick Order</button>
+                                <button class="btn btn-outline" onclick="addToPO('headphones')">Add to PO</button>
+                            </div>
+                        </div>
+                        <div class="suggestion-item">
+                            <div class="suggestion-info">
+                                <h5>USB Cable Pack</h5>
+                                <p>Current: 5 units • Forecast: 28 units needed in 30 days • Medium confidence</p>
+                            </div>
+                            <div class="suggestion-actions">
+                                <button class="btn btn-success" onclick="quickReorder('cables')">Quick Order</button>
+                                <button class="btn btn-outline" onclick="addToPO('cables')">Add to PO</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Enhanced Inventory Table -->
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>SKU</th>
+                                    <th>Stock</th>
+                                    <th>Status</th>
+                                    <th>30-Day Forecast</th>
+                                    <th>Reorder Point</th>
+                                    <th>Unit Cost</th>
+                                    <th>Total Value</th>
+                                    <th>Last Restocked</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <div class="product-info">
+                                            <div class="product-image">
+                                                <img src="/api/placeholder/40/40" alt="Wireless Headphones">
+                                            </div>
+                                            <div class="product-details">
+                                                <h4>Wireless Headphones</h4>
+                                                <p>Electronics • TechCorp</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>WH-001</td>
+                                    <td><strong>8</strong></td>
+                                    <td><span class="status-badge status-low-stock">Low Stock</span></td>
+                                    <td>
+                                        <div class="forecast-warning">
+                                            <span>⚠️ 45 units</span>
+                                            <span class="forecast-high-confidence">High</span>
+                                        </div>
+                                    </td>
+                                    <td>15</td>
+                                    <td>$25.00</td>
+                                    <td>$200.00</td>
+                                    <td>Nov 15, 2024</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn success" onclick="quickReorder('WH-001')">🔄 Reorder</button>
+                                            <button class="action-btn" onclick="editItem('WH-001')">✏️ Edit</button>
+                                            <button class="action-btn primary" onclick="addToPO('WH-001')">📝 Add to PO</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <div class="product-info">
+                                            <div class="product-image">
+                                                <img src="/api/placeholder/40/40" alt="USB Cable Pack">
+                                            </div>
+                                            <div class="product-details">
+                                                <h4>USB Cable Pack</h4>
+                                                <p>Electronics • TechCorp</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>USB-001</td>
+                                    <td><strong>5</strong></td>
+                                    <td><span class="status-badge status-low-stock">Low Stock</span></td>
+                                    <td>
+                                        <div class="forecast-warning">
+                                            <span>⚠️ 28 units</span>
+                                            <span class="forecast-medium-confidence">Medium</span>
+                                        </div>
+                                    </td>
+                                    <td>10</td>
+                                    <td>$12.50</td>
+                                    <td>$62.50</td>
+                                    <td>Nov 20, 2024</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn success" onclick="quickReorder('USB-001')">🔄 Reorder</button>
+                                            <button class="action-btn" onclick="editItem('USB-001')">✏️ Edit</button>
+                                            <button class="action-btn primary" onclick="addToPO('USB-001')">📝 Add to PO</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <div class="product-info">
+                                            <div class="product-image">
+                                                <img src="/api/placeholder/40/40" alt="Bluetooth Speaker">
+                                            </div>
+                                            <div class="product-details">
+                                                <h4>Bluetooth Speaker</h4>
+                                                <p>Electronics • Electronics Plus</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>BT-001</td>
+                                    <td><strong>25</strong></td>
+                                    <td><span class="status-badge status-in-stock">In Stock</span></td>
+                                    <td>
+                                        <div class="forecast-high-confidence">
+                                            <span>✅ 18 units</span>
+                                            <span>High</span>
+                                        </div>
+                                    </td>
+                                    <td>20</td>
+                                    <td>$45.00</td>
+                                    <td>$1,125.00</td>
+                                    <td>Dec 1, 2024</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn" onclick="quickReorder('BT-001')">🔄 Reorder</button>
+                                            <button class="action-btn" onclick="editItem('BT-001')">✏️ Edit</button>
+                                            <button class="action-btn" onclick="addToPO('BT-001')">📝 Add to PO</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <div class="product-info">
+                                            <div class="product-image">
+                                                <img src="/api/placeholder/40/40" alt="Phone Cases">
+                                            </div>
+                                            <div class="product-details">
+                                                <h4>Phone Cases</h4>
+                                                <p>Accessories • HomeGoods Inc</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>PC-001</td>
+                                    <td><strong>0</strong></td>
+                                    <td><span class="status-badge status-out-of-stock">Out of Stock</span></td>
+                                    <td>
+                                        <div class="forecast-warning">
+                                            <span>🚨 22 units</span>
+                                            <span class="forecast-medium-confidence">Medium</span>
+                                        </div>
+                                    </td>
+                                    <td>15</td>
+                                    <td>$8.00</td>
+                                    <td>$0.00</td>
+                                    <td>Oct 28, 2024</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn success" onclick="quickReorder('PC-001')">🔄 Urgent Reorder</button>
+                                            <button class="action-btn" onclick="editItem('PC-001')">✏️ Edit</button>
+                                            <button class="action-btn primary" onclick="addToPO('PC-001')">📝 Add to PO</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Purchase Orders Tab (Enhanced) -->
+                <div id="purchase-orders" class="tab-panel">
+                    <div class="po-quick-actions">
+                        <button class="btn btn-primary" onclick="openCreatePOModal()">📝 Create New PO</button>
+                        <button class="btn btn-success" onclick="openSmartPOModal()">🤖 Smart PO Builder</button>
+                        <button class="btn btn-outline" onclick="openBulkReceiveModal()">📦 Bulk Receive</button>
+                        <button class="btn btn-outline" onclick="exportPOReport()">📊 Export Report</button>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>PO Number</th>
+                                    <th>Supplier</th>
+                                    <th>Order Date</th>
+                                    <th>Expected Delivery</th>
+                                    <th>Status</th>
+                                    <th>Items</th>
+                                    <th>Total Cost</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>PO-001</strong></td>
+                                    <td>TechCorp</td>
+                                    <td>Dec 5, 2024</td>
+                                    <td>Dec 15, 2024</td>
+                                    <td><span class="status-badge status-shipped">Shipped</span></td>
+                                    <td>3 items</td>
+                                    <td>$2,450.00</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn" onclick="viewPO('PO-001')">👁️ View</button>
+                                            <button class="action-btn success" onclick="receivePO('PO-001')">📦 Receive</button>
+                                            <button class="action-btn" onclick="trackPO('PO-001')">🚛 Track</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>PO-002</strong></td>
+                                    <td>Electronics Plus</td>
+                                    <td>Dec 8, 2024</td>
+                                    <td>Dec 18, 2024</td>
+                                    <td><span class="status-badge status-approved">Approved</span></td>
+                                    <td>2 items</td>
+                                    <td>$1,200.00</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn" onclick="viewPO('PO-002')">👁️ View</button>
+                                            <button class="action-btn primary" onclick="sendPO('PO-002')">📧 Send</button>
+                                            <button class="action-btn" onclick="editPO('PO-002')">✏️ Edit</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>PO-003</strong></td>
+                                    <td>HomeGoods Inc</td>
+                                    <td>Dec 10, 2024</td>
+                                    <td>Dec 20, 2024</td>
+                                    <td><span class="status-badge status-pending">Pending</span></td>
+                                    <td>1 item</td>
+                                    <td>$350.00</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="action-btn" onclick="viewPO('PO-003')">👁️ View</button>
+                                            <button class="action-btn success" onclick="approvePO('PO-003')">✅ Approve</button>
+                                            <button class="action-btn" onclick="editPO('PO-003')">✏️ Edit</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Other tabs would go here... -->
+                <div id="suppliers" class="tab-panel">
+                    <p>Suppliers tab content would be integrated here...</p>
+                </div>
+
+                <div id="reports" class="tab-panel">
+                    <p>Reports tab content would be integrated here...</p>
+                </div>
+
+                <div id="alerts" class="tab-panel">
+                    <p>Alerts tab content would be integrated here...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Smart Purchase Order Modal -->
+    <div id="smartPOModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">🤖 Smart Purchase Order Builder</h3>
+                <button class="close-btn" onclick="closeModal('smartPOModal')">&times;</button>
+            </div>
+            <div>
+                <div class="ai-recommendations" style="margin-bottom: 20px;">
+                    <h3>🎯 AI Recommendations</h3>
+                    <p>Based on your sales data, inventory levels, and seasonal trends, we recommend:</p>
+                </div>
+                
+                <div class="po-suggestions">
+                    <h4>Recommended Items</h4>
+                    <div class="suggestion-item">
+                        <div class="suggestion-info">
+                            <h5>Wireless Headphones</h5>
+                            <p>Recommended: 50 units • Cost: $1,250.00 • Confidence: High</p>
+                        </div>
+                        <div class="suggestion-actions">
+                            <input type="checkbox" checked> Include
+                        </div>
+                    </div>
+                    <div class="suggestion-item">
+                        <div class="suggestion-info">
+                            <h5>USB Cable Pack</h5>
+                            <p>Recommended: 30 units • Cost: $375.00 • Confidence: Medium</p>
+                        </div>
+                        <div class="suggestion-actions">
+                            <input type="checkbox" checked> Include
+                        </div>
+                    </div>
+                    <div class="suggestion-item">
+                        <div class="suggestion-info">
+                            <h5>Phone Cases</h5>
+                            <p>Recommended: 25 units • Cost: $200.00 • Confidence: High</p>
+                        </div>
+                        <div class="suggestion-actions">
+                            <input type="checkbox" checked> Include
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Supplier</label>
+                    <select class="form-input">
+                        <option>TechCorp (Best match for selected items)</option>
+                        <option>Electronics Plus</option>
+                        <option>HomeGoods Inc</option>
+                    </select>
+                </div>
+
+                <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                    <h4>Order Summary</h4>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Items:</span>
+                        <span>3 products, 105 units</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Subtotal:</span>
+                        <span>$1,825.00</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Estimated Shipping:</span>
+                        <span>$75.00</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+                        <span>Total:</span>
+                        <span>$1,900.00</span>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="closeModal('smartPOModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="createSmartPurchaseOrder()">Create Smart PO</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Reorder Modal -->
+    <div id="quickReorderModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">🔄 Quick Reorder</h3>
+                <button class="close-btn" onclick="closeModal('quickReorderModal')">&times;</button>
+            </div>
+            <div>
+                <div class="product-info" style="margin-bottom: 20px;">
+                    <div class="product-image">
+                        <img src="/api/placeholder/40/40" alt="Product">
+                    </div>
+                    <div class="product-details">
+                        <h4>Wireless Headphones</h4>
+                        <p>SKU: WH-001 • Current Stock: 8 units</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Quantity to Order</label>
+                    <input type="number" class="form-input" value="45" min="1">
+                    <small style="color: #64748b;">AI suggests 45 units based on 30-day forecast</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Supplier</label>
+                    <select class="form-input">
+                        <option>TechCorp (Primary)</option>
+                        <option>Electronics Plus</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Expected Delivery</label>
+                    <input type="date" class="form-input" value="2024-12-20">
+                </div>
+
+                <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Unit Cost:</span>
+                        <span>$25.00</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                        <span>Total Cost:</span>
+                        <span>$1,125.00</span>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="closeModal('quickReorderModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="createQuickReorder()">Create Purchase Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab functionality
+        function showTab(tabName) {
+            // Hide all panels
+            document.querySelectorAll('.tab-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-item').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected panel
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+
+        // Modal functionality
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        // Smart PO functions
+        function openSmartPOModal() {
+            openModal('smartPOModal');
+        }
+
+        function createSmartPurchaseOrder() {
+            closeModal('smartPOModal');
+            alert('Smart Purchase Order created successfully! PO-004 has been generated.');
+        }
+
+        // Quick reorder functions
+        function quickReorder(sku) {
+            openModal('quickReorderModal');
+        }
+
+        function createQuickReorder() {
+            closeModal('quickReorderModal');
+            alert('Quick reorder created! PO-005 has been generated.');
+        }
+
+        // Other functions
+        function addToPO(sku) {
+            alert(`${sku} added to current purchase order draft`);
+        }
+
+        function syncShipStation() {
+            alert('Syncing with ShipStation...');
+        }
+
+        function createSmartPO(type) {
+            alert(`Creating smart PO for ${type}...`);
+        }
+
+        function showAllRecommendations() {
+            alert('Showing all AI recommendations...');
+        }
+
+        function dismissRecommendations() {
+            document.querySelector('.ai-recommendations').style.display = 'none';
+        }
+
+        // Close modals when clicking outside
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.remove('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

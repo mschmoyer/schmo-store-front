@@ -327,7 +327,7 @@ async function triggerHealthCheck(data: { integration_type?: string; store_id?: 
         response: { body: JSON.stringify({ health_status: health.status, operations_last_hour: metrics.total_operations }) }
       },
       store_id || 'system',
-      integration_type as 'shipstation' | 'shipengine' | 'stripe' | 'other'
+      integration_type as 'shipstation' | 'stripe' | 'other'
     );
 
     return NextResponse.json({

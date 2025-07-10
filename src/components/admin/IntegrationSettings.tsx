@@ -27,8 +27,7 @@ import {
   IconX, 
   IconAlertCircle,
   IconExternalLink,
-  IconDatabase,
-  IconPackage,
+  IconRefresh,
   IconChevronDown,
   IconChevronUp
 } from '@tabler/icons-react';
@@ -36,7 +35,7 @@ import { IntegrationConfiguration } from '@/types/database';
 
 interface Integration {
   id?: string;
-  integrationType: 'shipengine' | 'shipstation' | 'stripe' | 'square' | 'paypal';
+  integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;
   hasApiKey: boolean;
   hasApiSecret?: boolean;
@@ -77,45 +76,23 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     },
     validate: {
       apiKey: (value) => (!value ? 'API key is required' : null),
-      apiSecret: (value) => {
-        // Only require API secret for ShipStation Legacy API
-        if (integration.integrationType === 'shipstation' && !value) {
-          return 'API secret is required for ShipStation Legacy API';
-        }
+      apiSecret: () => {
         return null;
       },
     },
   });
   
   const integrationConfig = {
-    shipengine: {
+    shipstation: {
       name: 'ShipStation',
-      description: 'Connect your ShipStation account to manage products and inventory',
+      description: 'Connect your ShipStation account to manage products, inventory, and shipping',
       color: 'blue',
       icon: IconPlug,
       apiKeyLabel: 'ShipStation API Key',
-      apiKeyPlaceholder: 'shipstation_live_...',
+      apiKeyPlaceholder: 'ukyI...',
       docsUrl: 'https://docs.shipstation.com/',
       fields: [],
       supportsSyncing: true
-    },
-    shipstation: {
-      name: 'ShipStation Legacy API',
-      description: 'Legacy ShipStation API using Basic HTTP Authentication (API Key + Secret)',
-      color: 'orange',
-      icon: IconPlug,
-      apiKeyLabel: 'ShipStation API Key',
-      apiKeyPlaceholder: 'Enter your ShipStation API Key (used as username)',
-      docsUrl: 'https://help.shipstation.com/hc/en-us/articles/360025856371',
-      fields: [
-        {
-          key: 'apiSecret',
-          label: 'ShipStation API Secret',
-          placeholder: 'Enter your ShipStation API Secret (used as password)',
-          description: 'Your ShipStation API Secret - find both API Key and Secret at https://ss.shipstation.com/#/settings/api'
-        }
-      ],
-      supportsSyncing: false
     },
     stripe: {
       name: 'Stripe',
@@ -175,6 +152,17 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
   
   const config = integrationConfig[integration.integrationType];
   
+  // Handle case where integration type is not found in config
+  if (!config) {
+    return (
+      <Card shadow="sm" padding="lg" radius="md" withBorder>
+        <Alert color="red" icon={<IconAlertCircle size="1rem" />}>
+          Unknown integration type: {integration.integrationType}
+        </Alert>
+      </Card>
+    );
+  }
+  
   const handleTest = async () => {
     if (!form.values.apiKey) {
       notifications.show({
@@ -199,9 +187,6 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
         body: JSON.stringify({
           integrationType: integration.integrationType,
           apiKey: form.values.apiKey,
-          ...(integration.integrationType === 'shipstation' && {
-            apiSecret: form.values.apiSecret
-          })
         })
       });
       
@@ -245,7 +230,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     }
   };
   
-  const handleSync = async (type: 'products' | 'inventory') => {
+  const handleSync = async (type: 'products' | 'inventory' | 'all') => {
     if (!integration.isActive || !integration.hasApiKey) {
       notifications.show({
         title: 'Error',
@@ -255,44 +240,88 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       return;
     }
     
-    setSyncing(prev => ({ ...prev, [type]: true }));
-    
-    try {
-      const token = localStorage.getItem('admin_token');
-      const response = await fetch(`/api/admin/sync/${type}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+    if (type === 'all') {
+      // Handle unified sync - sync products, inventory, warehouses, and locations
+      setSyncing({ products: true, inventory: true });
       
-      const data = await response.json();
-      
-      if (data.success) {
-        const { addedCount, updatedCount, totalCount } = data.data;
-        notifications.show({
-          title: 'Sync Complete',
-          message: `${type === 'products' ? 'Products' : 'Inventory'} sync completed: ${addedCount} added, ${updatedCount} updated (${totalCount} total)`,
-          color: 'green',
-          icon: <IconCheck style={{ width: rem(18), height: rem(18) }} />,
+      try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch('/api/admin/sync/all', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         });
-      } else {
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          const { products, inventory, warehouses, locations } = data.data;
+          notifications.show({
+            title: 'Sync Complete',
+            message: `All data synced: ${products?.totalCount || 0} products, ${inventory?.totalCount || 0} inventory items, ${warehouses?.totalCount || 0} warehouses, ${locations?.totalCount || 0} locations`,
+            color: 'green',
+            icon: <IconCheck style={{ width: rem(18), height: rem(18) }} />,
+          });
+        } else {
+          notifications.show({
+            title: 'Sync Failed',
+            message: data.error || 'Failed to sync data',
+            color: 'red',
+          });
+        }
+      } catch (error) {
         notifications.show({
-          title: 'Sync Failed',
-          message: data.error || `Failed to sync ${type}`,
+          title: 'Error',
+          message: 'An error occurred while syncing data',
           color: 'red',
         });
+        console.error('Sync all error:', error);
+      } finally {
+        setSyncing({ products: false, inventory: false });
       }
-    } catch (error) {
-      notifications.show({
-        title: 'Error',
-        message: `An error occurred while syncing ${type}`,
-        color: 'red',
-      });
-      console.error(`Sync ${type} error:`, error);
-    } finally {
-      setSyncing(prev => ({ ...prev, [type]: false }));
+    } else {
+      // Handle individual sync types
+      setSyncing(prev => ({ ...prev, [type]: true }));
+      
+      try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(`/api/admin/sync/${type}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          const { addedCount, updatedCount, totalCount } = data.data;
+          notifications.show({
+            title: 'Sync Complete',
+            message: `${type === 'products' ? 'Products' : 'Inventory'} sync completed: ${addedCount} added, ${updatedCount} updated (${totalCount} total)`,
+            color: 'green',
+            icon: <IconCheck style={{ width: rem(18), height: rem(18) }} />,
+          });
+        } else {
+          notifications.show({
+            title: 'Sync Failed',
+            message: data.error || `Failed to sync ${type}`,
+            color: 'red',
+          });
+        }
+      } catch (error) {
+        notifications.show({
+          title: 'Error',
+          message: `An error occurred while syncing ${type}`,
+          color: 'red',
+        });
+        console.error(`Sync ${type} error:`, error);
+      } finally {
+        setSyncing(prev => ({ ...prev, [type]: false }));
+      }
     }
   };
   
@@ -317,7 +346,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       
       await onUpdate(integration.integrationType, {
         apiKey: String(values.apiKey || ''),
-        apiSecret: String(values.apiSecret || ''), // Add API Secret at top level for ShipStation
+        apiSecret: String(values.apiSecret || ''),
         configuration: {
           webhook_url: String(values.webhookUrl || ''),
           api_url: String(values.endpointUrl || ''),
@@ -442,87 +471,24 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
             
             <form onSubmit={form.onSubmit(handleSubmit)}>
               <Stack gap="md">
-                {/* API Key and Secret for ShipStation */}
-                {integration.integrationType === 'shipstation' ? (
-                  <Stack gap="md" style={{ maxWidth: '600px' }}>
-                    <Text size="sm" c="dimmed">
-                      Get your API credentials at{' '}
-                      <a href="https://ss.shipstation.com/#/settings/api" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--mantine-color-blue-6)' }}>
-                        ShipStation Settings
-                      </a>
-                    </Text>
-                    <PasswordInput
-                      label={config.apiKeyLabel}
-                      required
-                      {...form.getInputProps('apiKey')}
-                    />
-                    <Group align="flex-end" gap="md">
-                      <PasswordInput
-                        label="ShipStation API Secret"
-                        required
-                        style={{ flex: 1 }}
-                        {...form.getInputProps('apiSecret')}
-                      />
-                      <Button
-                        variant="light"
-                        onClick={handleTest}
-                        loading={testing}
-                        disabled={!form.values.apiKey || !form.values.apiSecret}
-                      >
-                        Test Connection
-                      </Button>
-                    </Group>
-                    
-                    <Divider label="Custom Store Setup" labelPosition="center" />
-                    
-                    <Alert color="blue" variant="light" title="Configure Custom Store in ShipStation">
-                      <Stack gap="sm">
-                        <Text size="sm">
-                          After saving your API credentials, configure a Custom Store in ShipStation:
-                        </Text>
-                        <Text size="sm" fw={600}>
-                          1. Go to Settings → Stores → Setup Store Connection
-                        </Text>
-                        <Text size="sm" fw={600}>
-                          2. Select &quot;Custom Store&quot; and enter these values:
-                        </Text>
-                        <Stack gap="xs" pl="md">
-                          <Text size="sm">
-                            <strong>URL to Custom XML Page:</strong> {window.location.origin}/api/shipstation/orders
-                          </Text>
-                          <Text size="sm">
-                            <strong>Username:</strong> {String(form.values.apiKey) || '[Your API Key]'}
-                          </Text>
-                          <Text size="sm">
-                            <strong>Password:</strong> {String(form.values.apiSecret) || '[Your API Secret]'}
-                          </Text>
-                        </Stack>
-                        <Text size="sm" c="dimmed">
-                          This allows ShipStation to automatically import orders and send shipment notifications back to your store.
-                        </Text>
-                      </Stack>
-                    </Alert>
-                  </Stack>
-                ) : (
-                  <Group grow>
-                    <PasswordInput
-                      label={config.apiKeyLabel}
-                      placeholder={config.apiKeyPlaceholder}
-                      required
-                      {...form.getInputProps('apiKey')}
-                    />
-                    <Box pt="xl">
-                      <Button
-                        variant="light"
-                        onClick={handleTest}
-                        loading={testing}
-                        disabled={!form.values.apiKey}
-                      >
-                        Test Connection
-                      </Button>
-                    </Box>
-                  </Group>
-                )}
+                <Group grow>
+                  <PasswordInput
+                    label={config.apiKeyLabel}
+                    placeholder={config.apiKeyPlaceholder}
+                    required
+                    {...form.getInputProps('apiKey')}
+                  />
+                  <Box pt="xl">
+                    <Button
+                      variant="light"
+                      onClick={handleTest}
+                      loading={testing}
+                      disabled={!form.values.apiKey}
+                    >
+                      Test Connection
+                    </Button>
+                  </Box>
+                </Group>
                 
                 <Switch
                   label={`Enable ${config.name} integration`}
@@ -541,7 +507,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                       label={field.label}
                       placeholder={field.placeholder}
                       description={field.description}
-                      required={integration.integrationType === 'shipstation' && field.key === 'apiSecret'}
+                      required={false}
                       {...form.getInputProps(field.key)}
                     />
                   );
@@ -557,31 +523,22 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                         <Button
                           variant="filled"
                           color="blue"
-                          leftSection={<IconPackage size={16} />}
-                          onClick={() => handleSync('products')}
-                          loading={syncing.products}
-                          disabled={syncing.inventory}
+                          leftSection={<IconRefresh size={16} />}
+                          onClick={() => handleSync('all')}
+                          loading={syncing.products || syncing.inventory}
                           fullWidth
                         >
-                          Sync Products
+                          Sync Data
                         </Button>
-                        <Button
-                          variant="filled"
-                          color="blue"
-                          leftSection={<IconDatabase size={16} />}
-                          onClick={() => handleSync('inventory')}
-                          loading={syncing.inventory}
-                          disabled={syncing.products}
-                          fullWidth
-                        >
-                          Sync Inventory
-                        </Button>
+                        <Text size="xs" c="dimmed" ta="center">
+                          Syncs products, inventory, warehouses, and locations
+                        </Text>
                       </Stack>
                       
                       <Stack gap="xs" style={{ flex: 1, paddingLeft: '2rem' }}>
                         <Switch
                           label="Enable automatic sync"
-                          description="Automatically sync products and inventory at regular intervals"
+                          description="Automatically sync products, inventory, warehouses, and locations at regular intervals"
                           {...form.getInputProps('autoSyncEnabled', { type: 'checkbox' })}
                         />
                         

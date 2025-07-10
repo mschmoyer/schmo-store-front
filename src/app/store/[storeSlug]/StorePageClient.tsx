@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, Group, Text, Badge, Button, NumberInput, Image, Grid, Container, Title, Loader, Center, Alert, Pagination, CardSection, GridCol } from '@mantine/core';
-import { IconMinus, IconPlus, IconShoppingCart, IconCheck } from '@tabler/icons-react';
+import { Card, Group, Text, Badge, Button, NumberInput, Image, Grid, Container, Title, Loader, Center, Alert, Pagination, CardSection, GridCol, TextInput } from '@mantine/core';
+import { IconMinus, IconPlus, IconShoppingCart, IconCheck, IconSearch } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import Link from 'next/link';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
@@ -81,6 +81,7 @@ interface StorePageClientProps {
 export default function StorePageClient({ store, storeSlug }: StorePageClientProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsByCategory, setProductsByCategory] = useState<Record<string, Product[]>>({});
+  const [filteredProductsByCategory, setFilteredProductsByCategory] = useState<Record<string, Product[]>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [inventoryData, setInventoryData] = useState<Record<string, number>>({});
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -90,6 +91,7 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
   const [totalPages, setTotalPages] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
   const [pageSize] = useState(50);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Track visitor for this store
   useVisitorTracking({
@@ -234,7 +236,7 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
         // Transform products for marketplace use
         const storeProducts = (data.products || []).map((product: Record<string, unknown>) => ({
           ...product,
-          price: product.base_price || product.sale_price || 29.99,
+          price: product.display_price || product.price || product.override_price || product.sale_price || product.base_price || 29.99,
           available_stock: Math.floor(Math.random() * 50) + 1, // Will be replaced with real inventory
           thumbnail_url: product.featured_image_url || "/placeholder-product.svg",
           category: product.category || "Other"
@@ -253,6 +255,7 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
         }, {});
         
         setProductsByCategory(categorizedProducts);
+        setFilteredProductsByCategory(categorizedProducts);
         
         // Fetch inventory for each product
         await fetchInventoryForProducts(storeProducts);
@@ -272,6 +275,57 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
       fetchProducts();
     }
   }, [store, currentPage, pageSize, fetchInventoryForProducts]);
+
+  // Filter products based on search query
+  useEffect(() => {
+    if (searchQuery.length >= 3) {
+      const query = searchQuery.toLowerCase();
+      const filtered: Record<string, Product[]> = {};
+      
+      Object.entries(productsByCategory).forEach(([category, categoryProducts]) => {
+        const filteredProducts = categoryProducts.filter(product => 
+          product.name.toLowerCase().includes(query) ||
+          product.description?.toLowerCase().includes(query) ||
+          product.sku?.toLowerCase().includes(query) ||
+          category.toLowerCase().includes(query)
+        );
+        
+        if (filteredProducts.length > 0) {
+          filtered[category] = filteredProducts;
+        }
+      });
+      
+      setFilteredProductsByCategory(filtered);
+    } else {
+      setFilteredProductsByCategory(productsByCategory);
+    }
+  }, [searchQuery, productsByCategory]);
+
+  // Track search queries with debouncing
+  useEffect(() => {
+    if (searchQuery.length >= 3) {
+      const timeoutId = setTimeout(async () => {
+        try {
+          await fetch('/api/admin/search-tracking', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              store_id: store.id,
+              search_query: searchQuery,
+              results_count: Object.values(filteredProductsByCategory).reduce((total, products) => total + products.length, 0),
+              timestamp: new Date().toISOString(),
+            }),
+          });
+        } catch (error) {
+          console.error('Error tracking search:', error);
+        }
+      }, 1500); // Wait 1.5 seconds after user stops typing
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [searchQuery, filteredProductsByCategory, store.id]);
 
   const handlePageChange = (page: number) => {
     setLoading(true);
@@ -463,6 +517,41 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
       </div>
 
       <Container size="xl" py="lg">
+        {/* Search Bar */}
+        <div style={{ marginBottom: '2rem' }}>
+          <TextInput
+            placeholder="Search products... (minimum 3 characters)"
+            leftSection={<IconSearch size={16} />}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+            size="lg"
+            radius="md"
+            style={{
+              maxWidth: '600px',
+              margin: '0 auto',
+            }}
+            styles={{
+              input: {
+                border: '1px solid var(--theme-border)',
+                '&:focus': {
+                  borderColor: 'var(--theme-primary)',
+                  boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.1)',
+                },
+              },
+            }}
+          />
+          {searchQuery.length > 0 && searchQuery.length < 3 && (
+            <Text size="sm" c="dimmed" mt="xs" ta="center">
+              Type at least 3 characters to search
+            </Text>
+          )}
+          {searchQuery.length >= 3 && Object.keys(filteredProductsByCategory).length === 0 && (
+            <Text size="sm" c="orange" mt="xs" ta="center">
+              No products found matching &quot;{searchQuery}&quot;
+            </Text>
+          )}
+        </div>
+
         {/* Product Count and Pagination Info */}
         {!error && !loading && (
           <div style={{ marginBottom: '2rem' }}>
@@ -486,7 +575,7 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
           </Alert>
         ) : (
           <>
-            {Object.entries(productsByCategory).map(([category, categoryProducts]) => (
+            {Object.entries(filteredProductsByCategory).map(([category, categoryProducts]) => (
               <div key={category} style={{ marginBottom: '3rem' }}>
                 <div style={{ 
                   display: 'flex', 

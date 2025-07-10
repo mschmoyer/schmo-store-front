@@ -53,10 +53,26 @@ When using `npm run dev:log` in a separate terminal, the server output is logged
 - **Performance**: Use React.memo, useMemo, useCallback for expensive operations
 - **Accessibility**: Include ARIA labels and semantic HTML
 
+## Testing
+
+### Unit Tests
+- `npm run test` - Run Jest unit tests
+- `npm run test:watch` - Run Jest in watch mode
+- `npm run test:ci` - Run Jest with coverage for CI
+
+### End-to-End Tests
+- `npm run test:e2e` - Run Playwright e2e tests (headless)
+- `npm run test:e2e:headed` - Run Playwright tests with visible browser
+- `npm run test:e2e:debug` - Run Playwright tests in debug mode
+- `npm run test:e2e:ui` - Run Playwright tests with interactive UI
+
+**Important**: Playwright tests require the development server to be running (`npm run dev`) on localhost:3000.
+
 ## Rules 
 
 - Always run lint after a task or TODO list item is completed. 
 - Always run unit tests at the end of a task. 
+- **Always run Playwright e2e tests after completing tasks that affect admin functionality** - use `npm run test:e2e --project=chromium` for faster single-browser testing.
 - Always check `dev.log` after task completion to verify server status and check for errors.
 - Add any TODO items to /docs/decision-log.md. Check them off when completed and include the date/time. Also include the user's prompt or request.
 - Check if the root README.md file needs an update after a task is completed. Only include relevant changes.

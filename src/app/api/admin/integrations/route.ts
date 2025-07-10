@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 // Define schema inline since we removed the schema file
 const IntegrationUpdateSchema = z.object({
   api_key: z.string().min(1, 'API key is required'),
-  api_secret: z.string().optional(), // Required for ShipStation Legacy API
+  api_secret: z.string().optional(), // Only required for some integrations like ShipStation
   configuration: z.object({
     api_url: z.string().optional(),
     api_version: z.string().optional(),
@@ -27,7 +27,7 @@ const IntegrationUpdateSchema = z.object({
   }).optional(),
   is_active: z.boolean().optional(),
   auto_sync_enabled: z.boolean().optional(),
-  auto_sync_interval: z.enum(['15min', '30min', '1hour', '4hour', '24hour']).optional()
+  auto_sync_interval: z.enum(['10min', '15min', '30min', '1hour', '4hour', '1day', '24hour']).optional()
 });
 
 // Simple encryption for API keys and secrets (in production, use proper encryption)
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     
     const { integrationType, ...updateData } = body;
     
-    if (!integrationType || !['shipengine', 'shipstation', 'stripe', 'square', 'paypal'].includes(integrationType)) {
+    if (!integrationType || !['shipstation', 'stripe', 'square', 'paypal'].includes(integrationType)) {
       return NextResponse.json({
         success: false,
         error: 'Invalid integration type'
@@ -121,17 +121,19 @@ export async function POST(request: NextRequest) {
     // Validate request body
     const validatedData = IntegrationUpdateSchema.parse(transformedData);
     
-    // Special validation for ShipStation Legacy API
-    if (integrationType === 'shipstation' && !validatedData.api_secret) {
-      return NextResponse.json({
-        success: false,
-        error: 'API Secret is required for ShipStation Legacy API'
-      }, { status: 400 });
-    }
     
     // Encrypt API key and secret
     const encryptedApiKey = encryptApiKey(validatedData.api_key);
     const encryptedApiSecret = validatedData.api_secret ? encryptApiSecret(validatedData.api_secret) : null;
+    
+    console.log('Integration Update Debug:', {
+      integration_type: integrationType,
+      api_key_original_length: validatedData.api_key.length,
+      api_key_first_6: validatedData.api_key.substring(0, 6),
+      api_key_last_4: validatedData.api_key.substring(validatedData.api_key.length - 4),
+      encrypted_api_key_length: encryptedApiKey.length,
+      store_id: user.storeId
+    });
     
     // Check if integration already exists
     const existingResult = await db.query(`
@@ -143,6 +145,12 @@ export async function POST(request: NextRequest) {
     
     if (existingResult.rows.length > 0) {
       // Update existing integration
+      console.log('Updating existing integration with SQL parameters:', {
+        encrypted_api_key_length: encryptedApiKey.length,
+        store_id: user.storeId,
+        integration_type: integrationType
+      });
+      
       result = await db.query(`
         UPDATE store_integrations 
         SET 
@@ -165,6 +173,11 @@ export async function POST(request: NextRequest) {
         user.storeId,
         integrationType
       ]);
+      
+      console.log('Integration update result:', {
+        rowCount: result.rowCount,
+        rows: result.rows.length
+      });
     } else {
       // Create new integration
       result = await db.query(`

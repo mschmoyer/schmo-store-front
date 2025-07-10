@@ -258,14 +258,29 @@ export async function PUT(
       updateValues.push(body.description);
       paramCount++;
     }
-    if (body.price !== undefined) {
-      updateFields.push(`base_price = $${paramCount}`);
-      updateValues.push(parseFloat(body.price));
+    if (body.long_description !== undefined) {
+      updateFields.push(`long_description = $${paramCount}`);
+      updateValues.push(body.long_description);
       paramCount++;
     }
-    if (body.compare_price !== undefined) {
-      updateFields.push(`compare_price = $${paramCount}`);
-      updateValues.push(body.compare_price ? parseFloat(body.compare_price) : null);
+    if (body.description_html !== undefined) {
+      updateFields.push(`description_html = $${paramCount}`);
+      updateValues.push(body.description_html);
+      paramCount++;
+    }
+    if (body.base_price !== undefined) {
+      updateFields.push(`base_price = $${paramCount}`);
+      updateValues.push(body.base_price ? parseFloat(body.base_price) : null);
+      paramCount++;
+    }
+    if (body.sale_price !== undefined) {
+      updateFields.push(`sale_price = $${paramCount}`);
+      updateValues.push(body.sale_price ? parseFloat(body.sale_price) : null);
+      paramCount++;
+    }
+    if (body.override_price !== undefined) {
+      updateFields.push(`override_price = $${paramCount}`);
+      updateValues.push(body.override_price ? parseFloat(body.override_price) : null);
       paramCount++;
     }
     if (body.cost_price !== undefined) {
@@ -295,12 +310,22 @@ export async function PUT(
     }
     if (body.tags !== undefined) {
       updateFields.push(`tags = $${paramCount}`);
-      updateValues.push(JSON.stringify(body.tags));
+      updateValues.push(body.tags);
+      paramCount++;
+    }
+    if (body.meta_title !== undefined) {
+      updateFields.push(`meta_title = $${paramCount}`);
+      updateValues.push(body.meta_title);
+      paramCount++;
+    }
+    if (body.meta_description !== undefined) {
+      updateFields.push(`meta_description = $${paramCount}`);
+      updateValues.push(body.meta_description);
       paramCount++;
     }
     if (body.images !== undefined) {
       updateFields.push(`gallery_images = $${paramCount}`);
-      updateValues.push(JSON.stringify(body.images));
+      updateValues.push(body.images);
       paramCount++;
     }
     if (body.is_active !== undefined) {

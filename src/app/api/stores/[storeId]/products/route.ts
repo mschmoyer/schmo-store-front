@@ -43,6 +43,7 @@ export async function GET(
         short_description as description,
         base_price,
         sale_price,
+        override_price,
         featured_image_url,
         category_id,
         tags,
@@ -79,7 +80,11 @@ export async function GET(
           ...product,
           category: categoryName,
           thumbnail_url: product.featured_image_url,
-          price: product.sale_price || product.base_price,
+          price: product.override_price || product.sale_price || product.base_price,
+          display_price: product.override_price || product.sale_price || product.base_price,
+          base_price: product.base_price,
+          sale_price: product.sale_price,
+          override_price: product.override_price,
           active: product.is_active
         };
       })

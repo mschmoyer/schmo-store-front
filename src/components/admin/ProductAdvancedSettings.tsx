@@ -339,6 +339,8 @@ export default function ProductAdvancedSettings({
                   value={discountSettings.discount_start_date}
                   onChange={(value) => handleDiscountChange('discount_start_date', value)}
                   leftSection={<IconCalendar size={16} />}
+                  disabled
+                  description="Date selection temporarily disabled"
                 />
                 <DateTimePicker
                   label="End Date"
@@ -346,6 +348,8 @@ export default function ProductAdvancedSettings({
                   value={discountSettings.discount_end_date}
                   onChange={(value) => handleDiscountChange('discount_end_date', value)}
                   leftSection={<IconCalendar size={16} />}
+                  disabled
+                  description="Date selection temporarily disabled"
                 />
               </Group>
 

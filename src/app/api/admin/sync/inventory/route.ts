@@ -6,24 +6,24 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request);
     
-    // Get ShipEngine integration
+    // Get ShipStation integration
     const integrationResult = await db.query(`
       SELECT api_key_encrypted, is_active
       FROM store_integrations 
-      WHERE store_id = $1 AND integration_type = 'shipengine'
+      WHERE store_id = $1 AND integration_type = 'shipstation'
     `, [user.storeId]);
     
     if (integrationResult.rows.length === 0 || !integrationResult.rows[0].is_active) {
       return NextResponse.json({
         success: false,
-        error: 'ShipEngine integration not found or inactive'
+        error: 'ShipStation integration not found or inactive'
       }, { status: 400 });
     }
     
     const encryptedApiKey = integrationResult.rows[0].api_key_encrypted;
     const apiKey = Buffer.from(String(encryptedApiKey), 'base64').toString('utf-8');
     
-    // Fetch all inventory from ShipStation (ShipEngine v2 API) with pagination
+    // Fetch all inventory from ShipStation v2 API with pagination
     let allInventory: Array<{
       sku: string;
       available: number;
@@ -34,9 +34,9 @@ export async function POST(request: NextRequest) {
     let hasMorePages = true;
     
     while (hasMorePages) {
-      const inventoryResponse = await fetch(`https://api.shipengine.com/v2/inventory?page=${page}&page_size=100`, {
+      const inventoryResponse = await fetch(`https://api.shipstation.com/v2/inventory?page=${page}&page_size=100`, {
         headers: {
-          'API-Key': apiKey,
+          'api-key': apiKey,
           'Content-Type': 'application/json'
         }
       });

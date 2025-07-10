@@ -79,13 +79,15 @@ export default function ProductEditForm({
     description_html: product.description_html || '',
     
     // Pricing
-    base_price: product.override_price || 0,
+    base_price: product.base_price || 0,
+    override_price: product.override_price || null,
     sale_price: product.sale_price || null,
     cost_price: product.cost_price || null,
     
     // Images
     featured_image_url: product.featured_image_url || '',
     gallery_images: product.gallery_images || [],
+    thumbnail_url: product.thumbnail_url || '',
     
     // SEO
     meta_title: product.meta_title || '',
@@ -133,7 +135,9 @@ export default function ProductEditForm({
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.name.trim()) {
+    // Check for product name (either user-entered or from integration)
+    const effectiveName = formData.name.trim() || product.name;
+    if (!effectiveName) {
       newErrors.name = 'Product name is required';
     }
 
@@ -145,12 +149,21 @@ export default function ProductEditForm({
       newErrors.slug = 'URL slug is required';
     }
 
-    if (formData.base_price <= 0) {
-      newErrors.base_price = 'Base price must be greater than 0';
+    // Check for effective display price
+    const effectivePrice = formData.override_price || formData.sale_price || formData.base_price;
+    if (effectivePrice === null || effectivePrice === undefined || effectivePrice < 0) {
+      newErrors.base_price = 'A valid price must be set (base price, override price, or sale price)';
     }
 
-    if (formData.sale_price && formData.sale_price >= formData.base_price) {
-      newErrors.sale_price = 'Sale price must be less than base price';
+    // Validate override price if set
+    if (formData.override_price !== null && formData.override_price < 0) {
+      newErrors.override_price = 'Override price must be 0 or greater';
+    }
+
+    // Validate sale price against base price or override price
+    const referencePrice = formData.override_price || formData.base_price;
+    if (formData.sale_price && formData.sale_price >= referencePrice) {
+      newErrors.sale_price = 'Sale price must be less than the reference price (override or base price)';
     }
 
     if (formData.meta_title && formData.meta_title.length > 60) {
@@ -182,14 +195,14 @@ export default function ProductEditForm({
         // Convert null values to undefined for TypeScript compatibility
         sale_price: formData.sale_price || undefined,
         cost_price: formData.cost_price || undefined,
+        override_price: formData.override_price || undefined,
         // Save user entries as overrides (convert null to undefined for TypeScript)
         override_name: formData.name || undefined,
         override_description: formData.long_description || undefined,
-        override_price: formData.base_price || undefined,
-        // Keep the original values from integration data intact
-        name: product.name,
-        long_description: product.long_description,
-        base_price: product.base_price
+        // Keep the original values from integration data intact when not overridden
+        name: formData.name || product.name,
+        long_description: formData.long_description || product.long_description,
+        base_price: formData.base_price || product.base_price
       };
       
       await onSave(saveData);
@@ -240,11 +253,11 @@ export default function ProductEditForm({
             <Group grow>
               <TextInput
                 label="Product Name"
-                placeholder={product.name || "Enter product name"}
-                value={formData.name}
+                placeholder="Enter product name"
+                value={formData.name || product.name || ''}
                 onChange={(e) => handleFieldChange('name', e.target.value)}
                 error={validationErrors.name}
-                description={product.name ? `Integration: ${product.name}` : undefined}
+                description={product.name && !formData.name ? `Using integration value: ${product.name}` : undefined}
               />
               <TextInput
                 label="SKU"
@@ -310,12 +323,25 @@ export default function ProductEditForm({
             
             <Group grow>
               <NumberInput
-                label="Base Price"
+                label="Base Price (Integration)"
                 placeholder={product.base_price ? `${product.base_price}` : "0.00"}
                 value={formData.base_price}
                 onChange={(value) => handleFieldChange('base_price', value)}
                 error={validationErrors.base_price}
-                description={product.base_price ? `Integration: $${product.base_price}` : undefined}
+                description={`From ShipStation: $${product.base_price || '0.00'}`}
+                min={0}
+                step={0.01}
+                decimalScale={2}
+                leftSection="$"
+                disabled
+              />
+              <NumberInput
+                label="Override Price"
+                placeholder="Leave empty to use base price"
+                value={formData.override_price || undefined}
+                onChange={(value) => handleFieldChange('override_price', value)}
+                error={validationErrors.override_price}
+                description="Set custom price that overrides integration price"
                 min={0}
                 step={0.01}
                 decimalScale={2}
@@ -327,6 +353,7 @@ export default function ProductEditForm({
                 value={formData.sale_price || undefined}
                 onChange={(value) => handleFieldChange('sale_price', value)}
                 error={validationErrors.sale_price}
+                description="Temporary promotional price"
                 min={0}
                 step={0.01}
                 decimalScale={2}
@@ -344,9 +371,20 @@ export default function ProductEditForm({
               />
             </Group>
 
-            {formData.sale_price && formData.sale_price < formData.base_price && (
+            {/* Display Price Indicator */}
+            <Alert icon={<IconInfoCircle size={16} />} color="blue" variant="light">
+              <Text size="sm" fw={500}>Customer Display Price: ${Number(formData.override_price || formData.sale_price || formData.base_price || 0).toFixed(2)}</Text>
+              <Text size="xs" c="dimmed">
+                Priority: Override Price → Sale Price → Base Price
+                {formData.override_price && " (Using Override Price)"}
+                {!formData.override_price && formData.sale_price && " (Using Sale Price)"}
+                {!formData.override_price && !formData.sale_price && " (Using Base Price)"}
+              </Text>
+            </Alert>
+
+            {formData.sale_price && formData.sale_price < (formData.override_price || formData.base_price) && (
               <Alert icon={<IconInfoCircle size={16} />} color="green" variant="light">
-                Sale discount: {Math.round(((formData.base_price - formData.sale_price) / formData.base_price) * 100)}%
+                Sale discount: {Math.round((((formData.override_price || formData.base_price) - formData.sale_price) / (formData.override_price || formData.base_price)) * 100)}%
               </Alert>
             )}
           </Stack>
@@ -356,6 +394,14 @@ export default function ProductEditForm({
         <Card withBorder p="md">
           <Stack gap="md">
             <Text size="md" fw={600}>Product Images</Text>
+            
+            <TextInput
+              label="ShipStation Thumbnail URL"
+              placeholder="URL from ShipStation integration"
+              value={formData.thumbnail_url}
+              onChange={(e) => handleFieldChange('thumbnail_url', e.target.value)}
+              description="Thumbnail image URL from ShipStation. You can also upload your own images below."
+            />
             
             <ImageGalleryManager
               images={imageItems}
