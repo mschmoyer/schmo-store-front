@@ -93,16 +93,24 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_shipstation_warehouses_updated_at ON shipstation_warehouses;
 CREATE TRIGGER update_shipstation_warehouses_updated_at 
     BEFORE UPDATE ON shipstation_warehouses 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_shipstation_inventory_warehouses_updated_at ON shipstation_inventory_warehouses;
 CREATE TRIGGER update_shipstation_inventory_warehouses_updated_at 
     BEFORE UPDATE ON shipstation_inventory_warehouses 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_shipstation_inventory_locations_updated_at ON shipstation_inventory_locations;
 CREATE TRIGGER update_shipstation_inventory_locations_updated_at 
     BEFORE UPDATE ON shipstation_inventory_locations 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Record migration
+INSERT INTO schema_migrations (version, description) 
+VALUES ('012', 'ShipStation warehouses and inventory locations tables')
+ON CONFLICT (version) DO NOTHING;
 
 COMMIT;
