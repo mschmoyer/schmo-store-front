@@ -10,15 +10,26 @@ ALTER TABLE coupons ADD COLUMN IF NOT EXISTS applies_to VARCHAR(50) DEFAULT 'ent
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS applicable_product_ids UUID[];
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS applicable_category_ids UUID[];
 
--- Step 2: Migrate existing targeting data from discounts to coupons
+-- Step 2: Migrate existing targeting data from discounts to coupons (if discounts table exists)
 -- For each coupon, copy the targeting from its linked discount
-UPDATE coupons 
-SET 
-    applies_to = COALESCE(d.applies_to, 'entire_order'),
-    applicable_product_ids = d.applicable_product_ids,
-    applicable_category_ids = d.applicable_category_ids
-FROM discounts d 
-WHERE coupons.discount_id = d.id;
+DO $$
+BEGIN
+    -- Check if discounts table exists
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'discounts') THEN
+        UPDATE coupons 
+        SET 
+            applies_to = COALESCE(d.applies_to, 'entire_order'),
+            applicable_product_ids = d.applicable_product_ids,
+            applicable_category_ids = d.applicable_category_ids
+        FROM discounts d 
+        WHERE coupons.discount_id = d.id;
+    ELSE
+        -- If discounts table doesn't exist, just ensure coupons have default values
+        UPDATE coupons 
+        SET applies_to = COALESCE(applies_to, 'entire_order')
+        WHERE applies_to IS NULL;
+    END IF;
+END $$;
 
 -- Step 3: Add constraints for new coupon targeting
 ALTER TABLE coupons ADD CONSTRAINT coupons_applies_to_check 
