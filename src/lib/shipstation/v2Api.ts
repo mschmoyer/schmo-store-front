@@ -75,6 +75,7 @@ interface CreateShipmentRequest {
       currency: string;
       amount: number;
     };
+    create_sales_order?: boolean;
   }];
 }
 
@@ -248,6 +249,35 @@ export async function getShipStationV2Credentials(storeId: string): Promise<Ship
 }
 
 /**
+ * Get SKU for a product from the database
+ */
+async function getProductSKU(productId: string | number, storeId?: string): Promise<string> {
+  try {
+    const query = `
+      SELECT sku 
+      FROM products 
+      WHERE id = $1 
+      ${storeId ? 'AND store_id = $2' : ''}
+      LIMIT 1
+    `;
+    
+    const params = storeId ? [productId, storeId] : [productId];
+    const result = await db.query(query, params);
+    
+    if (result.rows.length > 0) {
+      return result.rows[0].sku;
+    }
+    
+    // Fallback to product_id if SKU not found
+    console.warn(`SKU not found for product ${productId}, using product_id as fallback`);
+    return String(productId);
+  } catch (error) {
+    console.error('Error fetching product SKU:', error);
+    return String(productId);
+  }
+}
+
+/**
  * Transform order data to V2 shipment format
  */
 export async function transformToV2Shipment(
@@ -255,14 +285,19 @@ export async function transformToV2Shipment(
   orderNumber: string,
   credentials: ShipStationV2Credentials
 ): Promise<CreateShipmentRequest> {
-  // Create shipment items (simplified - no packages needed)
-  const items: ShipmentItem[] = orderData.items.map(item => ({
-    name: item.name,
-    sku: String(item.product_id),
-    quantity: item.quantity,
-    unit_price: item.price,
-    external_order_item_id: `${orderNumber}-${item.product_id}`
-  }));
+  // Create shipment items with proper SKUs from database
+  const items: ShipmentItem[] = await Promise.all(
+    orderData.items.map(async (item) => {
+      const sku = await getProductSKU(item.product_id, orderData.storeId);
+      return {
+        name: item.name,
+        sku: sku,
+        quantity: item.quantity,
+        unit_price: item.price,
+        external_order_item_id: `${orderNumber}-${item.product_id}`
+      };
+    })
+  );
 
   // Get stored warehouse data or use configured shipFromAddress
   let shipFromAddress = credentials.shipFromAddress;
@@ -324,7 +359,8 @@ export async function transformToV2Shipment(
       shipping_paid: {
         currency: 'USD',
         amount: orderData.shippingCost
-      }
+      },
+      create_sales_order: true
     }]
   };
 }

@@ -289,7 +289,7 @@ export default function SmartReorderWidget({
                 </Badge>
               </Group>
               
-              <Text size="xs" c="dimmed">
+              <Text size="xs" c="dimmed" component="div">
                 {rec.reason} • {rec.recommended_quantity} units • ${(rec.recommended_quantity * rec.unit_cost).toFixed(2)}
                 {rec.sales_velocity && (
                   <>

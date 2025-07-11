@@ -645,7 +645,7 @@ export default function InventoryPage() {
                     <Table.Th>Stock</Table.Th>
                     <Table.Th>
                       <Group gap="xs">
-                        <Text size="sm">Forecast</Text>
+                        <Text size="sm" component="span">Forecast</Text>
                         <Select
                           size="xs"
                           data={FORECAST_PERIODS.map(p => ({ value: p.value.toString(), label: p.label }))}

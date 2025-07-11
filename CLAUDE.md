@@ -68,6 +68,39 @@ When using `npm run dev:log` in a separate terminal, the server output is logged
 
 **Important**: Playwright tests require the development server to be running (`npm run dev`) on localhost:3000.
 
+## Background Sync System
+
+The application includes an automated background sync system for ShipStation integration:
+
+### Available Scripts
+- `npm run sync:background` - Run background sync (used by Heroku Scheduler)
+- `npm run sync:test` - Test sync manually
+
+### Sync Operations
+The system automatically syncs the following data from ShipStation:
+1. **Warehouses** - Shipping locations and addresses
+2. **Inventory Warehouses** - Warehouse mappings
+3. **Inventory Locations** - Location mappings
+4. **Products** - Product information, SKUs, prices, images
+5. **Inventory** - Stock levels and quantities
+
+### Setup for Heroku
+1. Set environment variable: `SYNC_AUTH_TOKEN=your-secure-token`
+2. Apply database migration: `015_sync_logs_table.sql`
+3. Configure Heroku Scheduler to run `npm run sync:background`
+4. See `/docs/heroku-scheduler-setup.md` for detailed setup instructions
+
+### Monitoring
+- API endpoint: `/api/admin/sync/status` - View sync history and statistics
+- Database table: `sync_logs` - Detailed sync results
+- Manual trigger: POST to `/api/admin/sync/background`
+
+### Performance
+- **Parallel Processing**: Content sync operations run simultaneously
+- **Error Resilience**: Individual failures don't stop entire sync
+- **Detailed Logging**: All operations logged with timing and results
+- **Automatic Cleanup**: Old sync logs removed after 30 days
+
 ## Rules 
 
 - Always run lint after a task or TODO list item is completed. 
