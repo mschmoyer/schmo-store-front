@@ -15,6 +15,13 @@ interface SyncAllResponse {
   locations: SyncResult;
 }
 
+// Import sync functions directly to avoid internal routing issues
+import { syncWarehouses } from '../warehouses/sync';
+import { syncInventoryWarehouses } from '../inventory-warehouses/sync';
+import { syncInventoryLocations } from '../inventory-locations/sync';
+import { syncProducts } from '../products/sync';
+import { syncInventory } from '../inventory/sync';
+
 /**
  * POST /api/admin/sync/all
  * Unified sync endpoint for ShipStation - syncs products, inventory, warehouses, and locations
@@ -77,128 +84,62 @@ export async function POST(request: NextRequest) {
 
     console.log(`Starting unified sync for store: ${storeId}`);
 
-    // 1. Sync warehouses (delegate to existing endpoint)
+    // 1. Sync warehouses
     try {
       console.log('Syncing warehouses...');
-      const warehousesResponse = await fetch(`${request.nextUrl.origin}/api/admin/sync/warehouses`, {
-        method: 'POST',
-        headers: {
-          'Authorization': request.headers.get('Authorization') || '',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (warehousesResponse.ok) {
-        const warehousesData = await warehousesResponse.json();
-        if (warehousesData.success) {
-          syncResults.warehouses = warehousesData.data;
-          console.log(`Warehouses synced: ${warehousesData.data.totalCount} total`);
-        }
-      } else {
-        console.error('Warehouses sync failed:', warehousesResponse.status, warehousesResponse.statusText);
-      }
+      const warehousesResult = await syncWarehouses(apiKey, storeId);
+      syncResults.warehouses = warehousesResult;
+      console.log(`Warehouses synced: ${warehousesResult.totalCount} total`);
     } catch (error) {
       console.error('Error syncing warehouses:', error);
       // Continue with other syncs even if warehouses fail
     }
 
-    // 2. Sync inventory warehouses (delegate to existing endpoint)
+    // 2. Sync inventory warehouses
     try {
       console.log('Syncing inventory warehouses...');
-      const inventoryWarehousesResponse = await fetch(`${request.nextUrl.origin}/api/admin/sync/inventory-warehouses`, {
-        method: 'POST',
-        headers: {
-          'Authorization': request.headers.get('Authorization') || '',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (inventoryWarehousesResponse.ok) {
-        const inventoryWarehousesData = await inventoryWarehousesResponse.json();
-        if (inventoryWarehousesData.success) {
-          // Add to locations count since they're related
-          syncResults.locations.totalCount += inventoryWarehousesData.data.totalCount;
-          syncResults.locations.addedCount += inventoryWarehousesData.data.addedCount;
-          syncResults.locations.updatedCount += inventoryWarehousesData.data.updatedCount;
-          console.log(`Inventory warehouses synced: ${inventoryWarehousesData.data.totalCount} total`);
-        }
-      } else {
-        console.error('Inventory warehouses sync failed:', inventoryWarehousesResponse.status, inventoryWarehousesResponse.statusText);
-      }
+      const inventoryWarehousesResult = await syncInventoryWarehouses(apiKey, storeId);
+      // Add to locations count since they're related
+      syncResults.locations.totalCount += inventoryWarehousesResult.totalCount;
+      syncResults.locations.addedCount += inventoryWarehousesResult.addedCount;
+      syncResults.locations.updatedCount += inventoryWarehousesResult.updatedCount;
+      console.log(`Inventory warehouses synced: ${inventoryWarehousesResult.totalCount} total`);
     } catch (error) {
       console.error('Error syncing inventory warehouses:', error);
       // Continue with other syncs
     }
 
-    // 3. Sync inventory locations (delegate to existing endpoint)
+    // 3. Sync inventory locations
     try {
       console.log('Syncing inventory locations...');
-      const inventoryLocationsResponse = await fetch(`${request.nextUrl.origin}/api/admin/sync/inventory-locations`, {
-        method: 'POST',
-        headers: {
-          'Authorization': request.headers.get('Authorization') || '',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (inventoryLocationsResponse.ok) {
-        const inventoryLocationsData = await inventoryLocationsResponse.json();
-        if (inventoryLocationsData.success) {
-          // Add to locations count
-          syncResults.locations.totalCount += inventoryLocationsData.data.totalCount;
-          syncResults.locations.addedCount += inventoryLocationsData.data.addedCount;
-          syncResults.locations.updatedCount += inventoryLocationsData.data.updatedCount;
-          console.log(`Inventory locations synced: ${inventoryLocationsData.data.totalCount} total`);
-        }
-      } else {
-        console.error('Inventory locations sync failed:', inventoryLocationsResponse.status, inventoryLocationsResponse.statusText);
-      }
+      const inventoryLocationsResult = await syncInventoryLocations(apiKey, storeId);
+      // Add to locations count
+      syncResults.locations.totalCount += inventoryLocationsResult.totalCount;
+      syncResults.locations.addedCount += inventoryLocationsResult.addedCount;
+      syncResults.locations.updatedCount += inventoryLocationsResult.updatedCount;
+      console.log(`Inventory locations synced: ${inventoryLocationsResult.totalCount} total`);
     } catch (error) {
       console.error('Error syncing inventory locations:', error);
       // Continue with other syncs
     }
 
-    // 4. Sync products (delegate to existing endpoint)
+    // 4. Sync products
     try {
       console.log('Syncing products...');
-      const productsResponse = await fetch(`${request.nextUrl.origin}/api/admin/sync/products`, {
-        method: 'POST',
-        headers: {
-          'Authorization': request.headers.get('Authorization') || '',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (productsResponse.ok) {
-        const productsData = await productsResponse.json();
-        if (productsData.success) {
-          syncResults.products = productsData.data;
-          console.log(`Products synced: ${productsData.data.totalCount} total`);
-        }
-      }
+      const productsResult = await syncProducts(apiKey, storeId);
+      syncResults.products = productsResult;
+      console.log(`Products synced: ${productsResult.totalCount} total`);
     } catch (error) {
       console.error('Error syncing products:', error);
       // Continue with other syncs
     }
 
-    // 5. Sync inventory (delegate to existing endpoint)
+    // 5. Sync inventory
     try {
       console.log('Syncing inventory...');
-      const inventoryResponse = await fetch(`${request.nextUrl.origin}/api/admin/sync/inventory`, {
-        method: 'POST',
-        headers: {
-          'Authorization': request.headers.get('Authorization') || '',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (inventoryResponse.ok) {
-        const inventoryData = await inventoryResponse.json();
-        if (inventoryData.success) {
-          syncResults.inventory = inventoryData.data;
-          console.log(`Inventory synced: ${inventoryData.data.totalCount} total`);
-        }
-      }
+      const inventoryResult = await syncInventory(apiKey, storeId);
+      syncResults.inventory = inventoryResult;
+      console.log(`Inventory synced: ${inventoryResult.totalCount} total`);
     } catch (error) {
       console.error('Error syncing inventory:', error);
       // Continue - this isn't critical

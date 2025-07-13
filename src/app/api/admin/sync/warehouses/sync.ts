@@ -1,5 +1,3 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth/session';
 import { db } from '@/lib/database/connection';
 
 interface SyncResult {
@@ -9,83 +7,21 @@ interface SyncResult {
 }
 
 /**
- * POST /api/admin/sync/warehouses
  * Sync warehouses from ShipStation V2 API
  */
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth(request);
-    const storeId = user.storeId;
-
-    // Get ShipStation integration
-    const integrationResult = await db.query(
-      `SELECT 
-        api_key_encrypted,
-        configuration,
-        is_active
-      FROM store_integrations 
-      WHERE store_id = $1 AND integration_type = 'shipstation' AND is_active = true`,
-      [storeId]
-    );
-
-    if (integrationResult.rows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'ShipStation integration not found or not active' },
-        { status: 400 }
-      );
-    }
-
-    const integration = integrationResult.rows[0];
-    const apiKey = Buffer.from(integration.api_key_encrypted, 'base64').toString('utf-8');
-
-    console.log('Warehouse Sync API Key Debug:', {
-      api_key_length: apiKey.length,
-      api_key_first_6: apiKey.substring(0, 6),
-      api_key_last_4: apiKey.substring(apiKey.length - 4)
-    });
-
-    // Sync warehouses
-    const result = await syncWarehouses(apiKey, storeId);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Warehouses synced successfully',
-      data: result
-    });
-
-  } catch (error) {
-    console.error('Error syncing warehouses:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * Sync warehouses from ShipStation V2 API
- */
-async function syncWarehouses(apiKey: string, storeId: string): Promise<SyncResult> {
+export async function syncWarehouses(apiKey: string, storeId: string): Promise<SyncResult> {
   const result: SyncResult = { totalCount: 0, addedCount: 0, updatedCount: 0 };
 
   try {
     console.log('Fetching warehouses from ShipStation V2 API...');
     
     // Get warehouses from ShipStation API
-    // Note: Node.js 18+ should handle TLS properly, but we'll add explicit error handling
     const response = await fetch('https://api.shipstation.com/v2/warehouses', {
       method: 'GET',
       headers: {
         'api-key': apiKey,
         'Content-Type': 'application/json'
       }
-    }).catch(error => {
-      console.error('Fetch error details:', {
-        message: error.message,
-        cause: error.cause,
-        code: error.code
-      });
-      throw error;
     });
 
     console.log('ShipStation V2 warehouses response:', {
