@@ -119,7 +119,7 @@ export default function StoreCartPage() {
     if (store?.id && cartItems.length > 0) {
       refreshCartPrices();
     }
-  }, [store?.id]); // Only depend on store.id to run once when store loads
+  }, [store?.id, cartItems]); // Depend on store.id and cartItems
 
   // Check if localStorage is available
   useEffect(() => {

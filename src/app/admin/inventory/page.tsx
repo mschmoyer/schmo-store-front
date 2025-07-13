@@ -147,11 +147,7 @@ export default function InventoryPage() {
   const [loadingForecast, setLoadingForecast] = useState(false);
   const [prefilledPOItems, setPrefilledPOItems] = useState<Array<{product_id: string; product_name: string; product_sku: string; recommended_quantity: number; unit_cost: number; supplier: string}>>([]);
 
-  useEffect(() => {
-    fetchInventoryData();
-  }, []);
-
-  const fetchInventoryData = async () => {
+  const fetchInventoryData = useCallback(async () => {
     try {
       const token = localStorage.getItem('admin_token');
       if (!token) {
@@ -179,7 +175,11 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchInventoryData();
+  }, [fetchInventoryData]);
 
   const handleReorder = (item: InventoryItem) => {
     setSelectedItem(item);

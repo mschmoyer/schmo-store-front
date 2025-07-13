@@ -78,9 +78,9 @@ export default function ReceivingModal({
     if (opened && purchaseOrder) {
       initializeItems();
     }
-  }, [opened, purchaseOrder]);
+  }, [opened, purchaseOrder, initializeItems]);
 
-  const initializeItems = () => {
+  const initializeItems = useCallback(() => {
     if (!purchaseOrder?.purchase_order_items) return;
 
     const receivingItems: ReceivingItem[] = purchaseOrder.purchase_order_items.map((item) => ({
@@ -99,7 +99,7 @@ export default function ReceivingModal({
     }));
 
     setItems(receivingItems);
-  };
+  }, [purchaseOrder]);
 
   const updateItem = (index: number, field: keyof ReceivingItem, value: string | number) => {
     setItems(prev => {

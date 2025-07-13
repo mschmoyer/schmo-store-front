@@ -66,9 +66,9 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
 
   useEffect(() => {
     calculateAnalytics();
-  }, [purchaseOrders, timeRange]);
+  }, [purchaseOrders, timeRange, calculateAnalytics]);
 
-  const calculateAnalytics = () => {
+  const calculateAnalytics = useCallback(() => {
     if (!purchaseOrders || purchaseOrders.length === 0) {
       setAnalytics(null);
       return;
@@ -162,7 +162,7 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
       monthlyTrends,
       statusBreakdown
     });
-  };
+  }, [purchaseOrders, timeRange]);
 
   const getMonthlyTrends = (pos: Array<{ created_at?: string; order_date: string; total_cost: number }>) => {
     const monthly: Record<string, { orderCount: number; totalSpend: number }> = {};

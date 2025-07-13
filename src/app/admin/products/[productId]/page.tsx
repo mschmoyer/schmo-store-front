@@ -118,7 +118,7 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
   /**
    * Fetch product data with analytics and related information
    */
-  const fetchProduct = async (id: string) => {
+  const fetchProduct = useCallback(async (id: string) => {
     setLoading(true);
     setError(null);
     
@@ -159,12 +159,12 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session?.sessionToken]);
 
   /**
    * Fetch categories for form dropdown
    */
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
       if (!session?.sessionToken) {
         console.error('No authentication token available for categories');
@@ -185,7 +185,7 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     } catch (err) {
       console.error('Error fetching categories:', err);
     }
-  };
+  }, [session?.sessionToken]);
 
   /**
    * Save product changes
@@ -343,7 +343,7 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
       }
     };
     loadData();
-  }, [params]);
+  }, [params, fetchProduct, fetchCategories]);
 
   // Show loading state
   if (loading) {

@@ -29,11 +29,11 @@ import {
   IconRefresh,
   IconCalendar,
   IconListSearch,
-  IconChartLine,
   IconWorldWww,
   IconCheck,
   IconAlertCircle
 } from '@tabler/icons-react';
+import TrendDashboard from '@/components/admin/TrendDashboard';
 
 interface SearchAnalytics {
   totalSearches: number;
@@ -593,89 +593,10 @@ export default function AnalyticsPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="trends" pt="md">
-          <Stack gap="md">
-            <Alert icon={<IconChartLine size="1rem" />} color="blue" variant="light">
-              Trend visualization coming soon! Charts will show search and visitor patterns over time.
-            </Alert>
-            
-            {/* Search Trends Table */}
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Title order={3} mb="md">Search Trends by Day</Title>
-              
-              {data.searchAnalytics.searchTrends.length > 0 ? (
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Date</Table.Th>
-                      <Table.Th>Searches</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {data.searchAnalytics.searchTrends.slice(0, 10).map((trend, index) => (
-                      <Table.Tr key={index}>
-                        <Table.Td>
-                          <Text size="sm">
-                            {formatDate(trend.date)}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge variant="light" color="blue">
-                            {trend.search_count}
-                          </Badge>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              ) : (
-                <Text c="dimmed" ta="center" py="xl">
-                  No trend data available yet
-                </Text>
-              )}
-            </Card>
-
-            {/* Visitor Trends Table */}
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Title order={3} mb="md">Visitor Trends by Day</Title>
-              
-              {data.visitorAnalytics.visitorTrends.length > 0 ? (
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Date</Table.Th>
-                      <Table.Th>Visitors</Table.Th>
-                      <Table.Th>Page Views</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {data.visitorAnalytics.visitorTrends.slice(0, 10).map((trend, index) => (
-                      <Table.Tr key={index}>
-                        <Table.Td>
-                          <Text size="sm">
-                            {formatDate(trend.date)}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge variant="light" color="green">
-                            {trend.visitor_count}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge variant="light" color="blue">
-                            {trend.page_views}
-                          </Badge>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              ) : (
-                <Text c="dimmed" ta="center" py="xl">
-                  No trend data available yet
-                </Text>
-              )}
-            </Card>
-          </Stack>
+          <TrendDashboard 
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+          />
         </Tabs.Panel>
       </Tabs>
     </Stack>

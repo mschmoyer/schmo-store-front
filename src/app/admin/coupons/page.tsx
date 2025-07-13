@@ -146,7 +146,7 @@ export default function CouponsManagementPage() {
     }
   }, [couponModalOpened]);
 
-  const fetchProducts = async (search: string = '') => {
+  const fetchProducts = useCallback(async (search: string = '') => {
     setLoadingProducts(true);
     try {
       const token = localStorage.getItem('admin_token');
@@ -171,7 +171,7 @@ export default function CouponsManagementPage() {
     } finally {
       setLoadingProducts(false);
     }
-  };
+  }, []);
 
   const fetchCategories = async () => {
     setLoadingCategories(true);
@@ -196,12 +196,11 @@ export default function CouponsManagementPage() {
     }
   };
 
-  const debouncedFetchProducts = React.useCallback(
-    debounce((search: string) => {
+  const debouncedFetchProducts = React.useMemo(
+    () => debounce((search: string) => {
       fetchProducts(search);
     }, 300),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [fetchProducts]
   );
 
   useEffect(() => {

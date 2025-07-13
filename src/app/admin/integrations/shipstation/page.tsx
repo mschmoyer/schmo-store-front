@@ -85,8 +85,12 @@ export default function ShipStationIntegrationPage() {
     validate: {
       username: (value) => value.trim() === '' ? 'Username is required' : null,
       password: (value) => value.trim() === '' ? 'Password is required' : null,
-      apiKey: (value) => value.trim() === '' ? 'API Key is required' : null,
-      apiSecret: (value) => value.trim() === '' ? 'API Secret is required' : null,
+      apiKey: (value) => {
+        // Skip validation if using existing masked key
+        if (hasExistingConfig && !apiKeyModified && value === '••••••••••••••••') return null;
+        return value.trim() === '' ? 'API Key is required' : null;
+      },
+      apiSecret: () => null, // API Secret is optional for ShipStation
       endpointUrl: (value) => {
         if (value.trim() === '') return 'Endpoint URL is required';
         try {
@@ -115,7 +119,24 @@ export default function ShipStationIntegrationPage() {
         if (data.success && data.data) {
           const configData = data.data;
           setConfig(configData);
-          form.setValues(configData);
+          
+          // Check if we have existing API credentials
+          if (configData.apiKey) {
+            setHasExistingConfig(true);
+            setOriginalApiKey(configData.apiKey);
+            if (configData.apiSecret) {
+              setOriginalApiSecret(configData.apiSecret);
+            }
+            
+            // Set form values with masked API credentials
+            form.setValues({
+              ...configData,
+              apiKey: '••••••••••••••••',
+              apiSecret: configData.apiSecret ? '••••••••••••••••' : configData.apiSecret || ''
+            });
+          } else {
+            form.setValues(configData);
+          }
         }
       } else {
         setError('Failed to load ShipStation configuration');
@@ -196,8 +217,8 @@ export default function ShipStationIntegrationPage() {
         body: JSON.stringify({
           username: form.values.username,
           password: form.values.password,
-          apiKey: form.values.apiKey,
-          apiSecret: form.values.apiSecret,
+          apiKey: apiKeyModified ? form.values.apiKey : originalApiKey,
+          apiSecret: apiSecretModified ? form.values.apiSecret : originalApiSecret,
           endpointUrl: form.values.endpointUrl
         })
       });
@@ -251,13 +272,37 @@ export default function ShipStationIntegrationPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(values)
+        body: JSON.stringify({
+          ...values,
+          apiKey: apiKeyModified ? values.apiKey : originalApiKey,
+          apiSecret: apiSecretModified ? values.apiSecret : (originalApiSecret || values.apiSecret)
+        })
       });
       
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
           setConfig(data.data);
+          
+          // Update original credentials if they were changed
+          if (apiKeyModified && data.data.apiKey) {
+            setOriginalApiKey(data.data.apiKey);
+            setApiKeyModified(false);
+          }
+          if (apiSecretModified && data.data.apiSecret) {
+            setOriginalApiSecret(data.data.apiSecret);
+            setApiSecretModified(false);
+          }
+          
+          // Set form back to masked values if we have credentials
+          if (data.data.apiKey) {
+            setHasExistingConfig(true);
+            form.setFieldValue('apiKey', '••••••••••••••••');
+            if (data.data.apiSecret) {
+              form.setFieldValue('apiSecret', '••••••••••••••••');
+            }
+          }
+          
           notifications.show({
             title: 'Configuration Saved',
             message: 'ShipStation integration settings have been saved successfully',
@@ -320,7 +365,24 @@ export default function ShipStationIntegrationPage() {
       )}
 
       <Card shadow="sm" padding="lg">
-        <form onSubmit={form.onSubmit(handleSubmit)}>
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            // If we have existing config and API key is not modified, bypass validation
+            if (hasExistingConfig && !apiKeyModified && form.values.apiKey === '••••••••••••••••') {
+              const validationErrors = form.validate();
+              // Remove apiKey error if it exists since we're using the stored value
+              delete validationErrors.apiKey;
+              
+              if (Object.keys(validationErrors).length === 0) {
+                handleSubmit(form.values);
+              }
+            } else {
+              form.onSubmit(handleSubmit)(e);
+            }
+          }}
+          noValidate={hasExistingConfig && !apiKeyModified}
+        >
           <Stack gap="md">
             <Group justify="space-between" mb="md">
               <div>
@@ -394,36 +456,86 @@ export default function ShipStationIntegrationPage() {
               />
             </Group>
 
+            {hasExistingConfig && !apiKeyModified && (
+              <Alert icon={<IconInfoCircle size="1rem" />} color="blue" variant="light" mb="sm">
+                <Text size="sm">
+                  Your existing API key is securely stored. To update it, click on the field and enter a new value.
+                </Text>
+              </Alert>
+            )}
+
             <Group grow>
               <TextInput
                 label="API Key"
-                placeholder="Enter API key"
+                placeholder={hasExistingConfig && !apiKeyModified ? "Using existing API key" : "Enter API key"}
                 description="API key for programmatic access"
                 rightSection={
                   <ActionIcon
                     variant="subtle"
-                    onClick={() => copyToClipboard(form.values.apiKey, 'API Key')}
-                    disabled={!form.values.apiKey}
+                    onClick={() => {
+                      const keyToCopy = apiKeyModified ? form.values.apiKey : originalApiKey;
+                      if (keyToCopy && keyToCopy !== '••••••••••••••••') {
+                        copyToClipboard(keyToCopy, 'API Key');
+                      }
+                    }}
+                    disabled={!form.values.apiKey || form.values.apiKey === '••••••••••••••••'}
                   >
                     <IconCopy size="1rem" />
                   </ActionIcon>
                 }
-                {...form.getInputProps('apiKey')}
+                value={form.values.apiKey}
+                error={form.errors.apiKey}
+                onChange={(e) => {
+                  form.setFieldValue('apiKey', e.target.value);
+                  setApiKeyModified(true);
+                }}
+                onFocus={() => {
+                  if (hasExistingConfig && form.values.apiKey === '••••••••••••••••' && !apiKeyModified) {
+                    form.setFieldValue('apiKey', '');
+                  }
+                }}
+                onBlur={() => {
+                  if (hasExistingConfig && form.values.apiKey === '' && !apiKeyModified) {
+                    form.setFieldValue('apiKey', '••••••••••••••••');
+                  }
+                  form.validateField('apiKey');
+                }}
+                required={!hasExistingConfig || apiKeyModified}
               />
               <TextInput
                 label="API Secret"
-                placeholder="Enter API secret"
-                description="API secret for secure authentication"
+                placeholder={hasExistingConfig && !apiSecretModified ? "Using existing API secret (optional)" : "Enter API secret (optional)"}
+                description="API secret for secure authentication (optional)"
                 rightSection={
                   <ActionIcon
                     variant="subtle"
-                    onClick={() => copyToClipboard(form.values.apiSecret, 'API Secret')}
-                    disabled={!form.values.apiSecret}
+                    onClick={() => {
+                      const secretToCopy = apiSecretModified ? form.values.apiSecret : originalApiSecret;
+                      if (secretToCopy && secretToCopy !== '••••••••••••••••') {
+                        copyToClipboard(secretToCopy, 'API Secret');
+                      }
+                    }}
+                    disabled={!form.values.apiSecret || form.values.apiSecret === '••••••••••••••••'}
                   >
                     <IconCopy size="1rem" />
                   </ActionIcon>
                 }
-                {...form.getInputProps('apiSecret')}
+                value={form.values.apiSecret}
+                error={form.errors.apiSecret}
+                onChange={(e) => {
+                  form.setFieldValue('apiSecret', e.target.value);
+                  setApiSecretModified(true);
+                }}
+                onFocus={() => {
+                  if (hasExistingConfig && form.values.apiSecret === '••••••••••••••••' && !apiSecretModified) {
+                    form.setFieldValue('apiSecret', '');
+                  }
+                }}
+                onBlur={() => {
+                  if (hasExistingConfig && form.values.apiSecret === '' && !apiSecretModified) {
+                    form.setFieldValue('apiSecret', '••••••••••••••••');
+                  }
+                }}
               />
             </Group>
 
@@ -475,7 +587,17 @@ export default function ShipStationIntegrationPage() {
               <Group>
                 <Button
                   variant="outline"
-                  onClick={() => form.reset()}
+                  onClick={() => {
+                    form.reset();
+                    // Reset modification flags
+                    setApiKeyModified(false);
+                    setApiSecretModified(false);
+                    // Restore masked values if we have existing config
+                    if (hasExistingConfig) {
+                      form.setFieldValue('apiKey', '••••••••••••••••');
+                      form.setFieldValue('apiSecret', '••••••••••••••••');
+                    }
+                  }}
                   disabled={saving}
                 >
                   Reset

@@ -109,3 +109,4 @@ The system automatically syncs the following data from ShipStation:
 - Always check `dev.log` after task completion to verify server status and check for errors.
 - Add any TODO items to /docs/decision-log.md. Check them off when completed and include the date/time. Also include the user's prompt or request.
 - Check if the root README.md file needs an update after a task is completed. Only include relevant changes.
+- Do not add disable lint lines. Always attempt to fix. 

@@ -45,3 +45,5 @@ next-env.d.ts
 
 # local documentation
 /docs/local
+/playwright-report
+/playwright-report

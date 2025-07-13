@@ -4,18 +4,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAdminAuth } from '@/lib/auth/adminAuth';
+import { requireAuth } from '@/lib/auth/session';
 import BackgroundSyncService from '@/lib/services/backgroundSyncService';
 import { db } from '@/lib/database/connection';
 
 export async function GET(request: NextRequest) {
   try {
     // Verify admin authentication
-    const authResult = await verifyAdminAuth(request);
-    if (!authResult.isValid) {
+    const user = await requireAuth(request);
+    if (!user.storeId) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error: 'Store not found' },
+        { status: 404 }
       );
     }
 
@@ -172,11 +172,11 @@ async function getRecentErrors() {
 export async function POST(request: NextRequest) {
   try {
     // Verify admin authentication
-    const authResult = await verifyAdminAuth(request);
-    if (!authResult.isValid) {
+    const user = await requireAuth(request);
+    if (!user.storeId) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
+        { success: false, error: 'Store not found' },
+        { status: 404 }
       );
     }
 

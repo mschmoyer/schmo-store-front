@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Stack,
   Group,
@@ -63,15 +63,21 @@ export default function SuppliersManagement() {
   const [deleteModalOpened, { open: openDeleteModal, close: closeDeleteModal }] = useDisclosure(false);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
 
-  useEffect(() => {
-    fetchSuppliers();
-  }, []);
-
-  useEffect(() => {
-    filterSuppliers();
+  const filterSuppliers = useCallback(() => {
+    let filtered = suppliers;
+    
+    if (searchQuery) {
+      filtered = filtered.filter(supplier =>
+        supplier.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        supplier.contact_person?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        supplier.email?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    setFilteredSuppliers(filtered);
   }, [suppliers, searchQuery]);
 
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async () => {
     try {
       const token = localStorage.getItem('admin_token');
       const response = await fetch('/api/admin/suppliers', {
@@ -98,21 +104,15 @@ export default function SuppliersManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const filterSuppliers = () => {
-    let filtered = suppliers;
-    
-    if (searchQuery) {
-      filtered = filtered.filter(supplier =>
-        supplier.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        supplier.contact_person?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        supplier.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
-    setFilteredSuppliers(filtered);
-  };
+  useEffect(() => {
+    fetchSuppliers();
+  }, [fetchSuppliers]);
+
+  useEffect(() => {
+    filterSuppliers();
+  }, [suppliers, searchQuery, filterSuppliers]);
 
   const handleAddSupplier = () => {
     setSelectedSupplier(null);
