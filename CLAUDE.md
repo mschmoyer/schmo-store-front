@@ -52,6 +52,7 @@ When using `npm run dev:log` in a separate terminal, the server output is logged
 - **Testing**: Write unit tests for all components and utilities
 - **Performance**: Use React.memo, useMemo, useCallback for expensive operations
 - **Accessibility**: Include ARIA labels and semantic HTML
+- **Mocks**: Avoid using mocks unless explicitly requested; prefer real data where possible
 
 ## Testing
 
@@ -96,12 +97,12 @@ The system automatically syncs the following data from ShipStation:
 - Database table: `sync_logs` - Detailed sync results
 - Manual trigger: POST to `/api/admin/sync/background`
 
-## Rules 
-
-- Always run lint after a task or TODO list item is completed. 
-- Always run unit tests at the end of a task. 
-- **Always run Playwright e2e tests after completing tasks that affect admin functionality** - use `npm run test:e2e --project=chromium` for faster single-browser testing.
-- Always check `dev.log` after task completion to verify server status and check for errors.
-- Add any TODO items to /docs/decision-log.md. Check them off when completed and include the date/time. Also include the user's prompt or request.
-- Check if the root README.md file needs an update after a task is completed. Only include relevant changes.
-- Do not add disable lint lines. Always attempt to fix. 
+## Completing a Task
+When completing a task, follow these steps:
+- Run lint: `npm run lint`
+- Run unit tests: `npm run test`
+- Run Playwright e2e tests: `npm run test:e2e --project=chromium` on related code
+- Check `dev.log` for server status and errors
+- Update `/docs/decision-log.md` with any TODO items, marking them off when completed`
+- Check if the root `README.md` file needs updates and include relevant changes
+- Increment the version number in `package.json` using semantic versioning (major.minor.patch) if the task affects application functionality

@@ -1,4 +1,5 @@
-import { db } from '@/lib/database/connection';
+#!/usr/bin/env node
+import { db } from '../src/lib/database/connection';
 
 interface SyncResult {
   totalCount: number;
@@ -9,7 +10,7 @@ interface SyncResult {
 /**
  * Sync inventory warehouses from ShipStation V2 API
  */
-export async function syncInventoryWarehouses(apiKey: string, storeId: string): Promise<SyncResult> {
+async function syncInventoryWarehouses(apiKey: string, storeId: string): Promise<SyncResult> {
   const result: SyncResult = { totalCount: 0, addedCount: 0, updatedCount: 0 };
 
   try {
@@ -81,3 +82,30 @@ export async function syncInventoryWarehouses(apiKey: string, storeId: string): 
 
   return result;
 }
+
+// Main execution
+async function main() {
+  if (process.argv.length < 4) {
+    console.error('Usage: npm run sync:inventory-warehouses <storeId> <apiKey>');
+    process.exit(1);
+  }
+
+  const storeId = process.argv[2];
+  const apiKey = process.argv[3];
+
+  try {
+    const result = await syncInventoryWarehouses(apiKey, storeId);
+    console.log('Sync completed:', result);
+    process.exit(0);
+  } catch (error) {
+    console.error('Sync failed:', error);
+    process.exit(1);
+  }
+}
+
+// Only run if called directly
+if (require.main === module) {
+  main();
+}
+
+export { syncInventoryWarehouses };
