@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateUser } from '@/lib/auth/session';
+import { requireAuth } from '@/lib/auth/session';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = await authenticateUser(request);
-    if (!user.success) {
-      return NextResponse.json({ error: user.error }, { status: 401 });
-    }
+    await requireAuth(request);
 
     const body = await request.json();
     const { items } = body;

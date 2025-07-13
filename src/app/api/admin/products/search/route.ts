@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/database/connection';
-import { authenticateUser } from '@/lib/auth/session';
+import { db } from '@/lib/database/connection';
+import { requireAuth } from '@/lib/auth/session';
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await authenticateUser(request);
-    if (!user.success) {
-      return NextResponse.json({ error: user.error }, { status: 401 });
-    }
-
-    const db = getDb();
+    const user = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
     const limit = parseInt(searchParams.get('limit') || '10');

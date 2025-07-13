@@ -40,6 +40,10 @@ When using `npm run dev:log` in a separate terminal, the server output is logged
 - TailwindCSS with PostCSS processing
 - Next.js config supports standard options
 
+## Heroku
+
+We are deployed on heroku. Our app is: rebel-shops. THe heroku command line interface is online locally. 
+
 ## Development Best Practices
 
 - **Components**: Create small, single-responsibility components

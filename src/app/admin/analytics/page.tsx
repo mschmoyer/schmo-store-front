@@ -276,7 +276,7 @@ export default function AnalyticsPage() {
         </Stack>
       )}
 
-      <Tabs value={activeTab} onChange={setActiveTab}>
+      <Tabs value={activeTab} onChange={(value) => value && setActiveTab(value)}>
         <Tabs.List>
           <Tabs.Tab value="overview" leftSection={<IconChartBar size="1rem" />}>
             Overview

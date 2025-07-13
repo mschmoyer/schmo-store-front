@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/session';
-import { db } from '@/lib/database';
+import { db } from '@/lib/database/connection';
 
 interface ShipStationConfig {
   id?: string;
@@ -28,6 +28,21 @@ interface ShipStationConfig {
     address_residential_indicator: 'yes' | 'no' | 'unknown';
     instructions?: string;
   };
+}
+
+interface StoreIntegrationRow {
+  id: string;
+  is_active: boolean;
+  configuration: Record<string, unknown>;
+  auto_sync_enabled: boolean;
+  auto_sync_interval: string;
+  api_key_encrypted?: string;
+  api_secret_encrypted?: string;
+  shipstation_username?: string;
+  shipstation_password_hash?: string;
+  shipstation_auth_enabled?: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -93,17 +108,19 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const config = configResult.rows[0];
+    const config = configResult.rows[0] as unknown as StoreIntegrationRow;
     const configData = config.configuration as Record<string, unknown>;
 
     // Decrypt API credentials if they exist
     let decryptedApiKey = '';
     let decryptedApiSecret = '';
     
-    if (config.api_key_encrypted && config.api_secret_encrypted) {
+    if (config.api_key_encrypted) {
       try {
-        decryptedApiKey = Buffer.from(config.api_key_encrypted, 'base64').toString('utf-8');
-        decryptedApiSecret = Buffer.from(config.api_secret_encrypted, 'base64').toString('utf-8');
+        decryptedApiKey = Buffer.from(config.api_key_encrypted as string, 'base64').toString('utf-8');
+        if (config.api_secret_encrypted) {
+          decryptedApiSecret = Buffer.from(config.api_secret_encrypted as string, 'base64').toString('utf-8');
+        }
       } catch (error) {
         console.error('Error decrypting API credentials:', error);
       }
@@ -122,8 +139,8 @@ export async function GET(request: NextRequest) {
           [storeId, decryptedApiKey]
         );
         
-        displayUsername = credentialsResult.rows[0].username;
-        displayPassword = credentialsResult.rows[0].password;
+        displayUsername = credentialsResult.rows[0].username as string;
+        displayPassword = credentialsResult.rows[0].password as string;
       } catch (error) {
         console.error('Error generating display credentials:', error);
       }
@@ -176,10 +193,10 @@ export async function POST(request: NextRequest) {
       shipFromAddress
     } = body as ShipStationConfig;
 
-    // Validate required fields - only need API key/secret now
-    if (!apiKey || !apiSecret || !endpointUrl) {
+    // Validate required fields - only need API key now
+    if (!apiKey || !endpointUrl) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: apiKey, apiSecret, endpointUrl' },
+        { success: false, error: 'Missing required fields: apiKey, endpointUrl' },
         { status: 400 }
       );
     }
@@ -217,13 +234,13 @@ export async function POST(request: NextRequest) {
       [storeId, apiKey]
     );
 
-    const generatedUsername = credentialsResult.rows[0].username;
-    const generatedPassword = credentialsResult.rows[0].password;
+    const generatedUsername = credentialsResult.rows[0].username as string;
+    const generatedPassword = credentialsResult.rows[0].password as string;
     const hashedPassword = Buffer.from(generatedPassword).toString('base64');
 
     // Simple encryption for API credentials (base64 for now)
     const encryptedApiKey = Buffer.from(apiKey).toString('base64');
-    const encryptedApiSecret = Buffer.from(apiSecret).toString('base64');
+    const encryptedApiSecret = apiSecret ? Buffer.from(apiSecret).toString('base64') : '';
 
     // Configuration object to store
     const configuration = {
@@ -361,7 +378,7 @@ export async function DELETE(request: NextRequest) {
 
     // Delete ShipStation integration
     await db.query(
-      'DELETE FROM integrations WHERE store_id = $1 AND integration_type = $2',
+      'DELETE FROM store_integrations WHERE store_id = $1 AND integration_type = $2',
       [storeId, 'shipstation']
     );
 
