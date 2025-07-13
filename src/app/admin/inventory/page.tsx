@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Stack, 
   Title, 
@@ -126,6 +127,7 @@ interface InventoryStats {
 }
 
 export default function InventoryPage() {
+  const router = useRouter();
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [stats, setStats] = useState<InventoryStats | null>(null);
@@ -867,7 +869,7 @@ export default function InventoryPage() {
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Title order={3} mb="md">Inventory Turnover</Title>
                 <Text c="dimmed" mb="md">Track how quickly inventory is sold and replaced</Text>
-                <Button variant="outline" fullWidth>
+                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/turnover')}>
                   Generate Report
                 </Button>
               </Card>
@@ -875,7 +877,7 @@ export default function InventoryPage() {
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Title order={3} mb="md">Stock Valuation</Title>
                 <Text c="dimmed" mb="md">Current value of all inventory items</Text>
-                <Button variant="outline" fullWidth>
+                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/valuation')}>
                   Generate Report
                 </Button>
               </Card>
@@ -883,7 +885,7 @@ export default function InventoryPage() {
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Title order={3} mb="md">Dead Stock Analysis</Title>
                 <Text c="dimmed" mb="md">Identify slow-moving inventory</Text>
-                <Button variant="outline" fullWidth>
+                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/dead-stock')}>
                   Generate Report
                 </Button>
               </Card>
@@ -891,7 +893,7 @@ export default function InventoryPage() {
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Title order={3} mb="md">Supplier Performance</Title>
                 <Text c="dimmed" mb="md">Analyze supplier delivery times and quality</Text>
-                <Button variant="outline" fullWidth>
+                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/supplier-performance')}>
                   Generate Report
                 </Button>
               </Card>

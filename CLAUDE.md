@@ -100,6 +100,7 @@ The system automatically syncs the following data from ShipStation:
 ## Completing a Task
 When completing a task, follow these steps:
 - Run lint: `npm run lint`
+- Run tsc
 - Run unit tests: `npm run test`
 - Run Playwright e2e tests: `npm run test:e2e --project=chromium` on related code
 - Check `dev.log` for server status and errors

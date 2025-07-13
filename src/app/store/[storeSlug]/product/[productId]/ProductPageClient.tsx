@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Title, Text, Badge, Button, Group, Stack, Grid, Image, Card, NumberInput, GridCol, CardSection } from '@mantine/core';
 import { IconShoppingCart, IconHeart, IconShare, IconMinus, IconPlus } from '@tabler/icons-react';
+import { ShareModal } from '@/components/product/ShareModal';
 import { notifications } from '@mantine/notifications';
 import { Product } from '@/types/product';
 
@@ -36,6 +37,7 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
   const [inventory, setInventory] = useState<InventoryData>({});
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [shareModalOpened, setShareModalOpened] = useState(false);
 
   // Load cart data from localStorage
   useEffect(() => {
@@ -78,11 +80,13 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
         const response = await fetch(`/api/stores/${store.id}/inventory`);
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.data) {
-            const inventoryMap = data.data.reduce((acc: InventoryData, item: Record<string, unknown>) => {
+          console.log('Inventory API response:', data); // Debug log
+          if (data.success && data.data && data.data.inventory) {
+            const inventoryMap = data.data.inventory.reduce((acc: InventoryData, item: Record<string, unknown>) => {
               acc[item.sku as string] = (item.available as number) || 0;
               return acc;
             }, {});
+            console.log('Inventory map:', inventoryMap); // Debug log
             setInventory(inventoryMap);
           }
         }
@@ -372,7 +376,8 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
                     background: isInStock() ? 'var(--theme-primary-gradient)' : 'var(--theme-disabled)',
                     border: 'none',
                     fontWeight: 600,
-                    color: isInStock() ? 'var(--theme-text-on-primary)' : 'var(--theme-text-muted)'
+                    color: isInStock() ? 'var(--theme-text-on-primary)' : '#ffffff',
+                    opacity: isInStock() ? 1 : 0.7
                   }}
                 >
                   {isInStock() ? 'Add to Cart' : 'Out of Stock'}
@@ -396,6 +401,7 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
                   variant="outline" 
                   size="lg"
                   leftSection={<IconShare size={20} />}
+                  onClick={() => setShareModalOpened(true)}
                   style={{
                     borderColor: 'var(--theme-border)',
                     color: 'var(--theme-text)',
@@ -412,6 +418,13 @@ export function ProductPageClient({ product, store }: ProductPageClientProps) {
           </Stack>
         </GridCol>
       </Grid>
+      
+      <ShareModal 
+        opened={shareModalOpened}
+        onClose={() => setShareModalOpened(false)}
+        productName={product.name}
+        productUrl={`/store/${store.store_slug}/product/${product.product_id}`}
+      />
     </Container>
   );
 }

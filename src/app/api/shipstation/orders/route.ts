@@ -180,7 +180,10 @@ export async function GET(request: NextRequest) {
     // Generate XML
     const xml = exportOrdersToXML(validOrders, page, totalPages);
     
-    // Log successful export
+    // Log XML payload for debugging
+    console.log('ShipStation Order Export XML:', xml);
+    
+    // Log successful export with XML payload
     await db.query(
       `INSERT INTO integration_logs (
         store_id,
@@ -207,7 +210,8 @@ export async function GET(request: NextRequest) {
           total_orders: totalOrders,
           valid_orders: validOrders.length,
           invalid_orders: invalidOrders.length,
-          total_pages: totalPages
+          total_pages: totalPages,
+          xml_payload: xml
         }),
         Date.now() - startTime
       ]

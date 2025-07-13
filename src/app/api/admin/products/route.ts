@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     let paramIndex = 2;
 
     if (filters.search) {
-      whereClause += ` AND (name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
+      whereClause += ` AND (name ILIKE $${paramIndex} OR short_description ILIKE $${paramIndex} OR long_description ILIKE $${paramIndex})`;
       queryParams.push(`%${filters.search}%`);
       paramIndex++;
     }
@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
     // Create the product directly with database query
     const insertResult = await db.query(`
       INSERT INTO products (
-        store_id, sku, name, slug, short_description, description, 
+        store_id, sku, name, slug, short_description, long_description, 
         base_price, compare_price, cost_price, track_inventory, stock_quantity,
         allow_backorder, weight, category_id, tags, featured_image_url, gallery_images,
         is_active, is_featured, published_at, created_at, updated_at
@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
       body.name,
       body.slug,
       body.short_description || null,
-      body.description || null,
+      body.long_description || body.description || null,
       parseFloat(body.price),
       body.compare_price ? parseFloat(body.compare_price) : null,
       body.cost_price ? parseFloat(body.cost_price) : null,

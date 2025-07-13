@@ -180,7 +180,7 @@ export default function ProductsAdminPage() {
     
     try {
       const filters: ProductFilters = {
-        search: searchQuery || undefined,
+        search: searchQuery.length >= 3 ? searchQuery : undefined,
         category_id: categoryFilter || undefined,
         is_active: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
         in_stock: stockFilter === 'in_stock' ? true : stockFilter === 'out_of_stock' ? false : undefined,
@@ -531,7 +531,11 @@ export default function ProductsAdminPage() {
   // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchQuery !== '' && isAuthenticated && session?.sessionToken) {
+      if (searchQuery.length >= 3 && isAuthenticated && session?.sessionToken) {
+        setCurrentPage(1);
+        fetchProducts(1);
+      } else if (searchQuery === '' && isAuthenticated && session?.sessionToken) {
+        // Reset search when clearing the input
         setCurrentPage(1);
         fetchProducts(1);
       }
@@ -710,11 +714,13 @@ export default function ProductsAdminPage() {
         <Group justify="space-between" mb="md">
           <Group>
             <TextInput
-              placeholder="Search products..."
+              placeholder="Search products (min 3 characters)..."
               leftSection={<IconSearch size={16} />}
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.currentTarget.value)}
               style={{ minWidth: 300 }}
+              description={searchQuery.length > 0 && searchQuery.length < 3 ? "Enter at least 3 characters to search" : undefined}
+              error={searchQuery.length > 0 && searchQuery.length < 3}
             />
             
             <Select
