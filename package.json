@@ -16,11 +16,7 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:ui": "playwright test --ui",
     "sync:background": "node scripts/background-sync.js",
-    "sync:test": "node scripts/background-sync.js",
-    "sync:inventory-warehouses": "tsx scripts/sync-inventory-warehouses.ts",
-    "sync:inventory-locations": "tsx scripts/sync-inventory-locations.ts",
-    "sync:products": "tsx scripts/sync-products.ts",
-    "sync:inventory": "tsx scripts/sync-inventory.ts"
+    "sync:test": "node scripts/background-sync.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

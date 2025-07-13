@@ -105,4 +105,4 @@ When completing a task, follow these steps:
 - Check `dev.log` for server status and errors
 - Update `/docs/decision-log.md` with any TODO items, marking them off when completed`
 - Check if the root `README.md` file needs updates and include relevant changes
-- Increment the version number in `package.json` using semantic versioning (major.minor.patch) if the task affects application functionality
+- Increment the version number in `package.json` using semantic versioning (major.minor.patch) if the task affects application functionality. For small fixes, increment patch. For medium feature adds, increment minor. Do not change major unless specified. 

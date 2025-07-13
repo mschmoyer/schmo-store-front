@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Modal,
   Stack,
@@ -74,12 +74,6 @@ export default function ReceivingModal({
   const [notes, setNotes] = useState('');
   const [partialReceiving, setPartialReceiving] = useState(false);
 
-  useEffect(() => {
-    if (opened && purchaseOrder) {
-      initializeItems();
-    }
-  }, [opened, purchaseOrder, initializeItems]);
-
   const initializeItems = useCallback(() => {
     if (!purchaseOrder?.purchase_order_items) return;
 
@@ -100,6 +94,12 @@ export default function ReceivingModal({
 
     setItems(receivingItems);
   }, [purchaseOrder]);
+
+  useEffect(() => {
+    if (opened && purchaseOrder) {
+      initializeItems();
+    }
+  }, [opened, purchaseOrder, initializeItems]);
 
   const updateItem = (index: number, field: keyof ReceivingItem, value: string | number) => {
     setItems(prev => {

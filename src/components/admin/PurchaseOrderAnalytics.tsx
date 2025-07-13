@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   SimpleGrid,
@@ -63,10 +63,6 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
   const [loading] = useState(false);
   const [timeRange, setTimeRange] = useState('30');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-
-  useEffect(() => {
-    calculateAnalytics();
-  }, [purchaseOrders, timeRange, calculateAnalytics]);
 
   const calculateAnalytics = useCallback(() => {
     if (!purchaseOrders || purchaseOrders.length === 0) {
@@ -163,6 +159,10 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
       statusBreakdown
     });
   }, [purchaseOrders, timeRange]);
+
+  useEffect(() => {
+    calculateAnalytics();
+  }, [purchaseOrders, timeRange, calculateAnalytics]);
 
   const getMonthlyTrends = (pos: Array<{ created_at?: string; order_date: string; total_cost: number }>) => {
     const monthly: Record<string, { orderCount: number; totalSpend: number }> = {};
