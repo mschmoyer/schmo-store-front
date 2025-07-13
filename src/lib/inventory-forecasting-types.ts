@@ -9,7 +9,10 @@ export const FORECAST_PERIODS = [
   { value: 90, label: '90 Days' },
   { value: 180, label: '6 Months' },
   { value: 365, label: '1 Year' }
-] as const
+] as const;
+
+// Ensure the array is fully initialized before use
+Object.freeze(FORECAST_PERIODS);
 
 export type ForecastPeriod = typeof FORECAST_PERIODS[number]['value']
 
