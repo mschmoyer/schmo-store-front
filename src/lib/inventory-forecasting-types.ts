@@ -1,7 +1,12 @@
 /**
+ * Valid forecast period values
+ */
+export type ForecastPeriod = 7 | 14 | 30 | 60 | 90 | 180 | 365;
+
+/**
  * Forecast periods for inventory demand prediction
  */
-export const FORECAST_PERIODS = [
+export const FORECAST_PERIODS: ReadonlyArray<{ value: ForecastPeriod; label: string }> = [
   { value: 7, label: '7 Days' },
   { value: 14, label: '14 Days' },
   { value: 30, label: '30 Days' },
@@ -9,12 +14,10 @@ export const FORECAST_PERIODS = [
   { value: 90, label: '90 Days' },
   { value: 180, label: '6 Months' },
   { value: 365, label: '1 Year' }
-] as const;
+];
 
 // Ensure the array is fully initialized before use
 Object.freeze(FORECAST_PERIODS);
-
-export type ForecastPeriod = typeof FORECAST_PERIODS[number]['value']
 
 /**
  * Sales data for forecasting calculations

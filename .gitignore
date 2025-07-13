@@ -36,14 +36,13 @@ dev.log
 # env files (can opt-in for committing if needed)
 .env*
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
 # local documentation
 /docs/local
+
+#playwright
 /playwright-report
-/playwright-report
+/test-results

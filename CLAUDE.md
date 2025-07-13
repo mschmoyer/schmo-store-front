@@ -40,10 +40,6 @@ When using `npm run dev:log` in a separate terminal, the server output is logged
 - TailwindCSS with PostCSS processing
 - Next.js config supports standard options
 
-## Heroku
-
-We are deployed on heroku. Our app is: rebel-shops. THe heroku command line interface is online locally. 
-
 ## Development Best Practices
 
 - **Components**: Create small, single-responsibility components
@@ -88,22 +84,17 @@ The system automatically syncs the following data from ShipStation:
 4. **Products** - Product information, SKUs, prices, images
 5. **Inventory** - Stock levels and quantities
 
-### Setup for Heroku
+### Heroku
 1. Set environment variable: `SYNC_AUTH_TOKEN=your-secure-token`
 2. Apply database migration: `015_sync_logs_table.sql`
 3. Configure Heroku Scheduler to run `npm run sync:background`
 4. See `/docs/heroku-scheduler-setup.md` for detailed setup instructions
+5. Our app is: rebel-shops
 
 ### Monitoring
 - API endpoint: `/api/admin/sync/status` - View sync history and statistics
 - Database table: `sync_logs` - Detailed sync results
 - Manual trigger: POST to `/api/admin/sync/background`
-
-### Performance
-- **Parallel Processing**: Content sync operations run simultaneously
-- **Error Resilience**: Individual failures don't stop entire sync
-- **Detailed Logging**: All operations logged with timing and results
-- **Automatic Cleanup**: Old sync logs removed after 30 days
 
 ## Rules 
 
