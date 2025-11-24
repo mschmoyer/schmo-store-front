@@ -15,15 +15,26 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
-// Database configuration
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'schmo_store',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-};
+// Database configuration - support both DATABASE_URL and individual vars
+let dbConfig;
+
+if (process.env.DATABASE_URL) {
+  // Heroku provides DATABASE_URL
+  dbConfig = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  };
+} else {
+  // Use individual environment variables
+  dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'schmo_store',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  };
+}
 
 const pool = new Pool(dbConfig);
 
@@ -240,10 +251,14 @@ async function testConnection() {
   } catch (error) {
     console.error('✗ Database connection failed:', error.message);
     console.error('Please check your database configuration:');
-    console.error(`  Host: ${dbConfig.host}`);
-    console.error(`  Port: ${dbConfig.port}`);
-    console.error(`  Database: ${dbConfig.database}`);
-    console.error(`  User: ${dbConfig.user}`);
+    if (process.env.DATABASE_URL) {
+      console.error('  Using DATABASE_URL from environment');
+    } else {
+      console.error(`  Host: ${dbConfig.host}`);
+      console.error(`  Port: ${dbConfig.port}`);
+      console.error(`  Database: ${dbConfig.database}`);
+      console.error(`  User: ${dbConfig.user}`);
+    }
     return false;
   }
 }
