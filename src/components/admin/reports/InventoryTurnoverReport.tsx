@@ -23,6 +23,7 @@ import {
   ScrollArea,
   Box
 } from '@mantine/core';
+import { useAdmin } from '@/contexts/AdminContext';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconTrendingUp,
@@ -110,6 +111,7 @@ interface InventoryTurnoverReportProps {
  * @returns JSX.Element
  */
 export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProps) {
+  const { session } = useAdmin();
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
     startOfDay(subDays(new Date(), 30)),
     endOfDay(new Date())
@@ -129,6 +131,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
   // Fetch turnover data
   const fetchTurnoverData = useCallback(async (isRefresh = false) => {
     if (!dateRange[0] || !dateRange[1]) return;
+    if (!session?.sessionToken) return;
 
     setLoading(!isRefresh);
     setRefreshing(isRefresh);
@@ -144,8 +147,8 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-        },
-        credentials: 'include'
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
       });
 
       if (!response.ok) {
@@ -168,14 +171,14 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateRange]);
+  }, [dateRange, session?.sessionToken]);
 
   // Initial load
   useEffect(() => {
-    if (dateRange[0] && dateRange[1]) {
+    if (dateRange[0] && dateRange[1] && session?.sessionToken) {
       fetchTurnoverData();
     }
-  }, [dateRange, fetchTurnoverData]);
+  }, [dateRange, fetchTurnoverData, session?.sessionToken]);
 
   // Filter and sort data
   const filteredAndSortedData = useMemo(() => {

@@ -23,6 +23,7 @@ import {
   NumberFormatter,
   Paper
 } from '@mantine/core';
+import { useAdmin } from '@/contexts/AdminContext';
 import { DatePickerInput } from '@mantine/dates';
 import {
   IconTrendingUp,
@@ -161,6 +162,7 @@ interface StockValuationReportProps {
  * @returns JSX.Element
  */
 export default function StockValuationReport({ }: StockValuationReportProps) {
+  const { session } = useAdmin();
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
     startOfDay(subDays(new Date(), 30)),
     endOfDay(new Date())
@@ -175,6 +177,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
   // Fetch valuation data
   const fetchValuationData = useCallback(async (isRefresh = false) => {
     if (!dateRange[0] || !dateRange[1]) return;
+    if (!session?.sessionToken) return;
 
     setLoading(!isRefresh);
     setRefreshing(isRefresh);
@@ -191,8 +194,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-        },
-        credentials: 'include'
+          'Authorization': `Bearer ${session.sessionToken}`
+        }
       });
 
       if (!response.ok) {
@@ -214,14 +217,14 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateRange, comparePrevious]);
+  }, [dateRange, comparePrevious, session?.sessionToken]);
 
   // Initial load
   useEffect(() => {
-    if (dateRange[0] && dateRange[1]) {
+    if (dateRange[0] && dateRange[1] && session?.sessionToken) {
       fetchValuationData();
     }
-  }, [dateRange, comparePrevious, fetchValuationData]);
+  }, [dateRange, comparePrevious, fetchValuationData, session?.sessionToken]);
 
   // Export to CSV
   const exportToCSV = () => {

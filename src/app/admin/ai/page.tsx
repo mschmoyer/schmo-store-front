@@ -33,7 +33,8 @@ import {
   IconCheck,
   IconSparkles,
   IconX,
-  IconColorSwatch
+  IconColorSwatch,
+  IconFileText
 } from '@tabler/icons-react';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
@@ -80,6 +81,21 @@ const aiFeatures: AIFeature[] = [
       'SEO keyword optimization',
       'Engaging storytelling',
       'Automatic publishing workflow'
+    ]
+  },
+  {
+    id: 'hs-code-generator',
+    title: 'HS Code Generator',
+    description: 'Generate Harmonized System trade classification codes for all your products using AI analysis.',
+    icon: IconFileText,
+    color: 'indigo',
+    category: 'automation',
+    status: 'available',
+    benefits: [
+      'Accurate trade classification',
+      'International shipping compliance',
+      'Bulk processing for all products',
+      'AI confidence scoring'
     ]
   },
   {
@@ -155,6 +171,24 @@ export default function AIPage() {
   const [generatedStoreDetails, setGeneratedStoreDetails] = useState<GeneratedStoreDetails | null>(null);
   const [resultsOpened, { open: openResults, close: closeResults }] = useDisclosure(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [hsCodeResults, setHsCodeResults] = useState<{
+    success: boolean;
+    message: string;
+    results: Array<{
+      productId: string;
+      success: boolean;
+      hsCode?: string;
+      description?: string;
+      confidence?: number;
+      error?: string;
+    }>;
+    stats: {
+      total: number;
+      successful: number;
+      failed: number;
+    };
+  } | null>(null);
+  const [hsCodeResultsOpened, { open: openHsCodeResults, close: closeHsCodeResults }] = useDisclosure(false);
 
   const handleApplyStoreDetails = async () => {
     if (!generatedStoreDetails || !user?.storeId) return;
@@ -248,12 +282,15 @@ export default function AIPage() {
     setIsGenerating(true);
     setGeneratedContent('');
     setGeneratedStoreDetails(null);
+    setHsCodeResults(null);
 
     try {
       const requestBody = featureId === 'store-details-generator' 
         ? { businessDescription: businessDescription.trim() }
         : featureId === 'blog-post-generator'
         ? { userPrompt: blogPostPrompt.trim() }
+        : featureId === 'hs-code-generator'
+        ? {} // Will process all products for the store
         : { storeId: user.storeId };
 
       const token = localStorage.getItem('admin_token');
@@ -282,6 +319,10 @@ export default function AIPage() {
           window.location.href = data.redirectUrl;
           return;
         }
+      } else if (featureId === 'hs-code-generator') {
+        setHsCodeResults(data);
+        close();
+        openHsCodeResults();
       } else {
         setGeneratedContent(data.content);
       }
@@ -613,6 +654,127 @@ export default function AIPage() {
                 color="green"
               >
                 {isApplying ? 'Applying...' : 'Apply to Store'}
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* HS Code Results Modal */}
+      <Modal
+        opened={hsCodeResultsOpened}
+        onClose={closeHsCodeResults}
+        title={
+          <Group gap="sm">
+            <IconFileText size={24} color="var(--mantine-color-indigo-6)" />
+            <Text fw={500}>HS Code Generation Results</Text>
+          </Group>
+        }
+        size="xl"
+      >
+        {hsCodeResults && (
+          <Stack gap="lg">
+            <Alert color="indigo" icon={<IconInfoCircle size={16} />}>
+              Generated HS codes for {hsCodeResults.stats?.successful || 0} of {hsCodeResults.stats?.total || 0} products.
+              HS codes have been automatically saved to your products.
+            </Alert>
+
+            <Paper withBorder p="md" radius="md">
+              <Stack gap="md">
+                <Group justify="space-between">
+                  <Text fw={500}>Processing Summary</Text>
+                  <Badge color="indigo" variant="light">
+                    {hsCodeResults.stats?.successful || 0} / {hsCodeResults.stats?.total || 0} successful
+                  </Badge>
+                </Group>
+                
+                <Grid>
+                  <GridCol span={4}>
+                    <div style={{ textAlign: 'center' }}>
+                      <Text size="xl" fw={700} color="green">
+                        {hsCodeResults.stats?.successful || 0}
+                      </Text>
+                      <Text size="sm" c="dimmed">Successful</Text>
+                    </div>
+                  </GridCol>
+                  <GridCol span={4}>
+                    <div style={{ textAlign: 'center' }}>
+                      <Text size="xl" fw={700} color="red">
+                        {hsCodeResults.stats?.failed || 0}
+                      </Text>
+                      <Text size="sm" c="dimmed">Failed</Text>
+                    </div>
+                  </GridCol>
+                  <GridCol span={4}>
+                    <div style={{ textAlign: 'center' }}>
+                      <Text size="xl" fw={700} color="blue">
+                        {hsCodeResults.stats?.total || 0}
+                      </Text>
+                      <Text size="sm" c="dimmed">Total</Text>
+                    </div>
+                  </GridCol>
+                </Grid>
+              </Stack>
+            </Paper>
+
+            {hsCodeResults.results && hsCodeResults.results.length > 0 && (
+              <Paper withBorder p="md" radius="md">
+                <Text fw={500} mb="md">Product Details</Text>
+                <Stack gap="sm" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  {hsCodeResults.results.slice(0, 10).map((result, index: number) => (
+                    <Paper key={index} p="sm" withBorder radius="sm">
+                      <Group justify="space-between" align="flex-start">
+                        <div style={{ flex: 1 }}>
+                          <Group gap="xs" mb="xs">
+                            <Text size="sm" fw={500} truncate>
+                              Product ID: {result.productId}
+                            </Text>
+                            {result.success ? (
+                              <Badge color="green" size="xs">Success</Badge>
+                            ) : (
+                              <Badge color="red" size="xs">Failed</Badge>
+                            )}
+                          </Group>
+                          
+                          {result.success ? (
+                            <Stack gap="xs">
+                              <Group gap="lg">
+                                <Text size="sm">
+                                  <Text span fw={500}>HS Code:</Text> {result.hsCode}
+                                </Text>
+                                <Text size="sm">
+                                  <Text span fw={500}>Confidence:</Text> {result.confidence}%
+                                </Text>
+                              </Group>
+                              <Text size="xs" c="dimmed">
+                                {result.description}
+                              </Text>
+                            </Stack>
+                          ) : (
+                            <Text size="xs" color="red">
+                              Error: {result.error}
+                            </Text>
+                          )}
+                        </div>
+                      </Group>
+                    </Paper>
+                  ))}
+                  {hsCodeResults.results.length > 10 && (
+                    <Text size="sm" c="dimmed" ta="center" py="md">
+                      ... and {hsCodeResults.results.length - 10} more results
+                    </Text>
+                  )}
+                </Stack>
+              </Paper>
+            )}
+
+            <Group justify="center">
+              <Button 
+                onClick={closeHsCodeResults}
+                leftSection={<IconCheck size={16} />}
+                color="indigo"
+              >
+                Done
               </Button>
             </Group>
           </Stack>

@@ -27,6 +27,7 @@ import {
   List,
   Divider
 } from '@mantine/core';
+import { useAdmin } from '@/contexts/AdminContext';
 import {
   IconAlertTriangle,
   IconDownload,
@@ -136,6 +137,7 @@ interface DeadStockAnalysisReportProps {
  * @returns JSX.Element
  */
 export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProps) {
+  const { session } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +159,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
 
   // Fetch dead stock data
   const fetchDeadStockData = useCallback(async (isRefresh = false) => {
+    if (!session?.sessionToken) return;
     setLoading(!isRefresh);
     setRefreshing(isRefresh);
     setError(null);
@@ -172,8 +175,8 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-        },
-        credentials: 'include'
+          'Authorization': `Bearer ${session?.sessionToken}`
+        }
       });
 
       if (!response.ok) {
@@ -198,12 +201,14 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [threshold90Days, threshold180Days, threshold365Days, customThreshold]);
+  }, [threshold90Days, threshold180Days, threshold365Days, customThreshold, session?.sessionToken]);
 
   // Initial load and threshold changes
   useEffect(() => {
-    fetchDeadStockData();
-  }, [threshold90Days, threshold180Days, threshold365Days, customThreshold, fetchDeadStockData]);
+    if (session?.sessionToken) {
+      fetchDeadStockData();
+    }
+  }, [threshold90Days, threshold180Days, threshold365Days, customThreshold, fetchDeadStockData, session?.sessionToken]);
 
   // Filter and sort data
   const filteredAndSortedData = useMemo(() => {

@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
 import { TopNav } from '@/components';
 import { ThemeStyleElement } from '@/lib/themeSSR';
@@ -27,11 +28,15 @@ interface StorePageProps {
 
 async function getStoreData(storeSlug: string): Promise<Store | null> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const headersList = await headers();
+    const host = headersList.get('host') || 'localhost:3000';
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const baseUrl = `${protocol}://${host}`;
+
     const response = await fetch(`${baseUrl}/api/stores/public?slug=${storeSlug}`, {
       next: { revalidate: 300 }, // 5 minutes
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       if (data.success && data.data) {

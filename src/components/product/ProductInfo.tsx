@@ -24,7 +24,8 @@ import {
   IconTruck,
   IconShield,
   IconRefresh,
-  IconInfoCircle
+  IconInfoCircle,
+  IconFileText
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { StarRating } from '@/components/ui/StarRating';
@@ -346,6 +347,56 @@ export function ProductInfo({
               </Grid.Col>
             ))}
           </Grid>
+        </Box>
+      )}
+      
+      {/* HS Code Information */}
+      {product.hs_code && (
+        <Box>
+          <Title order={3} size="h4" mb="sm">
+            <Group gap="xs">
+              <IconFileText size={16} color="var(--mantine-color-indigo-6)" />
+              Trade Classification
+            </Group>
+          </Title>
+          <Paper withBorder p="sm" radius="md">
+            <Stack gap="xs">
+              <Group justify="space-between">
+                <Text size="sm" fw={500}>
+                  HS Code:
+                </Text>
+                <Text size="sm" fw={700} c="indigo">
+                  {product.hs_code}
+                </Text>
+              </Group>
+              
+              {product.hs_code_description && (
+                <div>
+                  <Text size="xs" c="dimmed" mb="xs">
+                    Classification:
+                  </Text>
+                  <Text size="sm">
+                    {product.hs_code_description}
+                  </Text>
+                </div>
+              )}
+              
+              {product.hs_code_confidence && (
+                <Group justify="space-between">
+                  <Text size="xs" c="dimmed">
+                    AI Confidence:
+                  </Text>
+                  <Badge 
+                    color={product.hs_code_confidence >= 90 ? 'green' : product.hs_code_confidence >= 70 ? 'yellow' : 'orange'}
+                    variant="light"
+                    size="sm"
+                  >
+                    {product.hs_code_confidence}%
+                  </Badge>
+                </Group>
+              )}
+            </Stack>
+          </Paper>
         </Box>
       )}
       

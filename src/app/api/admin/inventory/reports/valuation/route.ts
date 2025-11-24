@@ -97,33 +97,40 @@ export async function GET(request: NextRequest) {
 
     const categoryResult = await db.query(categoryQuery, [user.storeId]);
 
-    // Get value by supplier
-    const supplierQuery = `
-      SELECT 
-        s.id as supplier_id,
-        s.name as supplier_name,
-        COUNT(DISTINCT p.id) as product_count,
-        COALESCE(SUM(p.stock_quantity), 0) as quantity,
-        COALESCE(SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)), 0) as cost_value,
-        COALESCE(SUM(p.stock_quantity * p.base_price), 0) as retail_value,
-        CASE 
-          WHEN SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)) = 0 THEN 0
-          ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) / 
-                SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) * 100
-        END as margin_percentage
-      FROM products p
-      LEFT JOIN purchase_order_items poi ON p.sku = poi.product_sku
-      LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
-      LEFT JOIN suppliers s ON po.supplier_id = s.id
-      WHERE p.store_id = $1
-        AND p.is_active = true
-        AND p.stock_quantity > 0
-        AND s.id IS NOT NULL
-      GROUP BY s.id, s.name
-      ORDER BY cost_value DESC
-    `;
+    // Get value by supplier - wrap in try/catch in case tables don't exist
+    let supplierResult;
+    try {
+      const supplierQuery = `
+        SELECT 
+          s.id as supplier_id,
+          s.name as supplier_name,
+          COUNT(DISTINCT p.id) as product_count,
+          COALESCE(SUM(p.stock_quantity), 0) as quantity,
+          COALESCE(SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)), 0) as cost_value,
+          COALESCE(SUM(p.stock_quantity * p.base_price), 0) as retail_value,
+          CASE 
+            WHEN SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)) = 0 THEN 0
+            ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) / 
+                  SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) * 100
+          END as margin_percentage
+        FROM products p
+        LEFT JOIN purchase_order_items poi ON p.sku = poi.product_sku
+        LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
+        LEFT JOIN suppliers s ON po.supplier_id = s.id
+        WHERE p.store_id = $1
+          AND p.is_active = true
+          AND p.stock_quantity > 0
+          AND s.id IS NOT NULL
+        GROUP BY s.id, s.name
+        ORDER BY cost_value DESC
+      `;
 
-    const supplierResult = await db.query(supplierQuery, [user.storeId]);
+      supplierResult = await db.query(supplierQuery, [user.storeId]);
+    } catch (error) {
+      console.warn('Supplier query failed (likely missing tables):', error);
+      // Return empty result if supplier tables don't exist
+      supplierResult = { rows: [] };
+    }
 
     // Get value by warehouse
     const warehouseQuery = `

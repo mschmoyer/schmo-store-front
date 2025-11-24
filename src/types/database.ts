@@ -356,6 +356,10 @@ export interface Product {
   override_images: string[];
   discount_type?: 'percentage' | 'fixed';
   discount_value?: number;
+  hs_code?: string;
+  hs_code_description?: string;
+  hs_code_confidence?: number;
+  hs_code_generated_at?: Timestamp;
   created_at: Timestamp;
   updated_at: Timestamp;
   published_at?: Timestamp;

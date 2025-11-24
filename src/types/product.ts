@@ -125,6 +125,12 @@ export interface EnhancedProduct extends Product {
   is_in_stock: boolean;
   backorder_allowed?: boolean;
   estimated_restock_date?: string;
+  
+  // HS Code for international trade
+  hs_code?: string;
+  hs_code_description?: string;
+  hs_code_confidence?: number;
+  hs_code_generated_at?: string;
 }
 
 // Product display logic utility type

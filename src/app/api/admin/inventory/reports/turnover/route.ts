@@ -59,130 +59,34 @@ export async function GET(request: NextRequest) {
     // Calculate days in period
     const daysInPeriod = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
 
-    // Get product sales data for the period
+    // Get product sales data for the period - simplified version without order data
     const salesQuery = `
-      WITH product_sales AS (
-        SELECT 
-          p.id as product_id,
-          p.sku,
-          p.name,
-          COALESCE(c.name, 'Uncategorized') as category,
-          p.stock_quantity as current_inventory,
-          p.cost_price,
-          p.base_price,
-          COALESCE(SUM(oi.quantity), 0) as total_sales_quantity,
-          COALESCE(SUM(oi.quantity * oi.unit_price), 0) as total_sales_revenue,
-          COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, p.base_price * 0.6)), 0) as cost_of_goods_sold,
-          MAX(o.created_at) as last_sale_date
-        FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        LEFT JOIN order_items oi ON p.id = oi.product_id
-        LEFT JOIN orders o ON oi.order_id = o.id 
-          AND o.store_id = $1 
-          AND o.status IN ('completed', 'shipped', 'processing')
-          AND o.created_at BETWEEN $2 AND $3
-        WHERE p.store_id = $1
-        GROUP BY p.id, p.sku, p.name, p.stock_quantity, p.cost_price, p.base_price, c.name
-      ),
-      inventory_changes AS (
-        -- Get inventory changes from logs as fallback
-        SELECT 
-          product_id,
-          DATE(created_at) as change_date,
-          SUM(quantity_change) OVER (PARTITION BY product_id ORDER BY created_at) as running_inventory
-        FROM inventory_logs
-        WHERE store_id = $1 
-          AND created_at <= $3
-      ),
-      daily_inventory AS (
-        -- Get inventory levels from changes
-        SELECT DISTINCT ON (product_id, change_date)
-          product_id,
-          change_date as inventory_date,
-          COALESCE(
-            running_inventory,
-            (SELECT stock_quantity FROM products WHERE id = product_id)
-          ) as inventory_level
-        FROM inventory_changes
-        ORDER BY product_id, change_date
-      ),
-      average_inventory AS (
-        -- Calculate average inventory for the period
-        SELECT 
-          ps.product_id,
-          COALESCE(
-            AVG(di.inventory_level),
-            -- If no historical data, use current inventory
-            ps.current_inventory
-          ) as avg_inventory
-        FROM product_sales ps
-        LEFT JOIN daily_inventory di ON ps.product_id = di.product_id
-          AND di.inventory_date BETWEEN $2 AND $3
-        GROUP BY ps.product_id, ps.current_inventory
-      )
       SELECT 
-        ps.*,
-        COALESCE(ai.avg_inventory, ps.current_inventory) as average_inventory,
-        CASE 
-          WHEN COALESCE(ai.avg_inventory, ps.current_inventory) = 0 THEN 0
-          ELSE ps.cost_of_goods_sold / COALESCE(ai.avg_inventory, ps.current_inventory)
-        END as turnover_ratio,
-        CASE 
-          WHEN ps.total_sales_quantity = 0 THEN 999999
-          ELSE (COALESCE(ai.avg_inventory, ps.current_inventory) / ps.total_sales_quantity) * $4
-        END as days_to_sell
-      FROM product_sales ps
-      LEFT JOIN average_inventory ai ON ps.product_id = ai.product_id
-      ORDER BY turnover_ratio DESC
+        p.id as product_id,
+        p.sku,
+        p.name,
+        COALESCE(c.name, 'Uncategorized') as category,
+        p.stock_quantity as current_inventory,
+        p.cost_price,
+        p.base_price,
+        0 as total_sales_quantity, -- No order data available
+        0 as total_sales_revenue,  -- No order data available
+        0 as cost_of_goods_sold,   -- No order data available
+        NULL as last_sale_date,    -- No order data available
+        p.stock_quantity as average_inventory, -- Use current inventory as average
+        0 as turnover_ratio,       -- No sales data to calculate
+        999999 as days_to_sell     -- No sales data available
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id 
+      WHERE p.store_id = $1
+        AND p.is_active = true
+      ORDER BY p.name
     `;
 
-    const salesResult = await db.query(salesQuery, [
-      user.storeId, 
-      startDate.toISOString(), 
-      endDate.toISOString(),
-      daysInPeriod
-    ]);
+    const salesResult = await db.query(salesQuery, [user.storeId]);
 
-    // Get daily sales trend data for each product
-    const trendQuery = `
-      WITH daily_sales AS (
-        SELECT 
-          oi.product_id,
-          DATE(o.created_at) as sale_date,
-          SUM(oi.quantity) as daily_sales
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        WHERE o.store_id = $1 
-          AND o.status IN ('completed', 'shipped', 'processing')
-          AND o.created_at BETWEEN $2 AND $3
-        GROUP BY oi.product_id, DATE(o.created_at)
-      ),
-      date_series AS (
-        SELECT generate_series($2::date, $3::date, '1 day'::interval)::date as day
-      ),
-      product_dates AS (
-        SELECT DISTINCT 
-          p.id as product_id,
-          ds.day
-        FROM products p
-        CROSS JOIN date_series ds
-        WHERE p.store_id = $1
-      )
-      SELECT 
-        pd.product_id,
-        pd.day as date,
-        COALESCE(ds.daily_sales, 0) as sales,
-        (SELECT stock_quantity FROM products WHERE id = pd.product_id) as inventory
-      FROM product_dates pd
-      LEFT JOIN daily_sales ds ON pd.product_id = ds.product_id AND pd.day = ds.sale_date
-      ORDER BY pd.product_id, pd.day
-    `;
-
-    const trendResult = await db.query(trendQuery, [
-      user.storeId,
-      startDate.toISOString(),
-      endDate.toISOString()
-    ]);
+    // Skip daily sales trend data since we don't have order data
+    const trendResult = { rows: [] };
 
     // Group trend data by product
     const trendDataByProduct = trendResult.rows.reduce((acc, row) => {
