@@ -2,8 +2,8 @@
  * Persistence for Stripe Connect accounts (flow B).
  */
 
-import { db } from '../database/connection';
-import type { ConnectAccountStatus, ConnectOnboardingStatus } from '../stripe/connect';
+import { db } from '@/lib/database/connection';
+import type { ConnectAccountStatus, ConnectOnboardingStatus } from '@/lib/stripe/connect';
 
 /** A `payment_accounts` row as the application consumes it. */
 export interface PaymentAccountRecord {

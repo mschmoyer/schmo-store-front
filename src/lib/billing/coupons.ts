@@ -17,7 +17,7 @@
  *    database first and applies the coupon to those server-side amounts only.
  */
 
-import { db } from '../database/connection';
+import { db } from '@/lib/database/connection';
 import { clampCents } from './money';
 import type { AppliedCoupon, CouponValidation, PricedLineItem } from './types';
 

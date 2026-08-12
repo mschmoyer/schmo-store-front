@@ -174,6 +174,133 @@ export type NotificationTemplateRow = {
   updated_at: Date | null;
 };
 
+/** Row of `public.integration_logs`. */
+export type IntegrationLogRow = {
+  id: string;
+  store_id: string;
+  integration_type: string;
+  operation: string;
+  status: string;
+  request_data: Record<string, unknown> | null;
+  response_data: Record<string, unknown> | null;
+  error_message: string | null;
+  execution_time_ms: number | null;
+  created_at: Date | null;
+};
+
+/** Row of `public.integration_alerts`. */
+export type IntegrationAlertRow = {
+  id: string;
+  store_id: string;
+  integration_type: string;
+  operation: string;
+  level: string;
+  type: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  acknowledged: boolean | null;
+  acknowledged_by: string | null;
+  acknowledged_at: Date | null;
+  created_at: Date | null;
+};
+
+/** Row of `public.job_queue`. */
+export type JobQueueRow = {
+  id: string;
+  job_type: string;
+  payload: Record<string, unknown>;
+  status: string | null;
+  priority: string | null;
+  attempts: number | null;
+  max_attempts: number | null;
+  error_message: string | null;
+  scheduled_at: Date | null;
+  started_at: Date | null;
+  completed_at: Date | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+};
+
+/** Row of `public.products`. */
+export type ProductRow = {
+  id: string;
+  store_id: string;
+  shipstation_product_id: string | null;
+  sku: string;
+  name: string;
+  slug: string;
+  short_description: string | null;
+  long_description: string | null;
+  description_html: string | null;
+  base_price: string;
+  sale_price: string | null;
+  cost_price: string | null;
+  track_inventory: boolean | null;
+  stock_quantity: number | null;
+  low_stock_threshold: number | null;
+  allow_backorder: boolean | null;
+  weight: string | null;
+  weight_unit: string | null;
+  length: string | null;
+  width: string | null;
+  height: string | null;
+  dimension_unit: string | null;
+  category_id: string | null;
+  tags: string[] | null;
+  featured_image_url: string | null;
+  gallery_images: string[] | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  requires_shipping: boolean | null;
+  shipping_class: string | null;
+  is_active: boolean | null;
+  is_featured: boolean | null;
+  is_digital: boolean | null;
+  override_name: string | null;
+  override_description: string | null;
+  override_price: string | null;
+  override_images: string[] | null;
+  discount_type: string | null;
+  discount_value: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  published_at: Date | null;
+  barcode: string | null;
+  hs_code: string | null;
+  hs_code_description: string | null;
+  hs_code_confidence: number | null;
+  hs_code_generated_at: Date | null;
+};
+
+/** Row of `public.inventory_logs`. */
+export type InventoryLogRow = {
+  id: string;
+  store_id: string;
+  product_id: string;
+  change_type: string;
+  quantity_change: number;
+  quantity_after: number;
+  reference_type: string | null;
+  reference_id: string | null;
+  notes: string | null;
+  created_at: Date | null;
+};
+
+/** Row of `public.shipment_notifications`. */
+export type ShipmentNotificationRow = {
+  id: string;
+  order_id: string;
+  notification_type: string;
+  sent_at: Date | null;
+  email_sent: boolean | null;
+  email_error: string | null;
+  tracking_number: string | null;
+  carrier: string | null;
+  tracking_url: string | null;
+  message: string | null;
+  created_at: Date | null;
+};
+
 /** A `COUNT(*)`/`COUNT(x)` projection. `pg` returns bigint columns as strings. */
 export type CountRow = {
   count: string;

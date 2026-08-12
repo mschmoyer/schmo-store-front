@@ -7,7 +7,7 @@
  */
 
 import type { PoolClient } from 'pg';
-import { db } from '../database/connection';
+import { db } from '@/lib/database/connection';
 import { computeCartTotals, normalizeQuantity } from './cart-pricing';
 import { validateCouponForCart } from './coupons';
 import { toCents } from './money';

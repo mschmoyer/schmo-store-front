@@ -1,0 +1,225 @@
+.skipLink {
+  position: absolute;
+  left: 16px;
+  top: -64px;
+  z-index: 60;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-950);
+  color: var(--paper);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--duration-standard) var(--ease-out);
+}
+
+.skipLink:focus-visible {
+  top: 12px;
+}
+
+.root {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(12px);
+  border-bottom: 1px solid transparent;
+  transition:
+    border-color var(--duration-standard) var(--ease-out),
+    box-shadow var(--duration-standard) var(--ease-out),
+    background-color var(--duration-standard) var(--ease-out);
+}
+
+.scrolled {
+  border-bottom-color: var(--border);
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  box-shadow: 0 1px 2px rgba(16, 18, 22, 0.04);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+  height: 76px;
+  transition: height var(--duration-standard) var(--ease-out);
+}
+
+.scrolled .bar {
+  height: 60px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  flex: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.navLink {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-700);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--duration-micro) var(--ease-out),
+    background-color var(--duration-micro) var(--ease-out);
+}
+
+.navLink:hover {
+  color: var(--ink-950);
+  background: var(--ink-100);
+}
+
+.navLink[aria-current='page'] {
+  color: var(--ember-700);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  margin-inline-start: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  cursor: pointer;
+}
+
+.toggleBar {
+  display: block;
+  height: 2px;
+  width: 100%;
+  border-radius: 2px;
+  background: var(--ink-800);
+  transition:
+    transform var(--duration-standard) var(--ease-out),
+    opacity var(--duration-micro) var(--ease-out);
+}
+
+.toggleBarTop {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.toggleBarHidden {
+  opacity: 0;
+}
+
+.toggleBarBottom {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* --------------------------------------------------------- mobile panel */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: var(--surface-scrim);
+}
+
+.panel {
+  position: fixed;
+  z-index: 55;
+  inset: 76px 0 auto 0;
+  max-height: calc(100dvh - 76px);
+  overflow-y: auto;
+  padding: 20px 16px 28px;
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.panelOpen {
+  animation: var(--animate-fade-in-up);
+}
+
+.panelNav {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.panelLink {
+  padding: 14px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink-900);
+  text-decoration: none;
+}
+
+.panelLink:hover {
+  background: var(--ink-100);
+}
+
+.panelActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panelNote {
+  margin: 16px 0 0;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+  text-align: center;
+}
+
+@media (max-width: 899px) {
+  .nav,
+  .actions {
+    display: none;
+  }
+
+  .toggle {
+    display: flex;
+  }
+
+  .bar,
+  .scrolled .bar {
+    height: 64px;
+  }
+
+  .panel {
+    inset-block-start: 64px;
+    max-height: calc(100dvh - 64px);
+  }
+}
+
+@media (min-width: 900px) {
+  .panel {
+    display: none;
+  }
+}

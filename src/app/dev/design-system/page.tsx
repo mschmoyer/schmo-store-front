@@ -297,12 +297,10 @@ export default function DesignSystemPage(): React.ReactElement {
                 />
                 <CardBody className={styles.productBody}>
                   <span className={styles.productName}>{product.name}</span>
-                  <Stack direction="horizontal" justify="between" align="center" gap={8}>
-                    <Price value={149.99} compareAt={199} size="sm" />
-                    <Badge tone="mint" size="sm" dot>
-                      In stock
-                    </Badge>
-                  </Stack>
+                  <Price value={149.99} compareAt={199} size="md" />
+                  <Badge tone="mint" size="sm" dot className={styles.productBadge}>
+                    In stock
+                  </Badge>
                 </CardBody>
               </Card>
             ))}

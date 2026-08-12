@@ -6,7 +6,7 @@
  */
 
 import type Stripe from 'stripe';
-import { db } from '../database/connection';
+import { db } from '@/lib/database/connection';
 import {
   PLATFORM_INTRO_AMOUNT_CENTS,
   PLATFORM_INTRO_MONTHS,

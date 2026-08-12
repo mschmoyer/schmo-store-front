@@ -13,7 +13,7 @@
  */
 
 import type { PoolClient } from 'pg';
-import { db } from '../database/connection';
+import { db } from '@/lib/database/connection';
 import { assertStockAvailable } from './cart';
 import { centsToDecimalString } from './money';
 import type {

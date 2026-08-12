@@ -200,8 +200,8 @@ describe('pickOnColor — the auto-contrast rule', () => {
     for (let h = 0; h < 360; h += 11) {
       for (let l = 0.1; l <= 0.95; l += 0.07) {
         const brand = oklchToHex({ l, c: 0.14, h });
-        const { hover, active } = deriveBrandStates(brand, '#ffffff');
-        const on = pickOnColor([brand, hover, active], darkInk, lightInk);
+        const on = pickOnColor([brand], darkInk, lightInk);
+        const { hover, active } = deriveBrandStates(brand, '#ffffff', on);
         const ratio = worstContrast(on, [brand, hover, active]);
         if (ratio < 4.5) failures.push(`${brand} -> ${on} (${ratio.toFixed(2)}:1)`);
       }

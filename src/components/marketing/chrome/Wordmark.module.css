@@ -1,0 +1,31 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.asset {
+  display: block;
+  width: auto;
+  height: var(--wordmark-size);
+}
+
+.mark {
+  display: block;
+  flex: none;
+}
+
+.text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(var(--wordmark-size) * 0.62);
+  letter-spacing: -0.025em;
+  line-height: 1;
+  color: var(--ink-900);
+  white-space: nowrap;
+}
+
+.onDark .text {
+  color: var(--paper);
+}

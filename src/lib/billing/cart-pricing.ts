@@ -137,14 +137,18 @@ export function computeShippingCents(
  * function keeps returning `0` and Stripe adds the tax line itself. If tax is instead computed
  * in-house, replace the body here and keep the signature.
  *
- * @param _taxableCents - Amount subject to tax (subtotal less discount).
- * @param _destination - Destination state/postal code, once rates are jurisdiction-aware.
+ * @param taxableCents - Amount subject to tax (subtotal less discount).
+ * @param destination - Destination state/postal code, once rates are jurisdiction-aware.
  * @returns Tax in cents. Always `0` today.
  */
 export function computeTaxCents(
-  _taxableCents: number,
-  _destination?: { state?: string; postalCode?: string; country?: string }
+  taxableCents: number,
+  destination?: { state?: string; postalCode?: string; country?: string }
 ): number {
+  // The signature is the contract a real tax engine will implement; the inputs are intentionally
+  // unused until then.
+  void taxableCents;
+  void destination;
   return 0;
 }
 

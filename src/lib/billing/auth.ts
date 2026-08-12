@@ -7,8 +7,8 @@
  */
 
 import { NextResponse } from 'next/server';
-import { db } from '../database/connection';
-import { getSessionFromCookies, getSessionFromRequest, type UserSession } from '../auth/session';
+import { db } from '@/lib/database/connection';
+import { getSessionFromCookies, getSessionFromRequest, type UserSession } from '@/lib/auth/session';
 
 /** A signed-in merchant plus the store they own. */
 export interface MerchantContext {

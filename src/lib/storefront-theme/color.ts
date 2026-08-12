@@ -461,45 +461,70 @@ export function pickOnColor(
 }
 
 /**
- * Derive the pressed/hovered variants of a brand color.
+ * Derive the hovered/pressed variants of a brand color.
  *
- * The direction of travel is chosen so the state change is always *visible*
- * against the page: a light brand darkens, a dark brand lightens. Chroma is
- * nudged up slightly on hover so the color reads as more "active", not just dimmer.
+ * Direction of travel is chosen so the state change is always *visible* against
+ * the page: on a light ground the brand darkens, on a dark ground it lightens,
+ * reversing near the ends of the range so a state never clips into flat black
+ * or flat white. Chroma is nudged up slightly so the state reads as more
+ * "active", not merely dimmer.
+ *
+ * When `ink` is supplied, the states are additionally constrained to keep that
+ * ink legible. Mid-tone brands are the awkward case: sRGB offers barely more
+ * than 4.58:1 against a mid luminance, so a full-strength state shift can push
+ * a button's own label below 4.5:1. Rather than give up on contrast, the engine
+ * gives up on the shift — it tries the preferred direction at decreasing
+ * magnitudes, then the opposite direction, and takes the first pair where both
+ * states still clear the target. Buttons in that lightness band get a subtler
+ * hover; nothing becomes unreadable.
  *
  * @param brand - Brand hex color
  * @param surface - Page ground the brand sits on
+ * @param ink - Optional ink that must stay legible on both states
+ * @param target - Contrast target for `ink`, defaults to 4.5:1
  * @returns Hover and active hex colors
  */
 export function deriveBrandStates(
   brand: string,
   surface: string,
+  ink?: string,
+  target: number = CONTRAST_TEXT,
 ): { hover: string; active: string } {
   if (!isHexColor(brand)) return { hover: brand, active: brand };
   const base = hexToOklch(brand);
   const surfaceL = isHexColor(surface) ? hexToOklch(surface).l : 1;
 
-  // Move away from the page ground; near the ends of the range, reverse so the
-  // state does not clip into a flat black or flat white.
-  let lighten = surfaceL > 0.5 ? false : true;
+  let lighten = surfaceL <= 0.5;
   if (base.l < 0.22) lighten = true;
   if (base.l > 0.9) lighten = false;
 
-  const step = 0.055;
-  const dir = lighten ? 1 : -1;
+  const STEP = 0.055;
+  const preferred = lighten ? 1 : -1;
 
-  const hover = oklchToHex({
-    l: clamp(base.l + dir * step, 0.04, 0.97),
-    c: base.c * 1.03,
-    h: base.h,
-  });
-  const active = oklchToHex({
-    l: clamp(base.l + dir * step * 2, 0.03, 0.98),
-    c: base.c * 1.05,
-    h: base.h,
-  });
+  const shift = (multiplier: number, direction: number): string =>
+    oklchToHex({
+      l: clamp(base.l + direction * STEP * multiplier, 0.03, 0.98),
+      c: base.c * (1 + 0.025 * multiplier),
+      h: base.h,
+    });
 
-  return { hover, active };
+  const legible = (hex: string): boolean =>
+    !ink || !isHexColor(ink) || contrastRatio(ink, hex) >= target;
+
+  // Full strength first, then progressively subtler, then the other direction.
+  for (const direction of [preferred, -preferred]) {
+    for (const scale of [1, 0.8, 0.6, 0.45, 0.3, 0.2]) {
+      const hover = shift(scale, direction);
+      const active = shift(scale * 2, direction);
+      if (hover !== brand && legible(hover) && legible(active)) {
+        return { hover, active };
+      }
+    }
+  }
+
+  // Nothing satisfies the ink — typically because the merchant pinned an
+  // unreadable `colorOnBrand`. A visible hover beats no hover at all.
+  return { hover: shift(1, preferred), active: shift(2, preferred) };
 }
 
 /**

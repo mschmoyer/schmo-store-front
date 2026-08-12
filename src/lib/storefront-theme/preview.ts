@@ -6,12 +6,21 @@
  * which means it must never be reachable without proof of authorisation:
  * "drafts must never be viewable without one".
  *
- * Tokens are short-lived, signed with the app's existing `JWT_SECRET` via `jose`
- * (the same library and secret `src/lib/auth/session.ts` uses), and scoped to a
- * single store id. A token minted for store A cannot preview store B.
+ * Tokens are short-lived, HS256-signed with the app's existing `JWT_SECRET`, and
+ * scoped to a single store id. A token minted for store A cannot preview store B.
+ *
+ * Implementation note: this uses `jsonwebtoken` (the library `src/lib/auth.ts`
+ * uses) rather than `jose` (which `src/lib/auth/session.ts` uses). Both ship the
+ * same HS256 JWTs over the same secret; `jsonwebtoken` is CommonJS, so this
+ * module is directly unit-testable under the repo's Jest setup, which for a
+ * security boundary is worth more than library symmetry.
+ *
+ * The exported functions are async so the implementation can move to a
+ * WebCrypto-based signer (and therefore the Edge runtime) without a breaking
+ * change to callers.
  */
 
-import { SignJWT, jwtVerify } from 'jose';
+import jwt, { type JwtPayload } from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 const ISSUER = 'rebelshops-storefront';
@@ -24,7 +33,8 @@ export const PREVIEW_TOKEN_TTL_SECONDS = 30 * 60;
 /** Upper bound on a requested lifetime. */
 export const PREVIEW_TOKEN_MAX_TTL_SECONDS = 4 * 60 * 60;
 
-const secret = new TextEncoder().encode(JWT_SECRET);
+/** Longest token string the verifier will even look at. */
+const MAX_TOKEN_LENGTH = 4096;
 
 export interface PreviewTokenClaims {
   /** The store this token may preview. */
@@ -55,22 +65,24 @@ export async function mintPreviewToken(
   if (!storeId) throw new Error('mintPreviewToken requires a storeId');
 
   const ttl = Math.min(
-    Math.max(60, options.ttlSeconds ?? PREVIEW_TOKEN_TTL_SECONDS),
+    Math.max(60, Math.floor(options.ttlSeconds ?? PREVIEW_TOKEN_TTL_SECONDS)),
     PREVIEW_TOKEN_MAX_TTL_SECONDS,
   );
-  const expiresAt = Math.floor(Date.now() / 1000) + ttl;
 
-  return new SignJWT({
-    storeId,
-    ...(options.userId ? { userId: options.userId } : {}),
-    type: TOKEN_TYPE,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setIssuer(ISSUER)
-    .setAudience(AUDIENCE)
-    .setExpirationTime(expiresAt)
-    .sign(secret);
+  return jwt.sign(
+    {
+      storeId,
+      ...(options.userId ? { userId: options.userId } : {}),
+      type: TOKEN_TYPE,
+    },
+    JWT_SECRET,
+    {
+      algorithm: 'HS256',
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      expiresIn: ttl,
+    },
+  );
 }
 
 /**
@@ -79,7 +91,7 @@ export async function mintPreviewToken(
  * Returns null for anything that is not a valid, unexpired, correctly-scoped
  * preview token — including tokens minted for a different purpose that happen to
  * be signed with the same secret, which is why `type`, `iss` and `aud` are all
- * checked.
+ * checked, and why `algorithms` is pinned (no `alg: none` downgrade).
  *
  * @param token - The raw token from the query string
  * @returns The claims, or null when the token is unusable
@@ -87,15 +99,18 @@ export async function mintPreviewToken(
 export async function verifyPreviewToken(
   token: string | null | undefined,
 ): Promise<PreviewTokenClaims | null> {
-  if (typeof token !== 'string' || token.length === 0 || token.length > 4096) return null;
+  if (typeof token !== 'string' || token.length === 0 || token.length > MAX_TOKEN_LENGTH) {
+    return null;
+  }
 
   try {
-    const { payload } = await jwtVerify(token, secret, {
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: ['HS256'],
       issuer: ISSUER,
       audience: AUDIENCE,
-      algorithms: ['HS256'],
-    });
+    }) as JwtPayload | string;
 
+    if (typeof payload === 'string') return null;
     if (payload.type !== TOKEN_TYPE) return null;
     if (typeof payload.storeId !== 'string' || payload.storeId.length === 0) return null;
 
@@ -105,8 +120,8 @@ export async function verifyPreviewToken(
       expiresAt: typeof payload.exp === 'number' ? payload.exp : 0,
     };
   } catch {
-    // A bad token is an ordinary condition, not an error worth logging on every
-    // public storefront request.
+    // A bad token is an ordinary condition on a public storefront route, not an
+    // error worth logging on every request.
     return null;
   }
 }

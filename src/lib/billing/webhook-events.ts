@@ -17,7 +17,7 @@
  * upserts), which also covers the narrow window where two deliveries are in flight at once.
  */
 
-import { db } from '../database/connection';
+import { db } from '@/lib/database/connection';
 
 /** Outcome of attempting to claim an event for processing. */
 export type WebhookClaim =

@@ -95,8 +95,12 @@ const BANNED_PROPERTIES = new Set(['behavior', '-ms-behavior', '-moz-binding']);
 /** Property names must look like CSS properties or custom properties. */
 const PROPERTY_RE = /^(?:--[a-zA-Z0-9_-]+|-{0,2}[a-zA-Z][a-zA-Z0-9-]*)$/;
 
-/** Characters that must never survive into a selector. */
-const SELECTOR_FORBIDDEN_RE = /[{}<>\\@;]/;
+/**
+ * Characters that must never survive into a selector. `>`, `+` and `~` are
+ * legitimate combinators and are deliberately absent; `<` is already stripped
+ * from the whole stylesheet before parsing.
+ */
+const SELECTOR_FORBIDDEN_RE = /[{}\\@;]/;
 
 /** C0 control characters: meaningless in CSS, useful only for confusing parsers. */
 const CONTROL_CHARS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;

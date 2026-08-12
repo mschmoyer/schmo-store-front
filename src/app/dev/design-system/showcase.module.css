@@ -185,9 +185,10 @@
   margin: 0;
 }
 
+/* §6: product grids are repeat(auto-fill, minmax(260px, 1fr)) with a 24px gap. */
 .productGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 24px;
 }
 
@@ -198,7 +199,7 @@
 .productBody {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 14px 16px 16px;
 }
 
@@ -272,4 +273,9 @@
 
   font-family: var(--font-mono);
   font-size: 0.75rem;
+}
+
+.productBadge {
+  align-self: flex-start;
+  margin-top: 2px;
 }

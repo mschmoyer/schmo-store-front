@@ -6,7 +6,7 @@
  * for how much.
  */
 
-import { db } from '../database/connection';
+import { db } from '@/lib/database/connection';
 import { toCents } from './money';
 import type {
   CartTotals,

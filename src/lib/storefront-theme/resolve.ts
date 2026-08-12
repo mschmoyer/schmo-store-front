@@ -199,8 +199,6 @@ export function deriveTokens(theme: StorefrontTheme): DerivedColors {
   const surfaceRaised = theme.brand.surfaceRaised;
   const brand = theme.brand.color;
 
-  const { hover: brandHover, active: brandActive } = deriveBrandStates(brand, surface);
-
   // Ink candidates are pulled from the merchant's own palette so the result
   // still feels like their store, not a generic black-or-white flip.
   const textOklch = hexToOklch(theme.brand.text);
@@ -216,9 +214,20 @@ export function deriveTokens(theme: StorefrontTheme): DerivedColors {
     h: raisedOklch.h,
   });
 
+  // Order matters. The ink is chosen against the *resting* brand color, which
+  // is the state WCAG actually judges and the one sRGB can always satisfy. The
+  // hover and active states are then derived under the constraint that they
+  // keep that same ink legible, rather than the other way around.
   const onBrand = isHexColor(theme.brand.colorOnBrand ?? '')
     ? (theme.brand.colorOnBrand as string)
-    : pickOnColor([brand, brandHover, brandActive], darkInk, lightInk, CONTRAST_TEXT);
+    : pickOnColor([brand], darkInk, lightInk, CONTRAST_TEXT);
+
+  const { hover: brandHover, active: brandActive } = deriveBrandStates(
+    brand,
+    surface,
+    onBrand,
+    CONTRAST_TEXT,
+  );
 
   const surfaceSunken = isDarkScheme
     ? adjustLightness(surface, -0.025)

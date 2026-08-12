@@ -38,6 +38,18 @@
       which keeps a single source of truth for each token.
    -------------------------------------------------------------------------- */
 @theme {
+  /*
+   * -- Typography (§3) ---------------------------------------------------
+   * These MUST live in a plain `@theme`, not `@theme inline`: the `inline`
+   * option stops Tailwind emitting the custom property at all (it only inlines
+   * the value into utilities), which would leave every `font-family:
+   * var(--font-sans)` in our CSS Modules resolving to nothing. The source
+   * variables are injected onto <body> by next/font in `layout.tsx`.
+   */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", "Menlo", monospace;
+
   /* -- Radius (§4) ------------------------------------------------------- */
   --radius-xs: 6px;
   --radius-sm: 8px;
@@ -388,10 +400,13 @@
       authors never have to hand-write var() in class soup.
    -------------------------------------------------------------------------- */
 @theme inline {
-  /* Fonts — the source vars are injected by next/font in layout.tsx */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: var(--font-space-grotesk), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  /*
+   * `inline` here is deliberate: it makes `bg-surface` compile to
+   * `background-color: var(--surface)`, so the utility follows the dark-mode
+   * override instead of freezing the light value. Nothing in this block is
+   * emitted as a custom property — anything a CSS Module needs to read by name
+   * must be declared in the plain `@theme` or `:root` blocks above.
+   */
 
   /* Raw scale → color utilities */
   --color-ink-950: var(--ink-950);

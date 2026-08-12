@@ -59,13 +59,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" {...mantineHtmlProps}>
+    // The font variables must sit on <html>, not <body>: globals.css declares
+    // `--font-sans: var(--font-inter), …` on :root, and a var() that is not
+    // resolvable at that element makes the whole declaration invalid at
+    // computed-value time — every font token would silently fall back to
+    // system sans.
+    <html
+      lang="en"
+      className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
+      {...mantineHtmlProps}
+    >
       <head>
         <ColorSchemeScript />
       </head>
-      <body
-        className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased`}
-      >
+      <body className="antialiased">
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
