@@ -79,7 +79,12 @@ export default function LoginPage(): React.ReactElement {
 
       const result = (await response.json()) as { token?: string; storeSlug?: string };
       if (result.token && typeof window !== 'undefined') {
-        localStorage.setItem('authToken', result.token);
+        // MUST be `admin_token`. AdminContext and every admin screen read that
+        // key; this page previously wrote `authToken`, which nothing read. A
+        // successful sign-in therefore landed on /admin, found no token, and
+        // bounced the merchant to a second sign-in screen. Same credentials,
+        // same session, twice — because two pages disagreed on one string.
+        localStorage.setItem('admin_token', result.token);
       }
       router.push(result.storeSlug ? `/admin?store=${result.storeSlug}` : '/create-store');
     } catch {

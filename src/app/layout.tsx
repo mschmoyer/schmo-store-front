@@ -64,24 +64,41 @@ export default function RootLayout({
     // resolvable at that element makes the whole declaration invalid at
     // computed-value time — every font token would silently fall back to
     // system sans.
+    // data-theme="light" pins the product to the approved palette.
+    //
+    // globals.css carries a `prefers-color-scheme: dark` override, so the
+    // marketing site was silently rendering near-black (#0e0f11) for every
+    // visitor whose OS is in dark mode — half the audience seeing a variant
+    // nobody art-directed, that matches neither the OG card nor the brand
+    // assets nor any screenshot we would show someone. Nothing in the product
+    // ever offered a dark-mode toggle, so that support was accidental rather
+    // than designed.
+    //
+    // The dark block is guarded by `:not([data-theme="light"])`, so this
+    // disables it without duplicating the 57 semantic tokens it redefines.
+    // Merchant storefronts are unaffected: they render from their own
+    // `--st-*` layer, and a merchant who picks the dark Voltage preset still
+    // gets a dark shop, because that is their choice rather than their OS's.
     <html
       lang="en"
+      data-theme="light"
       className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
       {...mantineHtmlProps}
     >
       <head>
-        <ColorSchemeScript defaultColorScheme="auto" />
+        <ColorSchemeScript defaultColorScheme="light" />
         {/*
-          Sets data-theme before first paint so the page never flashes the
-          wrong palette. AppProviders keeps it in sync afterwards; this only
-          has to win the very first frame, and it reads the same localStorage
-          key Mantine's own script uses.
+          No pre-paint colour-scheme script.
+
+          It used to read `prefers-color-scheme` and write
+          `document.documentElement.dataset.theme = 'dark'`, which overwrote
+          the `data-theme="light"` attribute above before the first frame —
+          so pinning the palette in the markup had no effect at all and the
+          product still rendered near-black for anyone whose OS is dark.
+
+          The palette is now fixed in the markup, so there is nothing to
+          restore from storage and nothing to compute before paint.
         */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=localStorage.getItem('mantine-color-scheme-value');if(!s||s==='auto'){s=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.dataset.theme=s;}catch(e){}})();`,
-          }}
-        />
       </head>
       <body className="antialiased">
         <AppProviders>{children}</AppProviders>

@@ -123,6 +123,17 @@
   border-top: 1px solid var(--border);
 }
 
+/*
+ * The rail variant of the same pair — `parts/Rail` owns the grid, so this only
+ * carries the rule and the spacing that separate the lists from the block
+ * above them.
+ */
+.listsRail {
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
 .listHeading {
   margin: 0 0 var(--space-3);
   font-family: var(--font-sans);

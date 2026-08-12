@@ -2,6 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Badge, Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
+import { Rail } from '../parts/Rail';
 import styles from './PlanCard.module.css';
 
 /**
@@ -112,53 +113,83 @@ export function PlanCard({
   );
 }
 
+export interface PlanListsProps {
+  /**
+   * Reflows the two lists into a horizontal snap rail on a phone instead of
+   * stacking them. Fifteen rows stacked are ~900px of scroll at 390px; side by
+   * side in a rail they are the height of the longer list and nothing is
+   * hidden, collapsed or moved behind a control.
+   *
+   * Only safe where the pair has the full content width — inside the plan card
+   * the rail would bleed past the card's own padding. @default false
+   */
+  rail?: boolean;
+}
+
 /**
  * The Included / Not-included pair.
  *
  * Exported separately so a layout with the full content width available can
  * render it outside the card — see `home/PricingSection`.
  *
+ * @param props - {@link PlanListsProps}
  * @returns The two inclusion lists.
  */
-export function PlanLists(): React.JSX.Element {
+export function PlanLists({ rail = false }: PlanListsProps): React.JSX.Element {
+  const included = (
+    <section className={styles.list}>
+      <h3 className={styles.listHeading}>Included</h3>
+      <ul className={styles.items}>
+        {INCLUDED.map((item) => (
+          <li key={item} className={styles.item}>
+            <span className={styles.tick} aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="12" height="12" focusable="false">
+                <path
+                  d="M3 8.4 6.3 11.6 13 4.8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
+  const notIncluded = (
+    <section className={styles.list}>
+      <h3 className={styles.listHeading}>Not included — read this part</h3>
+      <ul className={styles.items}>
+        {NOT_INCLUDED.map((item) => (
+          <li key={item.lead} className={`${styles.item} ${styles.itemOut}`}>
+            <span className={styles.dash} aria-hidden="true" />
+            <span>
+              <strong className={styles.itemLead}>{item.lead}</strong> {item.body}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
+  if (rail) {
+    return (
+      <Rail label="What the price does and does not include" columns={2} className={styles.listsRail}>
+        {included}
+        {notIncluded}
+      </Rail>
+    );
+  }
+
   return (
     <div className={styles.lists}>
-      <section className={styles.list}>
-          <h3 className={styles.listHeading}>Included</h3>
-          <ul className={styles.items}>
-            {INCLUDED.map((item) => (
-              <li key={item} className={styles.item}>
-                <span className={styles.tick} aria-hidden="true">
-                  <svg viewBox="0 0 16 16" width="12" height="12" focusable="false">
-                    <path
-                      d="M3 8.4 6.3 11.6 13 4.8"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className={styles.list}>
-          <h3 className={styles.listHeading}>Not included — read this part</h3>
-          <ul className={styles.items}>
-            {NOT_INCLUDED.map((item) => (
-              <li key={item.lead} className={`${styles.item} ${styles.itemOut}`}>
-                <span className={styles.dash} aria-hidden="true" />
-                <span>
-                  <strong className={styles.itemLead}>{item.lead}</strong> {item.body}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {included}
+      {notIncluded}
     </div>
   );
 }

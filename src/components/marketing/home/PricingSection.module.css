@@ -10,7 +10,7 @@
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-8);
+  gap: var(--stack-md);
   align-items: start;
   margin-top: var(--stack-md);
 }
@@ -37,15 +37,15 @@
 .catchBody {
   margin: 0;
   font-size: var(--text-base);
-  line-height: 1.7;
+  line-height: 1.6;
   color: var(--text-secondary);
   max-width: 52ch;
 }
 
 /* The two inclusion lists, given the full content width. */
 .listsBand {
-  margin-top: var(--space-9);
-  padding-top: var(--space-7);
+  margin-top: var(--stack-md);
+  padding-top: var(--stack-sm);
   border-top: 1px solid var(--border);
 }
 

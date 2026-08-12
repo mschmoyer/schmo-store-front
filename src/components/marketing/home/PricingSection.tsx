@@ -46,7 +46,7 @@ export function PricingSection(): React.JSX.Element {
       </div>
 
       <div className={styles.listsBand}>
-        <PlanLists />
+        <PlanLists rail />
       </div>
     </Section>
   );

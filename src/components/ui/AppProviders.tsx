@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MantineProvider, useComputedColorScheme } from '@mantine/core';
+import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { rebelCssVariablesResolver, rebelMantineTheme } from '@/lib/theme/rebel-theme';
@@ -11,21 +11,25 @@ export interface AppProvidersProps {
 }
 
 /**
- * Mirrors Mantine's computed colour scheme onto `data-theme`.
+ * Keeps Mantine's colour scheme pinned to the product's single palette.
  *
- * Without this, `:root[data-theme="dark"]` in `globals.css` is unreachable —
- * nothing in the app ever set the attribute — so a user flipping Mantine's
- * colour scheme got Mantine's internals in dark and our surfaces and text
- * still in light. One attribute, one source of truth, both systems agree.
+ * This used to mirror Mantine's *computed* scheme onto `data-theme`, which
+ * meant `useComputedColorScheme` resolving "auto" against the OS could write
+ * `dark` back onto the root element and undo the pinned palette from a client
+ * effect, one frame after paint.
+ *
+ * RebelShops ships one look. Nothing in the product offers a dark-mode toggle,
+ * so the previous behaviour was not a feature anyone chose — it just handed
+ * half the audience an unreviewed variant. Merchant storefronts are unaffected:
+ * they render from their own `--st-*` layer, so a merchant who picks the dark
+ * Voltage preset still gets a dark shop.
  *
  * @returns Nothing; this component renders no markup.
  */
 function ThemeAttributeSync(): null {
-  const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true });
-
   React.useEffect(() => {
-    document.documentElement.dataset.theme = scheme;
-  }, [scheme]);
+    document.documentElement.dataset.theme = 'light';
+  }, []);
 
   return null;
 }
@@ -54,7 +58,7 @@ export function AppProviders({ children }: AppProvidersProps): React.ReactElemen
         // globals.css's `prefers-color-scheme` block already does. Leaving
         // Mantine pinned to "light" was the desync: the CSS went dark and
         // Mantine did not.
-        defaultColorScheme="auto"
+        forceColorScheme="light"
       >
         <ThemeAttributeSync />
         <Notifications position="top-right" limit={4} />

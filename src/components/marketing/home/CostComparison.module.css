@@ -17,12 +17,27 @@
   border-top: 1px solid var(--border);
 }
 
+/*
+ * STACKED PAIRS, not a stacked table.
+ *
+ * Below the breakpoint the two figures sit side by side under the row's label,
+ * each carrying the vendor name the column header used to supply, and the
+ * note runs full width beneath them. Four full-width lines per row became
+ * three, and — the reason this shape was chosen over a table — the comparison
+ * is still a comparison at 390px: you read "$180.91" against "$468" on one
+ * line rather than scrolling a table sideways to find the second number.
+ */
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-1);
-  padding-block: var(--space-5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-4);
+  padding-block: var(--space-4);
   border-bottom: 1px solid var(--border);
+}
+
+.rowLabel,
+.note {
+  grid-column: 1 / -1;
 }
 
 .rowLabel {
@@ -69,7 +84,7 @@
 /* ------------------------------------------------------------- verdict */
 
 .verdict {
-  margin: var(--space-6) 0 0;
+  margin: var(--stack-sm) 0 0;
   font-size: var(--text-lg);
   line-height: 1.6;
   color: var(--text-muted);
@@ -86,8 +101,8 @@
 /* ------------------------------------------------------ fairness block */
 
 .fairness {
-  margin-top: var(--space-6);
-  padding: var(--space-5) var(--space-6);
+  margin-top: var(--stack-sm);
+  padding: var(--space-4) var(--space-5);
   background: var(--surface-2);
   border-radius: var(--radius-lg);
 }
@@ -110,7 +125,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
-  margin-top: var(--space-6);
+  margin-top: var(--stack-sm);
 }
 
 .microcopy {
@@ -147,7 +162,13 @@
   .row {
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr);
     gap: var(--space-6);
+    padding-block: var(--space-5);
     align-items: baseline;
+  }
+
+  .rowLabel,
+  .note {
+    grid-column: auto;
   }
 
   /* The row header and column position carry the meaning at this width. */

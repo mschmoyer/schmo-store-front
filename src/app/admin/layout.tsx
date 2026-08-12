@@ -20,8 +20,8 @@ function AdminLayoutContent({ children }: AdminLayoutContentProps) {
   
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && pathname !== '/admin/login') {
-      router.push('/admin/login');
+    if (!isLoading && !isAuthenticated && pathname !== '/login') {
+      router.push('/login');
     }
   }, [isAuthenticated, isLoading, pathname, router]);
   

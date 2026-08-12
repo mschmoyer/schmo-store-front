@@ -20,7 +20,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
@@ -54,8 +54,19 @@
   font-size: var(--text-sm);
 }
 
+/*
+ * One step down the type scale on a phone. At 14px the two long product names
+ * wrapped to two lines each, which made the "before" panel taller than the
+ * "after" it is being compared with.
+ */
+@container (max-width: 559px) {
+  .table {
+    font-size: var(--text-xs);
+  }
+}
+
 .table thead th {
-  padding: 8px 12px;
+  padding: 6px 10px;
   text-align: left;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -67,7 +78,7 @@
 }
 
 .table tbody td {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
   vertical-align: middle;
@@ -123,14 +134,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding-block: 10px;
+  gap: 6px;
+  padding-block: 6px;
 }
 
 .connectorLine {
   display: block;
   width: 1px;
-  height: 18px;
+  height: 12px;
   background: linear-gradient(to bottom, var(--border), var(--border-strong));
 }
 
@@ -164,9 +175,19 @@
 
 /* ------------------------------------------------------ storefront card */
 
+/*
+ * Below the container breakpoint the card is a ROW, not a stack: thumbnail
+ * left, name / price / stock right. Stacked, a full-width 16:9 frame plus its
+ * copy ran 290px and pushed the whole before/after argument off a phone's
+ * first screen — and a product row is what a storefront listing looks like on
+ * a phone anyway, so nothing about the claim changes.
+ */
 .card {
-  display: block;
-  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
   text-decoration: none;
   color: inherit;
   transition: background-color var(--duration-micro) var(--ease-out);
@@ -182,11 +203,11 @@
 }
 
 .cardBody {
-  padding-top: 14px;
+  min-width: 0;
 }
 
 .cardName {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: 1.0625rem;
   font-weight: 600;
@@ -203,7 +224,7 @@
 }
 
 .cardLink {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text);
@@ -279,6 +300,11 @@
   }
 
   .card {
+    display: block;
     padding: 14px;
+  }
+
+  .cardBody {
+    padding-top: 14px;
   }
 }

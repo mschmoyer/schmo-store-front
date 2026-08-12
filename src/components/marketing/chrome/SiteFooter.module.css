@@ -4,13 +4,13 @@
      were visibly different blacks. */
   background: var(--text);
   color: #a1a5ad;
-  padding-block: var(--section-y) var(--space-7);
+  padding-block: var(--section-y) var(--stack-md);
 }
 
 .inner {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) 2fr;
-  gap: clamp(32px, 6vw, 80px);
+  gap: clamp(24px, 6vw, 80px);
   width: 100%;
   max-width: var(--container-content);
   margin-inline: auto;
@@ -19,7 +19,7 @@
 
 .wordmark {
   display: flex;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .blurb {
@@ -41,7 +41,7 @@
 }
 
 .columnHeading {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   font-family: var(--font-sans);
   font-size: var(--text-eyebrow);
   font-weight: 600;
@@ -56,7 +56,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .link {
@@ -78,8 +78,8 @@
   justify-content: space-between;
   width: 100%;
   max-width: var(--container-content);
-  margin: clamp(40px, 7vw, 64px) auto 0;
-  padding: 24px var(--gutter) 0;
+  margin: clamp(24px, 7vw, 64px) auto 0;
+  padding: 20px var(--gutter) 0;
   border-top: 1px solid #2a2c30;
 }
 
@@ -99,14 +99,20 @@
     grid-template-columns: 1fr;
   }
 
+  /*
+   * TWO columns all the way down to 320px, not one.
+   *
+   * Collapsing to a single column below 480px turned eleven links into a
+   * 507px ladder — a fifth of the phone's whole footer — for a link set whose
+   * longest label ("Cost vs. Shopify Basic") still fits a 150px column in two
+   * lines. Two-up is the compact grid; the ladder was the stack.
+   */
   .columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 28px 24px;
+    gap: 24px 20px;
   }
-}
 
-@media (max-width: 479px) {
-  .columns {
-    grid-template-columns: 1fr;
+  .blurb {
+    max-width: none;
   }
 }

@@ -13,7 +13,7 @@
 .top {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-8);
+  gap: var(--stack-md);
   align-items: start;
   min-width: 0;
 }
@@ -50,7 +50,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
-  margin-top: var(--space-6);
+  margin-top: var(--stack-md);
 }
 
 .microcopy {
@@ -186,9 +186,13 @@
  * scroll on a phone.
  */
 @media (max-width: 759px) {
+  .table {
+    font-size: var(--text-xs);
+  }
+
   .table thead th,
   .table tbody td {
-    padding-inline: var(--space-2-5);
+    padding: var(--space-2) var(--space-2-5);
   }
 
   .op {

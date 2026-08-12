@@ -216,13 +216,13 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-4);
-  margin-top: var(--stack-md);
+  margin-top: var(--stack-sm);
 }
 
 .closingLine {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-size: clamp(1.0625rem, 2.4vw, 1.25rem);
   font-weight: 500;
   letter-spacing: -0.015em;
   color: var(--text);

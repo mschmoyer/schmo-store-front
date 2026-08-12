@@ -32,7 +32,7 @@ export function AdminProvider({ children }: AdminProviderProps) {
       setUser(null);
       setSession(null);
       localStorage.removeItem('admin_token');
-      router.push('/admin/login');
+      router.push('/login');
     };
 
     const verifySession = async () => {
@@ -124,7 +124,7 @@ export function AdminProvider({ children }: AdminProviderProps) {
       setUser(null);
       setSession(null);
       localStorage.removeItem('admin_token');
-      router.push('/admin/login');
+      router.push('/login');
     }
   };
 
@@ -132,7 +132,7 @@ export function AdminProvider({ children }: AdminProviderProps) {
     setUser(null);
     setSession(null);
     localStorage.removeItem('admin_token');
-    router.push('/admin/login');
+    router.push('/login');
   };
   
   const verify = async () => {

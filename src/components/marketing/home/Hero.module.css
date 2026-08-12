@@ -67,10 +67,13 @@
  * 1440 it applied inside a ~530px column and clipped both panels — the SKU
  * table lost its Product column and the price was cut off mid-digit.
  */
+/*
+ * No margin of its own: `.copy` is a grid and its `gap` already separates the
+ * visual from the sentence above it. The two together were 40px at 390px.
+ */
 .visual {
   position: relative;
   min-width: 0;
-  margin-top: var(--stack-md);
   container-type: inline-size;
 }
 
@@ -85,9 +88,6 @@
     max-width: 15ch;
   }
 
-  .visual {
-    margin-top: 0;
-  }
 }
 
 .textOnly .visual {
