@@ -32,7 +32,7 @@
 
 .required {
   color: var(--danger);
-  margin-inline-start: 2px;
+  margin-inline-start: var(--space-0-5);
 }
 
 .optional {
@@ -248,7 +248,7 @@
   flex: none;
   width: 15px;
   height: 15px;
-  margin-top: 1px;
+  margin-top: 1px; /* optical: centres the icon on the first text line */
 }
 
 /* --------------------------------------------------- checkbox / switch -- */
@@ -270,7 +270,7 @@
   flex-direction: column;
   gap: var(--space-0-5);
   min-width: 0;
-  padding-top: 1px;
+  padding-top: 1px; /* optical: aligns the label to the box glyph, not rhythm */
 }
 
 .choiceLabel {
@@ -309,7 +309,7 @@
   place-items: center;
   width: 18px;
   height: 18px;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
 
   background-color: var(--surface-raised);
   border: 1.5px solid var(--border-strong);

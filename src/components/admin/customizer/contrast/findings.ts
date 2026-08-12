@@ -43,8 +43,12 @@ export interface ContrastFinding {
   from?: string;
   /** The colour that would fix it. */
   to?: string;
-  /** Applying this patch resolves the finding. */
-  fix?: { path: string; value: string };
+  /**
+   * Applying this patch resolves the finding. A `null` value means *remove*
+   * the field, handing the choice back to the engine — `hexColorSchema` has no
+   * representation for "unset", so it cannot be an empty string.
+   */
+  fix?: { path: string; value: string | null };
 }
 
 /** Which control each `auditContrast` pair belongs beside, and how to explain it. */
@@ -166,7 +170,7 @@ export function contrastFindings(theme: StorefrontThemeInput): ContrastFinding[]
             to: derived.onBrand,
             // Clearing the pin hands the choice back to the engine, which is
             // guaranteed to find a legible ink for any brand colour.
-            fix: { path: 'brand.colorOnBrand', value: '' },
+            fix: { path: 'brand.colorOnBrand', value: null },
           }
         : {}),
     });

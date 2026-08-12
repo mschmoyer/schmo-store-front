@@ -79,6 +79,9 @@ export default function ShipStationStep({ api }: { api: OnboardingApi }): React.
   const canTest = apiKey.trim().length > 0;
 
   const test = async () => {
+    // Enter submits the form; the handler must re-check what the button's
+    // disabled state already covers.
+    if (!canTest || api.busy) return;
     setFailure(null);
     setSuccess(null);
     const result = await api.submit('/api/onboarding/shipstation', { apiKey: apiKey.trim() });

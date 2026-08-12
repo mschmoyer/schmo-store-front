@@ -89,7 +89,10 @@ export default function StoreStep({ api }: { api: OnboardingApi }): React.ReactE
     const value = event.target.value;
     setName(value);
     setFormError(null);
-    if (!slugEdited) setSlug(slugifyLive(value));
+    // `|| !slug` is not redundant: it makes regeneration depend on the *current*
+    // address rather than only on the edited flag, so an empty address always
+    // refills from the name even if the two events land in the same React batch.
+    if (!slugEdited || !slug) setSlug(slugifyLive(value));
   };
 
   const handleSlug = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,7 +113,7 @@ export default function StoreStep({ api }: { api: OnboardingApi }): React.ReactE
 
   const handleSubmit = async () => {
     setTouched({ name: true, slug: true });
-    if (!canContinue) return;
+    if (!canContinue || api.busy) return;
     const failure = await api.submit('/api/onboarding/store', {
       name: name.trim(),
       slug: slugify(slug),

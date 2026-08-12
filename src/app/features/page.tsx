@@ -71,8 +71,8 @@ export default async function FeaturesPage() {
         </section>
 
         <SyncSection />
-        <InventorySection includedHref="#included" />
         <MakeItYours stores={stores} />
+        <InventorySection includedHref="#included" />
         <AnalyticsSection searches={searches} includedHref="#included" />
         <IncludedLists />
         <FinalCta />

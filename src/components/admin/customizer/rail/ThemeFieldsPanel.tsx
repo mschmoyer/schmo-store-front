@@ -37,7 +37,7 @@ export interface ThemeFieldsPanelProps {
    * Apply a suggested contrast fix.
    * @param fix - The path and value to write
    */
-  onApplyFix: (fix: { path: string; value: string }) => void;
+  onApplyFix: (fix: { path: string; value: string | null }) => void;
   disabled?: boolean;
 }
 

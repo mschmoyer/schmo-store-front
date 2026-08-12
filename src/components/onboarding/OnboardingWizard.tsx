@@ -65,7 +65,9 @@ export default function OnboardingWizard(): React.ReactElement {
       }}
       onNavigate={(step) => void api.navigate(step)}
       busy={api.busy}
-      exitHref={api.state.authenticated ? '/login' : '/'}
+      exitHref={
+        api.state.status === 'completed' ? null : api.state.authenticated ? '/login' : '/'
+      }
       exitLabel={api.state.authenticated ? 'Save and finish later' : 'Back to site'}
     >
       <Step api={api} />

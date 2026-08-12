@@ -524,6 +524,7 @@
 
 /** The sample is drawn in the real family, loaded by the storefront font set. */
 .fontSample {
+  display: block;
   font-size: 17px;
   line-height: 1.35;
   color: var(--text-primary);

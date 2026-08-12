@@ -123,6 +123,10 @@ describe('getProductMark', () => {
     for (let i = 0; i < 600; i += 1) {
       const mark = getProductMark({ sku: `SKU-${i}`, name: `Product ${i}` });
       const lighter = (mark.gradient.match(/#[0-9A-Fa-f]{6}/g) ?? [])[0];
+      if (lighter === undefined) {
+        failures.push(`SKU-${i} produced a gradient with no hex stop: ${mark.gradient}`);
+        continue;
+      }
       const ratio = contrastWithWhite(lighter);
       if (ratio < MARK_MIN_CONTRAST) failures.push(`${lighter} @ ${ratio.toFixed(2)}:1`);
     }

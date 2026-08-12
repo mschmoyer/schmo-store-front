@@ -398,8 +398,11 @@ const craft = [
       const topY = 322, bottomY = 515, midY = (topY + bottomY) / 2, halfW = 110;
       const clipId = nid('lattice');
       defs.push(`<clipPath id="${clipId}"><path d="M ${cx} ${topY} C ${cx + 48} ${topY + 18} ${cx + halfW} ${topY + 63} ${cx + halfW} ${midY} C ${cx + halfW} ${midY + 33.5} ${cx + 48} ${bottomY - 18} ${cx} ${bottomY} C ${cx - 48} ${bottomY - 18} ${cx - halfW} ${midY + 33.5} ${cx - halfW} ${midY} C ${cx - halfW} ${topY + 63} ${cx - 48} ${topY + 18} ${cx} ${topY} Z"/></clipPath>`);
+      // Spaced wide enough that individual diamonds stay visible even at
+      // silhouette/thumbnail scale -- too tight a weave collapses into a
+      // solid smear instead of a readable lattice.
       let mesh = '';
-      for (let o = -260; o <= 260; o += 26) {
+      for (let o = -280; o <= 280; o += 58) {
         mesh += line(cx + o - 200, midY - 200, cx + o + 200, midY + 200, cLinenDark, 4, { strokeLinecap: 'round' });
         mesh += line(cx + o - 200, midY + 200, cx + o + 200, midY - 200, cLinenDark, 4, { strokeLinecap: 'round' });
       }

@@ -39,6 +39,15 @@ export default function StepPanel({
         onSubmit?.();
       }}
     >
+      {/*
+        Implicit form submission needs a submit button to exist. Every visible
+        control here is `type="button"` (the primary carries an onClick so it
+        also works when focus is elsewhere), so without this Enter in a field
+        would do nothing on any multi-input step. Off-screen rather than
+        `display: none`, and out of the tab order.
+      */}
+      <button type="submit" className={styles.hiddenSubmit} tabIndex={-1} aria-hidden="true" />
+
       {step.number !== null ? (
         <span className={styles.stepEyebrow}>
           Step {step.number} of {TOTAL_STEPS}

@@ -1,5 +1,5 @@
 .root {
-  background: var(--paper-sunken);
+  background: var(--paper);
   border-bottom: 1px solid var(--ink-200);
   padding-block: var(--section-y);
 }

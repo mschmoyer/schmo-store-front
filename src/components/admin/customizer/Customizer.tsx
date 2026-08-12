@@ -251,9 +251,17 @@ export function Customizer({ fontScopeClassName }: CustomizerProps): React.React
     [],
   );
 
-  const onApplyFix = React.useCallback((fix: { path: string; value: string }): void => {
-    dispatch({ type: 'theme/set', path: fix.path, value: fix.value });
-  }, []);
+  const onApplyFix = React.useCallback(
+    (fix: { path: string; value: string | null }): void => {
+      // `null` means "remove this field", which `setIn` does for `undefined`.
+      dispatch({
+        type: 'theme/set',
+        path: fix.path,
+        value: fix.value === null ? undefined : fix.value,
+      });
+    },
+    [],
+  );
 
   const onSelect = React.useCallback((selection: Selection): void => {
     dispatch({ type: 'select', selection });

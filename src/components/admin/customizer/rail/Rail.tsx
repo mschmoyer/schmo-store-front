@@ -65,7 +65,7 @@ export interface RailProps {
   canDuplicate: (section: Section) => boolean;
 
   findings: ContrastFinding[];
-  onApplyFix: (fix: { path: string; value: string }) => void;
+  onApplyFix: (fix: { path: string; value: string | null }) => void;
 
   /** Brings the storefront font variables into scope for the font previews only. */
   fontScopeClassName?: string;

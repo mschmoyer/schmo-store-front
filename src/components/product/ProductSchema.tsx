@@ -120,8 +120,7 @@ export function ProductSchema({ product, store, baseUrl = '', path }: ProductSch
         <script
           key={index}
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger -- JSON.stringify output of a
-          // server-built object; `<` is escaped below so it cannot close the tag.
+          // `<` is escaped below so a string in the data cannot close the tag.
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(data).replace(/</g, '\\u003c'),
           }}

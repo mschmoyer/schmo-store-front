@@ -48,15 +48,12 @@ export default function HowItWorksPage() {
               </Eyebrow>
             </Reveal>
             <Reveal delay={0.05}>
-              <h1 className={styles.title}>
-                From an API key to a live store, in one sitting.
-              </h1>
+              <h1 className={styles.title}>Three steps. One sitting.</h1>
             </Reveal>
             <Reveal delay={0.08}>
               <p className={styles.lede}>
-                Nothing here needs code. The one genuinely technical step is generating a
-                ShipStation API key, which takes about two minutes. Every estimate on this page is
-                measured, not aspirational.
+                Times below are real, measured on a catalog of a few hundred SKUs. A very large
+                catalog takes longer to sync — you don&rsquo;t have to sit and watch it.
               </p>
             </Reveal>
             <Reveal delay={0.11}>
@@ -72,7 +69,7 @@ export default function HowItWorksPage() {
           </div>
         </section>
 
-        <HowItWorksSteps />
+        <HowItWorksSteps hideIntro />
         <AlreadyHaveIt />
         <SyncSection />
         <FaqSection />

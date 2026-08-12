@@ -45,6 +45,8 @@ export function MobileNav({ storeName, items, searchAction }: MobileNavProps) {
 
     const drawer = drawerRef.current;
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    // Captured now: by cleanup time the ref may point at a different node.
+    const trigger = triggerRef.current;
 
     // Move focus in, so the first Tab lands inside the dialog rather than
     // somewhere behind it.
@@ -86,7 +88,7 @@ export function MobileNav({ storeName, items, searchAction }: MobileNavProps) {
       document.body.style.overflow = previousOverflow;
       // Returning focus is what stops a keyboard user from being dumped at the
       // top of the document every time they close the menu.
-      (previouslyFocused ?? triggerRef.current)?.focus?.();
+      (previouslyFocused ?? trigger)?.focus?.();
     };
   }, [open, close]);
 

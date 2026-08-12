@@ -1,6 +1,9 @@
+import { Suspense } from 'react';
+
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import { SectionList } from '@/components/store/sections';
 import { EmptyCatalogue } from '@/components/store/states/EmptyStates';
+import { HeroSkeleton, ProductGridSkeleton } from '@/components/store/states/Skeletons';
 import { StoreBand, StoreContainer } from '@/components/store/ui';
 
 import { loadStorefront, type SearchParams } from '../_lib/load';
@@ -52,10 +55,23 @@ export default async function StoreHomePage({ params, searchParams }: StorePageP
           </StoreContainer>
         </StoreBand>
       ) : (
-        <SectionList
-          sections={sections}
-          ctx={{ store, theme, categories, isPreview }}
-        />
+        // Sections each hit the catalogue, so they stream in behind a skeleton
+        // while the themed chrome paints immediately. The boundary lives here
+        // rather than in a segment `loading.tsx`, which would also wrap the
+        // product route and turn its `notFound()` into a soft 404.
+        <Suspense
+          fallback={
+            <StoreBand>
+              <StoreContainer>
+                <HeroSkeleton />
+                <div style={{ height: 'var(--st-space-9)' }} />
+                <ProductGridSkeleton count={8} />
+              </StoreContainer>
+            </StoreBand>
+          }
+        >
+          <SectionList sections={sections} ctx={{ store, theme, categories, isPreview }} />
+        </Suspense>
       )}
     </StorefrontShell>
   );

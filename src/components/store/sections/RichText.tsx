@@ -41,7 +41,6 @@ export function RichText({ section }: SectionProps) {
           )}
         >
           {html ? (
-            // eslint-disable-next-line react/no-danger -- sanitized above; see html.ts.
             <div dangerouslySetInnerHTML={{ __html: html }} />
           ) : (
             toParagraphs(body).map((paragraph, index) => <p key={index}>{paragraph}</p>)

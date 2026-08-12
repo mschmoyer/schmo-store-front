@@ -10,8 +10,10 @@ export interface WizardContainerProps {
   progress: OnboardingProgress;
   onNavigate: (step: StepId) => void;
   busy?: boolean;
-  /** Rendered top-right. The copy deck's "Save and finish later" exit. */
-  exitHref?: string;
+  /** Rendered top-right. The copy deck's "Save and finish later" exit.
+   *  Pass `null` to hide it — there is nothing left to finish later once the
+   *  run is complete, and offering it there is a lie. */
+  exitHref?: string | null;
   exitLabel?: string;
   children: React.ReactNode;
 }
@@ -44,11 +46,13 @@ export default function WizardContainer({
           </span>
           <span className={styles.brandName}>RebelShops</span>
         </Link>
-        <div className={styles.mastheadRight}>
-          <Link href={exitHref} className={styles.exitLink}>
-            {exitLabel}
-          </Link>
-        </div>
+        {exitHref ? (
+          <div className={styles.mastheadRight}>
+            <Link href={exitHref} className={styles.exitLink}>
+              {exitLabel}
+            </Link>
+          </div>
+        ) : null}
       </header>
 
       <div className={styles.body}>

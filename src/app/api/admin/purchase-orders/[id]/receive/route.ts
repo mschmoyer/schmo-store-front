@@ -3,7 +3,7 @@ import { requireAuth } from '@/lib/auth/session';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
@@ -12,7 +12,8 @@ export async function POST(
     const { items } = body;
 
     // Mock implementation - in production this would update the database
-    console.log('Receiving items for PO:', params.id, items);
+    const { id } = await params;
+    console.log('Receiving items for PO:', id, items);
 
     return NextResponse.json({
       success: true,

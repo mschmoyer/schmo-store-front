@@ -1,6 +1,5 @@
+import { storefrontFontVariables } from '@/lib/storefront-theme/fonts.next';
 import type { StorefrontData } from '@/app/store/_lib/load';
-
-import { storefrontFontVariables } from './theme/fonts';
 
 import { AnnouncementBar } from './chrome/AnnouncementBar';
 import { StoreFooter } from './chrome/StoreFooter';

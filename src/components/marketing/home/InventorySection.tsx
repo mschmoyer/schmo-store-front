@@ -76,8 +76,10 @@ export interface InventorySectionProps {
 /**
  * Copy deck §3.6 — inventory intelligence and purchase orders.
  *
- * The table leads and the copy sits beside it, reversing the previous section's
- * asymmetry so two dense sections do not read as one repeated layout.
+ * The copy sits in a two-column head and the report runs the full content width
+ * beneath it, so every column of the dead-stock table is legible without
+ * scrolling on a desktop. That also gives the section a different silhouette
+ * from the sync section above it.
  *
  * @param props - {@link InventorySectionProps}
  * @returns The inventory section.
@@ -88,7 +90,46 @@ export function InventorySection({
   return (
     <section className={styles.root}>
       <div className={styles.inner}>
-        <Reveal className={styles.reportWrap}>
+        <div className={styles.head}>
+          <div className={styles.headLeft}>
+            <Reveal>
+              <Eyebrow rule className={styles.eyebrow}>
+                In the box
+              </Eyebrow>
+            </Reveal>
+            <Reveal delay={0.05}>
+              <h2 className={styles.heading}>
+                Know what to reorder before you&rsquo;re out of it.
+              </h2>
+            </Reveal>
+            <Reveal delay={0.08}>
+              <p className={styles.subhead}>Inventory intelligence and purchase orders</p>
+            </Reveal>
+          </div>
+
+          <div className={styles.headRight}>
+            <Reveal delay={0.06}>
+              <p className={styles.body}>
+                RebelShops tracks sales velocity across 7, 14, 30, 60, 90, 180 and 365 days,
+                forecasts demand, and calculates a reorder point and reorder quantity per SKU.
+                Three reports come standard: inventory valuation, turnover, and dead stock — with
+                days since last sale, carrying cost and a suggested markdown on the money
+                that&rsquo;s sitting still. When it&rsquo;s time to buy, create a purchase order
+                against a supplier record, export it as a PDF, and receive it back into stock.
+              </p>
+            </Reveal>
+            <Reveal delay={0.09}>
+              <div className={styles.actions}>
+                <Button as={Link} href={includedHref} variant="secondary" size="md">
+                  See what&rsquo;s included
+                </Button>
+                <p className={styles.microcopy}>Export any inventory view to CSV.</p>
+              </div>
+            </Reveal>
+          </div>
+        </div>
+
+        <Reveal delay={0.06} className={styles.reportWrap}>
           <figure className={styles.report}>
             <figcaption className={styles.reportHead}>
               <span className={styles.reportTitle}>Dead stock report</span>
@@ -141,48 +182,12 @@ export function InventorySection({
           </figure>
         </Reveal>
 
-        <div className={styles.copy}>
-          <Reveal>
-            <Eyebrow rule className={styles.eyebrow}>
-              In the box
-            </Eyebrow>
-          </Reveal>
-
-          <Reveal delay={0.05}>
-            <h2 className={styles.heading}>Know what to reorder before you&rsquo;re out of it.</h2>
-          </Reveal>
-
-          <Reveal delay={0.08}>
-            <p className={styles.subhead}>Inventory intelligence and purchase orders</p>
-          </Reveal>
-
-          <Reveal delay={0.11}>
-            <p className={styles.body}>
-              RebelShops tracks sales velocity across 7, 14, 30, 60, 90, 180 and 365 days, forecasts
-              demand, and calculates a reorder point and reorder quantity per SKU. Three reports
-              come standard: inventory valuation, turnover, and dead stock — with days since last
-              sale, carrying cost and a suggested markdown on the money that&rsquo;s sitting still.
-              When it&rsquo;s time to buy, create a purchase order against a supplier record, export
-              it as a PDF, and receive it back into stock.
-            </p>
-          </Reveal>
-
-          <Reveal delay={0.14}>
-            <div className={styles.actions}>
-              <Button as={Link} href={includedHref} variant="secondary" size="lg">
-                See what&rsquo;s included
-              </Button>
-              <p className={styles.microcopy}>Export any inventory view to CSV.</p>
-            </div>
-          </Reveal>
-
-          <Reveal delay={0.17}>
-            <p className={styles.sidenote}>
-              On Shopify Basic, purchase orders, supplier records and dead-stock reporting are apps
-              you add and pay for separately.
-            </p>
-          </Reveal>
-        </div>
+        <Reveal delay={0.08}>
+          <p className={styles.sidenote}>
+            On Shopify Basic, purchase orders, supplier records and dead-stock reporting are apps
+            you add and pay for separately.
+          </p>
+        </Reveal>
       </div>
     </section>
   );

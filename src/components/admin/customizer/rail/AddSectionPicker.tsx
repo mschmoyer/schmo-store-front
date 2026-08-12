@@ -67,7 +67,7 @@ export function AddSectionPicker({
               <span className={styles.pickerIcon}>
                 <SectionIcon name={definition.icon} size={18} aria-hidden="true" />
               </span>
-              <span>
+              <span className={styles.pickerBody}>
                 <span className={styles.pickerTitle}>{definition.label}</span>
                 <span className={styles.pickerDesc}>{definition.description}</span>
                 {allowed ? (

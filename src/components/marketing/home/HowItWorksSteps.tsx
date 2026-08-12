@@ -11,14 +11,18 @@ export interface HowItWorksStepsProps {
   hideCta?: boolean;
   /** Heading level. Pass `h1` when this section opens a page. @default 'h2' */
   headingAs?: 'h1' | 'h2';
+  /** Drops the eyebrow/heading/subhead when the page above already carries it. */
+  hideIntro?: boolean;
 }
 
 /**
  * Copy deck §3.3 — three numbered steps with honest, measured time estimates.
  *
- * Each card carries a small facsimile of the screen that step actually uses,
- * built from the same primitives the admin is built from and marked
- * `aria-hidden` so it is decoration to a screen reader, never a second form.
+ * Laid out as a numbered timeline rather than three equal cards: the number
+ * rail carries the eye down the page, the copy sits beside it, and each row
+ * ends in a facsimile of the screen that step actually uses — built from the
+ * same primitives the admin is built from, and marked `aria-hidden` so it is
+ * decoration to a screen reader, never a second form.
  *
  * Gated per §3.3: step 3 describes store content fields and colour themes only.
  * No "drag and drop", fonts, layouts, sections or live preview until the
@@ -30,25 +34,30 @@ export interface HowItWorksStepsProps {
 export function HowItWorksSteps({
   hideCta = false,
   headingAs = 'h2',
+  hideIntro = false,
 }: HowItWorksStepsProps): React.JSX.Element {
   return (
     <section className={styles.root} id="how-it-works">
       <div className={styles.inner}>
-        <SectionIntro
-          as={headingAs}
-          eyebrow="Setup"
-          heading="Three steps. One sitting."
-          subhead="Times below are real, measured on a catalog of a few hundred SKUs. A very large catalog takes longer to sync — you don't have to sit and watch it."
-        />
+        {hideIntro ? null : (
+          <SectionIntro
+            as={headingAs}
+            eyebrow="Setup"
+            heading="Three steps. One sitting."
+            subhead="Times below are real, measured on a catalog of a few hundred SKUs. A very large catalog takes longer to sync — you don't have to sit and watch it."
+          />
+        )}
 
-        <ol className={styles.steps}>
+        <ol className={`${styles.steps} ${hideIntro ? styles.stepsFlush : ''}`}>
           <Reveal as="li" className={styles.step} delay={0}>
             <StepHead index={1} time="about 2 minutes" />
-            <h3 className={styles.stepTitle}>Paste your ShipStation API key</h3>
-            <p className={styles.stepBody}>
-              Generate a key in ShipStation, paste it in, we test the connection before saving.
-              Nothing syncs until you say go.
-            </p>
+            <div className={styles.stepCopy}>
+              <h3 className={styles.stepTitle}>Paste your ShipStation API key</h3>
+              <p className={styles.stepBody}>
+                Generate a key in ShipStation, paste it in, we test the connection before saving.
+                Nothing syncs until you say go.
+              </p>
+            </div>
             <div className={styles.figure} aria-hidden="true">
               <Input
                 label="ShipStation API key"
@@ -70,11 +79,13 @@ export function HowItWorksSteps({
 
           <Reveal as="li" className={styles.step} delay={0.08}>
             <StepHead index={2} time="2–10 minutes, unattended" />
-            <h3 className={styles.stepTitle}>We pull in your catalog</h3>
-            <p className={styles.stepBody}>
-              Products, SKUs, prices, images, stock levels, warehouses. You don&rsquo;t type
-              anything. Big catalogs take longer; you can close the tab and come back.
-            </p>
+            <div className={styles.stepCopy}>
+              <h3 className={styles.stepTitle}>We pull in your catalog</h3>
+              <p className={styles.stepBody}>
+                Products, SKUs, prices, images, stock levels, warehouses. You don&rsquo;t type
+                anything. Big catalogs take longer; you can close the tab and come back.
+              </p>
+            </div>
             <div className={styles.figure} aria-hidden="true">
               <ul className={styles.syncList}>
                 {[
@@ -95,11 +106,13 @@ export function HowItWorksSteps({
 
           <Reveal as="li" className={styles.step} delay={0.16}>
             <StepHead index={3} time="about 5 minutes" />
-            <h3 className={styles.stepTitle}>Name it, style it, publish</h3>
-            <p className={styles.stepBody}>
-              Store name, description, hero copy, a theme. Publish and your store is live at your
-              RebelShops URL.
-            </p>
+            <div className={styles.stepCopy}>
+              <h3 className={styles.stepTitle}>Name it, style it, publish</h3>
+              <p className={styles.stepBody}>
+                Store name, description, hero copy, a theme. Publish and your store is live at your
+                RebelShops URL.
+              </p>
+            </div>
             <div className={styles.figure} aria-hidden="true">
               <Input
                 label="Store name"

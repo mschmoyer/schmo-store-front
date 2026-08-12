@@ -155,7 +155,7 @@
   display: inline-flex;
   align-items: center;
   flex: none;
-  margin-inline-start: -2px;
+  margin-inline-start: calc(-1 * var(--space-0-5));
 }
 
 .icon > svg {

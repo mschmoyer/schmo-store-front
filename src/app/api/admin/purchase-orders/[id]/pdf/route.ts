@@ -12,10 +12,10 @@ import { generatePurchaseOrderPDF } from '@/lib/pdf/purchase-order';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const purchaseOrderId = params.id;
+    const { id: purchaseOrderId } = await params;
 
     if (!purchaseOrderId) {
       return NextResponse.json(
@@ -145,10 +145,10 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const purchaseOrderId = params.id;
+    const { id: purchaseOrderId } = await params;
     const body = await request.json();
     const { options } = body;
 

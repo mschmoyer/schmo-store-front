@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { getStoreBySlug } from '../_lib/queries';
 
@@ -13,13 +14,34 @@ import { getStoreBySlug } from '../_lib/queries';
  * a draft page.
  *
  * So the shell is a server component (`StorefrontShell`) that each page renders
- * with its own `searchParams`. This layout keeps only what genuinely belongs to
- * the whole subtree: metadata.
+ * with its own `searchParams`. This layout keeps the two things that genuinely
+ * belong to the whole subtree: metadata, and the existence check.
+ *
+ * The existence check has to be *here* rather than in the page. `loading.tsx`
+ * puts a Suspense boundary around the page, so by the time a page calls
+ * `notFound()` the response has already begun streaming and the status line has
+ * gone out as `200` — a soft 404, which tells search engines a dead shop URL is
+ * a real page. The layout renders above that boundary, so throwing here
+ * produces a genuine `404`.
+ *
+ * Only *existence* is checked here. Whether an existing shop may be shown
+ * depends on the preview token, which a layout cannot read.
  *
  * @param props.children - The page being rendered
+ * @param props.params - The route's store slug
  * @returns The children, untouched
  */
-export default function StoreLayout({ children }: { children: React.ReactNode }) {
+export default async function StoreLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: Promise<{ storeSlug: string }>;
+}) {
+  const { storeSlug } = await params;
+  const lookup = await getStoreBySlug(storeSlug, { allowUnpublished: true });
+  if (!lookup.ok) notFound();
+
   return <>{children}</>;
 }
 

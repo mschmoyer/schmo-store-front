@@ -156,7 +156,6 @@ export function StorefrontStyle({ storeId, theme }: StorefrontStyleProps) {
     <style
       id="storefront-theme"
       data-store-id={storeId}
-      // eslint-disable-next-line react/no-danger -- engine-generated tokens plus sanitized merchant CSS; see doc comment.
       dangerouslySetInnerHTML={{ __html: css }}
     />
   );

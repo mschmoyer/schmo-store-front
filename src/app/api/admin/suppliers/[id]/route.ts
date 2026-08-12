@@ -5,13 +5,15 @@ import { requireAuth } from '@/lib/auth/session';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
       return NextResponse.json({ error: 'No store associated with user' }, { status: 400 });
     }
+
+    const { id: supplierId } = await params;
 
     const result = await query(
       `SELECT 
@@ -21,7 +23,7 @@ export async function GET(
         created_at, updated_at
       FROM suppliers 
       WHERE id = $1 AND store_id = $2`,
-      [params.id, user.storeId]
+      [supplierId, user.storeId]
     );
 
     if (result.rows.length === 0) {
@@ -41,13 +43,15 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
       return NextResponse.json({ error: 'No store associated with user' }, { status: 400 });
     }
+
+    const { id: supplierId } = await params;
 
     const body = await request.json();
     const { 
@@ -76,7 +80,7 @@ export async function PUT(
     // Check if supplier exists and belongs to user's store
     const existingSupplier = await query(
       'SELECT id, name FROM suppliers WHERE id = $1 AND store_id = $2',
-      [params.id, user.storeId]
+      [supplierId, user.storeId]
     );
 
     if (existingSupplier.rows.length === 0) {
@@ -86,7 +90,7 @@ export async function PUT(
     // Check for duplicate name (excluding current supplier)
     const duplicateCheck = await query(
       'SELECT id FROM suppliers WHERE store_id = $1 AND LOWER(name) = LOWER($2) AND id != $3',
-      [user.storeId, name, params.id]
+      [user.storeId, name, supplierId]
     );
 
     if (duplicateCheck.rows.length > 0) {
@@ -117,7 +121,7 @@ export async function PUT(
     `;
 
     const result = await query(updateQuery, [
-      params.id,
+      supplierId,
       user.storeId,
       name,
       contact_person || null,
@@ -147,7 +151,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -155,10 +159,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'No store associated with user' }, { status: 400 });
     }
 
+    const { id: supplierId } = await params;
+
     // Check if supplier exists and belongs to user's store
     const existingSupplier = await query(
       'SELECT id, name FROM suppliers WHERE id = $1 AND store_id = $2',
-      [params.id, user.storeId]
+      [supplierId, user.storeId]
     );
 
     if (existingSupplier.rows.length === 0) {
@@ -168,14 +174,14 @@ export async function DELETE(
     // Check if supplier has any purchase orders
     const poCheck = await query<CountRow>(
       'SELECT COUNT(*) as count FROM purchase_orders WHERE supplier_id = $1',
-      [params.id]
+      [supplierId]
     );
 
     if (parseInt(poCheck.rows[0].count, 10) > 0) {
       // Don't delete, just deactivate
       await query(
         'UPDATE suppliers SET is_active = false WHERE id = $1 AND store_id = $2',
-        [params.id, user.storeId]
+        [supplierId, user.storeId]
       );
 
       return NextResponse.json({
@@ -187,7 +193,7 @@ export async function DELETE(
       // Safe to delete
       await query(
         'DELETE FROM suppliers WHERE id = $1 AND store_id = $2',
-        [params.id, user.storeId]
+        [supplierId, user.storeId]
       );
 
       return NextResponse.json({

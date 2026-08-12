@@ -113,14 +113,21 @@ export const radius = {
   full: '999px',
 } as const;
 
-/** Layered, warm-tinted elevation from §4. Never a single flat blur. */
+/**
+ * Layered elevation from §4. Warm-tinted means R > G > B: `rgba(38,26,20)`.
+ * The earlier `rgba(16,18,22)` had B > G > R, i.e. a blue-grey cast — cooler
+ * than neutral grey, on a warm paper ground. Every step is layered, including
+ * `xs`; a single flat blur is exactly what §4 forbids.
+ *
+ * Mirrors `--shadow-*` in `globals.css`. Change both together.
+ */
 export const shadow = {
-  xs: '0 1px 2px rgba(16,18,22,.06)',
-  sm: '0 1px 2px rgba(16,18,22,.06), 0 2px 6px rgba(16,18,22,.05)',
-  md: '0 2px 4px rgba(16,18,22,.05), 0 8px 20px -4px rgba(16,18,22,.10)',
-  lg: '0 4px 8px rgba(16,18,22,.04), 0 20px 44px -8px rgba(16,18,22,.14)',
-  xl: '0 8px 16px rgba(16,18,22,.05), 0 36px 80px -16px rgba(16,18,22,.20)',
-  ember: '0 2px 6px rgba(249,78,27,.24), 0 10px 28px -6px rgba(249,78,27,.32)',
+  xs: '0 1px 2px rgba(38,26,20,.06), 0 1px 3px rgba(38,26,20,.03)',
+  sm: '0 1px 2px rgba(38,26,20,.07), 0 2px 6px rgba(38,26,20,.05)',
+  md: '0 2px 4px rgba(38,26,20,.05), 0 8px 20px -4px rgba(38,26,20,.11)',
+  lg: '0 4px 8px rgba(38,26,20,.05), 0 20px 44px -8px rgba(38,26,20,.15)',
+  xl: '0 8px 16px rgba(38,26,20,.06), 0 36px 80px -16px rgba(38,26,20,.20)',
+  ember: '0 2px 6px rgba(220,58,12,.24), 0 10px 28px -6px rgba(220,58,12,.32)',
 } as const;
 
 /** Easing curves and durations from §4. */
@@ -283,8 +290,10 @@ export function gradientForSeed(seed: string): MarkGradient {
 
   const span = MARK_HUE_ARC.max - MARK_HUE_ARC.min;
   const hue = MARK_HUE_ARC.min + ((hash % 3600) / 3600) * span;
-  const saturation = 62 + ((hash >>> 8) % 26);
-  let lightness = 34 + ((hash >>> 14) % 18);
+  const saturation = 54 + ((hash >>> 8) % 40);
+  // A wide lightness range is what stops a constrained-hue grid reading as one
+  // colour repeated. Going darker is free: white contrast only improves.
+  let lightness = 26 + ((hash >>> 14) % 28);
 
   let from = hslToHex(hue, saturation, lightness);
   // Deterministic: the same seed always walks the same number of steps.

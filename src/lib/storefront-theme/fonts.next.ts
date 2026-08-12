@@ -33,7 +33,6 @@ import {
   Space_Grotesk,
 } from 'next/font/google';
 
-import { FONTS } from './fonts';
 import { FONT_IDS, type FontId } from './types';
 
 // NOTE: every option below must be an explicitly written literal.

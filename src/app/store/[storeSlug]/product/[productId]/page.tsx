@@ -236,7 +236,6 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
               <SectionHeading heading="Details" level={2} />
               <div className={sectionStyles.prose}>
                 {descriptionHtml ? (
-                  // eslint-disable-next-line react/no-danger -- sanitized in _lib/html.ts
                   <div dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
                 ) : (
                   paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)

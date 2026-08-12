@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { buildState, originOf, persist, requireOnboarding } from '../_lib/state';
+import { publishTheme } from '../_lib/theme';
 
 /**
  * Publish (or draft) the merchant's store and finish onboarding.
@@ -35,6 +36,10 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json().catch(() => ({}))) as { draft?: boolean };
     const publish = body.draft !== true;
+
+    // Promote the draft theme chosen in step 5. A draft store keeps its theme
+    // as a draft too, so nothing about it is visible until they publish.
+    if (publish) await publishTheme(context.row.store_id);
 
     await db.query(
       'UPDATE stores SET is_public = $2, is_active = true, updated_at = NOW() WHERE id = $1',

@@ -17,6 +17,9 @@
 .bordered {
   border: 1px dashed var(--border-strong);
   background-color: var(--surface-sunken);
+
+  /* The action buttons sit in this well, so their focus gap must be the well. */
+  --focus-ring-gap: var(--surface-sunken);
 }
 
 .compact {

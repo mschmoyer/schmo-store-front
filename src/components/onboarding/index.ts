@@ -14,3 +14,4 @@ export * from './lib/slug';
 export * from './lib/password';
 export * from './lib/steps';
 export * from './lib/types';
+export * from './lib/theme-mapping';

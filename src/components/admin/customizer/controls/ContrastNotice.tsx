@@ -19,7 +19,7 @@ export interface ContrastNoticeProps {
    * Apply the finding's suggested value.
    * @param fix - The theme path and value that resolve the finding
    */
-  onApplyFix?: (fix: { path: string; value: string }) => void;
+  onApplyFix?: (fix: { path: string; value: string | null }) => void;
 }
 
 /**
@@ -79,7 +79,7 @@ export function ContrastNotice({ finding, onApplyFix }: ContrastNoticeProps): Re
 
 export interface ContrastNoticeListProps {
   findings: ContrastFinding[];
-  onApplyFix?: (fix: { path: string; value: string }) => void;
+  onApplyFix?: (fix: { path: string; value: string | null }) => void;
 }
 
 /**

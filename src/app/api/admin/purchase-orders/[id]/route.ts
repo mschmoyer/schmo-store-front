@@ -56,7 +56,7 @@ interface UpdatePurchaseOrderRequest {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -67,7 +67,7 @@ export async function GET(
       }, { status: 404 });
     }
 
-    const purchaseOrderId = params.id;
+    const { id: purchaseOrderId } = await params;
 
     // Get purchase order with items
     const purchaseOrderResult = await db.query<PurchaseOrderWithItemsRow>(`
@@ -167,7 +167,7 @@ export async function GET(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -178,7 +178,7 @@ export async function PUT(
       }, { status: 404 });
     }
 
-    const purchaseOrderId = params.id;
+    const { id: purchaseOrderId } = await params;
     const body: UpdatePurchaseOrderRequest = await request.json();
 
     // Verify purchase order exists and belongs to store
@@ -380,7 +380,7 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -391,7 +391,7 @@ export async function DELETE(
       }, { status: 404 });
     }
 
-    const purchaseOrderId = params.id;
+    const { id: purchaseOrderId } = await params;
 
     // Check if purchase order exists and belongs to store
     const existingPOResult = await db.query(
@@ -474,7 +474,7 @@ export async function DELETE(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -485,7 +485,7 @@ export async function PATCH(
       }, { status: 404 });
     }
 
-    const purchaseOrderId = params.id;
+    const { id: purchaseOrderId } = await params;
     const body = await request.json();
 
     // Verify purchase order exists and belongs to store

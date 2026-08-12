@@ -78,7 +78,7 @@ export default function AccountStep({ api }: { api: OnboardingApi }): React.Reac
 
   const handleSubmit = async () => {
     setTouched({ firstName: true, lastName: true, email: true, password: true });
-    if (!isValid) return;
+    if (!isValid || api.busy) return;
 
     const failure = await api.submit('/api/onboarding/account', {
       email: values.email.trim(),

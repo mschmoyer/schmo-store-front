@@ -475,12 +475,14 @@
 }
 
 .navRowTitle {
+  display: block;
   font-size: var(--text-sm);
   font-weight: 600;
   line-height: 1.3;
 }
 
 .navRowSub {
+  display: block;
   font-size: var(--text-xs);
   color: var(--text-secondary);
   line-height: 1.4;
@@ -676,6 +678,11 @@
   cursor: not-allowed;
 }
 
+.pickerBody {
+  display: block;
+  min-width: 0;
+}
+
 .pickerIcon {
   display: grid;
   place-items: center;
@@ -688,12 +695,14 @@
 }
 
 .pickerTitle {
+  display: block;
   font-size: var(--text-sm);
   font-weight: 600;
   margin-bottom: 2px;
 }
 
 .pickerDesc {
+  display: block;
   font-size: var(--text-xs);
   line-height: 1.45;
   color: var(--text-secondary);
@@ -751,6 +760,7 @@
 }
 
 .presetMeta {
+  display: block;
   padding: 8px 10px 10px;
 }
 
@@ -764,6 +774,7 @@
 }
 
 .presetRegister {
+  display: block;
   margin-top: 2px;
   font-size: var(--text-xs);
   line-height: 1.4;

@@ -66,7 +66,9 @@ export function ColorControl({
     const withHash = next.startsWith('#') || next === '' ? next : `#${next}`;
     setDraft(withHash);
     if (isHexColor(withHash)) onChange(withHash);
-    else if (withHash === '' && optional) onChange('');
+    // An empty optional colour is *removed* from the patch rather than saved as
+    // an empty string: `hexColorSchema` rejects '' and the API would 400.
+    else if (withHash === '' && optional) onChange(undefined);
   };
 
   const empty = committed === '';
@@ -111,21 +113,23 @@ export function ColorControl({
       </div>
 
       {optional ? (
+        // The auto affordance carries this field's explanation, so the generic
+        // help line is not repeated underneath it.
         <div className={styles.autoRow}>
           <span className={styles.help}>
             {empty
-              ? 'Chosen automatically so it always stays readable.'
-              : 'Pinned by hand — the automatic choice is guaranteed readable.'}
+              ? (field.help ?? 'Chosen automatically so it always stays readable.')
+              : 'Pinned by hand. The automatic choice is always readable.'}
           </span>
           {empty ? null : (
-            <button type="button" className={styles.linkButton} onClick={() => onChange('')}>
+            <button type="button" className={styles.linkButton} onClick={() => onChange(undefined)}>
               Back to auto
             </button>
           )}
         </div>
+      ) : field.help ? (
+        <span className={styles.help}>{field.help}</span>
       ) : null}
-
-      {field.help ? <span className={styles.help}>{field.help}</span> : null}
       {notice}
     </div>
   );
