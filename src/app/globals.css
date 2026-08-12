@@ -193,8 +193,14 @@
   --duration-standard-ms: 220;
   --duration-entrance-ms: 420;
 
-  /* -- Layout (§6) ------------------------------------------------------- */
-  --container-content: 1200px;
+  /* -- Layout (§6) -------------------------------------------------------
+   * ONE content container for the marketing site. It was 1200px, but three
+   * component CSS modules also hard-coded 940px, 960px and 720px, so scrolling
+   * the homepage moved the left edge 120 -> 250 -> 24 -> 360 -> 240 -> 120.
+   * Those magic numbers are gone; a section that wants narrower text caps its
+   * MEASURE in `ch`, never its container.
+   */
+  --container-content: 1120px;
   --container-wide: 1440px;
   --container-prose: 68ch;
 

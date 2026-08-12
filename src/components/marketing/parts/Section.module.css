@@ -48,13 +48,26 @@
   --bg: #111214;
   --surface: #111214;
   --surface-2: #1b1d20;
-  --surface-raised: #1b1d20;
+  /*
+   * A raised surface on ink needs its OWN value, not --text again. When the
+   * card fill, the body copy and the button were all #111214 the cards on this
+   * block measured 1.05:1 against their ground and were effectively invisible.
+   * #202327 is 1.19:1 as a fill — still subtle, which is why it is paired with
+   * a deliberately strong hairline below rather than left to carry the edge on
+   * its own.
+   */
+  --surface-raised: #202327;
   --surface-sunken: #0a0b0c;
   --surface-inset: #1b1d20;
 
-  --border: #2a2c30;
-  --border-strong: #3f434a;
-  --border-subtle: #232629;
+  /*
+   * 1.67:1 against the ground. Stronger than the light theme's --border
+   * (1.26:1) on purpose: there is no shadow on a dark ground to help an edge
+   * read, so the hairline has to do the whole job.
+   */
+  --border: #383b41;
+  --border-strong: #4a4e56;
+  --border-subtle: #2a2c30;
   --border-control: #6b6f76;
 
   --text-primary: #ffffff;
