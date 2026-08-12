@@ -1,5 +1,28 @@
 import { Metadata } from 'next';
 
+/**
+ * Canonical site origin. Overridable per environment; falls back to the production domain.
+ */
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://rebelshops.com';
+
+/**
+ * INTEGRITY NOTE — read before adding anything to this file.
+ *
+ * Everything here is served to search engines as structured data, where it is
+ * treated as factual claims about the product. RebelShops has no customers yet
+ * and several advertised capabilities are still in progress. Therefore:
+ *
+ *   - No aggregateRating, no review, no testimonial, no customer count until
+ *     they describe real, attributable customers.
+ *   - No FAQ answer may describe a capability that is not shipped. An answer
+ *     here is a promise a buyer can hold us to.
+ *
+ * A previous version of this file published a fabricated 4.8/5 rating from 150
+ * nonexistent customers, an invented testimonial, a nonexistent 14-day free
+ * trial, and payment methods the platform does not support. Do not reintroduce
+ * that pattern.
+ */
+
 interface LandingPageMetaProps {
   title?: string;
   description?: string;
@@ -8,209 +31,177 @@ interface LandingPageMetaProps {
   canonicalUrl?: string;
 }
 
+/**
+ * Builds the Next.js Metadata object for the RebelShops marketing site.
+ *
+ * @param props - Optional overrides for title, description, keywords, OG image and canonical URL.
+ * @returns A Next.js `Metadata` object for the landing page.
+ */
 export const generateLandingPageMeta = ({
-  title = "RebelShop - Take Back Your Margins | Low-Cost Ecommerce Platform",
-  description = "Build your shop, power it with your favorite shipping app, and keep your profits. RebelShop: The affordable ecommerce solution that rebels against expensive software fees.",
-  keywords = "low cost ecommerce, online store, shipping platform, margins, profitable ecommerce, affordable storefront, rebel cart, ship efficiently, keep profits",
-  ogImage = "/landing/og-image.jpg",
-  canonicalUrl = "https://rebelshops.com"
+  title = 'RebelShops — Your ShipStation catalog, now a storefront',
+  description =
+    'Turn the products already in your ShipStation account into a real online store. '
+    + 'Set up in minutes, sell with Stripe, and keep shipping the way you already do. '
+    + '$1 for 3 months, then $19.99/month.',
+  keywords =
+    'shipstation storefront, shipstation ecommerce, sell from shipstation, '
+    + 'online store for shipstation sellers, shopify alternative, direct to consumer storefront',
+  ogImage = '/landing/og-image.jpg',
+  canonicalUrl = SITE_URL,
 }: LandingPageMetaProps = {}): Metadata => {
   return {
     title,
     description,
     keywords,
-    authors: [{ name: "RebelShop Team" }],
-    creator: "RebelShop",
-    publisher: "RebelShop",
-    robots: "index, follow",
+    authors: [{ name: 'RebelShops' }],
+    creator: 'RebelShops',
+    publisher: 'RebelShops',
+    robots: 'index, follow',
     alternates: {
       canonical: canonicalUrl,
     },
     openGraph: {
-      type: "website",
-      title: "RebelCart - Take Back Your Margins | Build Your Shop",
-      description: "Build your shop, power it with any shipping app, and keep your profits. The low-cost ecommerce solution that rebels against expensive software.",
+      type: 'website',
+      title,
+      description,
       url: canonicalUrl,
-      siteName: "RebelCart",
+      siteName: 'RebelShops',
       images: [
         {
           url: ogImage,
           width: 1200,
           height: 630,
-          alt: "RebelCart - Take Back Your Margins | Low-Cost Ecommerce Platform",
+          alt: 'RebelShops — turn your ShipStation catalog into a storefront',
         },
       ],
-      locale: "en_US",
+      locale: 'en_US',
     },
     twitter: {
-      card: "summary_large_image",
-      title: "RebelCart - Take Back Your Margins",
-      description: "Build your shop, power it with any shipping app, and keep your profits. Rebel against expensive software fees.",
+      card: 'summary_large_image',
+      title,
+      description,
       images: [ogImage],
-      creator: "@rebelcart",
-      site: "@rebelcart",
-    },
-    verification: {
-      google: "your-google-site-verification-code",
-      yandex: "your-yandex-verification-code",
-      yahoo: "your-yahoo-verification-code",
     },
     other: {
-      "fb:app_id": "your-facebook-app-id",
-      "apple-mobile-web-app-capable": "yes",
-      "apple-mobile-web-app-status-bar-style": "black-translucent",
-      "theme-color": "#dc2626",
-      "msapplication-TileColor": "#dc2626",
+      'apple-mobile-web-app-capable': 'yes',
+      'apple-mobile-web-app-status-bar-style': 'black-translucent',
+      'theme-color': '#F94E1B',
+      'msapplication-TileColor': '#F94E1B',
     },
   };
 };
 
-// Structured data for the landing page
+/**
+ * Schema.org structured data describing the site, the organization and the product.
+ * Claims here must be verifiable — see the integrity note at the top of this file.
+ */
 export const landingPageStructuredData = {
-  "@context": "https://schema.org",
-  "@graph": [
+  '@context': 'https://schema.org',
+  '@graph': [
     {
-      "@type": "WebSite",
-      "@id": "https://rebelcart.com/#website",
-      url: "https://rebelcart.com",
-      name: "RebelCart",
-      description: "Low-cost ecommerce platform that helps you keep your margins and ship efficiently",
-      potentialAction: [
-        {
-          "@type": "SearchAction",
-          target: {
-            "@type": "EntryPoint",
-            urlTemplate: "https://rebelcart.com/search?q={search_term_string}"
-          },
-          "query-input": "required name=search_term_string"
-        }
-      ]
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      url: SITE_URL,
+      name: 'RebelShops',
+      description:
+        'A storefront for sellers who already run their inventory and shipping through ShipStation.',
     },
     {
-      "@type": "Organization",
-      "@id": "https://rebelcart.com/#organization",
-      name: "RebelCart",
-      url: "https://rebelcart.com",
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'RebelShops',
+      url: SITE_URL,
       logo: {
-        "@type": "ImageObject",
-        url: "https://rebelcart.com/logo.png",
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/logo.png`,
         width: 512,
-        height: 512
+        height: 512,
       },
-      sameAs: [
-        "https://twitter.com/rebelcart",
-        "https://facebook.com/rebelcart",
-        "https://linkedin.com/company/rebelcart"
-      ]
     },
     {
-      "@type": "SoftwareApplication",
-      "@id": "https://rebelcart.com/#software",
-      name: "RebelCart",
-      applicationCategory: "BusinessApplication",
-      operatingSystem: "Web",
-      description: "Low-cost e-commerce platform for creating profitable online stores with any shipping platform",
-      url: "https://rebelcart.com",
-      screenshot: "https://rebelcart.com/landing/screenshot.jpg",
-      softwareVersion: "1.0",
-      releaseNotes: "Initial release with multi-platform shipping integration and margin-focused features",
+      '@type': 'SoftwareApplication',
+      '@id': `${SITE_URL}/#software`,
+      name: 'RebelShops',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      description:
+        'Turn the products already in your ShipStation account into an online store, '
+        + 'with Stripe checkout and orders that flow back into your existing shipping workflow.',
+      url: SITE_URL,
       offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
-        description: "Free trial, then low-cost monthly plans that keep your margins high",
-        availability: "https://schema.org/InStock",
-        validFrom: "2024-01-01"
+        '@type': 'Offer',
+        price: '19.99',
+        priceCurrency: 'USD',
+        description: '$1 for the first 3 months, then $19.99 per month. No transaction fees.',
+        availability: 'https://schema.org/InStock',
       },
-      aggregateRating: {
-        "@type": "AggregateRating",
-        ratingValue: "4.8",
-        ratingCount: "150",
-        bestRating: "5",
-        worstRating: "1"
-      },
-      review: [
-        {
-          "@type": "Review",
-          author: {
-            "@type": "Person",
-            name: "Sarah Johnson"
-          },
-          reviewRating: {
-            "@type": "Rating",
-            ratingValue: "5",
-            bestRating: "5"
-          },
-          reviewBody: "RebelCart saved us thousands in software fees while giving us better control over our margins. The shipping platform flexibility is amazing!"
-        }
-      ]
     },
     {
-      "@type": "WebPage",
-      "@id": "https://rebelcart.com/#webpage",
-      url: "https://rebelcart.com",
-      name: "RebelCart - Take Back Your Margins | Build Your Shop",
-      isPartOf: {
-        "@id": "https://rebelcart.com/#website"
-      },
-      about: {
-        "@id": "https://rebelcart.com/#organization"
-      },
-      description: "Build your shop, power it with your favorite shipping app, and keep your profits. Low-cost ecommerce solution that rebels against expensive software.",
-      breadcrumb: {
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          {
-            "@type": "ListItem",
-            position: 1,
-            name: "Home",
-            item: "https://schmostore.com"
-          }
-        ]
-      },
-      mainEntity: {
-        "@id": "https://schmostore.com/#software"
-      }
-    }
-  ]
+      '@type': 'WebPage',
+      '@id': `${SITE_URL}/#webpage`,
+      url: SITE_URL,
+      name: title(),
+      isPartOf: { '@id': `${SITE_URL}/#website` },
+      about: { '@id': `${SITE_URL}/#organization` },
+      mainEntity: { '@id': `${SITE_URL}/#software` },
+    },
+  ],
 };
 
-// FAQ structured data
+/** @returns The canonical page title used in structured data. */
+function title(): string {
+  return 'RebelShops — Your ShipStation catalog, now a storefront';
+}
+
+/**
+ * FAQ structured data. Every answer below describes behavior that exists today.
+ * If a capability is still in progress, it does not get an entry here.
+ */
 export const faqStructuredData = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
   mainEntity: [
     {
-      "@type": "Question",
-      name: "How long does it take to set up a store?",
+      '@type': 'Question',
+      name: 'What does RebelShops do?',
       acceptedAnswer: {
-        "@type": "Answer",
-        text: "Most stores are set up in under 5 minutes. Simply connect your ShipStation account, choose a theme, and customize your store settings."
-      }
+        '@type': 'Answer',
+        text:
+          'RebelShops reads the product catalog and inventory in your existing ShipStation '
+          + 'account and gives you a public online store to sell them from, so you do not have '
+          + 'to re-enter your products anywhere or change how you ship.',
+      },
     },
     {
-      "@type": "Question",
-      name: "Do I need technical skills to use Schmo Store?",
+      '@type': 'Question',
+      name: 'What does RebelShops cost?',
       acceptedAnswer: {
-        "@type": "Answer",
-        text: "No technical skills required! Our platform is designed to be user-friendly with drag-and-drop customization and automated ShipStation integration."
-      }
+        '@type': 'Answer',
+        text:
+          '$1 for the first three months, then $19.99 per month. We do not take a percentage '
+          + 'of your sales. Payment processing fees are charged by Stripe directly and go to Stripe, '
+          + 'not to us.',
+      },
     },
     {
-      "@type": "Question",
-      name: "What payment methods are supported?",
+      '@type': 'Question',
+      name: 'Do I need to use ShipStation?',
       acceptedAnswer: {
-        "@type": "Answer",
-        text: "We support all major payment methods including credit cards, PayPal, Apple Pay, and Google Pay through our integrated payment processing."
-      }
+        '@type': 'Answer',
+        text:
+          'ShipStation is the only shipping platform RebelShops integrates with today. The product '
+          + 'is built specifically for sellers who already use it.',
+      },
     },
     {
-      "@type": "Question",
-      name: "Is there a free trial?",
+      '@type': 'Question',
+      name: 'Do I need technical skills to set up a store?',
       acceptedAnswer: {
-        "@type": "Answer",
-        text: "Yes! We offer a 14-day free trial with full access to all features. No credit card required to start."
-      }
-    }
-  ]
+        '@type': 'Answer',
+        text:
+          'No. Setup is connecting your ShipStation account, choosing how your store looks, and '
+          + 'publishing. There is nothing to install and no code to write.',
+      },
+    },
+  ],
 };

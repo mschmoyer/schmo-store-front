@@ -68,7 +68,7 @@ export function Features() {
               size="lg"
               className={`${rebelTheme.classes.text.body} leading-relaxed`}
             >
-              RebelCart combines powerful ecommerce tools with any shipping platform you choose. 
+              RebelShops combines powerful ecommerce tools with any shipping platform you choose. 
               Keep your margins high and your costs low - the rebellion starts here.
             </Text>
           </div>

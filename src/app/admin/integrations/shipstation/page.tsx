@@ -79,6 +79,11 @@ export default function ShipStationIntegrationPage() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasExistingConfig, setHasExistingConfig] = useState(false);
+  const [originalApiKey, setOriginalApiKey] = useState('');
+  const [originalApiSecret, setOriginalApiSecret] = useState('');
+  const [apiKeyModified, setApiKeyModified] = useState(false);
+  const [apiSecretModified, setApiSecretModified] = useState(false);
 
   const form = useForm<ShipStationConfig>({
     initialValues: config,
@@ -370,10 +375,10 @@ export default function ShipStationIntegrationPage() {
             e.preventDefault();
             // If we have existing config and API key is not modified, bypass validation
             if (hasExistingConfig && !apiKeyModified && form.values.apiKey === '••••••••••••••••') {
-              const validationErrors = form.validate();
+              const validationErrors = form.validate().errors;
               // Remove apiKey error if it exists since we're using the stored value
               delete validationErrors.apiKey;
-              
+
               if (Object.keys(validationErrors).length === 0) {
                 handleSubmit(form.values);
               }

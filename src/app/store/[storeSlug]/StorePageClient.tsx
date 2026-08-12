@@ -808,7 +808,7 @@ export default function StorePageClient({ store, storeSlug }: StorePageClientPro
         )}
       </Container>
       
-      {/* RebelCart Footer */}
+      {/* RebelShops Footer */}
       <RebelShopFooter />
     </>
   );

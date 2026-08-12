@@ -1,3 +1,5 @@
+import { describe, it, expect, jest } from '@jest/globals';
+import { Readable } from 'stream';
 import { generatePurchaseOrderPDF } from '../purchase-order';
 
 // Mock the @react-pdf/renderer to avoid PDF generation in tests
@@ -12,9 +14,10 @@ jest.mock('@react-pdf/renderer', () => ({
   Font: {
     register: jest.fn(),
   },
+  // `toBuffer()` resolves to a readable stream, not a Buffer - mirror that here.
   pdf: jest.fn(() => ({
-    toBuffer: jest.fn().mockResolvedValue(Buffer.from('mock-pdf-buffer')),
-    toBlob: jest.fn().mockResolvedValue(new Blob(['mock-pdf-blob'])),
+    toBuffer: jest.fn(async () => Readable.from([Buffer.from('mock-pdf-buffer')])),
+    toBlob: jest.fn(async () => new Blob(['mock-pdf-blob'])),
   })),
 }));
 

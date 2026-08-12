@@ -61,7 +61,7 @@ const footerData: FooterSection[] = [
 //   { icon: IconBrandTwitter, href: 'https://twitter.com/schmostore', label: 'Twitter' },
 //   { icon: IconBrandFacebook, href: 'https://facebook.com/schmostore', label: 'Facebook' },
 //   { icon: IconBrandLinkedin, href: 'https://linkedin.com/company/schmostore', label: 'LinkedIn' },
-//   { icon: IconMail, href: 'mailto:hello@schmostore.com', label: 'Email' },
+//   { icon: IconMail, href: 'mailto:hello@rebelshops.com', label: 'Email' },
 // ];
 
 export function Footer() {

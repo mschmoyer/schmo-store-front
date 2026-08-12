@@ -128,7 +128,7 @@ export default function TopNav() {
                 }}
                 visibleFrom="sm"
               >
-                Schmo Store
+                RebelShops
               </Text>
             </Group>
           </Link>

@@ -127,7 +127,7 @@ export function DemoStores({
               size="lg"
               className={`${rebelTheme.classes.text.body} leading-relaxed`}
             >
-              Explore our demo stores to see how different businesses use Schmo Store to showcase 
+              Explore our demo stores to see how different businesses use RebelShops to showcase 
               their products and drive sales.
             </Text>
           </div>

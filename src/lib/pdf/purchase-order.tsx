@@ -202,9 +202,20 @@ const styles = StyleSheet.create({
   },
 });
 
-interface PurchaseOrderWithRelations extends PurchaseOrder {
+/**
+ * The subset of store fields rendered on the purchase order PDF.
+ *
+ * Callers (API routes) build this from the `stores` row rather than passing a
+ * full `Store`, so the template only requires the fields it actually renders.
+ */
+export type PurchaseOrderStoreInfo = Pick<
+  Store,
+  'id' | 'name' | 'address' | 'city' | 'state' | 'zip' | 'contact_email' | 'contact_phone'
+>;
+
+export interface PurchaseOrderWithRelations extends PurchaseOrder {
   supplier: Supplier;
-  store: Store;
+  store: PurchaseOrderStoreInfo;
   items: PurchaseOrderItem[];
 }
 
@@ -462,8 +473,27 @@ export const PurchaseOrderPDF: React.FC<{
 };
 
 /**
+ * Collect a Node readable stream into a single Buffer.
+ *
+ * `pdf(...).toBuffer()` resolves to a readable stream rather than a Buffer, so
+ * the stream has to be drained before the bytes can be handed to a Response.
+ *
+ * @param stream - Readable stream emitting the PDF bytes
+ * @returns Promise<Buffer> - The fully buffered stream contents
+ */
+const streamToBuffer = (stream: NodeJS.ReadableStream): Promise<Buffer> =>
+  new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk: Buffer | string) => {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    });
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+
+/**
  * Generate PDF buffer for purchase order
- * 
+ *
  * @param purchaseOrder - Purchase order data with relations
  * @returns Promise<Buffer> - PDF buffer
  */
@@ -471,8 +501,8 @@ export const generatePurchaseOrderPDF = async (
   purchaseOrder: PurchaseOrderWithRelations
 ): Promise<Buffer> => {
   const doc = <PurchaseOrderPDF purchaseOrder={purchaseOrder} />;
-  const pdfBuffer = await pdf(doc).toBuffer();
-  return pdfBuffer;
+  const pdfStream = await pdf(doc).toBuffer();
+  return await streamToBuffer(pdfStream);
 };
 
 /**

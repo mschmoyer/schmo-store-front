@@ -292,36 +292,83 @@ async function getAppliedMigrations(client) {
 }
 
 /**
- * Baseline a database that was migrated by the previous, version-keyed runner.
+ * Read the version strings the legacy runner recorded.
  *
- * The old runner executed every file present on disk at the time, so marking
- * them all applied is the correct interpretation of that history. Nothing is
- * executed here.
+ * @param {import('pg').PoolClient} client
+ * @returns {Promise<Set<string>>}
+ */
+async function getLegacyVersions(client) {
+  if (!(await tableExists(client, LEGACY_TABLE))) {
+    return new Set();
+  }
+  const result = await client.query(`SELECT version FROM ${LEGACY_TABLE}`);
+  return new Set(result.rows.map((row) => String(row.version)));
+}
+
+/**
+ * SQLSTATE codes that mean "the object this migration creates is already
+ * there". During legacy adoption these prove the migration's effect is present
+ * even though no tracking row exists, so the file can be adopted rather than
+ * failing the deploy.
+ */
+const DUPLICATE_OBJECT_CODES = new Set([
+  '42P07', // duplicate_table (also index, sequence, view)
+  '42701', // duplicate_column
+  '42710', // duplicate_object (trigger, constraint, type, role)
+  '42723', // duplicate_function
+  '42P06', // duplicate_schema
+  '42P04', // duplicate_database
+]);
+
+/**
+ * Record a migration as applied without executing it.
+ *
+ * @param {import('pg').PoolClient} client
+ * @param {{version: string, filename: string, checksum: string}} file
+ */
+async function markAdopted(client, file) {
+  await client.query(
+    `INSERT INTO ${TRACKING_TABLE} (filename, version, checksum, execution_ms, adopted)
+     VALUES ($1, $2, $3, 0, TRUE)
+     ON CONFLICT (filename) DO NOTHING`,
+    [file.filename, file.version, file.checksum],
+  );
+}
+
+/**
+ * Baseline a database that the previous, version-keyed runner already migrated.
+ *
+ * Only files whose numeric version actually appears in the legacy
+ * `schema_migrations` table are adopted — that is positive evidence they ran.
+ * Files with no such evidence (including the ones that never recorded
+ * themselves, and any genuinely new migration) are left pending so they run
+ * for real.
  *
  * @param {import('pg').PoolClient} client
  * @param {Array} files
- * @param {string} reason
+ * @param {Set<string>} legacyVersions
+ * @returns {Promise<number>} how many files were adopted
  */
-async function adoptExistingSchema(client, files, reason) {
-  console.log('');
-  console.log('─'.repeat(70));
-  console.log(`Baselining existing database (${reason}).`);
-  console.log('Every migration file on disk is being marked APPLIED without running it,');
-  console.log('because the previous version-keyed runner already executed them.');
-  console.log('If a migration is genuinely missing from this database, apply it with:');
-  console.log('  node database/migrate.js --force <filename>');
-  console.log('─'.repeat(70));
+async function adoptExistingSchema(client, files, legacyVersions) {
+  const adoptable = files.filter((file) => legacyVersions.has(file.version));
+  if (adoptable.length === 0) {
+    return 0;
+  }
 
-  for (const file of files) {
-    await client.query(
-      `INSERT INTO ${TRACKING_TABLE} (filename, version, checksum, execution_ms, adopted)
-       VALUES ($1, $2, $3, 0, TRUE)
-       ON CONFLICT (filename) DO NOTHING`,
-      [file.filename, file.version, file.checksum],
-    );
+  console.log('');
+  console.log('-'.repeat(72));
+  console.log('Baselining a database migrated by the previous version-keyed runner.');
+  console.log(`${adoptable.length} file(s) whose version is recorded in ${LEGACY_TABLE}`);
+  console.log('are being marked APPLIED without re-running them.');
+  console.log('Anything not recorded there is left pending and will run normally.');
+  console.log('-'.repeat(72));
+
+  for (const file of adoptable) {
+    await markAdopted(client, file);
     console.log(`  adopted  ${file.filename}`);
   }
   console.log('');
+  return adoptable.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,8 +431,11 @@ async function releaseLock(client) {
  *
  * @param {import('pg').PoolClient} client
  * @param {{version: string, filename: string, path: string, checksum: string}} migration
+ * @param {boolean} tolerateAlreadyApplied - When true (legacy baseline pass
+ *        only), a duplicate-object failure means the migration's effect is
+ *        already in the schema, so it is adopted instead of failing the run.
  */
-async function runMigration(client, migration) {
+async function runMigration(client, migration, tolerateAlreadyApplied = false) {
   const sql = fs.readFileSync(migration.path, 'utf8');
   const startedAt = Date.now();
 
@@ -408,6 +458,16 @@ async function runMigration(client, migration) {
     console.log(`  ok       ${migration.filename} (${Date.now() - startedAt}ms)`);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
+
+    if (tolerateAlreadyApplied && DUPLICATE_OBJECT_CODES.has(error.code)) {
+      await markAdopted(client, migration);
+      console.warn(
+        `  adopted  ${migration.filename} — already present in this database ` +
+          `(${error.code}: ${error.message}). Recorded as applied.`,
+      );
+      return;
+    }
+
     console.error(`  FAILED   ${migration.filename}: ${error.message}`);
     throw error;
   }
@@ -433,29 +493,39 @@ async function runMigrations(options = {}) {
     warnOnDuplicateVersions(files);
 
     const trackingExisted = await tableExists(client, TRACKING_TABLE);
-    await ensureTrackingTable(client);
+    // --dry-run must not mutate anything, not even the tracking table.
+    if (!dryRun) {
+      await ensureTrackingTable(client);
+    }
 
     // First run of this runner against a database the old runner already
-    // migrated? Baseline instead of replaying history.
+    // migrated? Baseline the files it provably applied instead of replaying
+    // them, then run the rest in "tolerate already applied" mode.
+    let legacyBaseline = false;
+    /** Filenames the baseline pass adopted (or, under --dry-run, would adopt). */
+    const simulatedAdoptions = new Set();
     if (!trackingExisted && adopt) {
-      const legacyPresent = await tableExists(client, LEGACY_TABLE);
-      if (legacyPresent) {
-        const legacyRows = await client.query(`SELECT COUNT(*)::int AS n FROM ${LEGACY_TABLE}`);
-        if (legacyRows.rows[0].n > 0) {
-          if (dryRun) {
-            console.log('[dry-run] would baseline this database from legacy schema_migrations.');
-          } else {
-            await adoptExistingSchema(
-              client,
-              files,
-              `${legacyRows.rows[0].n} rows in ${LEGACY_TABLE}`,
-            );
+      const legacyVersions = await getLegacyVersions(client);
+      if (legacyVersions.size > 0) {
+        legacyBaseline = true;
+        if (dryRun) {
+          for (const file of files) {
+            if (legacyVersions.has(file.version)) simulatedAdoptions.add(file.filename);
           }
+          console.log(
+            `[dry-run] would baseline ${simulatedAdoptions.size} file(s) already recorded in ` +
+              `${LEGACY_TABLE}, without running them.`,
+          );
+        } else {
+          await adoptExistingSchema(client, files, legacyVersions);
         }
       }
     }
 
     const applied = await getAppliedMigrations(client);
+    for (const filename of simulatedAdoptions) {
+      applied.set(filename, { checksum: null, applied_at: new Date(), adopted: true });
+    }
 
     // Checksum drift: a file changed after it was applied.
     for (const file of files) {
@@ -495,9 +565,9 @@ async function runMigrations(options = {}) {
         ':',
     );
     for (const migration of pending) {
-      await runMigration(client, migration);
+      await runMigration(client, migration, legacyBaseline && !force.includes(migration.filename));
     }
-    console.log(`Done — ${pending.length} migration(s) applied.`);
+    console.log(`Done - ${pending.length} migration(s) applied.`);
   } finally {
     await releaseLock(client);
     client.release();
@@ -505,14 +575,27 @@ async function runMigrations(options = {}) {
 }
 
 /**
- * Mark every migration file applied without executing any of them.
+ * Mark every migration file on disk as applied without executing any of them.
+ *
+ * Escape hatch for adopting a database whose history this runner cannot infer.
+ * Unlike the automatic legacy baseline, this adopts unconditionally.
  */
 async function baseline() {
   const client = await pool.connect();
   try {
     await acquireLock(client);
     await ensureTrackingTable(client);
-    await adoptExistingSchema(client, getMigrationFiles(), 'explicit --baseline');
+
+    const files = getMigrationFiles();
+    console.log('');
+    console.log('-'.repeat(72));
+    console.log(`Explicit --baseline: marking all ${files.length} file(s) APPLIED, running none.`);
+    console.log('-'.repeat(72));
+    for (const file of files) {
+      await markAdopted(client, file);
+      console.log(`  adopted  ${file.filename}`);
+    }
+    console.log('');
   } finally {
     await releaseLock(client);
     client.release();

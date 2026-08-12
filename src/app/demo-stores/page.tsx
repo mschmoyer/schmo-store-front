@@ -3,9 +3,9 @@ import { DemoStores } from '@/components/landing/DemoStores';
 import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
 
 export const metadata = generateLandingPageMeta({
-  title: "Demo Stores - Schmo Store Examples",
-  description: "Explore our collection of demo stores to see how different businesses use Schmo Store to showcase their products and drive sales.",
-  canonicalUrl: "https://schmostore.com/demo-stores"
+  title: "Demo Stores - RebelShops Examples",
+  description: "Explore our collection of demo stores to see how different businesses use RebelShops to showcase their products and drive sales.",
+  canonicalUrl: "https://rebelshops.com/demo-stores"
 });
 
 export default function DemoStoresPage() {
@@ -25,7 +25,7 @@ export default function DemoStoresPage() {
               size="lg"
               className="text-gray-600 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed"
             >
-              Explore our collection of demo stores to see how different businesses use Schmo Store 
+              Explore our collection of demo stores to see how different businesses use RebelShops 
               to showcase their products and drive sales. Each store demonstrates different themes, 
               layouts, and product categories.
             </Text>

@@ -168,8 +168,12 @@ const electronics = [
     slug: 'pulse-smartwatch',
     draw(defs) {
       let s = '';
-      s += pth('M 340 300 L 460 300 L 440 400 L 360 400 Z', mix(eLight, eDark, 0.5), rim(false));
-      s += pth('M 340 600 L 460 600 L 440 500 L 360 500 Z', mix(eLight, eDark, 0.5), rim(false));
+      const strapId = nid('strap');
+      defs.push(linearGrad(strapId, [[0, mix(eDark, '#000000', 0.1)], [1, T.ink950]]));
+      s += pth('M 344 296 L 456 296 L 434 388 L 366 388 Z', `url(#${strapId})`, { stroke: T.paperRaised, strokeWidth: 2, strokeOpacity: 0.14 });
+      s += pth('M 344 604 L 456 604 L 434 512 L 366 512 Z', `url(#${strapId})`, { stroke: T.paperRaised, strokeWidth: 2, strokeOpacity: 0.14 });
+      for (let hy = 316; hy < 380; hy += 16) s += line(360, hy, 440, hy, T.ink900, 2, { strokeOpacity: 0.3 });
+      for (let hy = 524; hy < 588; hy += 16) s += line(360, hy, 440, hy, T.ink900, 2, { strokeOpacity: 0.3 });
       s += box(defs, 320, 360, 160, 160, 30, eLight, eDark);
       s += rect(340, 380, 120, 120, 20, mix(eDark, '#000', 0.35));
       s += circle(468, 420, 10, eDark);
@@ -274,13 +278,15 @@ const craft = [
       let s = '';
       const id = nid('board');
       defs.push(linearGrad(id, [[0, cWoodLight], [1, cWood]]));
-      s += pth('M 250 500 Q 250 420 330 420 L 470 420 Q 550 420 550 500 L 550 540 Q 550 600 470 600 L 330 600 Q 250 600 250 540 Z',
+      // A long rectangular plank with gently rounded corners and one squared
+      // handle end -- not a capsule. rx/ry stay small relative to the board.
+      s += pth('M 236 400 L 512 400 Q 548 400 548 436 L 548 564 Q 548 600 512 600 L 236 600 Q 210 600 210 570 L 210 430 Q 210 400 236 400 Z',
         `url(#${id})`, rim(true));
-      for (let i = 0; i < 5; i++) s += line(270 + i * 60, 430, 270 + i * 60, 590, mix(cWood, '#000', 0.15), 2, { strokeOpacity: 0.22 });
-      s += circle(520, 440, 12, mix(cWood, '#000', 0.3), rim(true));
-      s += circle(520, 440, 5, mix(cWoodLight, '#000', 0.1));
-      s += glint(320, 450, 40, 14, 0.15);
-      s += signalDot(280, 570, 7, cAccent);
+      for (let i = 0; i < 7; i++) s += line(230 + i * 46, 414, 230 + i * 46, 586, mix(cWood, '#000', 0.15), 2, { strokeOpacity: 0.2 });
+      s += circle(516, 470, 13, mix(cWood, '#000', 0.35), rim(true));
+      s += circle(516, 470, 6, mix(cWoodLight, '#000', 0.05));
+      s += glint(270, 424, 90, 14, 0.14);
+      s += signalDot(240, 578, 7, cAccent);
       return s;
     },
   },
