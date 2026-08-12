@@ -1,5 +1,5 @@
+/* No ground: the page is one white ground and sections are separated by rules. */
 .root {
-  background: var(--bg);
   border-bottom: 1px solid var(--border);
   padding-block: var(--section-y);
 }
@@ -58,6 +58,11 @@
   color: var(--text-muted);
 }
 
+/*
+ * Ink, not green — matching `pricing/PlanCard`. A tick beside "A blog for your
+ * store" is not money, stock or a saving, and twenty of them on one page turned
+ * the reserved signal into decoration.
+ */
 .tick {
   display: grid;
   place-items: center;
@@ -65,8 +70,8 @@
   height: 18px;
   margin-top: 2px;
   border-radius: var(--radius-full);
-  background: var(--signal-soft);
-  color: var(--signal);
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .itemOut {

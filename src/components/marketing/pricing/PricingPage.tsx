@@ -66,9 +66,9 @@ export function PricingPage(): React.JSX.Element {
               <Button as={Link} href={ROUTES.signUp} size="lg">
                 Start for $1
               </Button>
-              <p className={styles.microcopy}>
-                No card required to start. Cancel anytime in your admin.
-              </p>
+              {/* The card carries "No card required to start" at the point of
+                  action; repeating it here just doubled the line. */}
+              <p className={styles.microcopy}>Cancel anytime in your admin.</p>
             </div>
           </div>
 

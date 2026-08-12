@@ -154,3 +154,14 @@ Then look at it: with the dev server already running on port 3000, screenshot
 e.g. `/store/demo-electronics/product/BCA-AUD-1001` — the product route resolves by SKU or DB id,
 not by slug) and confirm images load, prices/discounts render, and the one out-of-stock item per
 store shows a disabled "Out of Stock" state.
+
+## Signing in
+
+Every seeded user shares the password **`rebeldev`**. The most useful account is
+`demo@schmostore.com`, which owns **Basecamp Audio** (`/store/demo-electronics`).
+
+Previously the seed carried a bcrypt hash copied from the original `development.sql`
+whose plaintext nobody knew, so a fresh `npm run db:seed-demo` produced demo accounts
+that could not be logged into. Local setup looked complete and then dead-ended at the
+sign-in screen. If you change `PASSWORD_HASH` in `scripts/seed-demo.js`, update the
+plaintext here and in `README.md` — a hash without a documented plaintext is useless.

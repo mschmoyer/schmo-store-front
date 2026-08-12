@@ -109,40 +109,46 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sku {
+.table tbody td.sku {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text);
 }
 
-.name {
+.table tbody td.name {
   color: var(--text);
   font-weight: 500;
   white-space: normal;
 }
 
+/*
+ * Scoped through `.table tbody td` deliberately. `.table tbody td` sets the
+ * default cell colour and is more specific than a bare class, so an unscoped
+ * `.money` lost to it and the whole column rendered muted grey.
+ */
+
 /* Days-since-sale and markdown are warnings, not money. */
-.days,
-.markdown {
+.table tbody td.days,
+.table tbody td.markdown {
   color: var(--warning);
   font-variant-numeric: tabular-nums;
 }
 
 /* Recoverable cash is money. Signal green, and the only green in the table. */
-.money {
+.table tbody td.money {
   color: var(--signal);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.query {
+.table tbody td.query {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text);
 }
 
 /* Zero results is an out-of-stock-shaped fact: a gap, not a success. */
-.zero {
+.table tbody td.zero {
   color: var(--danger);
 }
 

@@ -83,7 +83,16 @@ const USERS = [
   { id: '550e8400-e29b-41d4-a716-446655440002', email: 'store.owner@example.com', first_name: 'Store', last_name: 'Owner' },
   { id: '550e8400-e29b-41d4-a716-446655440003', email: 'another.user@example.com', first_name: 'Another', last_name: 'User' },
 ];
-const PASSWORD_HASH = '$2b$10$rQkKm2rU6lzjVwjTBJEhE.TwXRQJ1L2NVPW2X3ZQJZ6E8dGZcH8bO'; // dev fixture only
+// Every seeded demo user shares this password. The plaintext is 'rebeldev',
+// documented in README.md and docs/demo-data.md.
+//
+// The previous value was a bcrypt hash carried over from the original seed
+// file whose plaintext nobody knew, so a fresh `npm run db:seed-demo`
+// produced demo accounts that could not be logged into at all — local setup
+// looked complete and then dead-ended at the sign-in screen.
+//
+// Dev fixture only. Never used outside seeded demo data.
+const PASSWORD_HASH = '$2b$10$.K2LwaD0LLZ4WS9CKxsCXek4Nqu9fr.q4PPCGF3FW9bRMNqBmFt06';
 
 // ---------------------------------------------------------------------------
 // Store / catalog data

@@ -1,5 +1,5 @@
+/* No ground: the page is one white ground and sections are separated by rules. */
 .root {
-  background: var(--bg);
   border-bottom: 1px solid var(--border);
   padding-block: var(--section-y);
 }
@@ -73,8 +73,9 @@
 }
 
 .usCol {
-  background: rgb(var(--mint-500-rgb) / 0.05);
-  border-inline: 1px solid rgb(var(--mint-500-rgb) / 0.14);
+  /* Ink rules, not a green wash — see below. */
+  background: var(--surface-2);
+  border-inline: 1px solid var(--border);
 }
 
 .totalRow th,
@@ -85,7 +86,7 @@
 }
 
 .totalRow .usCol {
-  background: rgb(var(--mint-500-rgb) / 0.1);
+  background: var(--surface-2);
 }
 
 .totalRow .rowHead {
@@ -103,6 +104,7 @@
   line-height: 1.1;
 }
 
+/* The twelve-month total is money — the only green in this table. */
 .totalUs {
   color: var(--signal);
 }
@@ -225,7 +227,7 @@
   }
 
   .usCol::before {
-    color: var(--signal);
+    color: var(--text);
   }
 
   .totalRow {

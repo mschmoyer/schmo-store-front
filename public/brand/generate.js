@@ -36,20 +36,30 @@ const BRAND = path.join(ROOT, 'public', 'brand');
 const PUBLIC = path.join(ROOT, 'public');
 
 /* ========================================================================== */
-/* 1. Palette — design-system.md §2                                            */
+/* 1. Palette — design-system.md §2 (revised 2026-08-12, "palette C")          */
 /* ========================================================================== */
+/**
+ * Near-monochrome plus one signal. The identity itself is monochrome: the mark
+ * is `ink` on light and `white` on dark, full stop. `signal` is reserved for
+ * money / stock / savings and appears in exactly one place in this file — the
+ * price on the poster — because a price is money. It is never used on the mark.
+ *
+ * The old ink/paper/ember scheme is gone. Note in particular that the ground is
+ * now pure #FFFFFF, not the warm #FBFAF8 paper: any counter or knockout left at
+ * the old value reads as a grey smudge on a white page.
+ */
 
 const C = {
-  ink950: '#08090B',
-  ink900: '#0E1014',
-  ink800: '#171A20',
-  ink700: '#22262F',
-  ink500: '#5A626F',
-  ink400: '#858D9A',
-  paper: '#FBFAF8',
-  ember: '#F94E1B',
-  ember400: '#FF6F3D',
-  mint: '#0FA871',
+  ink: '#111214',        // --text: type, primary fill, and the mark on light
+  inkSoft: '#2A2C30',    // hover / raised ink
+  white: '#FFFFFF',      // --bg, and the mark on dark
+  surface2: '#F4F4F5',   // --surface-2: subtle fill (the poster's ghost R)
+  border: '#E5E5E7',     // --border
+  borderStrong: '#D2D3D6',
+  muted: '#6B6F76',      // --text-muted
+  subtle: '#8A8E96',     // --text-subtle: meta only
+  signal: '#0F7B4A',     // --signal: money / stock / savings. Nothing else.
+  signalOnDark: '#3FBF83', // --signal-on-dark: the same role on ink
 };
 
 /* ========================================================================== */
@@ -344,7 +354,7 @@ function markSvg(id, title, colors) {
   return svg({ id, viewBox: MARK_VB, title, body: markBody(colors) });
 }
 
-/* ---- the tile (favicon / app icon): mark reversed out of an ember square -- */
+/* ---- the tile (favicon / app icon): mark reversed out of an ink square ---- */
 function tileBody({ radius, ground, fg, scale }) {
   const k = scale;
   const w = R_W * k;
@@ -356,7 +366,13 @@ function tileBody({ radius, ground, fg, scale }) {
   return bg + paint(set, { fg, accent: fg });
 }
 
-function tileSvg(id, { radius = 27, ground = C.ember, fg = C.paper, scale = 0.72 } = {}) {
+/**
+ * Tile geometry. `scale` was retuned from 0.72 to 0.78 when the tile inverted:
+ * an ink ground with a white mark needs a slightly larger, slightly bolder R to
+ * survive 16px, because the surrounding dark field optically eats a thin light
+ * stroke. Verified by rasterising at 16 / 32 / 48 and reading the pixel grid.
+ */
+function tileSvg(id, { radius = 26, ground = C.ink, fg = C.white, scale = 0.78 } = {}) {
   return svg({
     id,
     viewBox: `0 0 ${MARK_BOX} ${MARK_BOX}`,
@@ -427,48 +443,79 @@ function stackedSvg(id, { fg, accent }) {
 const OG = { w: 1200, height: 630 };
 
 /**
- * Composed once, rendered twice. Text uses a font stack rather than a single
- * family so the sharp fallback still lands on a grotesque.
+ * The poster, palette C.
+ *
+ * There is no accent colour to lean on, so the whole composition is carried by
+ * scale contrast and one structural move:
+ *
+ *   - a white page with a single, very large ink hero line (OGL.hero px) set
+ *     against a 16px mono eyebrow — a ~5x jump, which is what makes a
+ *     monochrome poster read as designed rather than as a default;
+ *   - a full-bleed ink band across the bottom holding the offer. That band is
+ *     the "one deliberate inversion at the decision point" the design system
+ *     allows for pricing, and it also gives the card a hard edge so it does not
+ *     dissolve into a light chat background when it is unfurled.
+ *
+ * A giant --surface-2 "ghost" R bleeding off the right edge was drawn and cut:
+ * at the size needed to fill the void, only the stem and the two bowl bars stay
+ * in frame and it reads as three grey rectangles, not as the monogram. The
+ * right side is now air, which is what the design system asks for anyway.
+ *
+ * The price is the one place `--signal` appears, because a price is money. On
+ * the ink band it has to be `--signal-on-dark` (8.02:1); `--signal` itself
+ * measures 1.9:1 there and would be unreadable.
+ *
+ * Text uses a font stack rather than a single family so the sharp fallback
+ * still lands on a grotesque. Layout is duplicated in src/app/opengraph-image
+ * .tsx, which renders the same composition with whatever face next/og has.
  */
+
+/** Shared with src/app/opengraph-image.tsx — keep the two in step. */
+const OGL = {
+  pad: 88,
+  markH: 46,
+  lockTop: 74,
+  eyebrow: 16,
+  eyebrowY: 210,
+  hero: 84,
+  heroY: 312,
+  heroLead: 92,
+  bandY: 470,
+  price: 46,
+  priceY: 568,
+  metaY: 538,
+  metaLead: 34,
+};
+
 function ogSvg() {
-  const pad = 82;
+  const pad = OGL.pad;
   const sans = 'Geist, Inter, &quot;Liberation Sans&quot;, Arial, Helvetica, sans-serif';
   const mono = '&quot;Geist Mono&quot;, &quot;JetBrains Mono&quot;, &quot;Liberation Mono&quot;, monospace';
+  const right = OG.w - pad;
 
   /* the lockup, top-left, at the same mark-to-word ratio as logo-horizontal */
-  const markH = 58;
-  const mk = markH / M.cap;
-  const wordK = markH / LOCK.markScale / M.cap;
-  const markSet = setText('R', { k: mk, ox: pad, oy: pad });
+  const mk = OGL.markH / M.cap;
+  const wordK = OGL.markH / LOCK.markScale / M.cap;
+  const markSet = setText('R', { k: mk, ox: pad, oy: OGL.lockTop });
   const wordSet = setText(WORD, {
     k: wordK,
     ox: pad + R_W * mk + LOCK.gap * wordK,
-    oy: pad + (markH - M.cap * wordK) / 2,
+    oy: OGL.lockTop + (OGL.markH - M.cap * wordK) / 2,
   });
-
-  /* a ghost R bleeding off the right edge — structural, not decoration. Only
-     the flap and the bowl's cut corner stay in frame; the stem runs off. */
-  const gk = 690 / M.cap;
-  const ghost = setText('R', { k: gk, ox: 900, oy: 40 });
-
-  const heroY = 300;
-  const line = 82;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${OG.w}" height="${OG.height}" viewBox="0 0 ${OG.w} ${OG.height}" role="img" aria-labelledby="og-title">
 <title id="og-title">RebelShops — your ShipStation catalog, now a storefront</title>
-<rect width="${OG.w}" height="${OG.height}" fill="${C.ink950}"/>
-<g opacity="0.62">${paint(ghost, { fg: C.ink800, accent: C.ink700 })}</g>
-<rect x="0" y="0" width="${OG.w}" height="6" fill="${C.ember}"/>
-${paint(markSet, { fg: C.paper, accent: C.ember })}
-${paint(wordSet, { fg: C.paper, accent: C.paper })}
-<text x="${pad}" y="222" font-family="${mono}" font-size="17" font-weight="500" letter-spacing="2.6" fill="${C.ember400}">FOR SHIPSTATION SELLERS</text>
-<text x="${pad}" y="${heroY}" font-family="${sans}" font-size="66" font-weight="650" letter-spacing="-2.2" fill="${C.paper}">Your ShipStation catalog,</text>
-<text x="${pad}" y="${heroY + line}" font-family="${sans}" font-size="66" font-weight="650" letter-spacing="-2.2" fill="${C.paper}">now a storefront.</text>
-<rect x="${pad}" y="452" width="256" height="58" rx="10" fill="${C.ember}"/>
-<text x="${pad + 128}" y="490" text-anchor="middle" font-family="${sans}" font-size="25" font-weight="650" letter-spacing="-0.4" fill="${C.ink950}">$1 for 3 months</text>
-<text x="${pad + 282}" y="474" font-family="${sans}" font-size="21" font-weight="450" fill="${C.ink400}">then $19.99/mo.</text>
-<text x="${pad + 282}" y="502" font-family="${sans}" font-size="21" font-weight="450" fill="${C.ink400}">No transaction fees.</text>
-<rect x="0" y="${OG.height - 1}" width="${OG.w}" height="1" fill="${C.ink800}"/>
+<rect width="${OG.w}" height="${OG.height}" fill="${C.white}"/>
+<rect x="0" y="${OGL.bandY}" width="${OG.w}" height="${OG.height - OGL.bandY}" fill="${C.ink}"/>
+${paint(markSet, { fg: C.ink, accent: C.ink })}
+${paint(wordSet, { fg: C.ink, accent: C.ink })}
+<text x="${right}" y="105" text-anchor="end" font-family="${sans}" font-size="20" font-weight="450" fill="${C.subtle}">rebelshops.com</text>
+<text x="${pad}" y="${OGL.eyebrowY}" font-family="${mono}" font-size="${OGL.eyebrow}" font-weight="500" letter-spacing="3.2" fill="${C.muted}">FOR SHIPSTATION SELLERS</text>
+<text x="${pad}" y="${OGL.heroY}" font-family="${sans}" font-size="${OGL.hero}" font-weight="650" letter-spacing="-2.9" fill="${C.ink}">Your ShipStation catalog,</text>
+<text x="${pad}" y="${OGL.heroY + OGL.heroLead}" font-family="${sans}" font-size="${OGL.hero}" font-weight="650" letter-spacing="-2.9" fill="${C.ink}">now a storefront.</text>
+<text x="${pad}" y="${OGL.priceY}" font-family="${sans}" font-size="${OGL.price}" font-weight="650" letter-spacing="-1.2" fill="${C.signalOnDark}">$1 for 3 months</text>
+<text x="${right}" y="${OGL.metaY}" text-anchor="end" font-family="${sans}" font-size="22" font-weight="450" fill="${C.subtle}">then $19.99/mo.</text>
+<text x="${right}" y="${OGL.metaY + OGL.metaLead}" text-anchor="end" font-family="${sans}" font-size="22" font-weight="450" fill="${C.subtle}">No transaction fees.</text>
 </svg>`;
 }
 
@@ -547,7 +594,7 @@ async function ogViaChromium(svgString, out) {
     .join('');
 
   const html = `<!doctype html><meta charset="utf-8"><style>${faces}
-    html,body{margin:0;padding:0;background:${C.ink950}}
+    html,body{margin:0;padding:0;background:${C.white}}
     svg{display:block}</style>${svgString}`;
 
   const launch = { args: ['--no-sandbox', '--font-render-hinting=none'] };
@@ -588,75 +635,65 @@ async function main() {
   };
 
   /* --- SVG --- */
-  put(BRAND, 'mark.svg', markSvg('rs-mark', 'RebelShops', { fg: C.ink900, accent: C.ember }));
-  put(
-    BRAND,
-    'mark-inverse.svg',
-    markSvg('rs-mark-inv', 'RebelShops', { fg: C.paper, accent: C.ember })
-  );
-  put(
-    BRAND,
-    'mark-mono.svg',
-    markSvg('rs-mark-mono', 'RebelShops', { fg: 'currentColor', accent: 'currentColor' })
-  );
+  /* The mark is monochrome. `accent` (the flap) is always the foreground: the
+     identity carries no second colour, and --signal is for money only. */
+  const onLight = { fg: C.ink, accent: C.ink };
+  const onDark = { fg: C.white, accent: C.white };
+  const asMono = { fg: 'currentColor', accent: 'currentColor' };
 
-  put(BRAND, 'wordmark.svg', wordmarkSvg('rs-word', C.ink900));
-  put(BRAND, 'wordmark-inverse.svg', wordmarkSvg('rs-word-inv', C.paper));
+  put(BRAND, 'mark.svg', markSvg('rs-mark', 'RebelShops', onLight));
+  put(BRAND, 'mark-inverse.svg', markSvg('rs-mark-inv', 'RebelShops', onDark));
+  put(BRAND, 'mark-mono.svg', markSvg('rs-mark-mono', 'RebelShops', asMono));
+
+  put(BRAND, 'wordmark.svg', wordmarkSvg('rs-word', C.ink));
+  put(BRAND, 'wordmark-inverse.svg', wordmarkSvg('rs-word-inv', C.white));
   put(BRAND, 'wordmark-mono.svg', wordmarkSvg('rs-word-mono', 'currentColor'));
 
-  put(
-    BRAND,
-    'logo-horizontal.svg',
-    horizontalSvg('rs-lh', { fg: C.ink900, accent: C.ember })
-  );
-  put(
-    BRAND,
-    'logo-horizontal-inverse.svg',
-    horizontalSvg('rs-lh-inv', { fg: C.paper, accent: C.ember })
-  );
-  put(
-    BRAND,
-    'logo-horizontal-mono.svg',
-    horizontalSvg('rs-lh-mono', { fg: 'currentColor', accent: 'currentColor' })
-  );
-  put(BRAND, 'logo-stacked.svg', stackedSvg('rs-ls', { fg: C.ink900, accent: C.ember }));
-  put(
-    BRAND,
-    'logo-stacked-inverse.svg',
-    stackedSvg('rs-ls-inv', { fg: C.paper, accent: C.ember })
-  );
-  put(
-    BRAND,
-    'logo-stacked-mono.svg',
-    stackedSvg('rs-ls-mono', { fg: 'currentColor', accent: 'currentColor' })
-  );
+  put(BRAND, 'logo-horizontal.svg', horizontalSvg('rs-lh', onLight));
+  put(BRAND, 'logo-horizontal-inverse.svg', horizontalSvg('rs-lh-inv', onDark));
+  put(BRAND, 'logo-horizontal-mono.svg', horizontalSvg('rs-lh-mono', asMono));
+  put(BRAND, 'logo-stacked.svg', stackedSvg('rs-ls', onLight));
+  put(BRAND, 'logo-stacked-inverse.svg', stackedSvg('rs-ls-inv', onDark));
+  put(BRAND, 'logo-stacked-mono.svg', stackedSvg('rs-ls-mono', asMono));
 
   /* --- raster --- */
   const tileRounded = tileSvg('rs-tile');
   const tileSquare = tileSvg('rs-tile-sq', { radius: 0 });
-  put(PUBLIC, 'icon.svg', tileSvg('rs-icon'));
+  put(BRAND, 'icon.svg', tileSvg('rs-icon'));
 
   await png(tileRounded, 512, path.join(BRAND, 'icon-512.png'));
   await png(tileRounded, 192, path.join(BRAND, 'icon-192.png'));
   await png(tileSquare, 180, path.join(BRAND, 'apple-touch-icon.png'));
-  await png(tileSquare, 180, path.join(PUBLIC, 'apple-icon.png'));
   written.push(
     'public/brand/icon-512.png',
     'public/brand/icon-192.png',
-    'public/brand/apple-touch-icon.png',
-    'public/apple-icon.png'
+    'public/brand/apple-touch-icon.png'
   );
 
   await ico(tileRounded, [16, 32, 48], path.join(PUBLIC, 'favicon.ico'));
   written.push('public/favicon.ico');
 
   /* logo.png — horizontal lockup, ink, transparent ground, 1200 wide */
-  const lh = horizontalSvg('rs-lh', { fg: C.ink900, accent: C.ember });
+  const lh = horizontalSvg('rs-lh', onLight);
   const lhMeta = await sharp(Buffer.from(lh), { density: DENSITY }).metadata();
-  await png(lh, 1200, path.join(PUBLIC, 'logo.png'), {
+  await png(lh, 1200, path.join(BRAND, 'logo-horizontal.png'), {
     height: Math.round((1200 * lhMeta.height) / lhMeta.width),
   });
-  written.push('public/logo.png');
+  written.push('public/brand/logo-horizontal.png');
+
+  /* Legacy duplicates at the root of public/ (icon.svg, apple-icon.png,
+     logo.png). Nothing in src/ references them and src/app/icon.tsx and
+     src/app/apple-icon.tsx supersede them, so they are not rewritten by
+     default. `BRAND_ROOT=1 node public/brand/generate.js` refreshes them for
+     as long as they still exist. */
+  if (process.env.BRAND_ROOT === '1') {
+    put(PUBLIC, 'icon.svg', tileSvg('rs-icon'));
+    await png(tileSquare, 180, path.join(PUBLIC, 'apple-icon.png'));
+    await png(lh, 1200, path.join(PUBLIC, 'logo.png'), {
+      height: Math.round((1200 * lhMeta.height) / lhMeta.width),
+    });
+    written.push('public/apple-icon.png', 'public/logo.png');
+  }
 
   /* --- the poster --- */
   const poster = ogSvg();
