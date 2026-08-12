@@ -1063,16 +1063,19 @@ export default function ProductsAdminPage() {
           </Text>
           
           <Group>
-            <Button 
-              variant="light" 
-              color="green"
+            {/* These carried color="green" and color="yellow". Listing a
+                product is not a success state and unlisting one is not a
+                warning — they are two ordinary bulk actions, and §2 keeps
+                green for money, stock and success. Only the destructive
+                action stays red. */}
+            <Button
+              variant="default"
               onClick={() => handleBulkAction('list')}
             >
               List Products
             </Button>
-            <Button 
-              variant="light" 
-              color="yellow"
+            <Button
+              variant="default"
               onClick={() => handleBulkAction('unlist')}
             >
               Unlist Products

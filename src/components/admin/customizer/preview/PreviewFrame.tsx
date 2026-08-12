@@ -12,9 +12,22 @@
  * 2. **Updates are pushed, not reloaded.** `theme:update` makes the iframe
  *    rewrite its custom-property block — a repaint. The customizer never calls
  *    `location.reload()` on it for a theme change.
- * 3. **The viewport switcher resizes the element**, in real CSS pixels, rather
- *    than scaling it with a transform, so the storefront's own media queries
- *    fire exactly as they will for a visitor.
+ * 3. **The viewport switcher gives the iframe the real device width**, then
+ *    scales the whole element down to fit whatever canvas is left over. The
+ *    iframe's *layout* viewport is still 1280 (or 834, or 390) CSS pixels, so
+ *    the storefront's media queries fire exactly as they will for a visitor —
+ *    a `transform` changes how big the result looks, not what the page thinks
+ *    it is being rendered into.
+ *
+ *    This is the one thing worth explaining, because the obvious alternative is
+ *    what used to be here: sizing the element to the available space and
+ *    calling that "Desktop". At a 1440 window, with a 232 px admin sidebar and
+ *    a 360 px rail, "Desktop" was a **738 px** frame — narrow enough that the
+ *    storefront collapsed to a hamburger. Tablet, clamped by `max-width: 100%`,
+ *    measured the same 738 px, so the two buttons rendered identically. A
+ *    merchant designing in "Desktop" had never seen their own navigation. A
+ *    scaled-down 1280 is smaller than life; a 738 px frame labelled "Desktop"
+ *    is wrong, and wrong is worse.
  *
  * `event.origin` is validated on every inbound message before anything in it is
  * read, and every outbound message is addressed to our own origin explicitly
@@ -36,13 +49,23 @@ import styles from '../Customizer.module.css';
 
 export type ViewportId = 'desktop' | 'tablet' | 'mobile';
 
-/** Real device widths. The iframe is set to these, not scaled to them. */
-export const VIEWPORTS: Record<ViewportId, { label: string; width: number | null; height: number | null }> =
-  {
-    desktop: { label: 'Desktop', width: null, height: null },
-    tablet: { label: 'Tablet', width: 834, height: 1112 },
-    mobile: { label: 'Mobile', width: 390, height: 844 },
-  };
+/**
+ * Real device widths. The iframe is always given exactly these CSS pixels; when
+ * the canvas is narrower, the whole element is scaled down to fit rather than
+ * being squeezed into a smaller — and therefore differently laid out — width.
+ *
+ * `height: null` means "as tall as the canvas allows", which is right for
+ * desktop: a desktop browser window has no fixed height, and pretending it does
+ * would just add a meaningless scroll boundary.
+ */
+export const VIEWPORTS: Record<
+  ViewportId,
+  { label: string; width: number; height: number | null }
+> = {
+  desktop: { label: 'Desktop', width: 1280, height: null },
+  tablet: { label: 'Tablet', width: 834, height: 1112 },
+  mobile: { label: 'Mobile', width: 390, height: 844 },
+};
 
 export interface PreviewFrameProps {
   /** `/store/{slug}?preview={token}`. Read once; later changes are ignored. */
@@ -149,48 +172,89 @@ export function PreviewFrame({
     post(sectionsUpdateMessage(sections));
   }, [sections, ready, post]);
 
+  /* ---- Fitting the device width into the canvas ------------------------ */
+
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  const [available, setAvailable] = React.useState<{ width: number; height: number } | null>(null);
+
+  React.useEffect(() => {
+    const element = wrapRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box) setAvailable({ width: box.width, height: box.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const size = VIEWPORTS[viewport];
+  // Never scale *up*: a 390 px phone shown at 3× would be a lie in the other
+  // direction, and the merchant would be judging type sizes that do not exist.
+  const scale = available && available.width > 0 ? Math.min(1, available.width / size.width) : 1;
+  const frameHeight =
+    size.height ?? (available && available.height > 0 ? Math.round(available.height / scale) : 900);
+  const percent = Math.round(scale * 100);
 
   return (
     <div className={styles.canvas}>
-      <div className={styles.frameWrap}>
+      <div className={styles.frameWrap} ref={wrapRef}>
         <div
-          className={styles.frameShell}
-          style={{
-            width: size.width ? `${size.width}px` : '100%',
-            height: size.height ? `min(${size.height}px, 100%)` : '100%',
-            maxWidth: '100%',
-          }}
+          className={styles.frameScaler}
+          style={{ width: size.width * scale, height: frameHeight * scale }}
         >
-          {!ready ? (
-            <div className={styles.frameOverlay}>
-              <Spinner size="md" />
-              <span>Loading your storefront…</span>
-            </div>
-          ) : null}
-
-          <iframe
-            ref={frameRef}
-            className={styles.frame}
-            src={initialSrc.current}
-            title="Storefront preview"
-            // The preview must run same-origin: the protocol is postMessage
-            // between two windows of this app, and the token in the URL is what
-            // authorises the draft.
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-          />
-
-          {handshakeTimedOut && !ready ? (
-            <div className={styles.frameNotice} role="status">
-              <IconAlertTriangle size={15} aria-hidden="true" style={{ flex: 'none', marginTop: 1 }} />
-              <span>
-                The storefront has not answered the preview handshake. Your changes are still being
-                saved to the draft — the preview will catch up once the renderer is available.
-              </span>
-            </div>
-          ) : null}
+          <div
+            className={styles.frameShell}
+            style={{
+              width: `${size.width}px`,
+              height: `${frameHeight}px`,
+              transform: scale === 1 ? undefined : `scale(${scale})`,
+            }}
+            data-viewport={viewport}
+            data-viewport-width={size.width}
+            data-viewport-scale={scale}
+          >
+            <iframe
+              ref={frameRef}
+              className={styles.frame}
+              src={initialSrc.current}
+              title="Storefront preview"
+              // The preview must run same-origin: the protocol is postMessage
+              // between two windows of this app, and the token in the URL is what
+              // authorises the draft.
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+            />
+          </div>
         </div>
+
+        {/* Overlay and notice sit outside the scaled box so their own type
+            stays at full size however far the storefront is zoomed out. */}
+        {!ready ? (
+          <div className={styles.frameOverlay}>
+            <Spinner size="md" />
+            <span>Loading your storefront…</span>
+          </div>
+        ) : null}
+
+        {handshakeTimedOut && !ready ? (
+          <div className={styles.frameNotice} role="status">
+            <IconAlertTriangle size={15} aria-hidden="true" style={{ flex: 'none', marginTop: 1 }} />
+            <span>
+              The storefront has not answered the preview handshake. Your changes are still being
+              saved to the draft — the preview will catch up once the renderer is available.
+            </span>
+          </div>
+        ) : null}
       </div>
+
+      {/* Say what is actually being rendered. A preview that is 57% of life
+          size is fine; a preview that quietly is not the width it claims is
+          how a merchant ends up designing for a breakpoint that does not
+          exist. */}
+      <p className={styles.viewportBadge} aria-live="polite" data-testid="viewport-badge">
+        {size.label} · {size.width}px wide
+        {percent < 100 ? <span> · shown at {percent}% to fit</span> : null}
+      </p>
     </div>
   );
 }

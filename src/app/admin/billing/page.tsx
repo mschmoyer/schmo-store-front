@@ -13,6 +13,7 @@
 
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 
 /** Copy describing the intro offer, computed server-side. */
 interface OfferSummary {
@@ -423,33 +424,14 @@ function BillingContent(): React.ReactElement {
   const subscription = billing?.subscription ?? null;
 
   return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: 24, background: TOKENS.paper }}>
-      <header style={{ marginBottom: 24 }}>
-        <p
-          style={{
-            fontSize: '0.75rem',
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            fontWeight: 600,
-            color: TOKENS.ink500,
-            margin: 0,
-          }}
-        >
-          Account
-        </p>
-        <h1
-          style={{
-            fontFamily: TOKENS.display,
-            fontSize: 'clamp(2.25rem, 4vw, 3.25rem)',
-            lineHeight: 1.08,
-            letterSpacing: '-0.025em',
-            color: TOKENS.ink900,
-            margin: '4px 0 0',
-          }}
-        >
-          Billing
-        </h1>
-      </header>
+    /* `padding: 0` — the admin shell already pads to 24px (§4). This page used
+       to add its own 24 on top, so Billing's content sat 48px in while every
+       other route sat at 24. */
+    <main style={{ maxWidth: 900, margin: '0 auto', background: TOKENS.paper }}>
+      <AdminPageHeader
+        title="Billing"
+        description="Your RebelShops subscription and the Stripe account your shoppers pay into."
+      />
 
       {checkoutFlag === 'success' ? (
         <div
@@ -589,7 +571,7 @@ function BillingContent(): React.ReactElement {
                 style={{
                   fontFamily: TOKENS.display,
                   fontVariantNumeric: 'tabular-nums',
-                  fontSize: 'clamp(2.25rem, 4vw, 3.25rem)',
+                  fontSize: '2.25rem',
                   letterSpacing: '-0.025em',
                   color: TOKENS.ink900,
                 }}

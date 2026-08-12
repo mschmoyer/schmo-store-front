@@ -20,6 +20,15 @@ export interface ImportProgress {
   status: ImportStatus;
   /** Products ShipStation has told us about so far. Real count, not a guess. */
   found: number;
+  /**
+   * Size of the whole catalog, straight out of ShipStation's list envelope
+   * (`total`, or `pages × page_size` when only a page count is returned).
+   *
+   * `null` means ShipStation did not tell us, and the UI must then show an
+   * indeterminate bar. It must never fall back to `found`, which only counts
+   * pages already read and would therefore report 100% from page one.
+   */
+  total: number | null;
   /** Products written into `products`. Real count. */
   imported: number;
   /** Products we read but could not write. */
@@ -102,6 +111,7 @@ export const ANONYMOUS_STATE: OnboardingState = {
   importProgress: {
     status: 'idle',
     found: 0,
+    total: null,
     imported: 0,
     failed: 0,
     skus: 0,

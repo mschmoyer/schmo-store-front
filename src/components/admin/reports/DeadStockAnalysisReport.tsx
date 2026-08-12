@@ -489,7 +489,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   {stats.total_dead_stock_items}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="red">
+              <ThemeIcon size="lg" variant="light">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -521,7 +521,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   ${stats.total_carrying_cost.toLocaleString()}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="orange">
+              <ThemeIcon size="lg" variant="light">
                 <IconTrendingDown size={20} />
               </ThemeIcon>
             </Group>
@@ -553,7 +553,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   {stats.highest_risk_items}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="red">
+              <ThemeIcon size="lg" variant="light">
                 <IconAlertTriangle size={20} />
               </ThemeIcon>
             </Group>
@@ -569,7 +569,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   ${stats.potential_recovery_value.toLocaleString()}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="green">
+              <ThemeIcon size="lg" variant="light">
                 <IconTag size={20} />
               </ThemeIcon>
             </Group>

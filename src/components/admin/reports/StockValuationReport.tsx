@@ -538,7 +538,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                     value={data.summary.total_cost_value} 
                     prefix="$" 
                     thousandSeparator 
-                    decimalScale={0}
+                    decimalScale={2}
+                    fixedDecimalScale
                   />
                 </Text>
                 {data.period_comparison && (
@@ -550,7 +551,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   </Group>
                 )}
               </Box>
-              <ThemeIcon size="lg" variant="light" color="red">
+              <ThemeIcon size="lg" variant="light">
                 <IconCurrencyDollar size={20} />
               </ThemeIcon>
             </Group>
@@ -567,7 +568,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                     value={data.summary.total_retail_value} 
                     prefix="$" 
                     thousandSeparator 
-                    decimalScale={0}
+                    decimalScale={2}
+                    fixedDecimalScale
                   />
                 </Text>
                 {data.period_comparison && (
@@ -579,7 +581,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   </Group>
                 )}
               </Box>
-              <ThemeIcon size="lg" variant="light" color="green">
+              <ThemeIcon size="lg" variant="light">
                 <IconCurrencyDollar size={20} />
               </ThemeIcon>
             </Group>
@@ -596,7 +598,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                     value={data.summary.total_potential_profit} 
                     prefix="$" 
                     thousandSeparator 
-                    decimalScale={0}
+                    decimalScale={2}
+                    fixedDecimalScale
                   />
                 </Text>
               </Box>
@@ -660,7 +663,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   {data.summary.total_products}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="orange">
+              <ThemeIcon size="lg" variant="light">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -744,7 +747,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                                 value={item.cost_value} 
                                 prefix="$" 
                                 thousandSeparator 
-                                decimalScale={0}
+                                decimalScale={2}
+                                fixedDecimalScale
                               />
                             </Text>
                           </Table.Td>
@@ -846,7 +850,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                             value={product.total_cost_value} 
                             prefix="$" 
                             thousandSeparator 
-                            decimalScale={0}
+                            decimalScale={2}
+                            fixedDecimalScale
                           />
                         </Text>
                       </Table.Td>
@@ -856,7 +861,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                             value={product.total_retail_value} 
                             prefix="$" 
                             thousandSeparator 
-                            decimalScale={0}
+                            decimalScale={2}
+                            fixedDecimalScale
                           />
                         </Text>
                       </Table.Td>
@@ -899,7 +905,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.current_period.total_cost_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -910,7 +917,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.current_period.total_retail_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -943,7 +951,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.previous_period.total_cost_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -954,7 +963,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.previous_period.total_retail_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>

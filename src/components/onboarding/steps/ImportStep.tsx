@@ -128,8 +128,22 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
   const isRunning = running || progress.status === 'running';
   const finished = progress.status === 'complete' || progress.status === 'partial';
   const failed = progress.status === 'failed';
-  const percent =
-    progress.found > 0 ? Math.min(100, Math.round((progress.imported / progress.found) * 100)) : 0;
+
+  /*
+   * The denominator is the size of the *catalog*, not the size of what we have
+   * already read. Dividing by `found` was the old bug: after page one of a
+   * 5,000-product import, `found` and `imported` were both 100, so the bar read
+   * 100% and then sat there for another forty-nine pages.
+   *
+   * When ShipStation does not send a count there is no honest percentage, so
+   * the bar goes indeterminate rather than inventing one.
+   */
+  const total = progress.total;
+  const determinate = total !== null && total > 0;
+  const percent = determinate
+    ? Math.min(100, Math.round(((progress.imported + progress.failed) / total) * 100))
+    : 0;
+  const indeterminate = !determinate && !finished && !failed && (isRunning || progress.found > 0);
 
   const primaryLabel = finished
     ? 'Continue'
@@ -182,7 +196,9 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
         <div className={styles.progressHead}>
           <p className={styles.progressTitle}>
             {isRunning
-              ? `Syncing your catalog. ${progress.found} products so far.`
+              ? determinate
+                ? `Syncing your catalog. ${progress.imported} of ${total} products in.`
+                : `Syncing your catalog. ${progress.found} products so far.`
               : finished
                 ? 'Catalog imported'
                 : failed
@@ -190,7 +206,7 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
                   : 'Ready when you are'}
           </p>
           <span className={styles.progressCount}>
-            {progress.imported}/{progress.found || '—'}
+            {progress.imported}/{determinate ? total : progress.found || '—'}
           </span>
         </div>
 
@@ -199,23 +215,35 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={isRunning && progress.found === 0 ? undefined : percent}
+          aria-valuenow={indeterminate || (!determinate && !finished) ? undefined : finished ? 100 : percent}
           aria-label="Catalog import progress"
+          data-testid="import-progress"
         >
           <div
             className={styles.progressFill}
-            data-indeterminate={isRunning && progress.found === 0}
+            data-indeterminate={indeterminate || undefined}
             data-tone={finished ? 'success' : failed ? 'danger' : undefined}
             style={
-              isRunning && progress.found === 0 ? undefined : { width: `${finished ? 100 : percent}%` }
+              indeterminate ? undefined : { width: `${finished ? 100 : determinate ? percent : 0}%` }
             }
           />
         </div>
 
+        {isRunning && !determinate ? (
+          <p className={styles.inlineNote}>
+            ShipStation has not told us how big your catalog is, so there is no honest percentage to
+            show. The counts below are real and keep climbing until every page is read.
+          </p>
+        ) : null}
+
         <div className={styles.stats}>
           <div className={styles.stat}>
-            <span className={styles.statValue}>{progress.found}</span>
-            <span className={styles.statLabel}>Products found</span>
+            <span className={styles.statValue}>
+              {determinate ? total : progress.found}
+            </span>
+            <span className={styles.statLabel}>
+              {determinate ? 'Products in ShipStation' : 'Products found'}
+            </span>
           </div>
           <div className={styles.stat}>
             <span className={styles.statValue}>{progress.imported}</span>
@@ -233,8 +261,9 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
       </div>
 
       <p className={styles.inlineNote}>
-        You can close this tab. The sync keeps its place, and coming back picks up from the same
-        page rather than starting over.
+        Keep this tab open while the sync runs — it is driven from here. Closing it loses nothing:
+        the cursor is stored server-side, so coming back resumes from the same page rather than
+        starting over. It just will not carry on while you are away.
       </p>
     </StepPanel>
   );

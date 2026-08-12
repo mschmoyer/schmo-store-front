@@ -1,9 +1,6 @@
-import { Suspense } from 'react';
-
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import { SectionList } from '@/components/store/sections';
 import { EmptyCatalogue } from '@/components/store/states/EmptyStates';
-import { HeroSkeleton, ProductGridSkeleton } from '@/components/store/states/Skeletons';
 import { StoreBand, StoreContainer } from '@/components/store/ui';
 
 import { loadStorefront, type SearchParams } from '../_lib/load';
@@ -55,23 +52,23 @@ export default async function StoreHomePage({ params, searchParams }: StorePageP
           </StoreContainer>
         </StoreBand>
       ) : (
-        // Sections each hit the catalogue, so they stream in behind a skeleton
-        // while the themed chrome paints immediately. The boundary lives here
-        // rather than in a segment `loading.tsx`, which would also wrap the
-        // product route and turn its `notFound()` into a soft 404.
-        <Suspense
-          fallback={
-            <StoreBand>
-              <StoreContainer>
-                <HeroSkeleton />
-                <div style={{ height: 'var(--st-space-9)' }} />
-                <ProductGridSkeleton count={8} />
-              </StoreContainer>
-            </StoreBand>
-          }
-        >
-          <SectionList sections={sections} ctx={{ store, theme, categories, isPreview }} />
-        </Suspense>
+        // Rendered inline, with no Suspense boundary.
+        //
+        // The boundary that used to be here bought a fast first paint at a
+        // price nobody had measured: React streams the contents of a suspended
+        // subtree into `<div hidden>` and un-hides it with an inline script, so
+        // with JavaScript disabled this page was a header, a footer, and 28,814
+        // characters of shop parked in a hidden div — an empty storefront for a
+        // failed bundle, a text-mode client, or a crawler that does not run JS.
+        // It also cost 0.3077 CLS, because the fallback was a hero skeleton and
+        // eight cards while the real page is a merchant-composed section list of
+        // entirely different geometry; there is no skeleton that can match a
+        // shape the customizer decides.
+        //
+        // The sections do query the catalogue, so this delays the first byte
+        // rather than the first section. A shop that renders is worth more than
+        // a shop that renders sooner.
+        <SectionList sections={sections} ctx={{ store, theme, categories, isPreview }} />
       )}
     </StorefrontShell>
   );

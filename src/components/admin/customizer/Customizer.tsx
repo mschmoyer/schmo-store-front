@@ -494,6 +494,7 @@ export function Customizer({ fontScopeClassName }: CustomizerProps): React.React
             findings={findings}
             onApplyFix={onApplyFix}
             fontScopeClassName={fontScopeClassName}
+            onReloadPreview={() => setReloadToken((n) => n + 1)}
           />
 
           {previewSrc ? (
@@ -525,6 +526,7 @@ export function Customizer({ fontScopeClassName }: CustomizerProps): React.React
         publishing={publishing}
         changes={changes}
         blocking={hasBlockingFinding(findings) ? findings.filter((f) => f.level === 'fail') : []}
+        warnings={findings.filter((finding) => finding.level === 'warn')}
         onGoToFinding={goToFinding}
       />
 

@@ -17,8 +17,6 @@ import {
   NumberInput,
   Textarea,
   Tabs,
-  Loader,
-  Center,
   Collapse,
   Divider,
   Avatar,
@@ -42,7 +40,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
-import { EmptyState, Price } from '@/components/ui';
+import { EmptyState, Price, SkeletonText } from '@/components/ui';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
 import table from '@/components/admin/adminTable.module.css';
 
@@ -906,9 +904,7 @@ export default function CouponsManagementPage() {
                       <ScrollArea h={200} type="auto">
                         <Stack gap="xs">
                           {loadingProducts ? (
-                            <Center py="md">
-                              <Loader size="sm" />
-                            </Center>
+                            <SkeletonText lines={5} lineHeight={16} />
                           ) : (
                             products.map((product) => (
                               <Group key={product.id} justify="space-between" p="xs" style={{ border: '1px solid var(--border)', borderRadius: '4px' }}>
@@ -950,9 +946,7 @@ export default function CouponsManagementPage() {
                     <ScrollArea h={200} type="auto">
                       <Stack gap="xs">
                         {loadingCategories ? (
-                          <Center py="md">
-                            <Loader size="sm" />
-                          </Center>
+                          <SkeletonText lines={4} lineHeight={16} />
                         ) : (
                           categories.map((category) => (
                             <Group key={category.id} justify="space-between" p="xs" style={{ border: '1px solid var(--border)', borderRadius: '4px' }}>

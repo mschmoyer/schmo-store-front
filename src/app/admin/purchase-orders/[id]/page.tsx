@@ -40,6 +40,7 @@ import {
 } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import table from '@/components/admin/adminTable.module.css';
 
 // Types
 export type PurchaseOrderStatus = 'pending' | 'approved' | 'shipped' | 'delivered' | 'cancelled';
@@ -723,10 +724,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Product</Table.Th>
-              <Table.Th>Quantity</Table.Th>
-              <Table.Th>Unit Cost</Table.Th>
-              <Table.Th>Total</Table.Th>
-              <Table.Th>Received</Table.Th>
+              <Table.Th className={table.numeric}>Quantity</Table.Th>
+              <Table.Th className={table.numeric}>Unit cost</Table.Th>
+              <Table.Th className={table.numeric}>Total</Table.Th>
+              <Table.Th className={table.numeric}>Received</Table.Th>
               <Table.Th>Progress</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -736,29 +737,26 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                 <Table.Td>
                   <Stack gap="xs">
                     <Text fw={500}>{item.product_name}</Text>
-                    <Text size="sm" c="dimmed" ff="monospace">
-                      SKU: {item.product_sku}
-                    </Text>
+                    <Text component="span" className={table.code}>{item.product_sku}</Text>
                   </Stack>
                 </Table.Td>
                 
-                <Table.Td>
+                <Table.Td className={table.numeric}>
                   <Text fw={500}>{item.quantity}</Text>
                 </Table.Td>
                 
-                <Table.Td>
+                <Table.Td className={table.numeric}>
                   <Text>{formatCurrency(item.unit_cost)}</Text>
                 </Table.Td>
                 
-                <Table.Td>
+                <Table.Td className={table.numeric}>
                   <Text fw={500}>{formatCurrency(item.total_cost)}</Text>
                 </Table.Td>
                 
-                <Table.Td>
-                  <Badge
-                    color={item.received_quantity === item.quantity ? 'green' : 'yellow'}
-                    variant="light"
-                  >
+                <Table.Td className={table.numeric}>
+                  {/* Fully received is a success (§2 permits the signal);
+                      partially received is not a warning, it is just progress. */}
+                  <Badge color={item.received_quantity === item.quantity ? 'green' : 'gray'}>
                     {item.received_quantity}/{item.quantity}
                   </Badge>
                 </Table.Td>
@@ -767,7 +765,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                   <Stack gap="xs">
                     <Progress
                       value={getReceivingProgress(item)}
-                      color={item.received_quantity === item.quantity ? 'green' : 'blue'}
+                      color={item.received_quantity === item.quantity ? 'green' : 'ink'}
                       size="sm"
                     />
                     <Text size="xs" c="dimmed">
@@ -846,9 +844,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Product</Table.Th>
-                <Table.Th>Ordered</Table.Th>
-                <Table.Th>Already Received</Table.Th>
-                <Table.Th>Receive Now</Table.Th>
+                <Table.Th className={table.numeric}>Ordered</Table.Th>
+                <Table.Th className={table.numeric}>Already received</Table.Th>
+                <Table.Th className={table.numeric}>Receive now</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -857,17 +855,15 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                   <Table.Td>
                     <Stack gap="xs">
                       <Text fw={500} size="sm">{item.product_name}</Text>
-                      <Text size="xs" c="dimmed" ff="monospace">
-                        SKU: {item.product_sku}
-                      </Text>
+                      <Text component="span" className={table.code}>{item.product_sku}</Text>
                     </Stack>
                   </Table.Td>
                   
-                  <Table.Td>
+                  <Table.Td className={table.numeric}>
                     <Text fw={500}>{item.quantity}</Text>
                   </Table.Td>
                   
-                  <Table.Td>
+                  <Table.Td className={table.numeric}>
                     <Text>{item.received_quantity}</Text>
                   </Table.Td>
                   

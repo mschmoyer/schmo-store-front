@@ -447,9 +447,9 @@ export default function InventoryPage() {
 
   const getStockStatusIcon = (status: string) => {
     switch (status) {
-      case 'out_of_stock': return <IconX size="1rem" color="red" />;
-      case 'low_stock': return <IconExclamationMark size="1rem" color="orange" />;
-      case 'discontinued': return <IconX size="1rem" color="gray" />;
+      case 'out_of_stock': return <IconX size="1rem" color="var(--danger-text)" />;
+      case 'low_stock': return <IconExclamationMark size="1rem" color="var(--warning-text)" />;
+      case 'discontinued': return <IconX size="1rem" color="var(--text-quaternary)" />;
       default: return null;
     }
   };
@@ -827,7 +827,6 @@ export default function InventoryPage() {
                             <ActionIcon 
                               size="sm" 
                               variant="subtle"
-                              color="green"
                               onClick={() => handleReceivePO(order)}
                             >
                               <IconTruckDelivery size="1rem" />

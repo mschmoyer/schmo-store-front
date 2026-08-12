@@ -14,9 +14,9 @@
  */
 
 import * as React from 'react';
-import { IconAlertTriangle, IconShieldCheck } from '@tabler/icons-react';
+import { IconAlertTriangle, IconRefresh, IconShieldCheck } from '@tabler/icons-react';
 
-import { Textarea } from '@/components/ui';
+import { Button, Textarea } from '@/components/ui';
 import {
   MAX_CUSTOM_CSS_LENGTH,
   sanitizeCustomCss,
@@ -35,6 +35,15 @@ export interface CustomCssPanelProps {
   onChange: (css: string) => void;
   /** Scopes the sanitizer preview exactly as the storefront will. */
   storeId: string;
+  /**
+   * Force one reload of the preview iframe.
+   *
+   * Theme tokens repaint over `postMessage` without a reload, but custom CSS
+   * is appended *past* the sentinel the repaint rewrites up to, so it is only
+   * ever rendered server-side. Rather than let the merchant believe their CSS
+   * was rejected, the panel says so and offers the reload.
+   */
+  onReloadPreview?: () => void;
 }
 
 /**
@@ -46,6 +55,7 @@ export function CustomCssPanel({
   value,
   onChange,
   storeId,
+  onReloadPreview,
 }: CustomCssPanelProps): React.ReactElement {
   const result = React.useMemo(
     () => sanitizeCustomCss(value, storefrontScope(storeId)),
@@ -55,6 +65,16 @@ export function CustomCssPanel({
   const length = value.length;
   const over = length > MAX_CUSTOM_CSS_LENGTH;
   const warnings = result.warnings;
+
+  // The CSS the preview is currently rendering — set when the panel mounts and
+  // again on every reload. Anything typed since then is saved but not shown.
+  const [previewedCss, setPreviewedCss] = React.useState(value);
+  const stale = value.trim() !== previewedCss.trim();
+
+  const reload = (): void => {
+    setPreviewedCss(value);
+    onReloadPreview?.();
+  };
 
   return (
     <div className={styles.railGroup}>
@@ -73,6 +93,26 @@ export function CustomCssPanel({
         error={over ? `Over the ${MAX_CUSTOM_CSS_LENGTH.toLocaleString()} character limit` : undefined}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
+
+      {stale && onReloadPreview ? (
+        <div
+          className={`${controlStyles.finding} ${controlStyles.findingAdjusted}`}
+          role="status"
+          data-testid="custom-css-stale"
+        >
+          <IconRefresh size={15} className={controlStyles.findingIcon} aria-hidden="true" />
+          <div className={controlStyles.findingBody}>
+            <span className={controlStyles.findingTitle}>The preview is not showing this yet</span>
+            <span>
+              Colours and fonts repaint instantly, but custom CSS is rendered with the page, so the
+              preview has to reload to pick it up. Your CSS is saved either way.
+            </span>
+            <Button variant="secondary" size="sm" onClick={reload} style={{ alignSelf: 'start' }}>
+              Reload the preview
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <div className={controlStyles.fieldRow}>
         <span className={controlStyles.help}>

@@ -57,6 +57,16 @@ export async function generateMetadata({
  * address and the back button moves through them correctly. Nothing here is
  * client-only state.
  *
+ * **There is deliberately no `loading.tsx` for this segment.** One used to
+ * exist and it was worse than nothing twice over: it rendered
+ * `ProductGridSkeleton` *outside* `StorefrontShell`, so there was no token
+ * block, no header and no footer — twelve pale tiles on a pure-white page,
+ * flashed in the middle of a merchant's black shop on every navigation — and
+ * because a route-level fallback makes Next stream the real markup into a
+ * `<div hidden>`, this page measured **zero** visible characters with
+ * JavaScript disabled. Without it the navigation simply waits for a
+ * server-rendered, fully themed page.
+ *
  * @param props - Route and search params
  * @returns The themed listing page
  */

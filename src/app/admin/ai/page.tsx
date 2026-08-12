@@ -628,7 +628,6 @@ export default function AIPage() {
                 onClick={handleApplyStoreDetails}
                 loading={isApplying}
                 leftSection={<IconCheck size={16} />}
-                color="green"
               >
                 {isApplying ? 'Applying...' : 'Apply to Store'}
               </Button>

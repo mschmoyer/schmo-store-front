@@ -64,6 +64,7 @@ export async function readSession(request: Request): Promise<UserSession | null>
 const DEFAULT_IMPORT: ImportProgress = {
   status: 'idle',
   found: 0,
+  total: null,
   imported: 0,
   failed: 0,
   skus: 0,
@@ -90,9 +91,15 @@ export function readImportProgress(raw: unknown): ImportProgress {
     value.status === 'skipped'
       ? value.status
       : 'idle';
+  // A row written before the catalog size was tracked has no `total`. That is
+  // "unknown", which the bar renders as indeterminate — it must not be coerced
+  // to 0 or to `found`, either of which would be a false claim of progress.
+  const total = Number(value.total);
+
   return {
     status,
     found: Number(value.found ?? 0) || 0,
+    total: value.total === null || value.total === undefined || !Number.isFinite(total) ? null : total,
     imported: Number(value.imported ?? 0) || 0,
     failed: Number(value.failed ?? 0) || 0,
     skus: Number(value.skus ?? 0) || 0,

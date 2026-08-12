@@ -1,0 +1,543 @@
+/*
+ * Checkout and order confirmation.
+ *
+ * These two pages used to be RebelShops admin forms wearing a dead `--theme-*`
+ * palette. They are now part of the merchant's shop, which means the same rule
+ * the rest of `src/components/store/**` follows applies here: every value is a
+ * `--st-*` token, an `--stx-*` value the renderer derived from one, or a
+ * geometric constant. There are no colours in this file.
+ */
+
+/* -- Layout --------------------------------------------------------------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: var(--st-space-8);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    /* Room for the sticky total bar, so the last field is never under it. */
+    padding-bottom: 96px;
+  }
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-6);
+  min-width: 0;
+}
+
+/* -- Card ----------------------------------------------------------------- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+  padding: var(--st-space-6);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-raised);
+  box-shadow: var(--st-shadow-card);
+}
+
+.cardTitle {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h5);
+  font-weight: var(--st-heading-weight);
+  text-transform: var(--st-heading-case);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+  margin: 0;
+}
+
+.cardNote {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  line-height: 1.5;
+}
+
+/* -- Review lines --------------------------------------------------------- */
+
+.reviewList {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reviewLine {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: var(--st-space-4);
+  align-items: center;
+  padding-block: var(--st-space-3);
+  border-top: 1px solid var(--st-border);
+}
+
+.reviewLine:first-child {
+  border-top: 0;
+}
+
+.reviewMedia {
+  position: relative;
+  inline-size: 56px;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+  flex: none;
+}
+
+.reviewMedia img {
+  object-fit: contain;
+}
+
+.reviewBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reviewName {
+  color: var(--st-text);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.reviewMeta {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reviewTotal {
+  color: var(--st-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* -- Form ----------------------------------------------------------------- */
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--st-space-4);
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .fieldFull {
+    grid-column: auto;
+  }
+}
+
+.addressGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 4fr);
+  gap: var(--st-space-4);
+}
+
+@media (max-width: 560px) {
+  .addressGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .addressGrid > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fieldHelp {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  margin-top: var(--st-space-1);
+}
+
+.fieldError {
+  font-size: var(--st-small);
+  color: var(--st-danger);
+  margin-top: var(--st-space-1);
+}
+
+.inputInvalid {
+  border-color: var(--st-danger);
+}
+
+/* -- Shipping options ------------------------------------------------------ */
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.optionsLegend {
+  font-size: var(--st-small);
+  font-weight: 600;
+  color: var(--st-text);
+  padding: 0;
+  margin-bottom: var(--st-space-3);
+}
+
+.option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--st-space-3);
+  align-items: start;
+  padding: var(--st-space-4);
+  border: 1px solid var(--st-border-strong);
+  border-radius: var(--st-radius-input);
+  background-color: var(--st-surface-raised);
+  cursor: pointer;
+}
+
+.option:hover {
+  background-color: var(--st-surface-sunken);
+}
+
+/* The chosen option is marked by the brand edge AND by the radio itself, so it
+   is never colour alone. */
+.optionSelected {
+  border-color: var(--st-brand);
+  box-shadow: inset 0 0 0 1px var(--st-brand);
+}
+
+.option input {
+  margin: 3px 0 0;
+  accent-color: var(--st-brand);
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.optionName {
+  color: var(--st-text);
+  font-weight: 600;
+}
+
+.optionMeta {
+  display: block;
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  line-height: 1.5;
+}
+
+.optionPrice {
+  color: var(--st-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* -- Summary --------------------------------------------------------------- */
+
+.summary {
+  position: sticky;
+  top: var(--st-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+  padding: var(--st-space-6);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-raised);
+  box-shadow: var(--st-shadow-card);
+}
+
+@media (max-width: 900px) {
+  .summary {
+    position: static;
+  }
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+  font-size: var(--st-body);
+  color: var(--st-text-muted);
+}
+
+.rowValue {
+  color: var(--st-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowPending {
+  color: var(--st-text-muted);
+  font-size: var(--st-small);
+  text-align: end;
+}
+
+.rowDiscount .rowValue {
+  color: var(--st-success);
+}
+
+.total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+  padding-top: var(--st-space-4);
+  border-top: 1px solid var(--st-border);
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h5);
+  font-weight: var(--st-heading-weight);
+  color: var(--st-text);
+}
+
+.totalValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.coupon {
+  display: flex;
+  gap: var(--st-space-2);
+  flex-wrap: wrap;
+}
+
+.coupon input {
+  flex: 1 1 140px;
+  min-width: 0;
+  text-transform: uppercase;
+}
+
+.couponApplied {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+  font-size: var(--st-small);
+  color: var(--st-text);
+}
+
+.couponCode {
+  font-weight: 600;
+  color: var(--st-success);
+}
+
+.divider {
+  border: 0;
+  border-top: 1px solid var(--st-border);
+  margin: 0;
+}
+
+/* -- Alerts ---------------------------------------------------------------- */
+
+.alert {
+  display: flex;
+  gap: var(--st-space-3);
+  padding: var(--st-space-4);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-sunken);
+  color: var(--st-text);
+  font-size: var(--st-small);
+  line-height: 1.5;
+  margin-bottom: var(--st-space-5);
+}
+
+.alertIcon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.alertTitle {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.alertWarning {
+  border-color: var(--st-warning);
+}
+
+.alertWarning .alertIcon {
+  color: var(--st-warning);
+}
+
+.alertDanger {
+  border-color: var(--st-danger);
+}
+
+.alertDanger .alertIcon {
+  color: var(--st-danger);
+}
+
+/* -- Sticky mobile total --------------------------------------------------- */
+
+/*
+ * On a phone the order summary sat under 2,300px of address form, so the
+ * shopper never saw what they were paying while typing it. This bar keeps the
+ * total and the action on screen the whole way down.
+ */
+.mobileBar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .mobileBar {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: var(--st-space-4);
+    padding: var(--st-space-3) var(--st-space-5);
+    border-top: 1px solid var(--st-border);
+    background-color: var(--st-surface-raised);
+    box-shadow: var(--st-shadow-popover);
+  }
+
+  .mobileBarTotal {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+
+  .mobileBarLabel {
+    font-size: var(--st-small);
+    color: var(--st-text-muted);
+  }
+
+  .mobileBarValue {
+    font-family: var(--st-font-heading);
+    font-size: var(--st-h6);
+    font-weight: var(--st-heading-weight);
+    color: var(--st-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobileBarAction {
+    flex: 1;
+  }
+
+  /* One pay button per viewport: the summary keeps it on desktop, the bar
+     takes it on a phone. */
+  .summaryAction {
+    display: none;
+  }
+}
+
+/* -- Order confirmation ---------------------------------------------------- */
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--st-space-5);
+  text-align: center;
+  padding: var(--st-space-8) var(--st-space-6);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-raised);
+  box-shadow: var(--st-shadow-card);
+}
+
+.confirmMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 72px;
+  block-size: 72px;
+  border-radius: 999px;
+  background-color: var(--st-brand);
+  color: var(--st-on-brand);
+  flex: none;
+}
+
+.confirmMarkQuiet {
+  background-color: var(--st-surface-sunken);
+  color: var(--st-text-muted);
+  border: 1px solid var(--st-border-strong);
+}
+
+.confirmLead {
+  color: var(--st-text-muted);
+  max-width: 56ch;
+  line-height: 1.6;
+}
+
+.confirmFacts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  width: 100%;
+  max-width: 460px;
+  text-align: start;
+}
+
+.confirmItems {
+  width: 100%;
+  max-width: 460px;
+  text-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  padding: var(--st-space-4);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-sunken);
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-3);
+  justify-content: center;
+}
+
+.mono {
+  font-family: var(--st-font-body);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--st-text);
+}
+
+/* -- Pending / loading ----------------------------------------------------- */
+
+.spinner {
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: 999px;
+  border: 2px solid var(--st-border-strong);
+  border-top-color: var(--st-brand);
+  animation: checkoutSpin 800ms linear infinite;
+}
+
+@keyframes checkoutSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.skeletonBlock {
+  block-size: 120px;
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-sunken);
+}

@@ -42,6 +42,8 @@ import {
 } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import { EmptyState } from '@/components/ui';
+import table from '@/components/admin/adminTable.module.css';
 
 // Types
 interface Product {
@@ -504,9 +506,9 @@ export default function CreatePurchaseOrderPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Product</Table.Th>
-                <Table.Th>Quantity</Table.Th>
-                <Table.Th>Unit Cost</Table.Th>
-                <Table.Th>Total</Table.Th>
+                <Table.Th className={table.numeric}>Quantity</Table.Th>
+                <Table.Th className={table.numeric}>Unit cost</Table.Th>
+                <Table.Th className={table.numeric}>Total</Table.Th>
                 <Table.Th>Actions</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -516,9 +518,7 @@ export default function CreatePurchaseOrderPage() {
                   <Table.Td>
                     <Stack gap="xs">
                       <Text fw={500}>{item.product_name}</Text>
-                      <Text size="sm" c="dimmed" ff="monospace">
-                        SKU: {item.product_sku}
-                      </Text>
+                      <Text component="span" className={table.code}>{item.product_sku}</Text>
                     </Stack>
                   </Table.Td>
                   
@@ -546,7 +546,7 @@ export default function CreatePurchaseOrderPage() {
                     />
                   </Table.Td>
                   
-                  <Table.Td>
+                  <Table.Td className={table.numeric}>
                     <Text fw={500}>{formatCurrency(item.total_cost)}</Text>
                   </Table.Td>
                   
@@ -564,15 +564,12 @@ export default function CreatePurchaseOrderPage() {
             </Table.Tbody>
           </Table>
         ) : (
-          <Box ta="center" py="xl">
-            <Stack align="center">
-              <IconPackage size={48} color="var(--border-strong)" />
-              <Text size="lg" c="dimmed">No items added yet</Text>
-              <Text size="sm" c="dimmed">
-                Click &quot;Add Product&quot; to start building your purchase order
-              </Text>
-            </Stack>
-          </Box>
+          <EmptyState
+            compact
+            titleAs="p"
+            title="No line items yet"
+            description="Add the products you want to restock and their quantities. Totals update as you go."
+          />
         )}
       </Card>
       

@@ -324,9 +324,13 @@ const countdownFields: SettingField[] = [
   {
     id: 'endsAt',
     label: 'Ends at',
+    // `SettingFieldType` has no `datetime` member yet, so this is declared as
+    // text and the customizer renders a real date picker for it (see
+    // `controls/registry.ts`). Add `'datetime'` to `SETTING_FIELD_TYPES` and
+    // this becomes an ordinary schema entry.
     type: 'text',
     default: '',
-    help: 'ISO date and time, e.g. 2026-12-24T23:59:00Z. The section hides itself once it passes.',
+    help: 'The section hides itself once this passes.',
   },
   { id: 'ctaLabel', label: 'Button label', type: 'text', default: 'Shop the sale' },
   { id: 'ctaHref', label: 'Button link', type: 'text', default: '/products' },

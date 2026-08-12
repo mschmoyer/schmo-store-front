@@ -20,14 +20,27 @@
  */
 
 import {
+  CONTRAST_UI,
+  adjustLightness,
   auditContrast,
   contrastRatio,
   deriveTokens,
+  isDark,
   resolveTheme,
   type StorefrontThemeInput,
 } from '@/lib/storefront-theme';
 
-export type ContrastLevel = 'fail' | 'adjusted';
+/**
+ * Severity of a finding.
+ *
+ * - `fail` — publishing this ships something unreadable. Blocks publish.
+ * - `warn` — publishing this ships something legible but *invisible*: a pale
+ *   brand on a pale page gives a button with a readable label and no findable
+ *   edge. WCAG 1.4.11 (non-text contrast) is a real requirement, but a brand
+ *   colour is the merchant's to choose, so this warns loudly and does not block.
+ * - `adjusted` — the engine silently changed a value and is saying so.
+ */
+export type ContrastLevel = 'fail' | 'warn' | 'adjusted';
 
 export interface ContrastFinding {
   /** Stable key for React and for tests. */
@@ -142,6 +155,30 @@ function normalizeHex(hex: string): string {
 }
 
 /**
+ * Walk a colour towards the far end of the lightness range until it clears a
+ * contrast floor against a background.
+ *
+ * Deliberately a *nudge*, not a recolour: it moves lightness in 2% steps and
+ * leaves hue and chroma alone, so the suggestion still reads as the merchant's
+ * colour. Against a light page it darkens; against a dark one it lightens.
+ *
+ * @param color - The colour to adjust
+ * @param background - What it has to be visible against
+ * @param required - The contrast floor to clear
+ * @returns The nearest shade that clears the floor, or the darkest/lightest
+ *          shade tried when nothing does
+ */
+function darkenToContrast(color: string, background: string, required: number): string {
+  const direction = isDark(background) ? 1 : -1;
+  let candidate = color;
+  for (let step = 0; step < 50; step += 1) {
+    if (contrastRatio(candidate, background) >= required) return candidate;
+    candidate = adjustLightness(candidate, direction * 0.02);
+  }
+  return candidate;
+}
+
+/**
  * Evaluate a working draft and describe everything a merchant should know
  * about its legibility.
  *
@@ -151,12 +188,34 @@ function normalizeHex(hex: string): string {
 export function contrastFindings(theme: StorefrontThemeInput): ContrastFinding[] {
   const resolved = resolveTheme(theme);
   const derived = deriveTokens(resolved);
+
+  /*
+   * What the engine *would* pick if the merchant's pin were gone.
+   *
+   * `derived.onBrand` above is computed from a theme that still contains the
+   * pin, so using it as the "after" swatch renders `#FFFFFF → #FFFFFF` — a fix
+   * preview showing no change, for a fix that does change something. Resolving
+   * a second time without the pin is the only way to know the real answer.
+   */
+  const withoutPin = { ...resolved, brand: { ...resolved.brand, colorOnBrand: '' } };
+  const accessibleOnBrand = deriveTokens(withoutPin).onBrand;
+
   const findings: ContrastFinding[] = [];
+  const seenPaths = new Set<string>();
 
   for (const row of auditContrast(resolved)) {
     if (row.passes) continue;
     const advice = PAIR_ADVICE[row.pair];
     if (!advice) continue;
+
+    // One pinned `colorOnBrand` fails against the resting, hover and pressed
+    // fills and produced three near-identical findings, so the publish dialog
+    // said "One thing needs fixing" above a list of three. It is one mistake
+    // with one fix: report it once, against the state WCAG actually judges.
+    if (advice.path === 'brand.colorOnBrand') {
+      if (seenPaths.has(advice.path)) continue;
+      seenPaths.add(advice.path);
+    }
 
     findings.push({
       id: `fail:${row.pair}`,
@@ -167,12 +226,44 @@ export function contrastFindings(theme: StorefrontThemeInput): ContrastFinding[]
       ...(advice.path === 'brand.colorOnBrand'
         ? {
             from: resolved.brand.colorOnBrand,
-            to: derived.onBrand,
+            to: accessibleOnBrand,
             // Clearing the pin hands the choice back to the engine, which is
             // guaranteed to find a legible ink for any brand colour.
             fix: { path: 'brand.colorOnBrand', value: null },
           }
         : {}),
+    });
+  }
+
+  /*
+   * The pair `auditContrast` does not check, and the one the brief names.
+   *
+   * Auto-contrast guarantees the *label* on a brand button is legible. It says
+   * nothing about the button itself. A pale-yellow brand on a near-white page
+   * gives a perfectly readable label floating on an invisible shape: "Quick
+   * add" buttons, "Sale" badges and brand-filled bands all disappear, and the
+   * old guardrail raised nothing at all.
+   *
+   * The floor is WCAG 1.4.11's 3:1 for non-text UI, measured against the page
+   * the buttons sit on.
+   */
+  const brandOnSurface = Math.round(contrastRatio(derived.brand, derived.surface) * 100) / 100;
+  if (brandOnSurface < CONTRAST_UI) {
+    findings.push({
+      id: 'warn:brand on surface',
+      level: 'warn',
+      path: 'brand.color',
+      title: 'Buttons in this colour have no visible edge',
+      detail:
+        `Your brand colour is ${brandOnSurface}:1 against the page — non-text UI needs 3:1. ` +
+        'The text on a button stays readable, but the button itself will not be findable: ' +
+        'the same is true of badges, price tags and any band filled with this colour.',
+      from: derived.brand,
+      to: darkenToContrast(derived.brand, derived.surface, CONTRAST_UI),
+      fix: {
+        path: 'brand.color',
+        value: darkenToContrast(derived.brand, derived.surface, CONTRAST_UI),
+      },
     });
   }
 

@@ -30,6 +30,11 @@ export interface PublishDialogProps {
   changes: DiffEntry[];
   blocking: ContrastFinding[];
   /**
+   * Findings that do not block publish but that the merchant must not discover
+   * after the fact — a brand colour with no visible edge, for instance.
+   */
+  warnings?: ContrastFinding[];
+  /**
    * Jump to the panel holding a failing control.
    * @param path - Dotted theme path
    */
@@ -51,6 +56,7 @@ export function PublishDialog({
   publishing,
   changes,
   blocking,
+  warnings = [],
   onGoToFinding,
 }: PublishDialogProps): React.ReactElement {
   const blocked = blocking.length > 0;
@@ -62,7 +68,9 @@ export function PublishDialog({
       title="Publish to your live storefront"
       description={
         blocked
-          ? 'One thing needs fixing before this can go live.'
+          ? blocking.length === 1
+            ? 'One thing needs fixing before this can go live.'
+            : `${blocking.length} things need fixing before this can go live.`
           : `${changes.length} ${changes.length === 1 ? 'change' : 'changes'} will go live for every visitor.`
       }
       size="md"
@@ -110,6 +118,41 @@ export function PublishDialog({
                 </button>
               </span>
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <div
+          className={`${controlStyles.finding} ${controlStyles.findingFail}`}
+          role="alert"
+          style={{ marginBottom: 16 }}
+          data-testid="publish-warnings"
+        >
+          <IconAlertTriangle size={16} className={controlStyles.findingIcon} aria-hidden="true" />
+          <div className={controlStyles.findingBody}>
+            <span className={controlStyles.findingTitle}>
+              {warnings.length === 1
+                ? 'One thing will ship looking broken'
+                : `${warnings.length} things will ship looking broken`}
+            </span>
+            {warnings.map((finding) => (
+              <span key={finding.id}>
+                <strong>{finding.title}.</strong> {finding.detail}{' '}
+                <button
+                  type="button"
+                  className={controlStyles.linkButton}
+                  style={{ color: 'inherit' }}
+                  onClick={() => onGoToFinding(finding.path)}
+                >
+                  Take me there
+                </button>
+              </span>
+            ))}
+            <span>
+              You can publish anyway — this is your brand colour to choose — but nobody has stopped
+              you because it looks fine here.
+            </span>
           </div>
         </div>
       ) : null}

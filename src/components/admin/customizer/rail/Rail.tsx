@@ -69,6 +69,9 @@ export interface RailProps {
 
   /** Brings the storefront font variables into scope for the font previews only. */
   fontScopeClassName?: string;
+
+  /** Forces one reload of the preview iframe. Used by the Custom CSS panel. */
+  onReloadPreview?: () => void;
 }
 
 /**
@@ -132,6 +135,7 @@ export function Rail(props: RailProps): React.ReactElement {
     findings,
     onApplyFix,
     fontScopeClassName,
+    onReloadPreview,
   } = props;
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -245,6 +249,7 @@ export function Rail(props: RailProps): React.ReactElement {
               storeId={storeId}
               value={theme.custom?.css ?? ''}
               onChange={(css) => onThemeChange('custom.css', css)}
+              onReloadPreview={onReloadPreview}
             />
           ) : selection.group === 'typography' ? (
             <>

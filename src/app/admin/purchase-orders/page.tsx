@@ -23,6 +23,7 @@ import { PurchaseOrder } from '@/lib/types/database';
 import Link from 'next/link';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { TableSkeleton } from '@/components/admin/AdminSkeletons';
+import table from '@/components/admin/adminTable.module.css';
 
 interface PurchaseOrderListItem extends PurchaseOrder {
   supplier_name: string;
@@ -300,8 +301,8 @@ export default function PurchaseOrdersPage() {
                 <Table.Th>Expected Delivery</Table.Th>
                 <Table.Th>Status</Table.Th>
                 <Table.Th>Payment Status</Table.Th>
-                <Table.Th>Total Amount</Table.Th>
-                <Table.Th>Items</Table.Th>
+                <Table.Th className={table.numeric}>Total</Table.Th>
+                <Table.Th className={table.numeric}>Items</Table.Th>
                 <Table.Th>Actions</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -310,7 +311,7 @@ export default function PurchaseOrdersPage() {
                 <Table.Tr key={po.id}>
                   <Table.Td>
                     <Link href={`/admin/purchase-orders/${po.id}`} style={{ textDecoration: 'none' }}>
-                      <Text fw={500} c="ink.9">
+                      <Text fw={500} className={table.code}>
                         {po.purchase_order_number}
                       </Text>
                     </Link>
@@ -335,12 +336,8 @@ export default function PurchaseOrdersPage() {
                       {po.payment_status.toUpperCase()}
                     </Badge>
                   </Table.Td>
-                  <Table.Td>{formatCurrency(po.total_amount)}</Table.Td>
-                  <Table.Td>
-                    <Badge variant="outline" color="gray">
-                      {po.items_count} items
-                    </Badge>
-                  </Table.Td>
+                  <Table.Td className={table.numeric}>{formatCurrency(po.total_amount)}</Table.Td>
+                  <Table.Td className={table.numeric}>{po.items_count}</Table.Td>
                   <Table.Td>
                     <Group gap="xs">
                       <Tooltip label="View Details">
@@ -353,7 +350,6 @@ export default function PurchaseOrdersPage() {
                       <Tooltip label="Download PDF">
                         <ActionIcon
                           variant="light"
-                          color="green"
                           size="sm"
                           onClick={() => handleDownloadPDF(po.id, po.purchase_order_number)}
                           loading={pdfLoading === po.id}

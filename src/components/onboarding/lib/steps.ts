@@ -71,7 +71,7 @@ export const STEPS: Record<StepId, StepDefinition> = {
     number: 4,
     title: 'Pull in your catalog',
     helper:
-      "We'll read your products, SKUs, prices, images and stock levels. A few hundred SKUs takes a few minutes — you can close this tab.",
+      "We'll read your products, SKUs, prices, images and stock levels. A few hundred SKUs takes a few minutes — keep this tab open, and if you close it the sync resumes where it stopped.",
     primaryLabel: 'Start sync',
     shortLabel: 'Catalog',
     skippable: true,

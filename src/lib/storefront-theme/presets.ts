@@ -25,7 +25,7 @@
 
 import { RADIUS_PX } from './defaults';
 import { createSection, defaultSections } from './sections';
-import type { PresetDefinition, Section, StorefrontTheme } from './types';
+import type { PresetDefinition, Section, SectionType, StorefrontTheme } from './types';
 
 /* ------------------------------------------------------------------ *
  * Studio — warm minimal, craft & homeware
@@ -72,7 +72,7 @@ const studio: StorefrontTheme = {
   header: {
     layout: 'logo-left-nav-below',
     sticky: false,
-    announcement: { text: 'Made in small batches. Free shipping over $95.', enabled: true },
+    announcement: { text: '', enabled: false },
   },
   footer: { layout: 'columns', showNewsletter: true },
   custom: {},
@@ -125,7 +125,7 @@ const voltage: StorefrontTheme = {
   header: {
     layout: 'logo-left',
     sticky: true,
-    announcement: { text: 'Next-day dispatch on every order placed before 3pm.', enabled: true },
+    announcement: { text: '', enabled: false },
   },
   footer: { layout: 'minimal', showNewsletter: true },
   custom: {},
@@ -176,7 +176,7 @@ const bloom: StorefrontTheme = {
   header: {
     layout: 'logo-center',
     sticky: true,
-    announcement: { text: 'Free samples with every order.', enabled: true },
+    announcement: { text: '', enabled: false },
   },
   footer: { layout: 'minimal', showNewsletter: true },
   custom: {},
@@ -227,10 +227,7 @@ const depot: StorefrontTheme = {
   header: {
     layout: 'logo-left-nav-below',
     sticky: true,
-    announcement: {
-      text: 'Trade accounts: net-30 terms and volume pricing available.',
-      enabled: true,
-    },
+    announcement: { text: '', enabled: false },
   },
   footer: { layout: 'columns', showNewsletter: false },
   custom: {},
@@ -333,7 +330,7 @@ const fresh: StorefrontTheme = {
   header: {
     layout: 'logo-left',
     sticky: true,
-    announcement: { text: 'Subscribe and save 15% on every delivery.', enabled: true },
+    announcement: { text: '', enabled: false },
   },
   footer: { layout: 'columns', showNewsletter: true },
   custom: {},
@@ -841,6 +838,29 @@ export function presetSections(id: string | undefined): Section[] {
     ...section,
     settings: JSON.parse(JSON.stringify(section.settings)) as Record<string, unknown>,
   }));
+}
+
+/**
+ * Read one setting out of a preset's shipped composition.
+ *
+ * The renderer uses this to tell "the merchant wrote this" from "this is the
+ * preset's placeholder still sitting where we put it" — which matters because
+ * a shop's own `hero_title` is real copy the merchant typed, and it should beat
+ * a preset default while losing to anything they set in the customizer.
+ *
+ * @param presetId - Preset id, typically `theme.preset`
+ * @param type - Section type to look inside
+ * @param key - Setting id
+ * @returns The shipped default as a string, or an empty string
+ */
+export function presetSectionDefault(
+  presetId: string | undefined,
+  type: SectionType,
+  key: string,
+): string {
+  const section = getPreset(presetId)?.sections.find((entry) => entry.type === type);
+  const value = section?.settings[key];
+  return typeof value === 'string' ? value : '';
 }
 
 /**

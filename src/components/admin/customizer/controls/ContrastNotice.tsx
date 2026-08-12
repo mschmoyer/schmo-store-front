@@ -29,11 +29,16 @@ export interface ContrastNoticeProps {
  */
 export function ContrastNotice({ finding, onApplyFix }: ContrastNoticeProps): React.ReactElement {
   const failing = finding.level === 'fail';
+  // A warning is not a failure — it does not block publish — but it is a
+  // problem the merchant has to see, so it gets the failure styling and an
+  // assertive live region rather than being filed away as a quiet status note.
+  const loud = failing || finding.level === 'warn';
 
   return (
     <div
-      className={`${styles.finding} ${failing ? styles.findingFail : styles.findingAdjusted}`}
-      role={failing ? 'alert' : 'status'}
+      className={`${styles.finding} ${loud ? styles.findingFail : styles.findingAdjusted}`}
+      role={loud ? 'alert' : 'status'}
+      data-level={finding.level}
     >
       <IconAlertTriangle size={15} className={styles.findingIcon} aria-hidden="true" />
       <div className={styles.findingBody}>
@@ -69,7 +74,11 @@ export function ContrastNotice({ finding, onApplyFix }: ContrastNoticeProps): Re
               style={{ verticalAlign: '-2px', marginRight: 4 }}
               aria-hidden="true"
             />
-            {finding.level === 'fail' ? 'Use an accessible colour' : 'Adopt the adjusted colour'}
+            {finding.level === 'fail'
+              ? 'Use an accessible colour'
+              : finding.level === 'warn'
+                ? 'Darken it just enough'
+                : 'Adopt the adjusted colour'}
           </button>
         ) : null}
       </div>

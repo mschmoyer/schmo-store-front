@@ -15,14 +15,12 @@ import {
   Modal,
   TextInput,
   Badge,
-  Center,
   Tooltip,
   Alert
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
-  IconPhoto,
   IconTrash,
   IconEdit,
   IconUpload,
@@ -49,6 +47,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { EmptyState } from '@/components/ui';
 
 interface ImageItem {
   id: string;
@@ -455,12 +454,12 @@ export default function ImageGalleryManager({
             </SortableContext>
           </DndContext>
         ) : (
-          <Center py="xl">
-            <Stack align="center" gap="md">
-              <IconPhoto size={48} color="var(--border-strong)" />
-              <Text c="dimmed">No images added yet</Text>
-            </Stack>
-          </Center>
+          <EmptyState
+            compact
+            titleAs="p"
+            title="No images yet"
+            description="Upload photographs of this product, or drag them in. The first image becomes the thumbnail."
+          />
         )}
       </Stack>
 

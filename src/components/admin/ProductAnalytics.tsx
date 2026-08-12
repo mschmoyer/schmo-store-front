@@ -101,8 +101,8 @@ export default function ProductAnalytics({
 
   // Utility functions for future use
   // const getChangeIcon = (change: number) => {
-  //   if (change > 0) return <IconArrowUpRight size={16} color="green" />;
-  //   if (change < 0) return <IconArrowDownRight size={16} color="red" />;
+  //   if (change > 0) return <IconArrowUpRight size={16} color="var(--success-text)" />;
+  //   if (change < 0) return <IconArrowDownRight size={16} color="var(--danger-text)" />;
   //   return null;
   // };
 
@@ -115,15 +115,15 @@ export default function ProductAnalytics({
   const getInventoryChangeIcon = (changeType: string) => {
     switch (changeType) {
       case 'restock':
-        return <IconPackage size={16} color="green" />;
+        return <IconPackage size={16} color="var(--success-text)" />;
       case 'sale':
-        return <IconShoppingCart size={16} color="ink" />;
+        return <IconShoppingCart size={16} color="var(--text-primary)" />;
       case 'adjustment':
-        return <IconRefresh size={16} color="orange" />;
+        return <IconRefresh size={16} color="var(--warning-text)" />;
       case 'return':
-        return <IconTrendingUp size={16} color="ink" />;
+        return <IconTrendingUp size={16} color="var(--text-primary)" />;
       default:
-        return <IconPackage size={16} color="gray" />;
+        return <IconPackage size={16} color="var(--text-quaternary)" />;
     }
   };
 

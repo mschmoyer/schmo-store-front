@@ -35,6 +35,7 @@ import {
 import TrendDashboard from '@/components/admin/TrendDashboard';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { PanelSkeleton, StatGridSkeleton } from '@/components/admin/AdminSkeletons';
+import { EmptyState } from '@/components/ui';
 
 interface SearchAnalytics {
   totalSearches: number;
@@ -347,9 +348,12 @@ export default function AnalyticsPage() {
                       ))}
                     </Stack>
                   ) : (
-                    <Text c="dimmed" ta="center" py="xl">
-                      No search data available yet
-                    </Text>
+                    <EmptyState
+                      compact
+                      titleAs="p"
+                      title="No searches yet"
+                      description="Once shoppers use the search box on your storefront, their terms appear here."
+                    />
                   )}
                 </Card>
               </Grid.Col>
@@ -377,9 +381,12 @@ export default function AnalyticsPage() {
                       ))}
                     </Stack>
                   ) : (
-                    <Text c="dimmed" ta="center" py="xl">
-                      No visitor data available yet
-                    </Text>
+                    <EmptyState
+                      compact
+                      titleAs="p"
+                      title="No visitors yet"
+                      description="Traffic appears here as soon as someone lands on your storefront."
+                    />
                   )}
                 </Card>
               </Grid.Col>
@@ -454,9 +461,12 @@ export default function AnalyticsPage() {
                       </Table.Tbody>
                     </Table>
                   ) : (
-                    <Text c="dimmed" ta="center" py="xl">
-                      No search data available yet
-                    </Text>
+                    <EmptyState
+                      compact
+                      titleAs="p"
+                      title="No searches yet"
+                      description="Once shoppers use the search box on your storefront, their terms appear here."
+                    />
                   )}
                 </Card>
               </Grid.Col>
@@ -579,9 +589,12 @@ export default function AnalyticsPage() {
                   </Table.Tbody>
                 </Table>
               ) : (
-                <Text c="dimmed" ta="center" py="xl">
-                  No visitor data available yet
-                </Text>
+                <EmptyState
+                  compact
+                  titleAs="p"
+                  title="No visitors yet"
+                  description="Traffic appears here as soon as someone lands on your storefront."
+                />
               )}
             </Card>
           </Stack>

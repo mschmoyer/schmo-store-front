@@ -151,6 +151,33 @@ export function nextSectionSuffix(sections: Section[], type: SectionType): strin
   return String(n);
 }
 
+/** A default deadline a week out, for a freshly added countdown. */
+export const COUNTDOWN_DEFAULT_DAYS = 7;
+
+/**
+ * Fill in the defaults a static schema cannot express.
+ *
+ * `SettingField.default` is a constant, so a countdown could only ever ship
+ * with an *empty* deadline — and because "hide when the timer runs out" is on
+ * out of the box, that meant a section which was invisible from the moment it
+ * was added, with nothing on screen saying why. A section you add and cannot
+ * see is indistinguishable from one that is broken.
+ *
+ * A week out is a placeholder the merchant will obviously change, and it makes
+ * the section render immediately so they can see what they are editing.
+ *
+ * @param section - A section straight out of `createSection`
+ * @returns The same section, with any time-relative defaults filled in
+ */
+export function seedDynamicDefaults(section: Section): Section {
+  if (section.type !== 'countdown') return section;
+  if (typeof section.settings.endsAt === 'string' && section.settings.endsAt !== '') return section;
+
+  const deadline = new Date(Date.now() + COUNTDOWN_DEFAULT_DAYS * 24 * 60 * 60 * 1000);
+  deadline.setSeconds(0, 0);
+  return { ...section, settings: { ...section.settings, endsAt: deadline.toISOString() } };
+}
+
 /**
  * How many of a type the list already holds.
  * @param sections - The current list
@@ -331,9 +358,11 @@ export function customizerReducer(
 
     case 'sections/add': {
       if (!canAddSection(state.present.sections, action.sectionType)) return state;
-      const section = createSection(
-        action.sectionType,
-        nextSectionSuffix(state.present.sections, action.sectionType),
+      const section = seedDynamicDefaults(
+        createSection(
+          action.sectionType,
+          nextSectionSuffix(state.present.sections, action.sectionType),
+        ),
       );
       const next = commitSections(state, [...state.present.sections, section]);
       return { ...next, selection: { kind: 'section', id: section.id }, tab: 'sections' };

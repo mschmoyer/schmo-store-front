@@ -39,7 +39,7 @@ const DESKTOP = { width: 1440, height: 900 };
  * These are the deliberate figures, and they are enforced because an
  * unenforced budget is a number in a document that the next section quietly
  * exceeds. The homepage was 12,381px at 1440 and 10,772px at 390 before the
- * rebuild; it is ~6,670 and ~6,900 now.
+ * rebuild; it measures ~6,730 and ~6,820 now.
  *
  * NOTE ON THE DESKTOP NUMBER — it was 6,500 during the mobile pass and is
  * 6,900 now, and it moved UP on purpose. The mobile pass had capped the shared

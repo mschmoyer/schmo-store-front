@@ -511,7 +511,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.fast_moving_count}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="green">
+              <ThemeIcon size="lg" variant="light">
                 <IconTrendingUp size={20} />
               </ThemeIcon>
             </Group>
@@ -527,7 +527,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.slow_moving_count}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="orange">
+              <ThemeIcon size="lg" variant="light">
                 <IconTrendingDown size={20} />
               </ThemeIcon>
             </Group>
@@ -543,7 +543,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.dead_stock_count}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="red">
+              <ThemeIcon size="lg" variant="light">
                 <IconAlertCircle size={20} />
               </ThemeIcon>
             </Group>

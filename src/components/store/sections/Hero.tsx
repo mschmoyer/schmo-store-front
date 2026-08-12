@@ -3,10 +3,41 @@ import Image from 'next/image';
 
 import { imageSrc, num, pick, str } from '@/app/store/_lib/settings';
 import { resolveStoreHref } from '@/app/store/_lib/present';
+import { presetSectionDefault } from '@/lib/storefront-theme';
 
 import { StoreBand, StoreContainer, StoreLinkButton, cx, storeUi } from '../ui';
 import type { SectionProps } from './types';
 import styles from './Sections.module.css';
+
+/**
+ * Read a hero string setting, but only when the merchant actually wrote it.
+ *
+ * Three sources want to fill the headline, and they rank in this order:
+ *
+ *  1. what the merchant typed into the customizer;
+ *  2. the shop's own `hero_title` / `hero_description`, which is also copy they
+ *     wrote, just in store settings rather than in the section editor;
+ *  3. the preset's placeholder.
+ *
+ * A preset ships real copy so a brand-new shop looks designed, but that copy is
+ * written for a *vertical*, not for this shop. If the value still matches the
+ * preset's default it has not been touched, so it yields to the merchant's own
+ * words and only wins when there are none.
+ *
+ * @param settings - The hero section's settings
+ * @param key - `heading` or `subheading`
+ * @param ctx - Section context, for the active preset id
+ * @returns The merchant's own copy, or an empty string
+ */
+function merchantCopy(
+  settings: Record<string, unknown>,
+  key: 'heading' | 'subheading',
+  ctx: SectionProps['ctx'],
+): string {
+  const value = str(settings, key);
+  if (!value) return '';
+  return value === presetSectionDefault(ctx.theme.preset, 'hero', key).trim() ? '' : value;
+}
 
 /**
  * The hero section.
@@ -37,9 +68,12 @@ export function Hero({ section, ctx }: SectionProps) {
   const { store } = ctx;
 
   const eyebrow = str(settings, 'eyebrow');
-  const heading = str(settings, 'heading') || store.heroTitle || store.storeName;
+  const heading = merchantCopy(settings, 'heading', ctx) || store.heroTitle || store.storeName;
   const subheading =
-    str(settings, 'subheading') || store.heroDescription || store.storeDescription || '';
+    merchantCopy(settings, 'subheading', ctx) ||
+    store.heroDescription ||
+    store.storeDescription ||
+    '';
 
   const primaryLabel = str(settings, 'primaryLabel', 'Shop all');
   const primaryHref = resolveStoreHref(store.storeSlug, str(settings, 'primaryHref', '/products'));

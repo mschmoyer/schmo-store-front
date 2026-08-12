@@ -6,8 +6,10 @@ import InventoryTurnoverReport from '@/components/admin/reports/InventoryTurnove
 import StockValuationReport from '@/components/admin/reports/StockValuationReport';
 // import DeadStockAnalysisReport from '@/components/admin/reports/DeadStockAnalysisReport';
 // import SupplierPerformanceReport from '@/components/admin/reports/SupplierPerformanceReport';
-import { Container, Paper, Text, Group, Button, Loader, Center } from '@mantine/core';
+import { Container, Paper, Button } from '@mantine/core';
 import { IconArrowLeft } from '@tabler/icons-react';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
 
 const reportComponents = {
   'turnover': InventoryTurnoverReport,
@@ -38,29 +40,28 @@ export default function InventoryReportPage() {
     }
   }, [ReportComponent, router]);
 
+  /* An unknown report type redirects; this is the single frame before the
+     router lands, so it draws the panel that is about to appear rather than a
+     spinner in the middle of nothing (§5). */
   if (!ReportComponent) {
-    return (
-      <Center h={400}>
-        <Loader size="lg" />
-      </Center>
-    );
+    return <PanelSkeleton height={320} label="Opening report" />;
   }
 
   return (
     <Container size="xl" py="lg">
       <Paper shadow="sm" p="lg" radius="md" withBorder>
-        <Group justify="space-between" mb="xl">
-          <Group>
+        <AdminPageHeader
+          title={reportTitle}
+          actions={
             <Button
-              variant="subtle"
+              variant="default"
               leftSection={<IconArrowLeft size={16} />}
               onClick={() => router.push('/admin/inventory')}
             >
-              Back to Inventory
+              Back to inventory
             </Button>
-            <Text size="xl" fw={700}>{reportTitle}</Text>
-          </Group>
-        </Group>
+          }
+        />
         
         <ReportComponent />
       </Paper>

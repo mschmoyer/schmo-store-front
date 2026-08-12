@@ -159,9 +159,9 @@ export default function SmartReorderWidget({
 
   const getTrendIcon = (trend: 'increasing' | 'stable' | 'decreasing') => {
     switch (trend) {
-      case 'increasing': return <IconTrendingUp size="0.8rem" color="green" />;
-      case 'decreasing': return <IconTrendingDown size="0.8rem" color="red" />;
-      case 'stable': return <IconMinus size="0.8rem" color="gray" />;
+      case 'increasing': return <IconTrendingUp size="0.8rem" color="var(--success-text)" />;
+      case 'decreasing': return <IconTrendingDown size="0.8rem" color="var(--danger-text)" />;
+      case 'stable': return <IconMinus size="0.8rem" color="var(--text-quaternary)" />;
     }
   };
 
@@ -193,7 +193,7 @@ export default function SmartReorderWidget({
       <Card withBorder>
         <Group justify="space-between">
           <Group>
-            <IconBrain size="1.2rem" color="green" />
+            <IconBrain size="1.2rem" color="var(--success-text)" />
             <Text fw={500}>AI Recommendations</Text>
           </Group>
           <Button
@@ -217,7 +217,7 @@ export default function SmartReorderWidget({
       {/* Header */}
       <Group justify="space-between" mb="sm">
         <Group>
-          <IconBrain size="1.2rem" color="ink" />
+          <IconBrain size="1.2rem" color="var(--text-primary)" />
           <Text fw={500}>Smart Reorder Recommendations</Text>
           {urgentCount > 0 && (
             <Badge color="red" size="sm">
@@ -306,7 +306,7 @@ export default function SmartReorderWidget({
               
               {rec.days_until_stockout <= 14 && (
                 <Group gap={4} mt={2}>
-                  <IconAlertTriangle size="0.8rem" color="orange" />
+                  <IconAlertTriangle size="0.8rem" color="var(--warning-text)" />
                   <Text size="xs" c="orange">
                     {rec.days_until_stockout} days until stockout
                   </Text>

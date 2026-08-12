@@ -114,19 +114,31 @@ function SortableSectionRow({
 
   /**
    * Alt+arrow moves the row one place without entering drag mode.
+   *
+   * This must run *before* dnd-kit's own key handler and stop the event when it
+   * acts: dnd-kit binds `onKeyDown` through `listeners`, and the two handlers
+   * both want the arrow keys. Ordering matters here — see the JSX below.
+   *
    * @param event - The keyboard event on the grip
+   * @returns Whether this handler consumed the event
    */
-  const onHandleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>): void => {
-    if (!event.altKey) return;
+  const onAltArrow = (event: React.KeyboardEvent<HTMLButtonElement>): boolean => {
+    if (!event.altKey) return false;
     if (event.key === 'ArrowUp' && index > 0) {
       event.preventDefault();
       event.stopPropagation();
       onMove(index, index - 1);
-    } else if (event.key === 'ArrowDown' && index < total - 1) {
+      return true;
+    }
+    if (event.key === 'ArrowDown' && index < total - 1) {
       event.preventDefault();
       event.stopPropagation();
       onMove(index, index + 1);
+      return true;
     }
+    // An Alt+arrow at either end of the list is still ours: swallowing it stops
+    // dnd-kit lifting the row in response to a move that cannot happen.
+    return event.key === 'ArrowUp' || event.key === 'ArrowDown';
   };
 
   return (
@@ -152,9 +164,19 @@ function SortableSectionRow({
         type="button"
         className={styles.dragHandle}
         aria-label={`Reorder ${label}. Position ${index + 1} of ${total}. Press space to lift, or hold alt and press the up and down arrows.`}
-        onKeyDown={onHandleKeyDown}
+        data-section-grip={section.id}
         {...attributes}
         {...listeners}
+        // Declared *after* the spreads on purpose. `listeners` contains dnd-kit's
+        // own `onKeyDown`; a handler declared before the spread is silently
+        // overwritten by it, which is exactly how the Alt+arrow path became dead
+        // code while the rail went on advertising it. Merging explicitly keeps
+        // both: Alt+arrow moves a step, everything else falls through to
+        // dnd-kit's lift/move/drop.
+        onKeyDown={(event) => {
+          if (onAltArrow(event)) return;
+          listeners?.onKeyDown?.(event);
+        }}
       >
         <IconGripVertical size={16} aria-hidden="true" />
       </button>
@@ -240,6 +262,65 @@ export function SectionList({
   const ids = sections.map((section) => section.id);
 
   /**
+   * A section's human label, for the live region.
+   *
+   * dnd-kit's default announcements read the raw id — "Draggable item hero-1
+   * was moved over droppable area hero-1" — which is meaningless read aloud.
+   *
+   * @param id - Section id
+   * @returns The label the rail shows, e.g. "Hero"
+   */
+  const labelOf = React.useCallback(
+    (id: string | number): string => {
+      const section = sections.find((candidate) => candidate.id === String(id));
+      if (!section) return String(id);
+      return getSectionDefinition(section.type)?.label ?? section.type;
+    },
+    [sections],
+  );
+
+  /**
+   * 1-based position of a section, for the live region.
+   * @param id - Section id
+   * @returns Its position, or 0 when unknown
+   */
+  const positionOf = React.useCallback(
+    (id: string | number | undefined): number =>
+      id === undefined ? 0 : ids.indexOf(String(id)) + 1,
+    [ids],
+  );
+
+  const announcements = React.useMemo(
+    () => ({
+      onDragStart: ({ active }: { active: { id: string | number } }) =>
+        `Picked up ${labelOf(active.id)}, position ${positionOf(active.id)} of ${ids.length}.`,
+      onDragOver: ({
+        active,
+        over,
+      }: {
+        active: { id: string | number };
+        over: { id: string | number } | null;
+      }) =>
+        over
+          ? `${labelOf(active.id)} would move to position ${positionOf(over.id)} of ${ids.length}.`
+          : `${labelOf(active.id)} is not over a drop position.`,
+      onDragEnd: ({
+        active,
+        over,
+      }: {
+        active: { id: string | number };
+        over: { id: string | number } | null;
+      }) =>
+        over
+          ? `${labelOf(active.id)} moved to position ${positionOf(over.id)} of ${ids.length}.`
+          : `${labelOf(active.id)} was dropped without moving.`,
+      onDragCancel: ({ active }: { active: { id: string | number } }) =>
+        `Reordering cancelled. ${labelOf(active.id)} is back at position ${positionOf(active.id)}.`,
+    }),
+    [ids.length, labelOf, positionOf],
+  );
+
+  /**
    * Note which row is in flight so the placeholder can dim.
    * @param event - dnd-kit drag start
    */
@@ -265,6 +346,7 @@ export function SectionList({
 
   return (
     <DndContext
+      accessibility={{ announcements }}
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}

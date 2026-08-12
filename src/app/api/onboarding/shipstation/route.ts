@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
         importState: {
           status: 'skipped',
           found: 0,
+          total: null,
           imported: 0,
           failed: 0,
           skus: 0,

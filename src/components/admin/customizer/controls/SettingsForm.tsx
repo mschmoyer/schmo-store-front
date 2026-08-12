@@ -50,7 +50,7 @@ export function SettingsForm({
     <div className={styles.field} style={{ gap: 16 }}>
       {schema.map((field: SettingField) => {
         const value = values[field.id];
-        const Control = controlFor(field.type, value, field.default);
+        const Control = controlFor(field, value);
         return (
           <Control
             key={field.id}

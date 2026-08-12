@@ -299,7 +299,16 @@ export const HEADER_FIELDS: ThemeFieldDescriptor[] = [
   ]),
   toggle('header.sticky', 'Stick to the top when scrolling'),
   toggle('header.announcement.enabled', 'Show an announcement bar'),
-  text('header.announcement.text', 'Announcement text', 'Free shipping over $50, and so on.'),
+  // Deliberately an *example*, not a default. Presets used to ship this bar
+  // switched on with copy like "Next-day dispatch on every order placed before
+  // 3pm" already in it, so choosing a theme published a delivery promise the
+  // merchant had never read, let alone agreed to. The words a shop puts above
+  // its own header have to be typed by the person who has to honour them.
+  text(
+    'header.announcement.text',
+    'Announcement text',
+    'Whatever you want across the top of every page — for example "Free shipping over $50". Write your own: this bar is a promise to your customers.',
+  ),
   text('header.announcement.href', 'Announcement link', 'Optional. A path such as /products.'),
 ];
 

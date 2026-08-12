@@ -218,25 +218,38 @@
 
 .frameWrap {
   position: relative;
-  flex: none;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  transition: none;
+}
+
+/* Occupies the *scaled* footprint, so the canvas lays out around what the
+   merchant can actually see rather than around the unscaled device width. */
+.frameScaler {
+  position: relative;
+  flex: none;
+  max-width: 100%;
 }
 
 .frameShell {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  /* The iframe is genuinely resized (spec section 10) — never CSS-transformed,
-     so media queries inside the storefront fire for real. */
-  transition: width var(--duration-standard) var(--ease-out),
+  /* The iframe is given the device width in real CSS pixels (spec section 10),
+     so the storefront's media queries fire for real. The transform only changes
+     how large that result is drawn — the layout viewport inside the frame is
+     still `data-viewport-width` pixels across. */
+  transition: transform var(--duration-standard) var(--ease-out),
+    width var(--duration-standard) var(--ease-out),
     height var(--duration-standard) var(--ease-out);
 }
 
@@ -244,6 +257,16 @@
   .frameShell {
     transition: none;
   }
+}
+
+.viewportBadge {
+  flex: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  text-align: center;
 }
 
 .frame {
