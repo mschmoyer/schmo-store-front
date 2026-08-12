@@ -51,18 +51,19 @@ export function CollectionGrid({ section, ctx }: SectionProps) {
               <Link
                 key={category.id}
                 href={`/store/${store.storeSlug}/products?category=${encodeURIComponent(category.slug)}`}
-                className={cx(styles.tile, shapeClass)}
+                className={styles.tile}
               >
-                {art ? (
-                  <Image
-                    src={art}
-                    alt=""
-                    fill
-                    sizes="(max-width: 700px) 100vw, 33vw"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                <span className={styles.tileVeil} aria-hidden="true" />
+                <span className={cx(styles.tileFrame, shapeClass)}>
+                  {art ? (
+                    <Image
+                      src={art}
+                      alt=""
+                      fill
+                      sizes="(max-width: 700px) 100vw, 33vw"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </span>
                 <span className={styles.tileBody}>
                   <span className={styles.tileName}>{category.name}</span>
                   {showCount ? (

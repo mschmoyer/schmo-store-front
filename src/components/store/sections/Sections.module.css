@@ -20,9 +20,47 @@
   align-items: center;
 }
 
-.heroSplitNoImage {
-  grid-template-columns: minmax(0, 720px);
-  justify-content: start;
+/*
+ * With no photograph there is no second column to fill, so the hero becomes a
+ * centred statement rather than a text block marooned in the left half of a
+ * wide screen. The brand-tinted wash gives the band a ground of its own so it
+ * still reads as a hero and not as the first paragraph of the page.
+ */
+.heroPlain {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding-block: var(--st-space-11);
+  border-radius: var(--st-radius-image);
+  background-image: radial-gradient(
+      ellipse 90% 120% at 50% -20%,
+      color-mix(in oklab, var(--st-brand) 14%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(var(--st-surface-sunken), var(--st-surface));
+}
+
+.heroPlain .heroCopy {
+  align-items: center;
+  text-align: center;
+  max-width: 44ch;
+  padding-inline: var(--st-space-5);
+}
+
+.heroPlain .heroLead {
+  max-width: 52ch;
+}
+
+/* Left-aligned copy is still honoured; only the dead column is removed. */
+.heroPlainStart {
+  place-items: center start;
+  text-align: start;
+}
+
+.heroPlainStart .heroCopy {
+  align-items: flex-start;
+  text-align: start;
+  max-width: 52ch;
 }
 
 .heroCopy {

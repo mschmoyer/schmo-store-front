@@ -102,9 +102,17 @@ export function Hero({ section, ctx }: SectionProps) {
 
   if (layout === 'text-only') {
     return (
-      <StoreBand tone="surface" className={styles.hero}>
+      <StoreBand tone="surface" className={styles.hero} tight>
         <StoreContainer>
-          <div className={cx(styles.heroSplit, styles.heroSplitNoImage)}>{copy}</div>
+          <div
+            className={cx(
+              styles.heroPlain,
+              align === 'left' && styles.heroPlainStart,
+              heightClass,
+            )}
+          >
+            {copy}
+          </div>
         </StoreContainer>
       </StoreBand>
     );

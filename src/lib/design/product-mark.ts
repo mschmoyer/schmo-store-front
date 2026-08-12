@@ -31,28 +31,49 @@ export interface ProductMark {
   weaveAngle: string;
   /** A tiny SVG data URI used as the blur-up placeholder. */
   blurDataURL: string;
+  /**
+   * True when the initials fall outside the Latin script. Space Grotesk is
+   * loaded `subsets: ['latin']`, so a CJK or Arabic mark would silently swap to
+   * a system face mid-grid. The tile renders these in Inter instead, which
+   * ships far broader coverage — a deliberate second face, not an accident.
+   */
+  nonLatin: boolean;
+  /** True when only one glyph was derived; the tile sizes it up optically. */
+  single: boolean;
 }
 
 /**
  * Derives up to two initials from a product name, falling back to the SKU.
+ *
+ * Commerce names lead with digits far more often than you would guess — "3M
+ * Command Hooks", "24kg Cast Iron Kettlebell", "#1 Best Seller Mug", "5-Pack".
+ * A numeric initial reads as noise, so words that *start with a letter* win;
+ * digits are only used when the name contains no letters at all.
  *
  * @param name - Product name, may be undefined.
  * @param sku - Product SKU, used when the name yields nothing usable.
  * @returns One or two uppercase characters, or `??` when neither input helps.
  */
 export function deriveInitials(name: string | undefined, sku: string | undefined): string {
-  const source = (name ?? '').replace(/[^\p{L}\p{N} ]/gu, ' ').trim();
-  const words = source.split(/\s+/).filter(Boolean);
+  const words = (name ?? '')
+    .replace(/[^\p{L}\p{N} ]/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
+  const letterWords = words.filter((word) => /^\p{L}/u.test(word));
+  const source = letterWords.length > 0 ? letterWords : words;
+
+  if (source.length >= 2) {
+    return (source[0][0] + source[1][0]).toUpperCase();
   }
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
+  if (source.length === 1) {
+    // One short word gives one glyph rather than an awkward half-full pair.
+    return source[0].slice(0, source[0].length > 2 ? 2 : 1).toUpperCase();
   }
 
-  const skuLetters = (sku ?? '').replace(/[^\p{L}\p{N}]/gu, '');
-  return (skuLetters.slice(0, 2) || '??').toUpperCase();
+  const skuChars = (sku ?? '').replace(/[^\p{L}\p{N}]/gu, '');
+  return (skuChars.slice(0, 2) || '??').toUpperCase();
 }
 
 /**
@@ -83,12 +104,16 @@ export function getProductMark(options: { sku?: string; name?: string }): Produc
     + `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/>`
     + `</linearGradient></defs><rect width="8" height="8" fill="url(#g)"/></svg>`;
 
+  const initials = deriveInitials(options.name, options.sku);
+
   return {
-    initials: deriveInitials(options.name, options.sku),
+    initials,
     gradient,
     foreground: on,
     glow: { x: `${glowX}%`, y: `${glowY}%` },
     weaveAngle: `${weaveAngle}deg`,
     blurDataURL: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+    nonLatin: /\p{L}/u.test(initials) && !/\p{Script=Latin}/u.test(initials),
+    single: [...initials].length === 1,
   };
 }

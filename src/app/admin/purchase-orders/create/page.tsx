@@ -65,8 +65,9 @@ interface PurchaseOrderItem {
 
 interface CreatePurchaseOrderForm {
   supplier: string;
-  order_date: Date | null;
-  expected_delivery: Date | null;
+  // Mantine v8 date inputs work with 'yyyy-MM-dd' strings rather than Date objects.
+  order_date: string | null;
+  expected_delivery: string | null;
   notes: string;
   items: PurchaseOrderItem[];
 }
@@ -95,7 +96,7 @@ export default function CreatePurchaseOrderPage() {
   // Form state
   const [form, setForm] = useState<CreatePurchaseOrderForm>({
     supplier: '',
-    order_date: new Date(),
+    order_date: new Date().toISOString().split('T')[0],
     expected_delivery: null,
     notes: '',
     items: []
@@ -288,8 +289,8 @@ export default function CreatePurchaseOrderPage() {
 
       const requestBody = {
         supplier: form.supplier,
-        order_date: form.order_date.toISOString().split('T')[0],
-        expected_delivery: form.expected_delivery ? form.expected_delivery.toISOString().split('T')[0] : undefined,
+        order_date: form.order_date,
+        expected_delivery: form.expected_delivery ?? undefined,
         notes: form.notes,
         items: form.items.map(item => ({
           product_id: item.product_id,

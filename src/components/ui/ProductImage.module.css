@@ -79,9 +79,11 @@
 .markGlow {
   position: absolute;
   inset: -20%;
+  /* Held at .22: the glow lightens the ground under the initials, and the
+     gradient's white-contrast floor is measured on the un-glowed stop. */
   background-image: radial-gradient(
     circle at var(--mark-glow-x) var(--mark-glow-y),
-    rgba(255, 255, 255, 0.34),
+    rgba(255, 255, 255, 0.22),
     rgba(255, 255, 255, 0) 58%
   );
 }
@@ -114,6 +116,23 @@
   color: var(--mark-fg);
   text-shadow: 0 1px 14px rgba(0, 0, 0, 0.22);
   user-select: none;
+}
+
+/* One glyph gets a larger optical size so it does not sit undersized next to
+   two-glyph siblings in the same grid. */
+.markInitialsSingle {
+  font-size: clamp(1.9rem, 34cqw, 7.5rem);
+}
+
+/*
+ * Space Grotesk is loaded latin-only. Rather than let a CJK/Arabic tile fall
+ * back to whatever the OS provides, switch it to Inter, which ships far
+ * broader coverage and is already in the document.
+ */
+.markInitialsNonLatin {
+  font-family: var(--font-sans);
+  font-size: clamp(1.3rem, 21cqw, 5rem);
+  letter-spacing: -0.01em;
 }
 
 .markSku {

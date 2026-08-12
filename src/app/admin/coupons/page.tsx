@@ -209,9 +209,9 @@ export default function CouponsManagementPage() {
     }
   }, [productSearchTerm, showAdvancedTargeting, debouncedFetchProducts]);
 
-  function debounce<T extends (...args: unknown[]) => unknown>(func: T, wait: number) {
+  function debounce<TArgs extends unknown[]>(func: (...args: TArgs) => void, wait: number) {
     let timeout: NodeJS.Timeout;
-    return function executedFunction(...args: Parameters<T>) {
+    return function executedFunction(...args: TArgs) {
       const later = () => {
         clearTimeout(timeout);
         func(...args);

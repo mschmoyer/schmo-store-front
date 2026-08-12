@@ -39,7 +39,8 @@ export interface ProductImageProps extends Omit<React.HTMLAttributes<HTMLDivElem
   ratio?: string;
   /** How the photograph fills the frame. @default 'cover' */
   fit?: ProductImageFit;
-  /** Corner radius token. @default 'md' */
+  /** Corner radius token. Matches buttons/inputs so tiles agree with the
+   *  rest of the composition (§4 caps a composition at two radii). @default 'sm' */
   rounded?: ProductImageRadius;
   /** Next.js `sizes` hint. @default '(max-width: 768px) 100vw, 320px' */
   sizes?: string;
@@ -72,7 +73,7 @@ export const ProductImage = React.forwardRef<HTMLDivElement, ProductImageProps>(
       alt,
       ratio = '1 / 1',
       fit = 'cover',
-      rounded = 'md',
+      rounded = 'sm',
       sizes = '(max-width: 768px) 100vw, 320px',
       priority = false,
       zoomOnHover = false,
@@ -124,7 +125,14 @@ export const ProductImage = React.forwardRef<HTMLDivElement, ProductImageProps>(
             <span className={styles.markGlow} aria-hidden="true" />
             <span className={styles.markWeave} aria-hidden="true" />
             <span className={styles.markVignette} aria-hidden="true" />
-            <span className={styles.markInitials} aria-hidden="true">
+            <span
+              className={cn(
+                styles.markInitials,
+                mark.single && styles.markInitialsSingle,
+                mark.nonLatin && styles.markInitialsNonLatin
+              )}
+              aria-hidden="true"
+            >
               {mark.initials}
             </span>
             {sku ? (

@@ -10,16 +10,23 @@
 .grid {
   --_cols: 4;
   --_gap: 24px;
-  --_min: 260px;
+  --_min: 240px;
 
   display: grid;
   gap: var(--_gap);
   /*
-   * `auto-fill` with a 260px floor is the baseline. The `max()` raises that
-   * floor to whatever an even split into `--_cols` would be, so a merchant who
-   * asks for 3 columns gets 3 on a wide screen instead of 5 — and the 260px
-   * floor still wins on narrow screens, which is what keeps the grid from
-   * collapsing to one cramped column on a phone.
+   * `auto-fill` over a fixed floor is the baseline — the grid reflows on its
+   * own and never becomes the single narrow column this page used to render.
+   * The `max()` then raises that floor to whatever an even split into
+   * `--_cols` would be, so a merchant who asks for 3 columns gets 3 on a wide
+   * screen instead of 5.
+   *
+   * The floor is 240px rather than a round 260px because of how close the two
+   * interact: a compact-density theme's container divided four ways lands a
+   * couple of pixels under 260, which would silently drop the merchant's
+   * four-column setting to three. 240px keeps a comfortable card, still
+   * collapses to two columns on a tablet and one on a phone, and lets the
+   * merchant's own setting win when it is within a hair of fitting.
    */
   grid-template-columns: repeat(
     auto-fill,
@@ -31,8 +38,15 @@
 }
 
 .gridCompact {
-  --_min: 200px;
+  --_min: 190px;
   --_gap: 16px;
+}
+
+/* Sold-out imagery steps back so the in-stock products in the same row read
+   first. The badge and the stock line still carry the actual message. */
+.cardSoldOut .mediaInner {
+  opacity: 0.55;
+  filter: saturate(0.65);
 }
 
 /* -- Card ----------------------------------------------------------------- */

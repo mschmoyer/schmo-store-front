@@ -610,10 +610,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               <Text fw={500}>Order Date:</Text>
               {editing ? (
                 <DateInput
-                  value={formData.order_date ? new Date(formData.order_date) : null}
-                  onChange={(date) => setFormData(prev => ({ 
-                    ...prev, 
-                    order_date: date ? date.toISOString().split('T')[0] : '' 
+                  value={formData.order_date || null}
+                  onChange={(date) => setFormData(prev => ({
+                    ...prev,
+                    order_date: date ?? ''
                   }))}
                   style={{ flex: 1, maxWidth: 200 }}
                 />
@@ -626,10 +626,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               <Text fw={500}>Expected Delivery:</Text>
               {editing ? (
                 <DateInput
-                  value={formData.expected_delivery ? new Date(formData.expected_delivery) : null}
-                  onChange={(date) => setFormData(prev => ({ 
-                    ...prev, 
-                    expected_delivery: date ? date.toISOString().split('T')[0] : '' 
+                  value={formData.expected_delivery || null}
+                  onChange={(date) => setFormData(prev => ({
+                    ...prev,
+                    expected_delivery: date ?? ''
                   }))}
                   style={{ flex: 1, maxWidth: 200 }}
                 />
