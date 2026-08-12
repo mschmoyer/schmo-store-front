@@ -130,14 +130,25 @@ describe('admin — no colour outside the palette', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('ships no gradient in the admin', () => {
-    // §1 anti-goals: "No pastel gradient soup." The top bar was a three-stop
-    // near-black gradient and a badge was `variant="gradient"`.
+  it('ships no decorative gradient in the admin', () => {
+    /*
+     * §1 anti-goals: "No pastel gradient soup." The top bar was a three-stop
+     * near-black gradient and a badge was `variant="gradient"`.
+     *
+     * A gradient built entirely from tokens is not the thing being banned —
+     * the colour-swatch transparency checkerboard is four `--ink-100` ramps and
+     * is exactly right. What is banned is a gradient carrying a literal, which
+     * is always somebody's decoration.
+     */
     const offenders: Array<{ file: string; hit: string }> = [];
     for (const { file, src } of adminFiles()) {
       const clean = stripComments(src);
-      const hit = /variant="gradient"|linear-gradient\(/.exec(clean);
-      if (hit) offenders.push({ file, hit: hit[0] });
+      if (clean.includes('variant="gradient"')) offenders.push({ file, hit: 'variant="gradient"' });
+      for (const gradient of clean.match(/(?:linear|radial|conic)-gradient\([^;]*/g) ?? []) {
+        if (/#[0-9a-fA-F]{3,8}|rgba?\(\s*\d/.test(gradient)) {
+          offenders.push({ file, hit: gradient.slice(0, 60) });
+        }
+      }
     }
     expect(offenders).toEqual([]);
   });
@@ -156,7 +167,8 @@ describe('admin — the chrome the owner rejected, by name', () => {
 
   it('uses the real RebelShops mark, not the old red cart', () => {
     expect(header).toContain('/brand/logo-horizontal.svg');
-    expect(header).not.toContain('RebelShopLogo');
+    // Comments stripped: the header's own docblock names what it replaced.
+    expect(stripComments(header)).not.toContain('RebelShopLogo');
   });
 
   it('has retired the name "RebelShop" and the tagline', () => {

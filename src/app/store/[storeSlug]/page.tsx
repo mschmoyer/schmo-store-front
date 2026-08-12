@@ -1,7 +1,10 @@
+import { cookies } from 'next/headers';
+
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import { SectionList } from '@/components/store/sections';
 import { EmptyCatalogue } from '@/components/store/states/EmptyStates';
-import { StoreBand, StoreContainer } from '@/components/store/ui';
+import { SectionHeading, StoreBand, StoreContainer } from '@/components/store/ui';
+import { verifySession } from '@/lib/auth/session';
 
 import { loadStorefront, type SearchParams } from '../_lib/load';
 import { countActiveProducts } from '../_lib/queries';
@@ -9,6 +12,33 @@ import { countActiveProducts } from '../_lib/queries';
 interface StorePageProps {
   params: Promise<{ storeSlug: string }>;
   searchParams: Promise<SearchParams>;
+}
+
+/**
+ * Whether this request is the shop's own owner looking at it.
+ *
+ * The merchant-facing troubleshooting block ("Open your dashboard and go to
+ * Products…", plus a *Manage products* button) is useful advice for exactly one
+ * person, and internal noise on the public web for everybody else. Gating it on
+ * "the shop is empty" published it to shoppers; gating it on identity does not.
+ *
+ * Any failure to read the cookie is treated as "not the owner". The cost of a
+ * false negative is a merchant seeing the same polite line a shopper sees; the
+ * cost of a false positive is admin instructions on a public URL, which is the
+ * defect this exists to close.
+ *
+ * @param storeId - The store being rendered
+ * @returns True only for an authenticated owner of this store
+ */
+async function isStoreOwner(storeId: string): Promise<boolean> {
+  try {
+    const token = (await cookies()).get('session')?.value;
+    if (!token) return false;
+    const session = await verifySession(token);
+    return session?.storeId === storeId;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -20,9 +50,18 @@ interface StorePageProps {
  * this page with no code change, and a section type this build does not know
  * about is skipped rather than crashing the shop.
  *
- * The only special case is a shop with no products at all, which gets the
- * merchant-facing empty state instead of a home page full of bands that would
- * each individually render nothing.
+ * A shop with no products still renders its own home page. Most of what a
+ * merchant composes — the hero, the value props, the image-with-text, the rich
+ * text — needs no catalogue at all, and the product-bearing sections already
+ * return `null` when they have nothing to show. Suppressing all seven and
+ * replacing them with a single panel was how a freshly published store came out
+ * as a black page reading "NO PRODUCTS YET · If it is yours, here is how to fill
+ * it: Open your dashboard…" — internal instructions, addressed to the owner,
+ * served to whoever the merchant had just been told to send the link to.
+ *
+ * So the empty case now splits by audience: the owner gets the troubleshooting
+ * block, and everyone else gets one quiet line under the merchant's real
+ * sections.
  *
  * @param props - Route params and search params
  * @returns The themed store home page

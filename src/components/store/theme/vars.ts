@@ -1,4 +1,10 @@
-import type { ResolvedTheme } from '@/lib/storefront-theme';
+import {
+  CONTRAST_TEXT,
+  CONTRAST_UI,
+  ensureContrast,
+  mix,
+  type ResolvedTheme,
+} from '@/lib/storefront-theme';
 
 /**
  * Renderer-level custom properties, derived from the theme.
@@ -24,9 +30,20 @@ export const THEME_BLOCK_SENTINEL = '/*__storefront-base__*/';
 /**
  * Build the button treatment for a theme's `buttons.style`.
  *
- * `outline` and `soft` both resolve their resting foreground to the brand color
- * and only flip to `--st-on-brand` once the brand fills the button, so the
- * engine's auto-contrast guarantee still holds in every state.
+ * **A brand colour is not automatically a legible foreground.** The engine
+ * guarantees `--st-on-brand` reads on a brand *fill*, and it lifts `--st-text`
+ * and `--st-text-muted` to 4.5:1 on the page — but `--st-brand` itself carries
+ * no such promise, because it is a fill colour first. An `outline` or `soft`
+ * button paints its label *in* the brand colour on a near-page ground, so it
+ * sits outside every guarantee the engine makes: Bloom's pink on its own
+ * off-white measured **2.28:1** with the brand used raw.
+ *
+ * So the two unfilled treatments run the brand through the same
+ * `ensureContrast` the engine uses on body text, against every ground that
+ * button can actually sit on — the page, a card, and (for `soft`) its own tint
+ * in both states. The result is still the merchant's hue, walked along the
+ * OKLCh lightness axis only as far as legibility requires, and it is computed
+ * here rather than in CSS because `color-mix()` cannot check its own contrast.
  *
  * @param theme - The resolved theme
  * @returns Declaration lines for the button variables
@@ -39,29 +56,50 @@ function buttonVars(theme: ResolvedTheme): string[] {
     `--stx-btn-weight: ${uppercase ? '650' : '600'}`,
   ];
 
+  const brand = theme.brand.color;
+  const surface = theme.brand.surface;
+  const raised = theme.brand.surfaceRaised;
+
   switch (theme.buttons.style) {
-    case 'outline':
+    case 'outline': {
+      // An outline button is transparent, so its ground is whatever band or card
+      // it lands on. Both are checked.
+      const label = ensureContrast(brand, [surface, raised], CONTRAST_TEXT);
+      const edge = ensureContrast(brand, [surface, raised], CONTRAST_UI);
       return [
         ...shared,
         '--stx-btn-bg: transparent',
-        '--stx-btn-fg: var(--st-brand)',
-        '--stx-btn-border: var(--st-brand)',
+        `--stx-btn-fg: ${label}`,
+        `--stx-btn-border: ${edge}`,
         '--stx-btn-bg-hover: var(--st-brand)',
         '--stx-btn-fg-hover: var(--st-on-brand)',
         '--stx-btn-border-hover: var(--st-brand)',
         '--stx-btn-border-width: 1px',
       ];
-    case 'soft':
+    }
+    case 'soft': {
+      // The tints are computed rather than left to `color-mix()` so their
+      // contrast can be measured against the label before either ships.
+      const rest = mix(surface, brand, 0.16);
+      const restOnCard = mix(raised, brand, 0.16);
+      const hover = mix(surface, brand, 0.28);
+      const hoverOnCard = mix(raised, brand, 0.28);
+      const label = ensureContrast(
+        brand,
+        [rest, restOnCard, hover, hoverOnCard],
+        CONTRAST_TEXT,
+      );
       return [
         ...shared,
-        '--stx-btn-bg: color-mix(in oklab, var(--st-brand) 16%, var(--st-surface))',
-        '--stx-btn-fg: var(--st-brand)',
+        `--stx-btn-bg: ${rest}`,
+        `--stx-btn-fg: ${label}`,
         '--stx-btn-border: transparent',
-        '--stx-btn-bg-hover: color-mix(in oklab, var(--st-brand) 28%, var(--st-surface))',
-        '--stx-btn-fg-hover: var(--st-brand)',
+        `--stx-btn-bg-hover: ${hover}`,
+        `--stx-btn-fg-hover: ${label}`,
         '--stx-btn-border-hover: transparent',
         '--stx-btn-border-width: 1px',
       ];
+    }
     case 'solid':
     default:
       return [

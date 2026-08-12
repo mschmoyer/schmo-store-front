@@ -21,6 +21,16 @@
  * Each preset also ships its **own home page composition** — see the section
  * block below. Tokens make a shop look different; composition and copy make it
  * a different shop, and a preset that only did the first is a colourway.
+ *
+ * **No preset enables the announcement bar.** It used to: picking a theme in
+ * onboarding published a strip across the top of the merchant's live shop
+ * reading things like "Next-day dispatch on every order placed before 3pm" or
+ * "Free samples with every order" — delivery terms and offers the merchant had
+ * never seen, on a step with no preview, that they then had to honour. Sample
+ * copy inside a section is a starting point a merchant will edit; a promise in
+ * the header is a commitment made on their behalf. The bar now ships off and
+ * empty, and the customizer's Header panel carries the example wording as help
+ * text instead.
  */
 
 import { RADIUS_PX } from './defaults';
