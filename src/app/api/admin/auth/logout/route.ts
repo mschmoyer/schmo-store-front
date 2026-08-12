@@ -1,41 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { destroySession, getSessionFromRequest } from '@/lib/auth/session';
+/**
+ * POST /api/admin/auth/logout
+ *
+ * Signs the admin out. Expires the httpOnly `session` cookie, which is what every server route
+ * reads; the client separately drops its `admin_token` from `localStorage`.
+ *
+ * Previously this required an `Authorization: Bearer` header and returned 400 or 401 without it -
+ * so a user whose token had expired, or who never had one in `localStorage`, could not log out at
+ * all, and the session cookie outlived the "logout" by up to seven days. Signing out now never
+ * fails and never inspects the token: the point is to end the session, and an invalid token means
+ * it should end anyway.
+ */
 
-export async function POST(request: NextRequest) {
-  try {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({
-        success: false,
-        error: 'No session token provided'
-      }, { status: 400 });
-    }
-    
-    const token = authHeader.substring(7);
-    
-    // Verify session exists
-    const user = await getSessionFromRequest(request);
-    if (!user) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid session'
-      }, { status: 401 });
-    }
-    
-    // Destroy session
-    await destroySession(token);
-    
-    return NextResponse.json({
-      success: true,
-      message: 'Logged out successfully'
-    });
-    
-  } catch (error) {
-    console.error('Logout error:', error);
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error'
-    }, { status: 500 });
-  }
+import { NextResponse } from 'next/server';
+import { clearSessionCookie } from '@/lib/auth/session-cookie';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * Sign the admin out.
+ *
+ * @returns JSON confirming the session cookie has been expired.
+ */
+export async function POST(): Promise<NextResponse> {
+  return clearSessionCookie(
+    NextResponse.json({ success: true, message: 'Logged out successfully' })
+  );
 }

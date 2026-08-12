@@ -109,15 +109,15 @@ export function AdminProvider({ children }: AdminProviderProps) {
   
   const logout = async () => {
     try {
+      // Called unconditionally, and with the cookie attached: the session that has to be ended
+      // lives in an httpOnly cookie, not in `admin_token`, so gating this on localStorage left the
+      // real session alive whenever the token was already gone.
       const token = localStorage.getItem('admin_token');
-      if (token) {
-        await fetch('/api/admin/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-      }
+      await fetch('/api/admin/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : undefined
+      });
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {

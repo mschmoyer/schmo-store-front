@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { hashPassword } from '@/lib/auth/password';
-import { createSession } from '@/lib/auth/session';
+import { SESSION_COOKIE, createSession } from '@/lib/auth/session';
 import {
   validateEmail,
   validateName,
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
       { message: "Account created. Let's connect ShipStation.", state },
       { status: 201 }
     );
-    response.cookies.set('session', token, {
+    response.cookies.set(SESSION_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

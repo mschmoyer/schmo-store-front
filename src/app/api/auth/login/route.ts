@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { verifyPassword } from '@/lib/auth/password';
-import { createSession } from '@/lib/auth/session';
+import { SESSION_COOKIE, createSession } from '@/lib/auth/session';
 
 interface LoginRequest {
   email: string;
@@ -86,11 +86,14 @@ export async function POST(req: NextRequest) {
       storeSlug: user.store_slug
     });
 
-    // Set session cookie
-    response.cookies.set('session', sessionToken, {
+    // Set session cookie. `path: '/'` is not optional: without it the browser scopes the cookie to
+    // the request's directory (`/api/auth`), so it is never sent to `/api/onboarding/**` or any
+    // other route that reads it - and logout cannot delete it from `/` either.
+    response.cookies.set(SESSION_COOKIE, sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      path: '/',
       maxAge: 60 * 60 * 24 * 7 // 7 days
     });
 

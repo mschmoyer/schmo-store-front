@@ -174,9 +174,10 @@ select store_slug, count(*) filter (where stock_quantity = 0) from products p jo
 
 Then look at it: with the dev server already running on port 3000, screenshot
 `/store/demo-electronics`, `/store/artisan-craft`, `/store/fitness-pro` (and a product detail page,
-e.g. `/store/demo-electronics/product/BCA-AUD-1001` — the product route resolves by SKU or DB id,
-not by slug) and confirm images load, prices/discounts render, and the one out-of-stock item per
-store shows a disabled "Out of Stock" state.
+e.g. `/store/demo-electronics/product/aviator-headphones-onyx` — despite the route being named
+`[productId]`, `getProduct` resolves the segment as a **slug** unless it parses as a UUID, so a SKU
+like `BCA-AUD-1001` 404s) and confirm images load, prices/discounts render, and the one out-of-stock
+item per store shows a disabled "Out of Stock" state.
 
 ## Signing in
 

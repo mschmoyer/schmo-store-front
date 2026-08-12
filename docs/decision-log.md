@@ -1343,3 +1343,50 @@ Open:
       `free_<uuid>`, so `createPaidOrder`'s idempotency (keyed on the session id) has nothing to
       match. The paid flow has the same shape but Stripe's payment step absorbs it. Consider keying
       free orders on a client-supplied idempotency token
+
+## Logging out did not log you out (2026-08-12)
+
+Reported: sign out, return to the marketing site, click "create a new site" — the wizard opens
+already showing "Schmo Store". Signing up as a different user was impossible.
+
+The httpOnly `session` cookie — the one every server route actually reads — was never cleared by
+anything.
+
+- [x] **`/api/auth/logout` did not exist.** `useAuth.signOut` POSTed to it and got a 404 it ignored.
+      (That provider is also never mounted anywhere, so it was dead code failing silently.) Created
+- [x] **`/api/admin/auth/logout` cleared no cookie.** It required an `Authorization: Bearer` header,
+      returned 400/401 without one, and its only action was `destroySession()` — which is a
+      documented no-op for JWTs. It now expires the cookie, takes no header, and always succeeds:
+      a logout that can fail leaves the user stuck signed in, and an invalid token is a reason to
+      end the session, not to refuse to
+- [x] **`AdminContext.logout` only called the endpoint `if (token)`.** A user whose `admin_token`
+      had already gone never hit logout at all. Now unconditional and sends `credentials: 'include'`
+- [x] So "logout" dropped `admin_token` from `localStorage` and redirected, while the real session
+      stayed valid for its full 7 days. `/create-store` resumes from that cookie *by design*
+      (`src/app/create-store/page.tsx:15`), which is correct behaviour fed a stale identity
+- [x] **`/api/auth/login` set the cookie with no `path`.** Browsers then scope it to the request's
+      directory — `/api/auth` — so it was never sent to `/api/onboarding/**` at all, and could not be
+      deleted from `/`. Now `path: '/'`, matching `/api/onboarding/account`. `clearSessionCookie`
+      clears both paths regardless, so cookies already in the wild from either route are killed
+- [x] **`response.cookies.set` is keyed by cookie name, not name+path.** Clearing `session` twice
+      through it kept only the last write — verified against the running server: one `Set-Cookie`,
+      `Path=/api/auth`, and the `/` cookie that matters survived. `clearSessionCookie` appends raw
+      `Set-Cookie` headers instead. Three regression tests cover it
+- [x] `SESSION_COOKIE` was declared in `onboarding/_lib/state.ts` and the name hardcoded in two
+      routes. Now one constant in `src/lib/auth/session-cookie.ts` — a jose-free module, so a route
+      that only expires a cookie does not load a crypto library (and can be unit-tested at all)
+- [x] Verified end-to-end against the live Schmo Store session: `/api/onboarding/state` returns
+      `store: Schmo Store, step: launch` with the cookie, and `store: none, step: account` through
+      the same cookie jar after POSTing either logout route
+- [x] **Version bumped** to 2.4.1
+
+Open:
+- [ ] Admin auth keeps the JWT in `localStorage` (`admin_token`) *and* in an httpOnly cookie, and
+      the two are set by different routes (`/api/admin/auth/login` returns a token and sets no
+      cookie; `/api/auth/login` and `/api/onboarding/account` set the cookie). The `localStorage`
+      copy is XSS-readable and buys nothing the cookie does not. Collapse onto the cookie
+- [ ] `src/hooks/useAuth.tsx` (350 lines, a full auth provider) is mounted nowhere. Delete it or
+      mount it — right now it is a second, divergent auth implementation waiting to be picked up
+- [ ] `destroySession()` is a no-op, so a stolen token stays valid until it expires. Logout is now
+      correct for the browser, but there is still no server-side revocation (jti blacklist, or
+      short-lived tokens plus refresh)

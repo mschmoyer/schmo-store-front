@@ -8,7 +8,7 @@
  */
 
 import { db } from '@/lib/database/connection';
-import { verifySession, type UserSession } from '@/lib/auth/session';
+import { SESSION_COOKIE, verifySession, type UserSession } from '@/lib/auth/session';
 import {
   asStepId,
   completeStep as advance,
@@ -23,7 +23,7 @@ import type {
 } from '@/components/onboarding/lib/types';
 
 /** Cookie the login route already sets. Onboarding reuses it verbatim. */
-export const SESSION_COOKIE = 'session';
+export { SESSION_COOKIE };
 
 interface SessionRow extends Record<string, unknown> {
   id: string;
