@@ -22,7 +22,7 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
    * (`'a'` / `'button'`) so it is actually reachable by keyboard (§7).
    */
   interactive?: boolean;
-  /** Draws an ember hairline across the top edge to mark a promoted card. */
+  /** Draws an ink hairline across the top edge to mark a promoted card. */
   accent?: boolean;
   /** Element to render. @default 'div' */
   as?: React.ElementType;

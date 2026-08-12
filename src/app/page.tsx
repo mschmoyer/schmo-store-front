@@ -5,23 +5,13 @@ import { AnalyticsBoot } from '@/components/marketing/parts/AnalyticsBoot';
 import { Hero } from '@/components/marketing/home/Hero';
 import { AlreadyHaveIt } from '@/components/marketing/home/AlreadyHaveIt';
 import { HowItWorksSteps } from '@/components/marketing/home/HowItWorksSteps';
-import { MakeItYours } from '@/components/marketing/home/MakeItYours';
-import { SyncSection } from '@/components/marketing/home/SyncSection';
-import { InventorySection } from '@/components/marketing/home/InventorySection';
-import { AnalyticsSection } from '@/components/marketing/home/AnalyticsSection';
+import { WhatYouGet } from '@/components/marketing/home/WhatYouGet';
 import { ProofSection } from '@/components/marketing/home/ProofSection';
 import { PricingSection } from '@/components/marketing/home/PricingSection';
 import { CostComparison } from '@/components/marketing/home/CostComparison';
-import { FaqSection } from '@/components/marketing/home/FaqSection';
 import { FinalCta } from '@/components/marketing/home/FinalCta';
+import { loadShowcaseStores, pickHeroProduct } from '@/components/marketing/data/showcase';
 import {
-  interleaveProducts,
-  loadShowcaseStores,
-  loadZeroResultSearches,
-  pickHeroProduct,
-} from '@/components/marketing/data/showcase';
-import {
-  faqStructuredData,
   generateLandingPageMeta,
   landingPageStructuredData,
 } from '@/components/seo/LandingPageMeta';
@@ -37,15 +27,35 @@ export const metadata: Metadata = generateLandingPageMeta({
 /**
  * The RebelShops marketing homepage.
  *
- * Renders on the server so the hero, the storefront showcase and the
- * zero-result search table are built from live rows in the seeded demo stores
- * rather than from copy. Section order follows docs/marketing-copy.md §3, with
- * the FAQ placed before the final CTA so the page ends on the offer (§3.12).
+ * Renders on the server so the hero's before/after visual is built from live
+ * rows in the seeded demo stores rather than from copy.
+ *
+ * LAYOUT CONTRACT — the page is one white ground from the header to the footer.
+ * Sections are separated by whitespace, a 1px rule and type hierarchy, never by
+ * an alternating background. Exactly one section inverts to ink: pricing, the
+ * decision point. Every section renders through `parts/Section`, which owns the
+ * only container on the site, so all content shares one left edge and no CTA
+ * can drift to an alignment of its own.
+ *
+ * SEVEN SECTIONS, NOT THIRTEEN. docs/marketing-copy.md §3 specifies thirteen,
+ * which is a features page wearing a homepage's name: the build followed it
+ * faithfully and produced 12,381px, 48% of which rendered byte-identically on
+ * /features and /how-it-works because those pages imported the same modules.
+ * What now lives elsewhere:
+ *
+ *   §3.4 MakeItYours ....... /features (it was the lowest-density section here)
+ *   §3.6 InventorySection .. /features (summarised in one line by WhatYouGet)
+ *   §3.8 AnalyticsSection .. /features (likewise)
+ *   §3.13 FaqSection ....... /pricing, beside the price it asks about
+ *   Full Shopify table ..... /pricing (the homepage keeps a three-row strip)
+ *
+ * That is only deletable because ROUTES.pricing/faq/comparison now point at
+ * /pricing instead of at `/#…` anchors on this page. See data/routes.ts.
  *
  * @returns The homepage.
  */
 export default async function HomePage() {
-  const [stores, searches] = await Promise.all([loadShowcaseStores(), loadZeroResultSearches(5)]);
+  const stores = await loadShowcaseStores();
 
   const hero = pickHeroProduct(stores);
   const heroRows = hero
@@ -55,34 +65,23 @@ export default async function HomePage() {
       ].sort((a, b) => a.sku.localeCompare(b.sku))
     : [];
 
-  const showcase = interleaveProducts(stores, 12);
-
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(landingPageStructuredData) }}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqStructuredData) }}
-      />
-
       <AnalyticsBoot />
       <SiteHeader />
 
       <main id="main">
         <Hero store={hero?.store ?? null} rows={heroRows} focus={hero?.product ?? null} />
         <AlreadyHaveIt />
-        <HowItWorksSteps />
-        <MakeItYours stores={stores} />
-        <SyncSection />
-        <InventorySection />
-        <AnalyticsSection searches={searches} />
-        <ProofSection items={showcase} />
+        <HowItWorksSteps showFigures={false} />
+        <WhatYouGet />
+        <ProofSection />
         <PricingSection />
         <CostComparison />
-        <FaqSection />
         <FinalCta />
       </main>
 

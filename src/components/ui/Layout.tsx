@@ -109,7 +109,7 @@ export const Section = React.forwardRef<HTMLElement, SectionProps>(function Sect
 export interface EyebrowProps extends React.HTMLAttributes<HTMLSpanElement> {
   /** Draws a short rule before the label instead of leading with bare text. */
   rule?: boolean;
-  /** Uses secondary ink rather than the ember accent. */
+  /** Uses secondary ink rather than the primary accent. */
   muted?: boolean;
   /** @default 'span' */
   as?: React.ElementType;

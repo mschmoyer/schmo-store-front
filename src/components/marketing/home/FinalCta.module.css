@@ -1,18 +1,18 @@
-.root {
-  background: var(--ink-950);
-  padding-block: clamp(4.5rem, 10vw, 8rem);
-}
+/*
+ * The closing offer. No ground of its own: this used to be a second full-bleed
+ * ink block, immediately after the ink proof section and the ink sync section.
+ * The page's one inversion is pricing, so this one closes on the page ground
+ * and gets its emphasis from type size and whitespace instead.
+ *
+ * Left-aligned, like every other section — a centred column here was the third
+ * distinct alignment on the page.
+ */
 
 .inner {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  width: 100%;
-  max-width: 720px;
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-  text-align: center;
+  align-items: flex-start;
+  gap: var(--space-4);
 }
 
 .heading {
@@ -20,7 +20,7 @@
   font-size: var(--text-h1);
   line-height: 1.06;
   letter-spacing: -0.025em;
-  color: var(--paper);
+  color: var(--text);
   max-width: 18ch;
 }
 
@@ -28,20 +28,19 @@
   margin: 0;
   font-size: var(--text-lg);
   line-height: 1.6;
-  color: var(--ink-300);
-  max-width: 48ch;
+  color: var(--text-muted);
+  max-width: 52ch;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 6px;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
 }
 
 .microcopy {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--ink-400);
+  color: var(--text-muted);
 }

@@ -1,64 +1,55 @@
-.root {
-  background: var(--paper-sunken);
-  border-bottom: 1px solid var(--ink-200);
-  padding-block: var(--section-y);
-}
+/* No `.root` and no background — the shared Section owns both. */
 
 .inner {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(40px, 6vw, 72px);
-  width: 100%;
-  max-width: var(--container-content);
-  margin-inline: auto;
-  padding-inline: var(--gutter);
+  gap: var(--space-10);
+  align-items: start;
 }
 
 .copy {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-}
-
-.eyebrow {
-  color: var(--ember-700);
+  gap: var(--stack-sm);
+  min-width: 0;
 }
 
 .heading {
   margin: 0;
   font-size: var(--text-h2);
-  line-height: 1.12;
+  line-height: 1.15;
   letter-spacing: -0.02em;
-  max-width: 18ch;
+  max-width: 20ch;
+  color: var(--text);
 }
 
 .lede {
   margin: 0;
   font-size: var(--text-lg);
-  color: var(--ink-700);
-  max-width: 46ch;
-  font-weight: 500;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 52ch;
 }
 
 .body {
   margin: 0;
-  font-size: var(--text-base);
-  color: var(--ink-500);
-  max-width: 52ch;
+  color: var(--text-muted);
+  max-width: 58ch;
 }
 
+/* CTA and its qualifier are one block, flush left with the prose above. */
 .actions {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
-  margin-top: 4px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .microcopy {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 /* --------------------------------------------------------- the checklist */
@@ -67,28 +58,23 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  align-self: center;
   width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .row {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
-  background: var(--paper-raised);
-  border: 1px solid var(--ink-200);
-  border-bottom-width: 0;
-}
-
-.row:first-child {
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  gap: var(--space-3-5);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
 }
 
 .row:last-child {
-  border-bottom-width: 1px;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-bottom: 0;
 }
 
 .rowLabel {
@@ -96,48 +82,51 @@
   font-size: 1.0625rem;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--ink-900);
+  color: var(--text);
 }
 
 .rowNote {
   font-size: var(--text-xs);
-  color: var(--ink-500);
+  color: var(--text-subtle);
   text-align: right;
 }
 
+/*
+ * The tick is the signal green: these are things the reader has already got,
+ * which is the "in stock / you have this" reading the signal is reserved for.
+ */
 .check {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-full);
-  background: var(--mint-50);
-  color: var(--mint-700);
+  background: var(--signal-soft);
+  color: var(--signal);
 }
 
 .box {
   display: block;
-  width: 26px;
-  height: 26px;
-  border: 2px dashed var(--ember-400);
+  width: 24px;
+  height: 24px;
+  border: 2px dashed var(--border-strong);
   border-radius: var(--radius-xs);
-  background: var(--ember-50);
 }
 
-/* The fifth row is deliberately louder than the four above it. */
+/*
+ * The fifth row is the gap we fill. It is emphasised with a fill and weight,
+ * not with a second dark block — the page gets exactly one of those.
+ */
 .rowTodo {
-  background: var(--ink-950);
-  border-color: var(--ink-950);
-  padding-block: 24px;
+  background: var(--surface-2);
 }
 
 .rowTodo .rowLabel {
-  color: var(--paper);
-  font-size: 1.1875rem;
+  font-size: 1.125rem;
 }
 
 .rowTodo .rowNote {
-  color: var(--ember-300);
+  color: var(--text);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -145,15 +134,14 @@
 
 @media (min-width: 1000px) {
   .inner {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.88fr);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
   }
 }
 
 @media (max-width: 520px) {
   .row {
-    grid-template-columns: 26px minmax(0, 1fr);
-    row-gap: 4px;
+    grid-template-columns: 24px minmax(0, 1fr);
+    row-gap: var(--space-1);
   }
 
   .rowNote {

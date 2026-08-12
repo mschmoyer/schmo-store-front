@@ -1,33 +1,38 @@
+/*
+ * Every colour here is a semantic token, never a ramp step. That is what lets
+ * the same card sit on the white /pricing page and inside the homepage's one
+ * inverted section without a single `onDark` branch: `Section.module.css`
+ * re-points the tokens, and this file does not need to know.
+ */
+
 .card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
   width: 100%;
-  max-width: 480px;
-  margin-inline: auto;
   padding: clamp(24px, 4vw, 32px);
-  background: var(--paper-raised);
-  border: 1px solid var(--ink-200);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
   position: relative;
   overflow: hidden;
 }
 
+/* An ink hairline, not a brand hue. On the dark section it inverts to white. */
 .card::before {
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
-  background: var(--ember-500);
+  background: var(--accent);
 }
 
 .head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2-5);
   flex-wrap: wrap;
-  padding-top: 4px;
+  padding-top: var(--space-1);
 }
 
 .eyebrow {
@@ -37,7 +42,7 @@
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-500);
+  color: var(--text-secondary);
 }
 
 .planName {
@@ -46,7 +51,7 @@
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--ink-950);
+  color: var(--text-primary);
 }
 
 .badge {
@@ -54,67 +59,72 @@
 }
 
 .priceBlock {
-  padding-block: 4px 8px;
-  border-bottom: 1px solid var(--ink-100);
+  padding-block: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
 }
 
+/* The price is money, so it is the one place the signal green belongs. */
 .price {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(3.25rem, 8vw, 4.25rem);
+  font-size: clamp(3rem, 7vw, 3.75rem);
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-950);
+  color: var(--signal);
 }
 
 .priceSymbol {
   font-size: 0.52em;
   vertical-align: 0.42em;
   margin-inline-end: 2px;
-  color: var(--ink-500);
 }
 
 .priceNote {
-  margin: 6px 0 0;
+  margin: var(--space-1-5) 0 0;
   font-size: var(--text-base);
-  color: var(--ink-700);
+  color: var(--text-secondary);
 }
 
 .thenLine {
-  margin: 10px 0 12px;
+  margin: var(--space-2-5) 0 var(--space-3);
   font-family: var(--font-display);
   font-size: 1.125rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-900);
+  color: var(--text-primary);
 }
 
 .microcopy {
-  margin: -6px 0 0;
+  margin: calc(-1 * var(--space-1-5)) 0 0;
   font-size: var(--text-sm);
-  color: var(--ink-500);
+  color: var(--text-secondary);
   text-align: center;
 }
 
+/*
+ * Two columns from the tablet breakpoint up. Fifteen stacked rows made this
+ * card roughly 900px tall on its own; side by side it is half that, and the
+ * "not included" column sits where a reader will actually still be looking.
+ */
 .lists {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  margin-top: 8px;
-  padding-top: 20px;
-  border-top: 1px solid var(--ink-100);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
 }
 
 .listHeading {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   font-family: var(--font-sans);
   font-size: var(--text-eyebrow);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-500);
+  color: var(--text-secondary);
 }
 
 .items {
@@ -123,18 +133,19 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: var(--space-2-5);
 }
 
 .item {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-2-5);
   font-size: var(--text-sm);
   line-height: 1.5;
-  color: var(--ink-700);
+  color: var(--text-secondary);
 }
 
+/* A tick is an "you get this" state — a permitted signal usage. */
 .tick {
   display: grid;
   place-items: center;
@@ -142,23 +153,30 @@
   height: 18px;
   margin-top: 2px;
   border-radius: var(--radius-full);
-  background: var(--mint-50);
-  color: var(--mint-700);
+  background: var(--success-subtle);
+  color: var(--signal);
 }
 
 .itemOut {
-  color: var(--ink-500);
+  color: var(--text-secondary);
 }
 
 .dash {
   width: 10px;
   height: 2px;
-  margin: 10px 0 0 4px;
+  margin: var(--space-2-5) 0 0 var(--space-1);
   border-radius: 2px;
-  background: var(--ink-300);
+  background: var(--border-strong);
 }
 
 .itemLead {
-  color: var(--ink-900);
+  color: var(--text-primary);
   font-weight: 600;
+}
+
+@media (min-width: 720px) {
+  .lists {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-7);
+  }
 }

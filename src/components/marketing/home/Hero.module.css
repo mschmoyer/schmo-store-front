@@ -1,46 +1,20 @@
-.root {
-  position: relative;
-  background: var(--paper);
-  border-bottom: 1px solid var(--ink-200);
-  padding-block: clamp(2.5rem, 6vw, 4.5rem) clamp(3.5rem, 8vw, 6rem);
-  overflow: hidden;
-}
-
-/* A single, barely-there warm wash anchored behind the headline. Not a
-   gradient band across the section — it never crosses a text baseline. */
-.root::before {
-  content: '';
-  position: absolute;
-  inset: -24% auto auto -12%;
-  width: 44rem;
-  height: 44rem;
-  background: radial-gradient(circle, rgb(var(--ember-500-rgb) / 0.06), transparent 62%);
-  pointer-events: none;
-}
-
-.inner {
-  position: relative;
-  width: 100%;
-  max-width: var(--container-content);
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-}
+/*
+ * Hero. No background of its own — the page ground runs straight through it,
+ * and there is no radial wash behind the headline: the old one was the first
+ * of the tonal shifts that made the page read as a stack of unrelated bands.
+ */
 
 .copy {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  gap: var(--stack-md);
 }
 
 .lead {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--stack-sm);
   min-width: 0;
-}
-
-.eyebrow {
-  color: var(--ember-700);
 }
 
 .headline {
@@ -48,14 +22,14 @@
   font-size: var(--text-display);
   line-height: 1.02;
   letter-spacing: -0.03em;
-  color: var(--ink-950);
+  color: var(--text);
   text-wrap: balance;
 }
 
 .support {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--stack-sm);
   min-width: 0;
 }
 
@@ -63,41 +37,43 @@
   margin: 0;
   font-size: var(--text-lg);
   line-height: 1.6;
-  color: var(--ink-500);
+  color: var(--text-muted);
   max-width: 48ch;
 }
 
+/*
+ * The CTA pair and the microcopy that qualifies it are ONE block, flush to the
+ * same left edge as the sentence above them. Previously the primary button
+ * floated right of a paragraph it had no relationship to.
+ */
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .microcopy {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 .visual {
   position: relative;
   min-width: 0;
-  margin-top: clamp(36px, 5vw, 56px);
+  margin-top: var(--stack-lg);
 }
 
 @media (min-width: 940px) {
   .copy {
-    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
-    gap: 56px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: var(--space-10);
     align-items: end;
   }
 
   .headline {
     max-width: 15ch;
-  }
-
-  .support {
-    padding-bottom: 4px;
   }
 }
 

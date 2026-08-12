@@ -5,8 +5,8 @@
  * duration. Every transform is inside a `prefers-reduced-motion:
  * no-preference` guard — see the note above the hover blocks.
  *
- * Colour contract: white labels sit on --accent-solid (ember-600, 4.51:1),
- * never on --accent/ember-500 (3.42:1). Hover darkens to --accent-solid-hover
+ * Colour contract: white labels sit on --accent-solid, which is now the ink
+ * --text (#111214) — 18.74:1 with white. Hover LIGHTENS to --accent-solid-hover
  * (6.37:1), so hovering increases contrast.
  */
 
@@ -94,28 +94,23 @@
 
 /* ------------------------------------------------------------- variants -- */
 
-/* Primary — ember-600 fill. The inset highlight gives the fill a lit top edge
-   so it reads as a raised object rather than a flat rectangle. */
+/* Primary — solid ink fill, white label. A near-black fill needs no inset
+   highlight to read as an object; the old lit top edge only existed to stop a
+   saturated vermilion looking flat, and on ink it reads as a smudge. */
 .primary {
   background-color: var(--accent-solid);
   color: var(--accent-fg);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    var(--shadow-ember-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 .primary:hover:not(:disabled):not([aria-disabled='true']) {
   background-color: var(--accent-solid-hover);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    var(--shadow-ember);
+  box-shadow: var(--shadow-sm);
 }
 
 .primary:active:not(:disabled):not([aria-disabled='true']) {
   background-color: var(--accent-solid-active);
-  box-shadow:
-    inset 0 1px 2px rgba(60, 16, 4, 0.4),
-    0 1px 1px rgba(220, 58, 12, 0.2);
+  box-shadow: none;
 }
 
 /* Secondary — paper fill + hairline. Hover moves border AND elevation, not
@@ -177,10 +172,10 @@
 }
 
 /*
- * Filled controls take the on-accent ring. An ember ring on an ember button
+ * Filled controls take the on-accent ring. An ink ring on an ink button
  * measures 1.00:1 — the indicator and the control are the same colour.
- * --focus-ring-on-accent is ink-900 in light (4.22:1 vs ember-600, 3.94:1 vs
- * rose-500) and ink-100 in dark (3.88:1 / 4.16:1).
+ * --focus-ring-on-accent is white in light (18.74:1 vs the ink fill, 6.57:1 vs
+ * the danger fill) and ink in dark, where the accent fill inverts to white.
  */
 .primary:focus-visible,
 .destructive:focus-visible {
@@ -217,21 +212,12 @@
 }
 
 .link:hover:not(:disabled):not([aria-disabled='true']) {
-  color: var(--ember-800);
+  color: var(--text-muted);
   text-decoration-color: currentColor;
 }
 
-:global(:root[data-theme='dark']) .link:hover:not(:disabled),
-:global(:root[data-mantine-color-scheme='dark']) .link:hover:not(:disabled) {
-  color: var(--ember-200);
-}
-
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme='light']):not([data-mantine-color-scheme='light']))
-    .link:hover:not(:disabled) {
-    color: var(--ember-200);
-  }
-}
+/* `--text-secondary` already inverts per theme, so the dark-mode duplicates
+   the old per-theme hover overrides are gone. */
 
 /*
  * -- Motion ---------------------------------------------------------------

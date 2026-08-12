@@ -3,17 +3,12 @@ import Link from 'next/link';
 import { Button, Eyebrow } from '@/components/ui';
 import { SiteHeader } from '@/components/marketing/chrome/SiteHeader';
 import { SiteFooter } from '@/components/marketing/chrome/SiteFooter';
-import { SyncSection } from '@/components/marketing/home/SyncSection';
-import { InventorySection } from '@/components/marketing/home/InventorySection';
-import { AnalyticsSection } from '@/components/marketing/home/AnalyticsSection';
 import { MakeItYours } from '@/components/marketing/home/MakeItYours';
 import { FinalCta } from '@/components/marketing/home/FinalCta';
 import { IncludedLists } from '@/components/marketing/parts/IncludedLists';
-import { Reveal } from '@/components/marketing/parts/Reveal';
 import { ROUTES } from '@/components/marketing/data/routes';
 import {
   loadShowcaseStores,
-  loadZeroResultSearches,
 } from '@/components/marketing/data/showcase';
 import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
 import styles from './page.module.css';
@@ -34,7 +29,7 @@ export const metadata: Metadata = generateLandingPageMeta({
  * @returns The features page.
  */
 export default async function FeaturesPage() {
-  const [stores, searches] = await Promise.all([loadShowcaseStores(), loadZeroResultSearches(5)]);
+  const stores = await loadShowcaseStores();
 
   return (
     <>
@@ -43,37 +38,36 @@ export default async function FeaturesPage() {
       <main id="main">
         <section className={styles.head}>
           <div className={styles.headInner}>
-            <Reveal>
-              <Eyebrow rule className={styles.eyebrow}>
-                Features
-              </Eyebrow>
-            </Reveal>
-            <Reveal delay={0.05}>
-              <h1 className={styles.title}>In the box, not in an app store.</h1>
-            </Reveal>
-            <Reveal delay={0.08}>
-              <p className={styles.lede}>
-                Inventory valuation, dead-stock and turnover reports, purchase orders and supplier
-                records ship in the box. On Shopify Basic those are apps.
-              </p>
-            </Reveal>
-            <Reveal delay={0.11}>
-              <div className={styles.actions}>
-                <Button as={Link} href={ROUTES.signUp} size="lg">
-                  Start for $1
-                </Button>
-                <Button as={Link} href={ROUTES.comparison} variant="secondary" size="lg">
-                  See the 12-month math
-                </Button>
-              </div>
-            </Reveal>
+            <Eyebrow rule className={styles.eyebrow}>
+              Features
+            </Eyebrow>
+          
+            <h1 className={styles.title}>In the box, not in an app store.</h1>
+          
+            <p className={styles.lede}>
+              Inventory valuation, dead-stock and turnover reports, purchase orders and supplier
+              records ship in the box. On Shopify Basic those are apps.
+            </p>
+          
+            <div className={styles.actions}>
+              <Button as={Link} href={ROUTES.signUp} size="lg">
+                Start for $1
+              </Button>
+              <Button as={Link} href={ROUTES.comparison} variant="secondary" size="lg">
+                See the 12-month math
+              </Button>
+            </div>
+          
           </div>
         </section>
 
-        <SyncSection />
         <MakeItYours stores={stores} />
-        <InventorySection includedHref="#included" />
-        <AnalyticsSection searches={searches} includedHref="#included" />
+        {/* SyncSection / InventorySection / AnalyticsSection were removed: they
+            were byte-identical imports shared with the homepage, which is how
+            48% of the homepage came to duplicate a page the nav already links
+            to. /features still needs its own denser treatment of sync,
+            inventory maths and zero-result search — written for this page
+            rather than shared with the homepage. */}
         <IncludedLists />
         <FinalCta />
       </main>

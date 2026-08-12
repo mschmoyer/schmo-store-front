@@ -68,14 +68,14 @@
   box-shadow: var(--focus-ring), var(--shadow-md);
 }
 
-/* A hairline of ember along the top edge marks a promoted card. */
+/* A hairline of ink along the top edge marks a promoted card. */
 .accent::before {
   content: '';
   position: absolute;
   inset: -1px -1px auto -1px;
   height: 3px;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: linear-gradient(90deg, var(--ember-400), var(--ember-600));
+  background: var(--accent);
 }
 
 /*

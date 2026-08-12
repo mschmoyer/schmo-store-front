@@ -1,25 +1,16 @@
-.root {
-  background: var(--paper-sunken);
-  border-bottom: 1px solid var(--ink-200);
-  padding-block: var(--section-y);
-}
-
-.inner {
-  width: 100%;
-  max-width: 960px;
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-}
+/*
+ * No `.root`/`.inner` — the shared Section owns the ground, width and padding.
+ * The RebelShops column is tinted with the signal green because the column is
+ * money: it is the price comparison, which is exactly the role the signal is
+ * reserved for.
+ */
 
 .tableWrap {
-  margin-top: clamp(32px, 5vw, 44px);
-  background: var(--paper-raised);
-  border: 1px solid var(--ink-200);
+  margin-top: var(--stack-md);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-
 .tableScroll {
   overflow-x: auto;
 }
@@ -32,32 +23,32 @@
 }
 
 .caption {
-  padding: 13px 18px;
-  background: var(--paper-sunken);
-  border-bottom: 1px solid var(--ink-200);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
-  color: var(--ink-500);
+  color: var(--text-muted);
   text-align: left;
 }
 
 .table thead th {
-  padding: 13px 18px;
-  background: var(--paper-sunken);
-  border-bottom: 1px solid var(--ink-200);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: var(--ink-950);
+  color: var(--text);
   white-space: nowrap;
 }
 
 .table tbody th,
 .table tbody td {
-  padding: 13px 18px;
-  border-bottom: 1px solid var(--ink-100);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
   vertical-align: top;
-  color: var(--ink-700);
+  color: var(--text-muted);
   font-weight: 400;
 }
 
@@ -67,7 +58,7 @@
 }
 
 .rowHead {
-  color: var(--ink-900);
+  color: var(--text);
   font-weight: 500;
   min-width: 15ch;
 }
@@ -79,9 +70,9 @@
 
 .totalRow th,
 .totalRow td {
-  background: var(--paper-sunken);
-  border-top: 1px solid var(--ink-200);
-  border-bottom: 1px solid var(--ink-200);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .totalRow .usCol {
@@ -90,7 +81,7 @@
 
 .totalRow .rowHead {
   font-weight: 700;
-  color: var(--ink-950);
+  color: var(--text);
 }
 
 .totalUs,
@@ -103,25 +94,28 @@
   line-height: 1.1;
 }
 
+/* The twelve-month total is the money line. Signal green, deliberately. */
 .totalUs {
-  color: var(--mint-700);
+  color: var(--signal);
 }
 
 .totalThem {
-  color: var(--ink-900);
+  color: var(--text);
 }
 
 /* ------------------------------------------------------------- verdict */
 
 .verdict {
-  margin: 20px 0 0;
+  margin: var(--space-5) 0 0;
   font-size: var(--text-lg);
   line-height: 1.6;
-  color: var(--ink-700);
+  color: var(--text-muted);
+  max-width: 62ch;
 }
 
+/* The saving is money. */
 .verdict strong {
-  color: var(--ink-950);
+  color: var(--signal);
   font-family: var(--font-display);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -130,18 +124,18 @@
 /* ------------------------------------------------------ fairness block */
 
 .fairness {
-  margin-top: 28px;
-  padding: 22px 24px;
-  background: transparent;
-  border: 1px solid var(--ink-200);
+  margin-top: var(--space-7);
+  padding: var(--space-5) var(--space-6);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
 
 .fairPara {
-  margin: 0 0 14px;
+  margin: 0 0 var(--space-3-5);
   font-size: var(--text-sm);
   line-height: 1.65;
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 .fairPara:last-of-type {
@@ -149,18 +143,18 @@
 }
 
 .fairLead {
-  color: var(--ink-900);
+  color: var(--text);
   font-weight: 700;
 }
 
 .sources {
-  margin: 16px 0 0;
+  margin: var(--space-4) 0 0;
   font-size: var(--text-xs);
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 .sources a {
-  color: var(--ember-700);
+  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -186,8 +180,8 @@
   }
 
   .table tbody tr {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--ink-100);
+    padding: var(--space-3-5) var(--space-4);
+    border-bottom: 1px solid var(--border);
   }
 
   .table tbody tr:last-child {
@@ -201,9 +195,9 @@
   }
 
   .rowHead {
-    margin-bottom: 8px;
+    margin-bottom: var(--space-2);
     font-weight: 700;
-    color: var(--ink-950);
+    color: var(--text);
   }
 
   .table tbody td {
@@ -221,15 +215,15 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--ink-500);
+    color: var(--text-muted);
   }
 
   .usCol::before {
-    color: var(--mint-700);
+    color: var(--signal);
   }
 
   .totalRow {
-    background: var(--paper-sunken);
+    background: var(--surface-2);
   }
 
   .totalUs,

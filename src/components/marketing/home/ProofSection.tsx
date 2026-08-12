@@ -1,16 +1,10 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { Badge, Button, Price, ProductImage } from '@/components/ui';
-import type { ShowcaseProduct, ShowcaseStore } from '../data/showcase';
-import { ROUTES, storeUrl } from '../data/routes';
-import { Reveal } from '../parts/Reveal';
+import { Button } from '@/components/ui';
+import { ROUTES } from '../data/routes';
+import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './ProofSection.module.css';
-
-export interface ProofSectionProps {
-  /** Real products from the seeded stores, already interleaved. */
-  items: Array<{ product: ShowcaseProduct; store: ShowcaseStore }>;
-}
 
 interface ProofCard {
   title: string;
@@ -50,88 +44,41 @@ const CARDS: readonly ProofCard[] = [
 /**
  * Copy deck §3.9 — proof, with zero customers.
  *
- * No testimonials, no logos, no counts, no ratings. The evidence is a wide
- * bleed of products that exist in the database and can be opened, plus three
- * cards including the one that tells the reader not to buy.
+ * No testimonials, no logos, no counts, no ratings — just three cards,
+ * including the one that tells the reader not to buy.
  *
- * @param props - {@link ProofSectionProps}
+ * There used to be a wall of twelve product tiles above these cards. Twelve
+ * photographs of a yoga mat and a kettlebell from three seeded demo stores are
+ * not evidence that the software works, and under a heading reading "Here's the
+ * evidence instead" they actively undercut it. The three text cards are the
+ * evidence. The tiles also carried the section's internal 120px alignment jog,
+ * which went with them.
+ *
  * @returns The proof section.
  */
-export function ProofSection({ items }: ProofSectionProps): React.JSX.Element {
+export function ProofSection(): React.JSX.Element {
   return (
-    <section className={styles.root} id="proof">
-      <div className={styles.inner}>
-        <SectionIntro
-          onDark
-          eyebrow="No testimonials yet"
-          heading="We launched recently. Here’s the evidence instead."
-          subhead="You can’t check our references yet, so check the product."
-        />
-      </div>
+    <Section id="proof" ruled>
+      <SectionIntro
+        eyebrow="No testimonials yet"
+        heading="We launched recently. Here’s the evidence instead."
+        subhead="You can’t check our references yet, so check the product."
+      />
 
-      {items.length > 0 ? (
-        <div className={styles.bleed}>
-          <ul className={styles.grid}>
-            {items.map(({ product, store }, index) => (
-              <Reveal
-                as="li"
-                key={`${store.slug}-${product.sku}`}
-                delay={Math.min(index, 6) * 0.04}
-                className={styles.item}
-              >
-                <Link
-                  href={`${storeUrl(store.slug)}/product/${product.sku}`}
-                  className={styles.tile}
-                >
-                  <ProductImage
-                    src={product.image}
-                    name={product.name}
-                    sku={product.sku}
-                    alt=""
-                    ratio="1 / 1"
-                    rounded="md"
-                    sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 220px"
-                    className={styles.tileImage}
-                  />
-                  <span className={styles.tileBody}>
-                    <span className={styles.tileName}>{product.name}</span>
-                    <span className={styles.tileMeta}>
-                      <Price value={product.price} size="sm" showSavings={false} />
-                      {product.stock > 0 ? (
-                        <Badge tone="mint" dot size="sm">
-                          {product.stock} on hand
-                        </Badge>
-                      ) : (
-                        <Badge tone="rose" dot size="sm">
-                          Sold out
-                        </Badge>
-                      )}
-                    </span>
-                    <span className={styles.tileStore}>{store.name}</span>
-                  </span>
-                </Link>
-              </Reveal>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className={styles.inner}>
-        <ul className={styles.cards}>
-          {CARDS.map((card, index) => (
-            <Reveal as="li" key={card.title} delay={index * 0.08} className={styles.cardItem}>
-              <div className={styles.card}>
-                <h3 className={styles.cardTitle}>{card.title}</h3>
-                <p className={styles.cardBody}>{card.body}</p>
-                <Button as={Link} href={card.href} variant="secondary" size="md">
-                  {card.cta}
-                </Button>
-              </div>
-            </Reveal>
-          ))}
-        </ul>
-      </div>
-    </section>
+      <ul className={styles.cards}>
+        {CARDS.map((card) => (
+          <li key={card.title} className={styles.cardItem}>
+            <div className={styles.card}>
+              <h3 className={styles.cardTitle}>{card.title}</h3>
+              <p className={styles.cardBody}>{card.body}</p>
+              <Button as={Link} href={card.href} variant="secondary" size="md">
+                {card.cta}
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

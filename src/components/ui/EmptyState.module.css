@@ -48,7 +48,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
-/* A soft ember halo so the mark reads as intentional artwork, not an icon
+/* A soft neutral halo so the mark reads as intentional artwork, not an icon
    someone forgot to style. */
 .figure::after {
   content: '';
@@ -57,8 +57,8 @@
   border-radius: var(--radius-xl);
   background-image: radial-gradient(
     circle,
-    rgb(var(--ember-500-rgb) / 0.1),
-    rgb(var(--ember-500-rgb) / 0) 68%
+    rgb(var(--ink-900-rgb) / 0.07),
+    rgb(var(--ink-900-rgb) / 0) 68%
   );
   z-index: -1;
 }

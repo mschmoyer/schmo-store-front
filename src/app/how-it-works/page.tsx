@@ -4,11 +4,9 @@ import { Button, Eyebrow } from '@/components/ui';
 import { SiteHeader } from '@/components/marketing/chrome/SiteHeader';
 import { SiteFooter } from '@/components/marketing/chrome/SiteFooter';
 import { HowItWorksSteps } from '@/components/marketing/home/HowItWorksSteps';
-import { SyncSection } from '@/components/marketing/home/SyncSection';
 import { AlreadyHaveIt } from '@/components/marketing/home/AlreadyHaveIt';
 import { FaqSection } from '@/components/marketing/home/FaqSection';
 import { FinalCta } from '@/components/marketing/home/FinalCta';
-import { Reveal } from '@/components/marketing/parts/Reveal';
 import { ROUTES } from '@/components/marketing/data/routes';
 import { faqStructuredData } from '@/components/seo/LandingPageMeta';
 import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
@@ -42,36 +40,31 @@ export default function HowItWorksPage() {
       <main id="main">
         <section className={styles.head}>
           <div className={styles.headInner}>
-            <Reveal>
-              <Eyebrow rule className={styles.eyebrow}>
-                How it works
-              </Eyebrow>
-            </Reveal>
-            <Reveal delay={0.05}>
-              <h1 className={styles.title}>Three steps. One sitting.</h1>
-            </Reveal>
-            <Reveal delay={0.08}>
-              <p className={styles.lede}>
-                Times below are real, measured on a catalog of a few hundred SKUs. A very large
-                catalog takes longer to sync — you don&rsquo;t have to sit and watch it.
-              </p>
-            </Reveal>
-            <Reveal delay={0.11}>
-              <div className={styles.actions}>
-                <Button as={Link} href={ROUTES.signUp} size="lg">
-                  Start for $1
-                </Button>
-                <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
-                  See a live store
-                </Button>
-              </div>
-            </Reveal>
+            <Eyebrow rule className={styles.eyebrow}>
+              How it works
+            </Eyebrow>
+          
+            <h1 className={styles.title}>Three steps. One sitting.</h1>
+          
+            <p className={styles.lede}>
+              Times below are real, measured on a catalog of a few hundred SKUs. A very large
+              catalog takes longer to sync — you don&rsquo;t have to sit and watch it.
+            </p>
+          
+            <div className={styles.actions}>
+              <Button as={Link} href={ROUTES.signUp} size="lg">
+                Start for $1
+              </Button>
+              <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
+                See a live store
+              </Button>
+            </div>
+          
           </div>
         </section>
 
         <HowItWorksSteps hideIntro />
         <AlreadyHaveIt />
-        <SyncSection />
         <FaqSection />
         <FinalCta />
       </main>

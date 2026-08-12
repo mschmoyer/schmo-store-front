@@ -322,7 +322,7 @@
 }
 
 .choice:hover:not(.disabled) .box {
-  border-color: var(--ember-400);
+  border-color: var(--border-strong);
 }
 
 .box:has(.nativeControl:checked),

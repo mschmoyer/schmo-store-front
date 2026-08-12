@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { INCLUDED, NOT_INCLUDED } from '../pricing/PlanCard';
-import { Reveal } from './Reveal';
 import { SectionIntro } from './SectionIntro';
 import styles from './IncludedLists.module.css';
 
@@ -22,7 +21,7 @@ export function IncludedLists(): React.JSX.Element {
         />
 
         <div className={styles.columns}>
-          <Reveal className={styles.column}>
+          <div className={styles.column}>
             <h3 className={styles.columnHeading}>Included</h3>
             <ul className={styles.list}>
               {INCLUDED.map((item) => (
@@ -43,9 +42,9 @@ export function IncludedLists(): React.JSX.Element {
                 </li>
               ))}
             </ul>
-          </Reveal>
+          </div>
 
-          <Reveal delay={0.08} className={`${styles.column} ${styles.columnOut}`}>
+          <div className={`${styles.column} ${styles.columnOut}`}>
             <h3 className={styles.columnHeading}>Not included — read this part</h3>
             <ul className={styles.list}>
               {NOT_INCLUDED.map((item) => (
@@ -57,7 +56,7 @@ export function IncludedLists(): React.JSX.Element {
                 </li>
               ))}
             </ul>
-          </Reveal>
+          </div>
         </div>
       </div>
     </section>

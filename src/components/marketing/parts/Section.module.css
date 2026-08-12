@@ -1,0 +1,108 @@
+/*
+ * The ONE section geometry for the whole marketing site.
+ *
+ * Two rules, and nothing is allowed to opt out of either:
+ *
+ *   1. ONE GROUND. Sections do not paint a background. The page is `--bg` from
+ *      the header to the footer, and sections are separated by whitespace, a
+ *      1px `--border` rule and type hierarchy. The single exception is
+ *      `.dark`, which the pricing section uses once — one deliberate inversion
+ *      at the decision point reads as emphasis; two would read as noise.
+ *
+ *   2. ONE LEFT EDGE. `.inner` is the only container on the site. Every
+ *      section's content therefore starts at exactly the same x, and a CTA can
+ *      never drift to an alignment of its own.
+ *
+ * Block padding comes from `--section-y` / `--section-y-tight` in globals.css.
+ * No section may declare its own `padding-block`.
+ */
+
+.root {
+  position: relative;
+  padding-block: var(--section-y);
+}
+
+/* A section that continues the thought of the one above it. */
+.tight {
+  padding-block: var(--section-y-tight);
+}
+
+/*
+ * The separator. A hairline, not a colour change. It sits on the section's
+ * leading edge so the last section before the footer does not double up.
+ */
+.ruled {
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * The one permitted inversion. Full-bleed ink, used exactly once (pricing).
+ * Tokens are re-pointed rather than colours being hand-written, so everything
+ * nested inside — buttons, badges, prices — follows without knowing it is on a
+ * dark ground.
+ */
+.dark {
+  background: var(--text);
+  color: #ffffff;
+
+  --bg: #111214;
+  --surface: #111214;
+  --surface-2: #1b1d20;
+  --surface-raised: #1b1d20;
+  --surface-sunken: #0a0b0c;
+  --surface-inset: #1b1d20;
+
+  --border: #2a2c30;
+  --border-strong: #3f434a;
+  --border-subtle: #232629;
+  --border-control: #6b6f76;
+
+  --text-primary: #ffffff;
+  --text-secondary: #a1a5ad; /* 7.59:1 on #111214 */
+  --text-tertiary: #a1a5ad;
+  --text-quaternary: #85898f; /* 5.33:1 — still AA for meta */
+  --text-inverse: #111214;
+
+  /* The accent inverts to a white fill with ink type: 18.74:1 either way. */
+  --accent: #ffffff;
+  --accent-solid: #ffffff;
+  --accent-solid-hover: #e5e5e7;
+  --accent-solid-active: #d2d3d6;
+  --accent-subtle: #1b1d20;
+  --accent-subtle-border: #2a2c30;
+  --accent-text: #ffffff;
+  --accent-fg: #111214;
+
+  /* #0F7B4A is 1.9:1 here, so the signal steps up to its dark-ground twin. */
+  --signal: var(--signal-on-dark);
+  --signal-soft: rgb(var(--mint-500-rgb) / 0.2);
+  --success: var(--signal-on-dark);
+  --success-solid: var(--signal-on-dark);
+  --success-text: var(--signal-on-dark);
+  --success-subtle: rgb(var(--mint-500-rgb) / 0.2);
+  --success-border: rgb(var(--mint-500-rgb) / 0.38);
+
+  --focus-ring-gap: #111214;
+  --focus-ring-color: #ffffff;
+  --focus-ring-on-accent: #111214;
+}
+
+/* The single container. Nothing else on the site sets a max-width + gutter. */
+.inner {
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/*
+ * A full-bleed child that still starts at the shared left edge — used by the
+ * product tile row, which runs wider than the measure but must not look like a
+ * different column.
+ */
+.bleed {
+  width: 100%;
+  max-width: var(--container-wide);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}

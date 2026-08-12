@@ -48,9 +48,12 @@
 
 /*
  * Solid tones use the `-solid` shades, which are the ones that clear 4.5:1
- * with a white label: ember-600 4.51, mint-700 6.45, amber-700 5.78,
- * rose-500 4.83. The 500-weight brand shades fail (ember 3.42, mint 3.06,
- * amber 2.77) and are reserved for fills without text on them.
+ * with a white label: accent (ink) 18.74, signal 5.31, warning 5.02,
+ * danger 6.57. Every tone below is token-driven, so the one dark section on the
+ * marketing site re-points them without this file knowing.
+ *
+ * `mint` is the signal green and is reserved for stock and money. `ember` is a
+ * legacy tone name that now resolves to plain ink; it carries no hue.
  */
 
 /* ---------------------------------------------------------------- tones -- */
@@ -61,7 +64,7 @@
   color: var(--text-secondary);
 }
 .neutral .dot {
-  background-color: var(--ink-400);
+  background-color: var(--text-subtle);
 }
 
 .ember {
@@ -70,7 +73,7 @@
   color: var(--accent-text);
 }
 .ember .dot {
-  background-color: var(--ember-500);
+  background-color: var(--accent);
 }
 
 .mint {
@@ -79,7 +82,7 @@
   color: var(--success-text);
 }
 .mint .dot {
-  background-color: var(--mint-500);
+  background-color: var(--signal);
 }
 
 .amber {
@@ -88,7 +91,7 @@
   color: var(--warning-text);
 }
 .amber .dot {
-  background-color: var(--amber-500);
+  background-color: var(--warning);
 }
 
 .rose {
@@ -97,7 +100,7 @@
   color: var(--danger-text);
 }
 .rose .dot {
-  background-color: var(--rose-500);
+  background-color: var(--danger);
 }
 
 /* Solid — for the rare badge that must win against a busy background. */

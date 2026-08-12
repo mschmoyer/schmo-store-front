@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { Eyebrow } from '@/components/ui';
-import { Reveal } from './Reveal';
 import styles from './SectionIntro.module.css';
 
 export interface SectionIntroProps {
@@ -14,8 +13,6 @@ export interface SectionIntroProps {
   as?: 'h1' | 'h2';
   /** Centres the block and caps its measure. */
   centered?: boolean;
-  /** Inverts colours for `--ink-950` grounds. */
-  onDark?: boolean;
   /** Anchor id applied to the heading, for in-page links. */
   id?: string;
   className?: string;
@@ -24,6 +21,12 @@ export interface SectionIntroProps {
 /**
  * The eyebrow / heading / subhead trio, with one vertical rhythm for every
  * section on the site so the page does not drift.
+ *
+ * There is no `onDark` variant any more. The one dark section on the site
+ * re-points `--text-primary` and `--text-secondary` on its own container
+ * (see `Section.module.css`), so this component reads the right colours there
+ * without knowing it is on a dark ground — which is the only way to keep a
+ * single source of truth for "what colour is a heading".
  *
  * @param props - {@link SectionIntroProps}
  * @returns A section introduction block.
@@ -34,31 +37,21 @@ export function SectionIntro({
   subhead,
   as: Heading = 'h2',
   centered = false,
-  onDark = false,
   id,
   className,
 }: SectionIntroProps): React.JSX.Element {
   return (
-    <Reveal
-      className={[
-        styles.root,
-        centered ? styles.centered : '',
-        onDark ? styles.onDark : '',
-        className,
-      ]
+    <div
+      className={[styles.root, centered ? styles.centered : '', className]
         .filter(Boolean)
         .join(' ')}
     >
-      {eyebrow ? (
-        <Eyebrow rule className={styles.eyebrow}>
-          {eyebrow}
-        </Eyebrow>
-      ) : null}
+      {eyebrow ? <Eyebrow rule>{eyebrow}</Eyebrow> : null}
       <Heading id={id} className={Heading === 'h1' ? styles.h1 : styles.h2}>
         {heading}
       </Heading>
       {subhead ? <p className={styles.subhead}>{subhead}</p> : null}
-    </Reveal>
+    </div>
   );
 }
 

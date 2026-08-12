@@ -5,7 +5,6 @@ import { Button, Eyebrow } from '@/components/ui';
 import { SiteHeader } from '../chrome/SiteHeader';
 import { SiteFooter } from '../chrome/SiteFooter';
 import { FinalCta } from '../home/FinalCta';
-import { Reveal } from '../parts/Reveal';
 import { ROUTES } from '../data/routes';
 import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
 import { PlanCard } from './PlanCard';
@@ -55,34 +54,30 @@ export function PricingPage(): React.JSX.Element {
         <section className={styles.head}>
           <div className={styles.headInner}>
             <div className={styles.headCopy}>
-              <Reveal>
-                <Eyebrow rule className={styles.eyebrow}>
-                  Pricing
-                </Eyebrow>
-              </Reveal>
-              <Reveal delay={0.05}>
-                <h1 className={styles.title}>One plan. $19.99 a month.</h1>
-              </Reveal>
-              <Reveal delay={0.08}>
-                <p className={styles.lede}>
-                  Your first three months cost $1 total. We never take a percentage of a sale.
+              <Eyebrow rule className={styles.eyebrow}>
+                Pricing
+              </Eyebrow>
+            
+              <h1 className={styles.title}>One plan. $19.99 a month.</h1>
+            
+              <p className={styles.lede}>
+                Your first three months cost $1 total. We never take a percentage of a sale.
+              </p>
+            
+              <div className={styles.headActions}>
+                <Button as={Link} href={ROUTES.faq} variant="secondary" size="lg">
+                  Read the FAQ
+                </Button>
+                <p className={styles.microcopy}>
+                  Card required. Cancel anytime in your admin.
                 </p>
-              </Reveal>
-              <Reveal delay={0.11}>
-                <div className={styles.headActions}>
-                  <Button as={Link} href={ROUTES.faq} variant="secondary" size="lg">
-                    Read the FAQ
-                  </Button>
-                  <p className={styles.microcopy}>
-                    Card required. Cancel anytime in your admin.
-                  </p>
-                </div>
-              </Reveal>
+              </div>
+            
             </div>
 
-            <Reveal delay={0.06} className={styles.cardWrap}>
+            <div className={styles.cardWrap}>
               <PlanCard eyebrow="Everything, one price" badge="0% transaction fees" />
-            </Reveal>
+            </div>
           </div>
         </section>
 

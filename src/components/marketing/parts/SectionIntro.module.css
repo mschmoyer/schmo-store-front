@@ -1,7 +1,13 @@
+/*
+ * One vertical rhythm for every section opening on the site, and — because it
+ * sets no margin or padding of its own — one left edge with everything that
+ * follows it inside the shared container.
+ */
+
 .root {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--stack-xs);
   max-width: 58ch;
 }
 
@@ -12,19 +18,12 @@
   text-align: center;
 }
 
-.eyebrow {
-  color: var(--ember-700);
-}
-
-.onDark .eyebrow {
-  color: var(--ember-300);
-}
-
 .h1 {
   margin: 0;
   font-size: var(--text-h1);
   line-height: 1.08;
   letter-spacing: -0.025em;
+  color: var(--text-primary);
 }
 
 .h2 {
@@ -32,7 +31,8 @@
   font-size: var(--text-h2);
   line-height: 1.15;
   letter-spacing: -0.02em;
-  max-width: 20ch;
+  max-width: 22ch;
+  color: var(--text-primary);
 }
 
 .centered .h2 {
@@ -43,15 +43,6 @@
   margin: 0;
   font-size: var(--text-lg);
   line-height: 1.6;
-  color: var(--ink-500);
+  color: var(--text-secondary);
   max-width: 56ch;
-}
-
-.onDark .subhead {
-  color: var(--ink-300);
-}
-
-.onDark .h2,
-.onDark .h1 {
-  color: var(--ink-100);
 }

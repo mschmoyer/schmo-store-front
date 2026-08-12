@@ -1,32 +1,18 @@
-.root {
-  background: var(--ink-950);
-  color: var(--ink-300);
-  padding-block: var(--section-y);
-}
-
-.inner {
-  width: 100%;
-  max-width: var(--container-content);
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-}
+/*
+ * No ground of its own. This was a full-bleed `--ink-950` block wedged between
+ * two light sections, which is most of what made the page read as "some dark on
+ * top of light". The evidence is the products; it does not need a stage.
+ */
 
 /* ------------------------------------------------- wide product bleed -- */
 
-.bleed {
-  width: 100%;
-  max-width: var(--container-wide);
-  margin: clamp(36px, 5vw, 52px) auto clamp(40px, 6vw, 64px);
-  padding-inline: var(--gutter);
-}
-
 .grid {
   list-style: none;
-  margin: 0;
+  margin: var(--stack-md) 0 var(--stack-md);
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-  gap: 14px;
+  gap: var(--space-3-5);
 }
 
 .item {
@@ -37,9 +23,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 10px;
-  background: var(--ink-900);
-  border: 1px solid var(--ink-800);
+  padding: var(--space-2-5);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   text-decoration: none;
   color: inherit;
@@ -49,26 +34,26 @@
 }
 
 .tile:hover {
-  border-color: var(--ink-600);
-  background: var(--ink-800);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
 }
 
 .tileImage {
   width: 100%;
-  background: var(--paper);
+  background: var(--surface-2);
 }
 
 .tileBody {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 4px 4px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-1) var(--space-1);
 }
 
 .tileName {
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--ink-100);
+  color: var(--text);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -80,15 +65,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  color: var(--ink-100);
 }
 
 .tileStore {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--ink-400);
+  color: var(--text-subtle);
 }
 
 /* ------------------------------------------------------ the three cards */
@@ -99,7 +83,7 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .cardItem {
@@ -111,11 +95,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
-  padding: 24px;
-  background: var(--paper-raised);
-  border: 1px solid var(--ink-200);
+  padding: var(--space-6);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
 
@@ -124,19 +107,19 @@
   font-size: var(--text-h3);
   line-height: 1.25;
   letter-spacing: -0.015em;
-  color: var(--ink-950);
+  color: var(--text);
 }
 
 .cardBody {
   margin: 0;
   flex: 1;
   font-size: var(--text-sm);
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 @media (max-width: 640px) {
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 10px;
+    gap: var(--space-2-5);
   }
 }

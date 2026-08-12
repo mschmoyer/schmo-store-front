@@ -1,44 +1,44 @@
-.root {
-  background: var(--paper);
-  border-bottom: 1px solid var(--ink-200);
-  padding-block: var(--section-y);
-}
+/*
+ * The homepage's ONE inverted section. The ground itself comes from
+ * `Section.module.css`'s `.dark`; this file only lays out what sits on it.
+ *
+ * Why this section and no other: it is the decision point. A single inversion
+ * where the reader has to choose reads as emphasis. The page previously had
+ * four dark blocks, which is not emphasis — it is stripes.
+ */
 
-.inner {
-  width: 100%;
-  max-width: 720px;
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-}
-
-.cardWrap {
-  margin-top: clamp(32px, 5vw, 44px);
-}
-
-.catchWrap {
-  margin-top: 20px;
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+  margin-top: var(--stack-md);
 }
 
 .catch {
-  max-width: 480px;
-  margin-inline: auto;
-  padding: 22px 24px;
-  background: var(--paper-sunken);
-  border: 1px solid var(--ink-200);
-  border-radius: var(--radius-lg);
+  align-self: start;
 }
 
 .catchTitle {
-  margin: 0 0 10px;
-  font-size: 1.0625rem;
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
   font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--ink-950);
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
 }
 
 .catchBody {
   margin: 0;
-  font-size: var(--text-sm);
-  line-height: 1.65;
-  color: var(--ink-500);
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-width: 52ch;
+}
+
+@media (min-width: 940px) {
+  .layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: var(--space-10);
+  }
 }

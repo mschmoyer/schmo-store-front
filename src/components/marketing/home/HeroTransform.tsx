@@ -1,8 +1,5 @@
-'use client';
-
 import * as React from 'react';
 import Link from 'next/link';
-import { motion, useReducedMotion } from 'framer-motion';
 import { Badge, Price, ProductImage } from '@/components/ui';
 import type { ShowcaseProduct, ShowcaseStore } from '../data/showcase';
 import { storeUrl } from '../data/routes';
@@ -19,29 +16,25 @@ export interface HeroTransformProps {
 
 /**
  * The hero visual: a plain ShipStation-style product row becoming a live
- * storefront card, joined by a single ember connector labelled `ShipStation
- * API`.
+ * storefront card, joined by a hairline connector labelled `ShipStation API`.
  *
  * Every SKU, name, quantity and price below is read from the seeded demo store
  * this component is handed — the card links through to that exact product on
  * the live storefront, so the claim is checkable in one click.
  *
+ * This renders as a server component with no entrance animation. It previously
+ * mounted every panel and row at `opacity: 0` and faded them in from the
+ * client, which meant the single strongest thing on the page was invisible to a
+ * crawler, to a no-JS reader, and in any screenshot taken before hydration.
+ *
  * @param props - {@link HeroTransformProps}
  * @returns The two-panel hero composition.
  */
 export function HeroTransform({ store, rows, focus }: HeroTransformProps): React.JSX.Element {
-  const reduced = useReducedMotion();
-
-  const rise = (delay: number) => ({
-    initial: { opacity: 0, y: reduced ? 0 : 10 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: reduced ? 0.2 : 0.5, delay: reduced ? 0 : delay, ease: [0.16, 1, 0.3, 1] as const },
-  });
-
   return (
     <div className={styles.root}>
       {/* ---------------------------------------------- panel one: source */}
-      <motion.figure className={styles.panel} {...rise(0.05)}>
+      <figure className={styles.panel}>
         <figcaption className={styles.panelHead}>
           <span className={styles.panelLabel}>In ShipStation</span>
           <span className={styles.panelMeta}>{store.productCount} SKUs</span>
@@ -64,39 +57,32 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
-                <motion.tr
+              {rows.map((row) => (
+                <tr
                   key={row.sku}
                   className={row.sku === focus.sku ? styles.focusRow : undefined}
-                  {...rise(0.12 + index * 0.06)}
                 >
                   <td className={styles.sku}>{row.sku}</td>
                   <td className={styles.name}>{row.name}</td>
                   <td className={`${styles.numeric} ${styles.qty} ${row.stock === 0 ? styles.qtyZero : ''}`}>
                     {row.stock}
                   </td>
-                </motion.tr>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </motion.figure>
+      </figure>
 
       {/* -------------------------------------------------- the connector */}
-      <motion.div
-        className={styles.connector}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: reduced ? 0 : 0.42 }}
-        aria-hidden="true"
-      >
+      <div className={styles.connector} aria-hidden="true">
         <span className={styles.connectorLine} />
         <span className={styles.connectorLabel}>ShipStation API</span>
         <span className={styles.connectorLine} />
-      </motion.div>
+      </div>
 
       {/* ------------------------------------------- panel two: storefront */}
-      <motion.figure className={styles.panel} {...rise(0.72)}>
+      <figure className={styles.panel}>
         <figcaption className={styles.panelHead}>
           <span className={styles.panelLabel}>On your store</span>
           <span className={styles.panelMeta}>{store.name}</span>
@@ -133,7 +119,7 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
             </p>
           </div>
         </Link>
-      </motion.figure>
+      </figure>
     </div>
   );
 }

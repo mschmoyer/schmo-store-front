@@ -2,7 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Badge, Button, Input } from '@/components/ui';
 import { ROUTES } from '../data/routes';
-import { Reveal } from '../parts/Reveal';
+import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './HowItWorksSteps.module.css';
 
@@ -13,16 +13,24 @@ export interface HowItWorksStepsProps {
   headingAs?: 'h1' | 'h2';
   /** Drops the eyebrow/heading/subhead when the page above already carries it. */
   hideIntro?: boolean;
+  /**
+   * Renders the per-step screen facsimiles. They are the point of
+   * `/how-it-works`; on the homepage they were roughly 900px of decoration in
+   * front of a reader who has not yet decided to care, so the homepage asks for
+   * the steps without them. @default true
+   */
+  showFigures?: boolean;
 }
 
 /**
  * Copy deck §3.3 — three numbered steps with honest, measured time estimates.
  *
  * Laid out as a numbered timeline rather than three equal cards: the number
- * rail carries the eye down the page, the copy sits beside it, and each row
- * ends in a facsimile of the screen that step actually uses — built from the
- * same primitives the admin is built from, and marked `aria-hidden` so it is
- * decoration to a screen reader, never a second form.
+ * rail carries the eye down the page and the copy sits beside it. With
+ * `showFigures` each row also ends in a facsimile of the screen that step
+ * actually uses — built from the same primitives the admin is built from, and
+ * marked `aria-hidden` so it is decoration to a screen reader, never a second
+ * form.
  *
  * Gated per §3.3: step 3 describes store content fields and colour themes only.
  * No "drag and drop", fonts, layouts, sections or live preview until the
@@ -35,29 +43,38 @@ export function HowItWorksSteps({
   hideCta = false,
   headingAs = 'h2',
   hideIntro = false,
+  showFigures = true,
 }: HowItWorksStepsProps): React.JSX.Element {
   return (
-    <section className={styles.root} id="how-it-works">
-      <div className={styles.inner}>
-        {hideIntro ? null : (
-          <SectionIntro
-            as={headingAs}
-            eyebrow="Setup"
-            heading="Three steps. One sitting."
-            subhead="Times below are real, measured on a catalog of a few hundred SKUs. A very large catalog takes longer to sync — you don't have to sit and watch it."
-          />
-        )}
+    <Section id="how-it-works" ruled={!hideIntro}>
+      {hideIntro ? null : (
+        <SectionIntro
+          as={headingAs}
+          eyebrow="Setup"
+          heading="Three steps. One sitting."
+          subhead="Times below are real, measured on a catalog of a few hundred SKUs. A very large catalog takes longer to sync — you don't have to sit and watch it."
+        />
+      )}
 
-        <ol className={`${styles.steps} ${hideIntro ? styles.stepsFlush : ''}`}>
-          <Reveal as="li" className={styles.step} delay={0}>
-            <StepHead index={1} time="about 2 minutes" />
-            <div className={styles.stepCopy}>
-              <h3 className={styles.stepTitle}>Paste your ShipStation API key</h3>
-              <p className={styles.stepBody}>
-                Generate a key in ShipStation, paste it in, we test the connection before saving.
-                Nothing syncs until you say go.
-              </p>
-            </div>
+      <ol
+        className={[
+          styles.steps,
+          hideIntro ? styles.stepsFlush : '',
+          showFigures ? styles.withFigures : styles.noFigures,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <li className={styles.step}>
+          <StepHead index={1} time="about 2 minutes" />
+          <div className={styles.stepCopy}>
+            <h3 className={styles.stepTitle}>Paste your ShipStation API key</h3>
+            <p className={styles.stepBody}>
+              Generate a key in ShipStation, paste it in, we test the connection before saving.
+              Nothing syncs until you say go.
+            </p>
+          </div>
+          {showFigures ? (
             <div className={styles.figure} aria-hidden="true">
               <Input
                 label="ShipStation API key"
@@ -75,17 +92,19 @@ export function HowItWorksSteps({
                 <span className={styles.figureNote}>We can see your ShipStation account.</span>
               </div>
             </div>
-          </Reveal>
+          ) : null}
+        </li>
 
-          <Reveal as="li" className={styles.step} delay={0.08}>
-            <StepHead index={2} time="2–10 minutes, unattended" />
-            <div className={styles.stepCopy}>
-              <h3 className={styles.stepTitle}>We pull in your catalog</h3>
-              <p className={styles.stepBody}>
-                Products, SKUs, prices, images, stock levels, warehouses. You don&rsquo;t type
-                anything. Big catalogs take longer; you can close the tab and come back.
-              </p>
-            </div>
+        <li className={styles.step}>
+          <StepHead index={2} time="2–10 minutes, unattended" />
+          <div className={styles.stepCopy}>
+            <h3 className={styles.stepTitle}>We pull in your catalog</h3>
+            <p className={styles.stepBody}>
+              Products, SKUs, prices, images, stock levels, warehouses. You don&rsquo;t type
+              anything. Big catalogs take longer; you can close the tab and come back.
+            </p>
+          </div>
+          {showFigures ? (
             <div className={styles.figure} aria-hidden="true">
               <ul className={styles.syncList}>
                 {[
@@ -102,17 +121,19 @@ export function HowItWorksSteps({
                 ))}
               </ul>
             </div>
-          </Reveal>
+          ) : null}
+        </li>
 
-          <Reveal as="li" className={styles.step} delay={0.16}>
-            <StepHead index={3} time="about 5 minutes" />
-            <div className={styles.stepCopy}>
-              <h3 className={styles.stepTitle}>Name it, style it, publish</h3>
-              <p className={styles.stepBody}>
-                Store name, description, hero copy, a theme. Publish and your store is live at your
-                RebelShops URL.
-              </p>
-            </div>
+        <li className={styles.step}>
+          <StepHead index={3} time="about 5 minutes" />
+          <div className={styles.stepCopy}>
+            <h3 className={styles.stepTitle}>Name it, style it, publish</h3>
+            <p className={styles.stepBody}>
+              Store name, description, hero copy, a theme. Publish and your store is live at your
+              RebelShops URL.
+            </p>
+          </div>
+          {showFigures ? (
             <div className={styles.figure} aria-hidden="true">
               <Input
                 label="Store name"
@@ -123,11 +144,11 @@ export function HowItWorksSteps({
                 hint="Shown in your store header and page titles"
               />
               <div className={styles.swatches}>
-                {['#0E1014', '#D98A00', '#0FA871', '#2563EB', '#F94E1B', '#5A626F'].map(
+                {['#111214', '#B45309', '#0F7B4A', '#2F5D8C', '#6B6F76', '#B42318'].map(
                   (color, i) => (
                     <span
                       key={color}
-                      className={`${styles.swatch} ${i === 4 ? styles.swatchActive : ''}`}
+                      className={`${styles.swatch} ${i === 0 ? styles.swatchActive : ''}`}
                       style={{ background: color }}
                     />
                   )
@@ -135,23 +156,21 @@ export function HowItWorksSteps({
                 <span className={styles.figureNote}>11 color themes</span>
               </div>
             </div>
-          </Reveal>
-        </ol>
+          ) : null}
+        </li>
+      </ol>
 
-        <Reveal delay={0.1}>
-          <div className={styles.closing}>
-            <p className={styles.closingLine}>
-              Realistically: under 20 minutes from API key to a live store you can send someone.
-            </p>
-            {hideCta ? null : (
-              <Button as={Link} href={ROUTES.signUp} size="lg">
-                Start for $1
-              </Button>
-            )}
-          </div>
-        </Reveal>
+      <div className={styles.closing}>
+        <p className={styles.closingLine}>
+          Realistically: under 20 minutes from API key to a live store you can send someone.
+        </p>
+        {hideCta ? null : (
+          <Button as={Link} href={ROUTES.signUp} size="lg">
+            Start for $1
+          </Button>
+        )}
       </div>
-    </section>
+    </Section>
   );
 }
 

@@ -11,7 +11,7 @@ import {
   VENDOR_LINKS,
   usd,
 } from '../data/pricing';
-import { Reveal } from '../parts/Reveal';
+import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './CostComparison.module.css';
 
@@ -86,98 +86,92 @@ export function CostComparison(): React.JSX.Element {
   const rows = buildRows();
 
   return (
-    <section className={styles.root} id="comparison">
-      <div className={styles.inner}>
-        <SectionIntro
-          eyebrow="The math"
-          heading="Twelve months, side by side."
-          subhead="Shopify Basic is a good product. It's also priced for someone who hasn't already solved shipping."
-        />
+    <Section id="comparison" ruled>
+      <SectionIntro
+        eyebrow="The math"
+        heading="Twelve months, side by side."
+        subhead="Shopify Basic is a good product. It's also priced for someone who hasn't already solved shipping."
+      />
 
-        <Reveal delay={0.06} className={styles.tableWrap}>
-          <div
-            className={styles.tableScroll}
-            role="region"
-            aria-label="Twelve-month cost comparison"
-            tabIndex={0}
-          >
-            <table className={styles.table}>
-              <caption className={styles.caption}>
-                Platform fee only, first twelve months, US pricing.
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col" className={styles.rowHead}>
-                    <span className="sr-only-focusable">Line item</span>
-                  </th>
-                  <th scope="col" className={styles.usCol}>
-                    RebelShops
-                  </th>
-                  <th scope="col">Shopify Basic</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.label} className={row.total ? styles.totalRow : undefined}>
-                    <th scope="row" className={styles.rowHead}>
-                      {row.label}
-                    </th>
-                    <td className={styles.usCol} data-label="RebelShops">
-                      {row.total ? <span className={styles.totalUs}>{row.rebel}</span> : row.rebel}
-                    </td>
-                    <td data-label="Shopify Basic">
-                      {row.total ? (
-                        <span className={styles.totalThem}>{row.shopify}</span>
-                      ) : (
-                        row.shopify
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Reveal>
-
-        <Reveal delay={0.08}>
-          <p className={styles.verdict}>
-            Against monthly billing, that&rsquo;s <strong>{usd(SAVING_VS_MONTHLY)} less</strong>{' '}
-            over the first year. Against Shopify&rsquo;s annual prepay,{' '}
-            <strong>{usd(SAVING_VS_ANNUAL)} less</strong> — and you don&rsquo;t prepay.
-          </p>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <div className={styles.fairness}>
-            <p className={styles.fairPara}>
-              <strong className={styles.fairLead}>Where Shopify wins.</strong> Shopify Basic gives
-              you a custom domain, a mature theme ecosystem, a large app store, POS, multi-currency,
-              abandoned-cart recovery and a support organization. We have none of that. If you need
-              any of it, Shopify Basic at {usd(SHOPIFY_BASIC_MONTHLY)}/mo is a fair price for it.
-            </p>
-            <p className={styles.fairPara}>
-              <strong className={styles.fairLead}>What we left out on purpose.</strong> We&rsquo;re
-              not counting app fees against Shopify, because which apps you need is your business
-              and their prices aren&rsquo;t ours to quote. We&rsquo;re also not counting card
-              processing as a difference, because on Shopify Basic with Shopify Payments the
-              published online card rate and Stripe&rsquo;s published US standard rate are
-              effectively the same — {STRIPE_CARD_RATE}. The difference in this table is platform
-              fee, and only platform fee.
-            </p>
-            <p className={styles.sources}>
-              Check us:{' '}
-              <a href={VENDOR_LINKS.shopify} rel="noopener noreferrer nofollow" target="_blank">
-                shopify.com/pricing
-              </a>{' '}
-              ·{' '}
-              <a href={VENDOR_LINKS.stripe} rel="noopener noreferrer nofollow" target="_blank">
-                stripe.com/pricing
-              </a>
-            </p>
-          </div>
-        </Reveal>
+      <div className={styles.tableWrap}>
+        <div
+          className={styles.tableScroll}
+          role="region"
+          aria-label="Twelve-month cost comparison"
+          tabIndex={0}
+        >
+        <table className={styles.table}>
+          <caption className={styles.caption}>
+            Platform fee only, first twelve months, US pricing.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" className={styles.rowHead}>
+                <span className="sr-only-focusable">Line item</span>
+              </th>
+              <th scope="col" className={styles.usCol}>
+                RebelShops
+              </th>
+              <th scope="col">Shopify Basic</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className={row.total ? styles.totalRow : undefined}>
+                <th scope="row" className={styles.rowHead}>
+                  {row.label}
+                </th>
+                <td className={styles.usCol} data-label="RebelShops">
+                  {row.total ? <span className={styles.totalUs}>{row.rebel}</span> : row.rebel}
+                </td>
+                <td data-label="Shopify Basic">
+                  {row.total ? (
+                    <span className={styles.totalThem}>{row.shopify}</span>
+                  ) : (
+                    row.shopify
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-    </section>
+      </div>
+
+      <p className={styles.verdict}>
+        Against monthly billing, that&rsquo;s <strong>{usd(SAVING_VS_MONTHLY)} less</strong>{' '}
+        over the first year. Against Shopify&rsquo;s annual prepay,{' '}
+        <strong>{usd(SAVING_VS_ANNUAL)} less</strong> — and you don&rsquo;t prepay.
+      </p>
+
+      <div className={styles.fairness}>
+        <p className={styles.fairPara}>
+          <strong className={styles.fairLead}>Where Shopify wins.</strong> Shopify Basic gives
+          you a custom domain, a mature theme ecosystem, a large app store, POS, multi-currency,
+          abandoned-cart recovery and a support organization. We have none of that. If you need
+          any of it, Shopify Basic at {usd(SHOPIFY_BASIC_MONTHLY)}/mo is a fair price for it.
+        </p>
+        <p className={styles.fairPara}>
+          <strong className={styles.fairLead}>What we left out on purpose.</strong> We&rsquo;re
+          not counting app fees against Shopify, because which apps you need is your business
+          and their prices aren&rsquo;t ours to quote. We&rsquo;re also not counting card
+          processing as a difference, because on Shopify Basic with Shopify Payments the
+          published online card rate and Stripe&rsquo;s published US standard rate are
+          effectively the same — {STRIPE_CARD_RATE}. The difference in this table is platform
+          fee, and only platform fee.
+        </p>
+        <p className={styles.sources}>
+          Check us:{' '}
+          <a href={VENDOR_LINKS.shopify} rel="noopener noreferrer nofollow" target="_blank">
+            shopify.com/pricing
+          </a>{' '}
+          ·{' '}
+          <a href={VENDOR_LINKS.stripe} rel="noopener noreferrer nofollow" target="_blank">
+            stripe.com/pricing
+          </a>
+        </p>
+      </div>
+    </Section>
   );
 }
 

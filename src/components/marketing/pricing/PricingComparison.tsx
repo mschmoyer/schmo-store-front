@@ -7,7 +7,6 @@ import {
   VENDOR_LINKS,
   usd,
 } from '../data/pricing';
-import { Reveal } from '../parts/Reveal';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './PricingComparison.module.css';
 
@@ -105,7 +104,7 @@ export function PricingComparison(): React.JSX.Element {
           subhead="Shopify Basic is a good product. It's also priced for someone who hasn't already solved shipping."
         />
 
-        <Reveal delay={0.06} className={styles.tableWrap}>
+        <div className={styles.tableWrap}>
           <div
             className={styles.tableScroll}
             role="region"
@@ -148,28 +147,27 @@ export function PricingComparison(): React.JSX.Element {
               </tbody>
             </table>
           </div>
-        </Reveal>
+        </div>
 
-        <Reveal delay={0.08}>
-          <div className={styles.fairness}>
-            <p className={styles.fairPara}>
-              <strong className={styles.fairLead}>Where Shopify wins.</strong> Shopify Basic gives
-              you a custom domain, a mature theme ecosystem, a large app store, POS, multi-currency,
-              abandoned-cart recovery and a support organization. We have none of that. If you need
-              any of it, Shopify Basic at {usd(SHOPIFY_BASIC_MONTHLY)}/mo is a fair price for it.
-            </p>
-            <p className={styles.sources}>
-              Check every figure:{' '}
-              <a href={VENDOR_LINKS.shopify} rel="noopener noreferrer nofollow" target="_blank">
-                shopify.com/pricing
-              </a>{' '}
-              ·{' '}
-              <a href={VENDOR_LINKS.stripe} rel="noopener noreferrer nofollow" target="_blank">
-                stripe.com/pricing
-              </a>
-            </p>
-          </div>
-        </Reveal>
+        <div className={styles.fairness}>
+          <p className={styles.fairPara}>
+            <strong className={styles.fairLead}>Where Shopify wins.</strong> Shopify Basic gives
+            you a custom domain, a mature theme ecosystem, a large app store, POS, multi-currency,
+            abandoned-cart recovery and a support organization. We have none of that. If you need
+            any of it, Shopify Basic at {usd(SHOPIFY_BASIC_MONTHLY)}/mo is a fair price for it.
+          </p>
+          <p className={styles.sources}>
+            Check every figure:{' '}
+            <a href={VENDOR_LINKS.shopify} rel="noopener noreferrer nofollow" target="_blank">
+              shopify.com/pricing
+            </a>{' '}
+            ·{' '}
+            <a href={VENDOR_LINKS.stripe} rel="noopener noreferrer nofollow" target="_blank">
+              stripe.com/pricing
+            </a>
+          </p>
+        </div>
+      
       </div>
     </section>
   );

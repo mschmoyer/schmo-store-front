@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Badge, Button } from '@/components/ui';
 import type { ShowcaseStore } from '../data/showcase';
 import { ROUTES, storeUrl } from '../data/routes';
-import { Reveal } from '../parts/Reveal';
+import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './MakeItYours.module.css';
 
@@ -29,26 +29,25 @@ export interface MakeItYoursProps {
  */
 export function MakeItYours({ stores }: MakeItYoursProps): React.JSX.Element {
   return (
-    <section className={styles.root}>
-      <div className={styles.inner}>
-        <div className={styles.head}>
-          <SectionIntro
-            eyebrow="Make it yours"
-            heading="It should look like your brand, not like our template."
-            subhead="Set your store name, description and hero copy, pick a color theme, and publish. Your products render in a responsive catalog with search, a cart and a checkout. Every store gets clean URLs and product metadata search engines can read."
-          />
-          <Reveal delay={0.1} className={styles.headActions}>
-            <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
-              See a live store
-            </Button>
-            <p className={styles.microcopy}>Change anything later. Republishing takes a click.</p>
-          </Reveal>
+    <Section ruled>
+      <div className={styles.head}>
+        <SectionIntro
+          eyebrow="Make it yours"
+          heading="It should look like your brand, not like our template."
+          subhead="Set your store name, description and hero copy, pick a color theme, and publish. Your products render in a responsive catalog with search, a cart and a checkout. Every store gets clean URLs and product metadata search engines can read."
+        />
+        <div className={styles.headActions}>
+          <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
+            See a live store
+          </Button>
+          <p className={styles.microcopy}>Change anything later. Republishing takes a click.</p>
         </div>
+      </div>
 
-        <ul className={styles.grid}>
-          {stores.map((store, index) => (
-            <Reveal as="li" key={store.slug} delay={index * 0.08} className={styles.item}>
-              <Link href={storeUrl(store.slug)} className={styles.card}>
+      <ul className={styles.grid}>
+        {stores.map((store) => (
+          <li key={store.slug} className={styles.item}>
+            <Link href={storeUrl(store.slug)} className={styles.card}>
                 <span className={styles.art}>
                   <Image
                     src={store.hero}
@@ -71,12 +70,11 @@ export function MakeItYours({ stores }: MakeItYoursProps): React.JSX.Element {
                     {store.productCount} products · rebelshops.com/{store.slug}
                   </span>
                 </span>
-              </Link>
-            </Reveal>
-          ))}
-        </ul>
-      </div>
-    </section>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

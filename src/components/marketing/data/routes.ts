@@ -6,23 +6,28 @@
  * every header, footer and CTA follows.
  *
  * Deliberately absent:
- *   - `/pricing` — the route is owned by another agent and is not mounted yet,
- *     so pricing links point at the homepage pricing block until it is.
  *   - `/changelog`, `/status`, `/about`, `/contact` — not built. The copy deck
  *     (§3.9, §3.13) requires the cards and sentences that depend on them to be
  *     cut rather than linked to a stub.
+ *
+ * HISTORY: `pricing`, `faq` and `comparison` used to be `/#…` anchors on the
+ * homepage, even though `src/app/pricing/page.tsx` had been mounted for some
+ * time. The nav therefore never left the homepage, which is why the homepage
+ * had to carry a full pricing block, a full FAQ and a full comparison table —
+ * roughly 3,000px of duplicated content. Pointing these three strings at the
+ * real route is what made that content deletable.
  */
 export const ROUTES = {
   home: '/',
   features: '/features',
   howItWorks: '/how-it-works',
   demoStores: '/demo-stores',
-  /** Homepage pricing block. Swap to `/pricing` the day that route mounts. */
-  pricing: '/#pricing',
-  /** Homepage FAQ block. */
-  faq: '/#faq',
-  /** Homepage cost comparison. */
-  comparison: '/#comparison',
+  /** The real pricing route. Carries the plan, the FAQ and the full comparison. */
+  pricing: '/pricing',
+  /** The FAQ lives on the pricing page, next to the thing it is asked about. */
+  faq: '/pricing#faq',
+  /** The full twelve-month Shopify Basic comparison table. */
+  comparison: '/pricing#comparison',
   /** Account creation + store setup wizard. No card is taken today. */
   signUp: '/create-store',
   signIn: '/login',

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Reveal } from '../parts/Reveal';
 import styles from './PricingFaq.module.css';
 
 interface Item {
@@ -65,32 +64,30 @@ export function PricingFaq(): React.JSX.Element {
   return (
     <section className={styles.root} id="faq">
       <div className={styles.inner}>
-        <Reveal>
-          <h2 className={styles.heading}>Before you enter a card.</h2>
-        </Reveal>
+        <h2 className={styles.heading}>Before you enter a card.</h2>
+      
 
         <div className={styles.list}>
           {ITEMS.map((item, index) => (
-            <Reveal key={item.question} delay={Math.min(index, 5) * 0.04}>
-              <details className={styles.item} name="pricing-faq">
-                <summary className={styles.summary}>
-                  <span className={styles.question}>{item.question}</span>
-                  <span className={styles.chevron} aria-hidden="true">
-                    <svg viewBox="0 0 16 16" width="14" height="14" focusable="false">
-                      <path
-                        d="M4 6.5 8 10.5 12 6.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                </summary>
-                <p className={styles.answer}>{item.answer}</p>
-              </details>
-            </Reveal>
+            <details className={styles.item} name="pricing-faq">
+              <summary className={styles.summary}>
+                <span className={styles.question}>{item.question}</span>
+                <span className={styles.chevron} aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" focusable="false">
+                    <path
+                      d="M4 6.5 8 10.5 12 6.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </summary>
+              <p className={styles.answer}>{item.answer}</p>
+            </details>
+          
           ))}
         </div>
       </div>
