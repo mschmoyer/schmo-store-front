@@ -1,0 +1,192 @@
+/*
+ * Sign-in. Same ground, type and ember signal as the setup wizard so the two
+ * screens read as one product.
+ */
+
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--surface);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  isolation: isolate;
+}
+
+.page::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 420px;
+  background:
+    radial-gradient(80% 120% at 12% 0%, rgb(var(--ember-500-rgb) / 0.08), transparent 62%),
+    radial-gradient(60% 100% at 88% 0%, rgb(var(--ember-500-rgb) / 0.045), transparent 60%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.masthead {
+  padding: 20px var(--app-pad, 24px);
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.brand:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-display, inherit);
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: var(--shadow-ember-sm);
+}
+
+.brandName {
+  font-family: var(--font-display, inherit);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.02em;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px var(--app-pad, 24px) 72px;
+}
+
+@media (min-width: 720px) {
+  .main {
+    align-items: center;
+    padding-top: 0;
+    padding-bottom: 96px;
+  }
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 28px 24px;
+}
+
+@media (min-width: 480px) {
+  .card {
+    padding: 36px 32px;
+  }
+}
+
+.eyebrow {
+  display: block;
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 10px;
+}
+
+.title {
+  font-family: var(--font-display, inherit);
+  font-size: clamp(1.5rem, 3.2vw, 1.875rem);
+  line-height: 1.14;
+  letter-spacing: -0.022em;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.subtitle {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  color: var(--text-secondary);
+  margin: 0 0 24px;
+}
+
+.fields {
+  display: grid;
+  gap: 18px;
+}
+
+.submit {
+  margin-top: 24px;
+}
+
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  margin-bottom: 20px;
+}
+
+.alertIcon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.alertBody {
+  min-width: 0;
+}
+
+.alertTitle {
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.alertText {
+  margin: 0;
+}
+
+.footer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.footer a {
+  color: var(--accent-text);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.footer a:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-xs);
+}

@@ -419,20 +419,6 @@ function stackedSvg(id, { fg, accent }) {
   });
 }
 
-/* ---- the theme-aware SVG favicon ---------------------------------------- */
-function iconSvg() {
-  const body = markBody({ fg: 'var(--rs-fg)', accent: C.ember });
-  const style =
-    `<style>:root{--rs-fg:${C.ink900}}` +
-    `@media (prefers-color-scheme:dark){:root{--rs-fg:${C.paper}}}</style>`;
-  return svg({
-    id: 'rs-icon',
-    viewBox: MARK_VB,
-    title: 'RebelShops',
-    style,
-    body,
-  });
-}
 
 /* ========================================================================== */
 /* 4. The OG poster                                                            */
@@ -449,19 +435,21 @@ function ogSvg() {
   const sans = 'Geist, Inter, &quot;Liberation Sans&quot;, Arial, Helvetica, sans-serif';
   const mono = '&quot;Geist Mono&quot;, &quot;JetBrains Mono&quot;, &quot;Liberation Mono&quot;, monospace';
 
-  /* lockup, top-left, mark 62 tall */
-  const mk = 62 / M.cap;
+  /* the lockup, top-left, at the same mark-to-word ratio as logo-horizontal */
+  const markH = 58;
+  const mk = markH / M.cap;
+  const wordK = markH / LOCK.markScale / M.cap;
   const markSet = setText('R', { k: mk, ox: pad, oy: pad });
-  const wordK = 34 / M.cap;
   const wordSet = setText(WORD, {
     k: wordK,
-    ox: pad + R_W * mk + 22,
-    oy: pad + (62 - 34) / 2,
+    ox: pad + R_W * mk + LOCK.gap * wordK,
+    oy: pad + (markH - M.cap * wordK) / 2,
   });
 
-  /* a ghost R bleeding off the lower right — quiet, structural, not decoration */
-  const gk = 520 / M.cap;
-  const ghost = setText('R', { k: gk, ox: 792, oy: 176 });
+  /* a ghost R bleeding off the right edge — structural, not decoration. Only
+     the flap and the bowl's cut corner stay in frame; the stem runs off. */
+  const gk = 690 / M.cap;
+  const ghost = setText('R', { k: gk, ox: 900, oy: 40 });
 
   const heroY = 300;
   const line = 82;
@@ -469,7 +457,7 @@ function ogSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${OG.w}" height="${OG.height}" viewBox="0 0 ${OG.w} ${OG.height}" role="img" aria-labelledby="og-title">
 <title id="og-title">RebelShops — your ShipStation catalog, now a storefront</title>
 <rect width="${OG.w}" height="${OG.height}" fill="${C.ink950}"/>
-<g opacity="0.5">${paint(ghost, { fg: C.ink800, accent: C.ink700 })}</g>
+<g opacity="0.62">${paint(ghost, { fg: C.ink800, accent: C.ink700 })}</g>
 <rect x="0" y="0" width="${OG.w}" height="6" fill="${C.ember}"/>
 ${paint(markSet, { fg: C.paper, accent: C.ember })}
 ${paint(wordSet, { fg: C.paper, accent: C.paper })}
@@ -478,8 +466,8 @@ ${paint(wordSet, { fg: C.paper, accent: C.paper })}
 <text x="${pad}" y="${heroY + line}" font-family="${sans}" font-size="66" font-weight="650" letter-spacing="-2.2" fill="${C.paper}">now a storefront.</text>
 <rect x="${pad}" y="452" width="256" height="58" rx="10" fill="${C.ember}"/>
 <text x="${pad + 128}" y="490" text-anchor="middle" font-family="${sans}" font-size="25" font-weight="650" letter-spacing="-0.4" fill="${C.ink950}">$1 for 3 months</text>
-<text x="${pad + 280}" y="482" font-family="${sans}" font-size="21" font-weight="450" fill="${C.ink400}">then $19.99/mo.</text>
-<text x="${pad + 280}" y="507" font-family="${sans}" font-size="21" font-weight="450" fill="${C.ink400}">We never take a cut of a sale.</text>
+<text x="${pad + 282}" y="474" font-family="${sans}" font-size="21" font-weight="450" fill="${C.ink400}">then $19.99/mo.</text>
+<text x="${pad + 282}" y="502" font-family="${sans}" font-size="21" font-weight="450" fill="${C.ink400}">No transaction fees.</text>
 <rect x="0" y="${OG.height - 1}" width="${OG.w}" height="1" fill="${C.ink800}"/>
 </svg>`;
 }
@@ -614,6 +602,7 @@ async function main() {
 
   put(BRAND, 'wordmark.svg', wordmarkSvg('rs-word', C.ink900));
   put(BRAND, 'wordmark-inverse.svg', wordmarkSvg('rs-word-inv', C.paper));
+  put(BRAND, 'wordmark-mono.svg', wordmarkSvg('rs-word-mono', 'currentColor'));
 
   put(
     BRAND,
@@ -625,18 +614,27 @@ async function main() {
     'logo-horizontal-inverse.svg',
     horizontalSvg('rs-lh-inv', { fg: C.paper, accent: C.ember })
   );
+  put(
+    BRAND,
+    'logo-horizontal-mono.svg',
+    horizontalSvg('rs-lh-mono', { fg: 'currentColor', accent: 'currentColor' })
+  );
   put(BRAND, 'logo-stacked.svg', stackedSvg('rs-ls', { fg: C.ink900, accent: C.ember }));
   put(
     BRAND,
     'logo-stacked-inverse.svg',
     stackedSvg('rs-ls-inv', { fg: C.paper, accent: C.ember })
   );
-
-  put(PUBLIC, 'icon.svg', iconSvg());
+  put(
+    BRAND,
+    'logo-stacked-mono.svg',
+    stackedSvg('rs-ls-mono', { fg: 'currentColor', accent: 'currentColor' })
+  );
 
   /* --- raster --- */
   const tileRounded = tileSvg('rs-tile');
   const tileSquare = tileSvg('rs-tile-sq', { radius: 0 });
+  put(PUBLIC, 'icon.svg', tileSvg('rs-icon'));
 
   await png(tileRounded, 512, path.join(BRAND, 'icon-512.png'));
   await png(tileRounded, 192, path.join(BRAND, 'icon-192.png'));
@@ -685,6 +683,6 @@ if (require.main === module) {
 
 module.exports = {
   C, M, STEM, R_SPEC, GLYPHS, KERN, measure, setText, paint, svg,
-  markSvg, tileSvg, wordmarkSvg, horizontalSvg, stackedSvg, iconSvg, ogSvg,
+  markSvg, tileSvg, wordmarkSvg, horizontalSvg, stackedSvg, ogSvg,
   MARK_VB, WORD, WORD_W, R_W,
 };

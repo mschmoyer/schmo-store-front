@@ -107,7 +107,10 @@ export async function GET(request: NextRequest) {
     const comparisonDateCondition = `WHERE store_id = $1 AND created_at >= NOW() - INTERVAL '${days * 2} days' AND created_at < NOW() - INTERVAL '${days} days'`;
     
     // Check if tables exist
-    const tablesExist = await db.query(`
+    const tablesExist = await db.query<{
+      search_tracking_exists: boolean;
+      visitors_exists: boolean;
+    }>(`
       SELECT 
         EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'search_tracking') as search_tracking_exists,
         EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'visitors') as visitors_exists
@@ -127,7 +130,7 @@ export async function GET(request: NextRequest) {
         if (hasSearchTracking) {
           try {
             // Current period searches
-            const currentSearches = await db.query(`
+            const currentSearches = await db.query<{ total: string }>(`
               SELECT COUNT(*) as total
               FROM search_tracking
               ${dateCondition}
@@ -135,7 +138,7 @@ export async function GET(request: NextRequest) {
             totalSearches = parseInt(currentSearches.rows[0]?.total || '0');
 
             // Previous period searches for trend calculation
-            const previousSearches = await db.query(`
+            const previousSearches = await db.query<{ total: string }>(`
               SELECT COUNT(*) as total
               FROM search_tracking
               ${comparisonDateCondition}
@@ -147,7 +150,7 @@ export async function GET(request: NextRequest) {
             }
 
             // Get top search term
-            const topSearchResult = await db.query(`
+            const topSearchResult = await db.query<{ search_query: string; search_count: string }>(`
               SELECT search_query, COUNT(*) as search_count
               FROM search_tracking
               ${dateCondition}
@@ -158,7 +161,7 @@ export async function GET(request: NextRequest) {
             
             if (topSearchResult.rows.length > 0) {
               topSearchTerm = topSearchResult.rows[0].search_query;
-              topSearchCount = parseInt(topSearchResult.rows[0].search_count);
+              topSearchCount = parseInt(topSearchResult.rows[0].search_count, 10);
             }
           } catch (error) {
             console.error('Error querying search data:', error);
@@ -179,7 +182,7 @@ export async function GET(request: NextRequest) {
         if (hasVisitorTracking) {
           try {
             // Current period visitors
-            const currentVisitors = await db.query(`
+            const currentVisitors = await db.query<{ total: string }>(`
               SELECT COUNT(DISTINCT ip_address) as total
               FROM visitors
               ${dateCondition}
@@ -187,7 +190,7 @@ export async function GET(request: NextRequest) {
             uniqueVisitors = parseInt(currentVisitors.rows[0]?.total || '0');
 
             // Previous period visitors for trend calculation
-            const previousVisitors = await db.query(`
+            const previousVisitors = await db.query<{ total: string }>(`
               SELECT COUNT(DISTINCT ip_address) as total
               FROM visitors
               ${comparisonDateCondition}
@@ -199,7 +202,7 @@ export async function GET(request: NextRequest) {
             }
 
             // Calculate simple bounce rate based on single page visits
-            const bounceRateQuery = await db.query(`
+            const bounceRateQuery = await db.query<{ total_sessions: string; total_page_views: string }>(`
               SELECT 
                 COUNT(DISTINCT ip_address) as total_sessions,
                 COUNT(*) as total_page_views
@@ -233,7 +236,7 @@ export async function GET(request: NextRequest) {
         let zeroResultsCount = 0;
         if (hasSearchTracking && totalSearches > 0) {
           try {
-            const zeroResultsQuery = await db.query(`
+            const zeroResultsQuery = await db.query<{ zero_results: string }>(`
               SELECT COUNT(*) as zero_results
               FROM search_tracking
               ${dateCondition}

@@ -1,0 +1,225 @@
+/*
+ * Product grid and card.
+ *
+ * Geometry, alignment, image fit and hover behaviour all come from the theme's
+ * `productCard` settings — via `--st-ratio-product` and `--stx-*` for the parts
+ * CSS can fill in, and via `[data-hover]` / `[data-card-align]` on the
+ * storefront wrapper for the parts a custom property cannot select.
+ */
+
+.grid {
+  --_cols: 4;
+  --_gap: 24px;
+  --_min: 260px;
+
+  display: grid;
+  gap: var(--_gap);
+  /*
+   * `auto-fill` with a 260px floor is the baseline. The `max()` raises that
+   * floor to whatever an even split into `--_cols` would be, so a merchant who
+   * asks for 3 columns gets 3 on a wide screen instead of 5 — and the 260px
+   * floor still wins on narrow screens, which is what keeps the grid from
+   * collapsing to one cramped column on a phone.
+   */
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(
+      min(100%, max(var(--_min), calc((100% - (var(--_cols) - 1) * var(--_gap)) / var(--_cols)))),
+      1fr
+    )
+  );
+}
+
+.gridCompact {
+  --_min: 200px;
+  --_gap: 16px;
+}
+
+/* -- Card ----------------------------------------------------------------- */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  min-width: 0;
+  padding: var(--stx-card-padding, 0);
+  border-radius: var(--st-radius-card);
+  background-color: transparent;
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+
+/* A card only draws a container when the theme actually asks for borders or
+   elevation; otherwise the product sits directly on the page, which is what
+   the editorial presets want. */
+:global(.storefront[data-radius]) .cardBoxed {
+  padding: var(--st-space-4);
+  border: var(--stx-border-visible) solid var(--st-border);
+  background-color: var(--st-surface-raised);
+  box-shadow: var(--st-shadow-card);
+}
+
+.media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--st-radius-image);
+  background-color: var(--st-surface-sunken);
+  padding: var(--stx-image-pad);
+  aspect-ratio: var(--st-ratio-product);
+}
+
+.mediaInner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(var(--st-radius-image) - 2px);
+  overflow: hidden;
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: var(--stx-image-fit);
+  transition: transform 320ms ease, opacity 220ms ease;
+}
+
+/* The hover image for `swap`; only mounted when a second image exists. */
+.imageAlt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: var(--stx-image-fit);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+/* -- Hover effects, chosen by the theme ----------------------------------- */
+
+:global(.storefront[data-hover='lift']) .card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--st-shadow-card-hover);
+}
+
+:global(.storefront[data-hover='zoom']) .card:hover .image {
+  transform: scale(1.06);
+}
+
+:global(.storefront[data-hover='swap']) .card:hover .imageAlt {
+  opacity: 1;
+}
+
+:global(.storefront[data-hover='swap']) .card:hover .image {
+  opacity: 0;
+}
+
+/* -- Body ----------------------------------------------------------------- */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: var(--stx-card-items);
+  text-align: var(--stx-card-align);
+  gap: var(--st-space-2);
+  min-width: 0;
+}
+
+.vendor {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.name {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  font-weight: var(--st-heading-weight);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+  line-height: 1.3;
+  margin: 0;
+  /* Two lines keeps every card in a row the same height without truncating
+     most real product names. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The whole card is clickable, but only the name is the accessible link — a
+   nested-link card is a keyboard trap and a screen-reader mess. */
+.nameLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+.nameLink::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--st-radius-card);
+}
+
+.nameLink:hover {
+  color: var(--st-brand);
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  align-items: var(--stx-card-items);
+  gap: var(--st-space-2);
+  margin-top: auto;
+}
+
+/* -- Badges over the image ------------------------------------------------ */
+
+.flags {
+  position: absolute;
+  top: var(--st-space-3);
+  inset-inline-start: var(--st-space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--st-space-2);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* -- Quick add ------------------------------------------------------------ */
+
+.quickAdd {
+  position: absolute;
+  inset-inline: var(--st-space-3);
+  bottom: var(--st-space-3);
+  z-index: 3;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.card:hover .quickAdd,
+.card:focus-within .quickAdd {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Touch devices have no hover, so a hidden quick-add would be unreachable. */
+@media (hover: none) {
+  .quickAdd {
+    position: static;
+    opacity: 1;
+    transform: none;
+    margin-top: var(--st-space-2);
+  }
+}
+
+.quickAddStatic {
+  position: static;
+  opacity: 1;
+  transform: none;
+}

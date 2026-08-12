@@ -7,9 +7,10 @@ jest.mock('../../database/connection', () => ({
 }));
 
 import { db } from '@/lib/database/connection';
+import { asQueryMock } from '../test-support/query-mock';
 import { claimWebhookEvent, markWebhookFailed, markWebhookHandled } from '../webhook-events';
 
-const query = db.query as jest.MockedFunction<typeof db.query>;
+const query = asQueryMock(db.query);
 
 /** A Stripe event as the webhook route hands it to the ledger. */
 const EVENT = {

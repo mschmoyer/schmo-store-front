@@ -6,9 +6,10 @@ jest.mock('../../database/connection', () => ({
 }));
 
 import { db } from '@/lib/database/connection';
+import { asQueryMock } from '../test-support/query-mock';
 import { repriceCart, resolveUnitPriceCents } from '../cart';
 
-const query = db.query as jest.MockedFunction<typeof db.query>;
+const query = asQueryMock(db.query);
 
 const STORE_ID = '650e8400-e29b-41d4-a716-446655440001';
 const LAPTOP_ID = '850e8400-e29b-41d4-a716-446655440002';

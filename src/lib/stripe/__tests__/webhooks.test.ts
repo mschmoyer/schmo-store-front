@@ -4,6 +4,7 @@ import {
   dispatchStripeEvent,
   isHandledEventType,
   readRawBody,
+  type StripeEventHandler,
   type StripeEventHandlerMap,
 } from '../webhooks';
 
@@ -46,8 +47,13 @@ describe('stripe webhook dispatch', () => {
   });
 
   it('routes an event to its handler exactly once', async () => {
-    const completed = jest.fn().mockResolvedValue(undefined);
-    const expired = jest.fn().mockResolvedValue(undefined);
+    const seen: string[] = [];
+    const completed: StripeEventHandler = async (received) => {
+      seen.push(`completed:${received.type}`);
+    };
+    const expired: StripeEventHandler = async (received) => {
+      seen.push(`expired:${received.type}`);
+    };
     const handlers: StripeEventHandlerMap = {
       'checkout.session.completed': completed,
       'checkout.session.expired': expired,
@@ -56,8 +62,7 @@ describe('stripe webhook dispatch', () => {
     const outcome = await dispatchStripeEvent(event('checkout.session.completed'), handlers);
 
     expect(outcome).toBe('processed');
-    expect(completed).toHaveBeenCalledTimes(1);
-    expect(expired).not.toHaveBeenCalled();
+    expect(seen).toEqual(['completed:checkout.session.completed']);
   });
 
   it('ignores - and does not throw on - an event type with no handler', async () => {
@@ -67,7 +72,9 @@ describe('stripe webhook dispatch', () => {
 
   it('propagates a handler failure so the route can return 500 and Stripe can retry', async () => {
     const handlers: StripeEventHandlerMap = {
-      'invoice.paid': jest.fn().mockRejectedValue(new Error('database down')),
+      'invoice.paid': async () => {
+        throw new Error('database down');
+      },
     };
 
     await expect(dispatchStripeEvent(event('invoice.paid'), handlers)).rejects.toThrow(

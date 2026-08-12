@@ -25,7 +25,7 @@ import type {
 /** Cookie the login route already sets. Onboarding reuses it verbatim. */
 export const SESSION_COOKIE = 'session';
 
-interface SessionRow {
+interface SessionRow extends Record<string, unknown> {
   id: string;
   user_id: string;
   store_id: string | null;
@@ -228,7 +228,7 @@ export async function persist(row: SessionRow, options: PersistOptions): Promise
   return updated.rows[0];
 }
 
-interface StoreRow {
+interface StoreRow extends Record<string, unknown> {
   id: string;
   store_name: string;
   store_slug: string;
@@ -237,7 +237,7 @@ interface StoreRow {
   theme_name: string | null;
 }
 
-interface IntegrationRow {
+interface IntegrationRow extends Record<string, unknown> {
   configuration: Record<string, unknown> | null;
   is_active: boolean;
   api_key_encrypted: string | null;
