@@ -1,0 +1,40 @@
+/*
+ * The opening block of every non-home marketing page. It exists so that
+ * /features, /how-it-works and /demo-stores stop each declaring their own
+ * `.head` / `.headInner` pair in a page-local CSS module — three copies of the
+ * same rules was how those pages drifted onto their own container widths.
+ *
+ * Ground, container and block padding come from `parts/Section`.
+ */
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-h1);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  max-width: 20ch;
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+
+/* CTAs sit under the sentence they follow from, on the shared left edge. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}

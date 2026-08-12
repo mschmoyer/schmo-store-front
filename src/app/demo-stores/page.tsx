@@ -67,8 +67,7 @@ export default async function DemoStoresPage() {
               </p>
             ) : (
               stores.map((store, index) => (
-                <DemoStoreCard store={store} priority={index === 0} />
-              
+                <DemoStoreCard key={store.slug} store={store} priority={index === 0} />
               ))
             )}
           </div>

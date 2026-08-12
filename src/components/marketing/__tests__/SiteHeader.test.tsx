@@ -1,18 +1,52 @@
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { SiteHeader } from '../chrome/SiteHeader';
 import { SiteFooter } from '../chrome/SiteFooter';
 import { ROUTES } from '../data/routes';
 
-/** Every route the marketing chrome is allowed to point at. */
+/**
+ * Every route the marketing chrome is allowed to point at, derived from the
+ * filesystem rather than hand-maintained.
+ *
+ * A literal allowlist here defeats the test's own purpose. It went stale the
+ * moment `/pricing` was mounted: the chrome correctly started linking to the
+ * real pricing route and this guard failed, reporting a defect in the code when
+ * the defect was in the list. Reading `src/app` means a new page is trusted the
+ * moment it exists, and a link to a page that does NOT exist still fails, which
+ * is the only thing this test was ever meant to catch.
+ */
+const APP_DIR = path.join(process.cwd(), 'src', 'app');
+
+/**
+ * Walks the App Router tree and collects every statically routable path.
+ *
+ * @param dir - Directory to walk.
+ * @param prefix - Route prefix accumulated so far.
+ * @returns Every static route found beneath `dir`.
+ */
+function collectRoutes(dir: string, prefix = ''): string[] {
+  const found: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      if (/^page\.(tsx|ts|jsx|js)$/.test(entry.name)) found.push(prefix || '/');
+      continue;
+    }
+    // Skip private folders (_foo), API routes, and dynamic segments — a link to
+    // a dynamic route is checked by its concrete instances in the seed data.
+    if (entry.name.startsWith('_') || entry.name === 'api') continue;
+    if (entry.name.startsWith('[')) continue;
+    // Route groups (foo) do not contribute a path segment.
+    const segment = entry.name.startsWith('(') ? '' : `/${entry.name}`;
+    found.push(...collectRoutes(path.join(dir, entry.name), prefix + segment));
+  }
+  return found;
+}
+
 const EXISTING_ROUTES = new Set<string>([
-  '/',
-  '/features',
-  '/how-it-works',
-  '/demo-stores',
-  '/create-store',
-  '/login',
-  '/store',
+  ...collectRoutes(APP_DIR),
+  // Concrete instances of the dynamic /store/[storeSlug] route, from the demo seed.
   '/store/demo-electronics',
   '/store/artisan-craft',
   '/store/fitness-pro',
@@ -104,7 +138,17 @@ describe('SiteFooter', () => {
 });
 
 describe('routes', () => {
-  it('points pricing at the homepage block until /pricing is mounted', () => {
-    expect(ROUTES.pricing).toBe('/#pricing');
+  it('points pricing at the real route, not a homepage anchor', () => {
+    // This used to assert '/#pricing'. That anchor scrolled 7,533px down the
+    // homepage while a full /pricing route sat orphaned, and it is a large part
+    // of why the homepage had to carry a duplicate pricing block at all.
+    expect(ROUTES.pricing).toBe('/pricing');
+  });
+
+  it('never points at a homepage anchor for a page that exists', () => {
+    for (const [name, href] of Object.entries(ROUTES)) {
+      if (typeof href !== 'string') continue;
+      expect(`${name}=${href}`).not.toMatch(/^[a-z]+=\/#/);
+    }
   });
 });

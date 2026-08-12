@@ -68,8 +68,8 @@ export function PricingFaq(): React.JSX.Element {
       
 
         <div className={styles.list}>
-          {ITEMS.map((item, index) => (
-            <details className={styles.item} name="pricing-faq">
+          {ITEMS.map((item) => (
+            <details key={item.question} className={styles.item} name="pricing-faq">
               <summary className={styles.summary}>
                 <span className={styles.question}>{item.question}</span>
                 <span className={styles.chevron} aria-hidden="true">
@@ -87,7 +87,6 @@ export function PricingFaq(): React.JSX.Element {
               </summary>
               <p className={styles.answer}>{item.answer}</p>
             </details>
-          
           ))}
         </div>
       </div>
