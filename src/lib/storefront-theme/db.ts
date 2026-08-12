@@ -11,6 +11,7 @@
 
 import { db } from '@/lib/database';
 
+import { presetSections } from './presets';
 import { defaultSections, normalizeSections } from './sections';
 import { resolveTheme } from './resolve';
 import type { ResolvedTheme, Section, StorefrontTheme, StorefrontThemeInput } from './types';
@@ -213,6 +214,33 @@ export async function getThemeForRender(
  * ------------------------------------------------------------------ */
 
 /**
+ * Substitute a preset's own home page for the generic starter list.
+ *
+ * Presets did not always carry a composition, so the callers that seed a brand
+ * new draft — onboarding, and "reset to preset" — were written to hand over
+ * `defaultSections()` alongside the chosen preset's theme. Now that a preset
+ * *is* a composition, handing us the generic list next to a preset id means
+ * "this preset's page", and honouring that literally would leave every store
+ * opening on the same seven sections whichever look the merchant picked.
+ *
+ * Only the exact shipped starter list is substituted. Anything a merchant has
+ * touched differs from it and is persisted verbatim.
+ *
+ * @param theme - The theme patch being saved, if any
+ * @param sections - The sections the caller supplied, if any
+ * @returns The sections to persist
+ */
+function withPresetComposition(
+  theme: StorefrontThemeInput | undefined,
+  sections: Section[] | undefined,
+): Section[] | undefined {
+  if (sections === undefined || !theme?.preset) return sections;
+  const generic = JSON.stringify(defaultSections());
+  if (JSON.stringify(sections) !== generic) return sections;
+  return presetSections(theme.preset);
+}
+
+/**
  * Create or update a store's draft.
  *
  * Passing `undefined` for either argument leaves that column alone, so the
@@ -230,9 +258,11 @@ export async function saveDraft(
 ): Promise<ResolvedThemeRecord> {
   if (!storeId) throw new Error('saveDraft requires a storeId');
 
+  const resolvedSections = withPresetComposition(theme, sections);
+
   const themeJson = theme === undefined ? null : JSON.stringify(theme);
-  const sectionsJson = sections === undefined ? null : JSON.stringify(sections);
-  const fallbackSections = JSON.stringify(defaultSections());
+  const sectionsJson = resolvedSections === undefined ? null : JSON.stringify(resolvedSections);
+  const fallbackSections = JSON.stringify(presetSections(theme?.preset));
 
   const result = await db.query<ThemeRow>(
     `INSERT INTO storefront_themes (store_id, status, theme, sections, version)

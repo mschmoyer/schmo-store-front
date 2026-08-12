@@ -24,7 +24,7 @@ const { test, expect } = require('@playwright/test');
 /** Every public marketing route, with the copy that must open it. */
 const ROUTES = [
   { path: '/', heading: /ShipStation catalog, now a storefront/i },
-  { path: '/pricing', heading: /\$1 for three months/i },
+  { path: '/pricing', heading: /One plan\. \$19\.99 a month/i },
   { path: '/features', heading: /.+/ },
   { path: '/how-it-works', heading: /.+/ },
   { path: '/demo-stores', heading: /.+/ },
@@ -378,9 +378,15 @@ test.describe('Marketing — pricing tells the truth', () => {
     expect(body).toContain('$19.99');
 
     // `PricingPage.tsx` shipped "Card required." twelve lines below a docblock
-    // saying the page takes no card, and the signup wizard takes none either.
-    expect(body).not.toContain('Card required');
-    expect(body.toLowerCase()).not.toContain('card required');
+    // in the same file saying the page takes no card — and `/create-store`
+    // takes none either. The page now says the true, and better, version.
+    expect(body).toContain('No card required');
+
+    // …and nowhere says the false one. Removing the true sentence first is
+    // what makes this assert the CLAIM rather than the substring: "No card
+    // required to start." contains "card required".
+    const withoutTheTrueVersion = body.replace(/no card required/gi, '');
+    expect(withoutTheTrueVersion.toLowerCase()).not.toContain('card required');
   });
 
   test('the homepage states the price above the fold', async ({ page }) => {

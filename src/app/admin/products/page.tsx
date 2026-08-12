@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
-  Title,
   Paper,
   Table,
   Button,
@@ -18,16 +17,12 @@ import {
   Pagination,
   Menu,
   Stack,
-  Flex,
   NumberInput,
   Alert,
   Skeleton,
   Tooltip,
   Modal,
-  FileInput,
-  Card,
-  SimpleGrid,
-  Center
+  FileInput
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
@@ -54,6 +49,10 @@ import {
 } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Product, ProductFilters } from '@/types/database';
+import { EmptyState, Price } from '@/components/ui';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { StatCard, StatGrid } from '@/components/admin/StatCard';
+import table from '@/components/admin/adminTable.module.css';
 
 // Enhanced Product interface with sales data
 interface ProductWithSales extends Product {
@@ -579,17 +578,17 @@ export default function ProductsAdminPage() {
   return (
     <Box>
       {/* Header Section */}
-      <Flex justify="space-between" align="center" mb="xl">
-        <Box>
-          <Title order={1} mb="xs">Products</Title>
-          <Text c="dimmed">
+      <AdminPageHeader
+        title="Products"
+        description={
+          <>
             {statistics.total} product{statistics.total !== 1 ? 's' : ''} total
             {statistics.active > 0 && ` • ${statistics.active} active`}
             {selectedProducts.size > 0 && ` • ${selectedProducts.size} selected`}
-          </Text>
-        </Box>
-        
-        <Group>
+          </>
+        }
+        actions={
+          <>
           <Button 
             variant="light" 
             leftSection={<IconRefresh size={16} />}
@@ -643,72 +642,47 @@ export default function ProductsAdminPage() {
           >
             Add Product
           </Button>
-        </Group>
-      </Flex>
+          </>
+        }
+      />
       
-      {/* Stats Cards */}
-      <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} mb="xl">
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Total Products
-              </Text>
-              <Text fw={700} size="xl">{statistics.total}</Text>
-            </Box>
-            <IconPackage size={32} color="var(--text-primary)" />
-          </Group>
-        </Card>
-        
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Active
-              </Text>
-              <Text fw={700} size="xl" c="green">{statistics.active}</Text>
-            </Box>
-            <IconCheck size={32} color="var(--success-text)" />
-          </Group>
-        </Card>
-        
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                In Stock
-              </Text>
-              <Text fw={700} size="xl" c="green">{statistics.inStock}</Text>
-            </Box>
-            <IconShoppingCart size={32} color="var(--success-text)" />
-          </Group>
-        </Card>
-        
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Out of Stock
-              </Text>
-              <Text fw={700} size="xl" c="red">{statistics.outOfStock}</Text>
-            </Box>
-            <IconAlertTriangle size={32} color="var(--warning-text)" />
-          </Group>
-        </Card>
-        
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Inventory Value
-              </Text>
-              <Text fw={700} size="xl" c="ink.9">{formatCurrency(statistics.totalValue)}</Text>
-            </Box>
-            <IconCurrencyDollar size={32} color="var(--text-primary)" />
-          </Group>
-        </Card>
-      </SimpleGrid>
-      
+      {/*
+        Five bespoke cards became five StatCards. What went with them: a green
+        tick beside "Active", a green cart beside "In Stock" and an amber
+        triangle beside "Out of Stock" — three tinted 32px icons doing the job
+        the numbers already do. §2 reserves the signal for money, stock and
+        success; a count of listings is none of those, and a warning triangle
+        that is always amber tells you nothing about whether anything is wrong.
+        Tone now follows the value: out-of-stock is only red when it is not zero.
+      */}
+      <StatGrid min={190}>
+        <StatCard label="Total products" value={statistics.total} icon={<IconPackage size={18} stroke={1.6} />} />
+        <StatCard label="Active" value={statistics.active} meta="Listed in the store" icon={<IconCheck size={18} stroke={1.6} />} />
+        <StatCard
+          label="In stock"
+          value={statistics.inStock}
+          tone="signal"
+          meta="Available to ship"
+          icon={<IconShoppingCart size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Out of stock"
+          value={statistics.outOfStock}
+          tone={statistics.outOfStock > 0 ? 'danger' : 'neutral'}
+          meta={statistics.outOfStock > 0 ? 'Cannot be ordered' : 'Nothing is out'}
+          icon={<IconAlertTriangle size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Inventory value"
+          value={statistics.totalValue}
+          format="currency"
+          meta="At list price"
+          icon={<IconCurrencyDollar size={18} stroke={1.6} />}
+        />
+      </StatGrid>
+
+      <Box mb="xl" />
+
       {/* Search and Filters */}
       <Paper withBorder p="md" mb="md">
         <Group justify="space-between" mb="md">
@@ -793,9 +767,9 @@ export default function ProductsAdminPage() {
                 />
               </Table.Th>
               <Table.Th>Product</Table.Th>
-              <Table.Th>Price</Table.Th>
+              <Table.Th className={table.numeric}>Price</Table.Th>
               <Table.Th>Stock</Table.Th>
-              <Table.Th>Sales</Table.Th>
+              <Table.Th className={table.numeric}>Sales</Table.Th>
               <Table.Th>Status</Table.Th>
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
@@ -824,24 +798,28 @@ export default function ProductsAdminPage() {
                       <Text fw={500} lineClamp={1}>
                         {product.name}
                       </Text>
-                      <Text size="xs" c="dimmed" ff="monospace">
-                        SKU: {product.sku}
+                      <Text component="span" className={table.code}>
+                        {product.sku}
                       </Text>
                     </Box>
                   </Group>
                 </Table.Td>
                 
-                <Table.Td>
-                  <Group gap="xs">
-                    <Text fw={500}>
-                      {formatCurrency(product.base_price)}
-                    </Text>
-                    {product.sale_price && (
-                      <Text size="xs" c="dimmed" td="line-through">
-                        {formatCurrency(product.sale_price)}
-                      </Text>
-                    )}
-                  </Group>
+                <Table.Td className={table.numeric}>
+                  {/* When a sale price exists it is the price the shopper
+                      pays, so it is the one Price renders; the list price is
+                      the struck-through compare-at. The old order had it
+                      backwards. */}
+                  {product.sale_price ? (
+                    <Price
+                      value={Number(product.sale_price)}
+                      compareAt={Number(product.base_price)}
+                      showSavings={false}
+                      size="sm"
+                    />
+                  ) : (
+                    <Price value={Number(product.base_price)} size="sm" />
+                  )}
                 </Table.Td>
                 
                 <Table.Td>
@@ -861,15 +839,16 @@ export default function ProductsAdminPage() {
                   </Group>
                 </Table.Td>
                 
-                <Table.Td>
-                  <Group gap="xs">
-                    <Text size="sm" fw={500}>
-                      {product.sales_data.total_sales}
-                    </Text>
-                    <Text size="xs" c="dimmed">
+                <Table.Td className={table.numeric}>
+                  {/* Units and revenue used to sit side by side as "4 $916.00",
+                      which reads as two unlabelled columns squeezed into one.
+                      Stacked, the revenue is visibly a gloss on the count. */}
+                  <span className={table.stacked}>
+                    <span>{product.sales_data.total_sales}</span>
+                    <span className={table.sub}>
                       {formatCurrency(product.sales_data.total_revenue)}
-                    </Text>
-                  </Group>
+                    </span>
+                  </span>
                 </Table.Td>
                 
                 <Table.Td>
@@ -952,28 +931,44 @@ export default function ProductsAdminPage() {
         </Table>
         
         {products.length === 0 && !loading && (
-          <Center py="xl">
-            <Stack align="center">
-              <IconPackage size={48} color="var(--border-strong)" />
-              <Text size="lg" c="dimmed">No products found</Text>
-              <Text size="sm" c="dimmed">
-                {searchQuery || statusFilter || stockFilter ? 
-                  'Try adjusting your filters' : 
-                  'Create your first product to get started'
-                }
-              </Text>
-              {(!searchQuery && !statusFilter && !stockFilter) && (
-                <Button 
-                  leftSection={<IconPlus size={16} />}
-                  onClick={() => {
-                    window.location.href = '/admin/products/add';
-                  }}
-                >
-                  Add Your First Product
-                </Button>
-              )}
-            </Stack>
-          </Center>
+          <Box p="xl">
+            <EmptyState
+              titleAs="p"
+              title={
+                searchQuery || statusFilter || stockFilter
+                  ? 'No products match these filters'
+                  : 'No products yet'
+              }
+              description={
+                searchQuery || statusFilter || stockFilter
+                  ? 'Clear a filter or widen the search to see more of your catalog.'
+                  : 'Products sync in from ShipStation, or you can add one by hand.'
+              }
+              action={
+                searchQuery || statusFilter || stockFilter ? (
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setStatusFilter('');
+                      setStockFilter('');
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : (
+                  <Button
+                    leftSection={<IconPlus size={16} />}
+                    onClick={() => {
+                      window.location.href = '/admin/products/add';
+                    }}
+                  >
+                    Add your first product
+                  </Button>
+                )
+              }
+            />
+          </Box>
         )}
       </Paper>
       

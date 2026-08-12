@@ -18,12 +18,9 @@ import {
   Select,
   Alert,
   Loader,
-  ThemeIcon,
-  rem,
   Tabs,
   SimpleGrid,
   Switch,
-  Avatar,
   Tooltip
 } from '@mantine/core';
 import { 
@@ -58,6 +55,9 @@ import PurchaseOrderAnalytics from '@/components/admin/PurchaseOrderAnalytics';
 import SuppliersManagement from '@/components/admin/SuppliersManagement';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { StatCard, StatGrid } from '@/components/admin/StatCard';
+import { Price, ProductImage } from '@/components/ui';
+import table from '@/components/admin/adminTable.module.css';
 
 interface SalesVelocity {
   total_sales: number;
@@ -488,82 +488,62 @@ export default function InventoryPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} mb="xs">
-            Inventory Management
-          </Title>
-          <Text c="dimmed">
-            Manage your stock levels, forecasting, and purchase orders
-          </Text>
-        </div>
-        <Button leftSection={<IconRefresh size="1rem" />} variant="outline" onClick={handleSyncShipStation}>
-          Sync ShipStation
-        </Button>
-      </Group>
+      <AdminPageHeader
+        title="Inventory"
+        description="Stock levels, forecasting and restock orders across every warehouse."
+        actions={
+          <Button leftSection={<IconRefresh size="1rem" />} variant="default" onClick={handleSyncShipStation}>
+            Sync ShipStation
+          </Button>
+        }
+      />
 
-      {/* Stats Cards */}
-      <SimpleGrid cols={{ base: 2, md: 6 }} spacing="md">
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Products</Text>
-            <ThemeIcon color="ink" variant="light" size="sm">
-              <IconPackage style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.total_products}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Value</Text>
-            <ThemeIcon color="green" variant="light" size="sm">
-              <IconChartBar style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>${stats?.total_value.toLocaleString()}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Low Stock</Text>
-            <ThemeIcon color="yellow" variant="light" size="sm">
-              <IconAlertTriangle style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.low_stock_items}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Out of Stock</Text>
-            <ThemeIcon color="red" variant="light" size="sm">
-              <IconAlertCircle style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.out_of_stock_items}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Pending Orders</Text>
-            <ThemeIcon color="ink" variant="light" size="sm">
-              <IconTruckDelivery style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.pending_orders}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Restocked This Month</Text>
-            <ThemeIcon color="ink" variant="light" size="sm">
-              <IconRefresh style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.this_month_restocked}</Text>
-        </Card>
-      </SimpleGrid>
+      {/*
+        Six hand-built cards became six StatCards. Their `ThemeIcon`s carried a
+        green chart, an amber triangle and a red circle — three hues chosen per
+        card rather than per value, which is what made this row read as a
+        traffic light that never changes. Tone now tracks the number: low stock
+        is amber only when something is low, out of stock is red only when
+        something is out.
+      */}
+      <StatGrid min={172}>
+        <StatCard
+          label="Total products"
+          value={stats?.total_products ?? 0}
+          icon={<IconPackage size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Total value"
+          value={stats?.total_value ?? 0}
+          format="currency"
+          meta="At unit cost"
+          icon={<IconChartBar size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Low stock"
+          value={stats?.low_stock_items ?? 0}
+          tone={(stats?.low_stock_items ?? 0) > 0 ? 'warning' : 'neutral'}
+          icon={<IconAlertTriangle size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Out of stock"
+          value={stats?.out_of_stock_items ?? 0}
+          tone={(stats?.out_of_stock_items ?? 0) > 0 ? 'danger' : 'neutral'}
+          icon={<IconAlertCircle size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Pending orders"
+          value={stats?.pending_orders ?? 0}
+          meta="Awaiting delivery"
+          icon={<IconTruckDelivery size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Restocked"
+          value={stats?.this_month_restocked ?? 0}
+          meta="This month"
+          icon={<IconRefresh size={18} stroke={1.6} />}
+        />
+      </StatGrid>
 
       {/* Smart AI Recommendations Widget */}
       <SmartReorderWidget 
@@ -644,27 +624,35 @@ export default function InventoryPage() {
 
             {/* Inventory Grid */}
             <Card shadow="sm" padding="lg" radius="md" withBorder>
+              {/* The forecast window used to be a <Select> living inside a
+                  <th>. A column header is a label for the column, not a place
+                  to put a 40px control — it stretched the header band to twice
+                  the height of every other cell and put a form field in the
+                  tab order between two column names. */}
+              <Group justify="flex-end" gap="xs" mb="sm">
+                <Text size="xs" c="dimmed" component="label" htmlFor="forecast-window">
+                  Forecast window
+                </Text>
+                <Select
+                  id="forecast-window"
+                  size="xs"
+                  aria-label="Forecast window"
+                  data={FORECAST_PERIODS.map(p => ({ value: p.value.toString(), label: p.label }))}
+                  value={forecastPeriod.toString()}
+                  onChange={(value) => handleForecastPeriodChange(parseInt(value || '30') as ForecastPeriod)}
+                  style={{ width: 110 }}
+                />
+                {loadingForecast && <Loader size="xs" />}
+              </Group>
               <Table>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Product</Table.Th>
-                    <Table.Th>Stock</Table.Th>
-                    <Table.Th>
-                      <Group gap="xs">
-                        <Text size="sm" component="span">Forecast</Text>
-                        <Select
-                          size="xs"
-                          data={FORECAST_PERIODS.map(p => ({ value: p.value.toString(), label: p.label }))}
-                          value={forecastPeriod.toString()}
-                          onChange={(value) => handleForecastPeriodChange(parseInt(value || '30') as ForecastPeriod)}
-                          style={{ minWidth: 80 }}
-                        />
-                        {loadingForecast && <Loader size="xs" />}
-                      </Group>
-                    </Table.Th>
-                    <Table.Th>Reorder Point</Table.Th>
-                    <Table.Th>Unit Cost</Table.Th>
-                    <Table.Th>Total Value</Table.Th>
+                    <Table.Th className={table.numeric}>Stock</Table.Th>
+                    <Table.Th className={table.numeric}>Forecast</Table.Th>
+                    <Table.Th className={table.numeric}>Reorder at</Table.Th>
+                    <Table.Th className={table.numeric}>Unit cost</Table.Th>
+                    <Table.Th className={table.numeric}>Total value</Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -673,32 +661,36 @@ export default function InventoryPage() {
                     <Table.Tr key={item.id}>
                       <Table.Td>
                         <Group gap="sm">
-                          <Avatar 
-                            src={item.featured_image_url} 
-                            size="sm" 
-                            radius="sm"
-                          >
-                            <IconShoppingCart size="1rem" />
-                          </Avatar>
-                          <div>
-                            <Text size="sm" fw={500}>{item.name}</Text>
-                            <Text size="xs" c="dimmed">{item.sku}</Text>
+                          {/* A fixed-width frame; Mantine's Avatar let a wide
+                              photograph push the name onto its own line, which
+                              is why two rows in this grid were twice as tall as
+                              the rest. */}
+                          <ProductImage
+                            src={item.featured_image_url}
+                            name={item.name}
+                            alt=""
+                            rounded="sm"
+                            style={{ width: 32, flex: 'none' }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <Text size="sm" fw={500} lineClamp={1}>{item.name}</Text>
+                            <Text component="span" className={table.code}>{item.sku}</Text>
                             <Text size="xs" c="dimmed">{item.category}</Text>
                           </div>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <Text size="sm" fw={500}>{item.stock_quantity}</Text>
+                      <Table.Td className={table.numeric}>
+                        <Group gap="xs" justify="flex-end" wrap="nowrap">
                           {getStockStatusIcon(item.status) && (
                             <Tooltip label={getStockStatusTooltip(item.status)}>
                               {getStockStatusIcon(item.status)}
                             </Tooltip>
                           )}
+                          <Text size="sm" fw={500}>{item.stock_quantity}</Text>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
+                      <Table.Td className={table.numeric}>
+                        <Group gap="xs" justify="flex-end" wrap="nowrap">
                           <Text size="sm">
                             {forecastData[item.id]?.forecastValue || 
                              (forecastPeriod <= 30 ? item.forecast_30_days : item.forecast_90_days)}
@@ -718,20 +710,18 @@ export default function InventoryPage() {
                           {(forecastData[item.id]?.forecastValue || 
                             (forecastPeriod <= 30 ? item.forecast_30_days : item.forecast_90_days)) 
                             > item.stock_quantity && (
-                            <IconAlertTriangle size="1rem" color="orange" />
+                            <IconAlertTriangle size="1rem" color="var(--warning-text)" />
                           )}
                         </Group>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td className={table.numeric}>
                         <Text size="sm">{item.reorder_point}</Text>
                       </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">${item.unit_cost.toFixed(2)}</Text>
+                      <Table.Td className={table.numeric}>
+                        <Price value={item.unit_cost} size="sm" />
                       </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>
-                          ${(item.stock_quantity * item.unit_cost).toFixed(2)}
-                        </Text>
+                      <Table.Td className={table.numeric}>
+                        <Price value={item.stock_quantity * item.unit_cost} size="sm" />
                       </Table.Td>
                       <Table.Td>
                         <Group gap="xs">

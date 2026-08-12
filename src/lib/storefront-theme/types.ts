@@ -274,6 +274,18 @@ export interface PresetDefinition {
   register: string;
   thumbnail: PresetThumbnail;
   theme: StorefrontTheme;
+  /**
+   * The home page this preset opens with.
+   *
+   * A preset is a **design**, not a palette (spec section 6), and half of a
+   * design is composition: which sections a shop leads with, in what order,
+   * carrying what copy. Without this field every preset fell through to one
+   * hardcoded list and the six looks were six colourways of a single page.
+   *
+   * Required, and required to be *different* per preset —
+   * `presets.test.ts` fails if any two presets share a composition.
+   */
+  sections: Section[];
 }
 
 /* ------------------------------------------------------------------ *

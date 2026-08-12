@@ -44,7 +44,10 @@ function buildContentSecurityPolicy(): string {
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
-    "frame-ancestors 'none'",
+    // 'self', not 'none': the customizer frames /store/* from this origin.
+    // With 'none' this becomes a latent kill switch that takes the preview
+    // down the moment CSP_ENFORCE=true, long after anyone remembers why.
+    "frame-ancestors 'self'",
     "form-action 'self'",
     `script-src ${scriptSrc}`,
     "style-src 'self' 'unsafe-inline'",
@@ -165,7 +168,32 @@ const nextConfig: NextConfig = {
 
     return [
       {
-        source: "/(.*)",
+        // Storefronts are deliberately frameable by this origin, because the
+        // theme customizer previews a live store in an iframe. The blanket
+        // `X-Frame-Options: DENY` below matched `/(.*)`, which includes
+        // `/store/*`, so the customizer's preview pane was blocked by our own
+        // header: the merchant got a permanent "Loading your storefront…"
+        // spinner and the single most important feature in the product never
+        // worked. It was not environment-gated, so production shipped it too.
+        //
+        // SAMEORIGIN rather than removing the header: a storefront should be
+        // framed by our customizer and by nothing else. `frame-ancestors`
+        // below carries the same rule for browsers that honour CSP, which is
+        // the modern equivalent and supersedes X-Frame-Options where both
+        // apply.
+        source: "/store/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      {
+        // Everything except /store/*. Next applies EVERY matching entry, so a
+        // plain `/(.*)` here still re-applied `DENY` to storefronts and
+        // silently defeated the SAMEORIGIN rule above — the customizer preview
+        // stayed blocked even after the storefront entry was added.
+        source: "/((?!store/).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
