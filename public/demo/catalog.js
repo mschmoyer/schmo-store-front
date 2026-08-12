@@ -268,20 +268,29 @@ const craft = [
     },
   },
   {
-    // Slender neck, smooth continuous taper to a modest base -- a bottle
-    // profile, not a bulb-on-a-body figure.
+    // A bud vase reads as three distinct parts: a stable narrow foot, a
+    // rounded body, and a long, straight, narrow neck with a slight lip
+    // flare -- that proportion (a genuinely long straight neck, not a
+    // continuous bulb-to-point taper) is the entire identity. Previously the
+    // "neck" tapered continuously into the body, reading as a bulb with a
+    // sprout -- an onion or garlic bulb, not a vessel.
     slug: 'bud-ceramic-vase',
-    bbox: { x: 344, y: 228, w: 112, h: 396 },
+    bbox: { x: 346, y: 252, w: 108, h: 366 },
     draw(defs) {
       let s = '';
       const id = nid('vase');
       defs.push(linearGrad(id, [[0, cCream], [1, cCreamDark]]));
-      s += pth('M 352 620 L 448 620 C 458 620 460 600 456 580 C 448 528 420 500 412 460 C 406 428 404 400 404 350 L 404 290 L 396 290 L 396 350 C 396 400 394 428 388 460 C 380 500 352 528 344 580 C 340 600 342 620 352 620 Z',
+      // Right edge, top to bottom: lip -> straight neck shaft (long, constant
+      // width) -> shoulder curve out to the belly -> taper into the foot.
+      // Left edge mirrors it back up to close the path.
+      s += pth('M 417 290 L 414 302 L 414 420 C 414 420 440 440 452 480 C 452 480 448 520 440 556 C 440 556 436 588 432 606 L 368 606 C 364 588 360 556 360 556 C 352 520 348 480 348 480 C 348 480 360 440 386 420 L 386 302 L 383 290 Z',
         `url(#${id})`, rim(false));
-      s += ellipse(400, 290, 12, 6, mix(cCreamDark, '#000', 0.15)); // rim opening
-      s += ellipse(400, 620, 48, 11, mix(cCreamDark, '#000', 0.2));
-      s += glint(384, 400, 8, 90, 0.28);
-      s += pth('M 400 282 q 26 -22 8 -48', 'none', { stroke: mix(T.mint500, T.ink700, 0.3), strokeWidth: 9, strokeLinecap: 'round', opacity: 0.85 });
+      s += ellipse(400, 606, 32, 9, mix(cCreamDark, '#000', 0.22)); // stable narrow foot
+      s += ellipse(400, 290, 11, 5, mix(cCreamDark, '#000', 0.15)); // rim opening
+      s += glint(390, 380, 7, 70, 0.26);
+      // straight stem with one small leaf -- not a curling sprout
+      s += line(400, 290, 400, 254, mix(T.mint500, T.ink700, 0.3), 6, { strokeLinecap: 'round', opacity: 0.85 });
+      s += group(ellipse(400, 270, 13, 6, mix(T.mint500, T.ink700, 0.2), { opacity: 0.85 }), { transform: 'rotate(-35 400 270)' });
       return s;
     },
   },
@@ -576,19 +585,24 @@ const fitness = [
     },
   },
   {
-    // Flattened elliptical caps (proper cylinder perspective), a distinct
-    // plastic core ring at each end, and a diagonal crosshatch texture.
+    // A foam roller reads horizontal: laid on its side, seen slightly along
+    // its axis so one end cap foreshortens to an ellipse, length clearly
+    // greater than diameter, crosshatch texture running along the length.
+    // Previously it stood near-vertical with a wide open top -- a waste bin.
     slug: 'corestrike-foam-roller',
-    bbox: { x: 308, y: 350, w: 184, h: 240 },
+    bbox: { x: 270, y: 422, w: 260, h: 76 },
     draw(defs) {
       let s = '';
-      s += cylinderV(defs, 400, 380, 560, 88, 27, fSteel, fSteelDark);
-      for (let i = -3; i <= 3; i++) {
-        s += line(400 + i * 26, 380, 400 + i * 26 + 40, 560, fSteelDark, 3, { strokeOpacity: 0.16 });
-        s += line(400 + i * 26, 380, 400 + i * 26 - 40, 560, fSteelDark, 3, { strokeOpacity: 0.16 });
+      const x1 = 300, x2 = 500, cy = 460, rx = 30, ry = 38;
+      s += capsuleH(defs, x1, x2, cy, rx, ry, fSteel, fSteelDark);
+      // crosshatch texture running along the length
+      for (let x = x1 + 12; x <= x2 - 12; x += 16) {
+        s += line(x, cy - ry * 0.85, x + 18, cy + ry * 0.85, fSteelDark, 3, { strokeOpacity: 0.18 });
+        s += line(x, cy + ry * 0.85, x + 18, cy - ry * 0.85, fSteelDark, 3, { strokeOpacity: 0.18 });
       }
-      s += ellipse(400, 380, 50, 15, mix(fSteelDark, T.ink900, 0.3), rim(true)); // core, top
-      s += ellipse(400, 560, 50, 15, mix(fSteelDark, T.ink900, 0.3), rim(true)); // core, bottom
+      // plastic core ring at each foreshortened end cap
+      s += ellipse(x1, cy, rx * 0.4, ry * 0.4, mix(fSteelDark, T.ink900, 0.3), rim(true));
+      s += ellipse(x2, cy, rx * 0.4, ry * 0.4, mix(fSteelDark, T.ink900, 0.3), rim(true));
       return s;
     },
   },
@@ -633,21 +647,32 @@ const fitness = [
     },
   },
   {
-    // Distinct twist-cap lid with a flip-spout, tick-mark measurements, and
-    // a visible wire whisk ball.
+    // A screw-top lid needs to read distinctly wider than the body (not a
+    // near-equal-width dark cap on a light cylinder, which is what read as
+    // a AA battery), with a flip spout projecting off-center at the lid's
+    // top edge, and the body tapered slightly toward the base so it isn't a
+    // perfect cylinder.
     slug: 'shakerline-protein-shaker',
-    bbox: { x: 326, y: 284, w: 148, h: 316 },
+    bbox: { x: 322, y: 262, w: 156, h: 338 },
     draw(defs) {
       let s = '';
-      s += cylinderV(defs, 400, 340, 580, 62, 18, mix(T.paperRaised, fSteel, 0.2), fSteelDark);
-      for (const y of [420, 460, 500]) s += line(346, y, 366, y, fSteelDark, 3, { strokeOpacity: 0.4 }); // measurement ticks
-      s += circle(400, 522, 11, mix(fSteelDark, '#FFFFFF', 0.2), rim(false)); // wire whisk ball
-      s += line(391, 522, 409, 522, fDark, 2, { strokeOpacity: 0.6 });
-      s += line(400, 513, 400, 531, fDark, 2, { strokeOpacity: 0.6 });
-      s += ellipse(400, 326, 66, 15, mix(fDark, '#000', 0.15), rim(true)); // twist-cap lid
-      s += rect(378, 288, 44, 38, 13, mix(fDark, '#000', 0.1), rim(true)); // flip spout
-      s += ellipse(400, 288, 16, 5, fSteel, { opacity: 0.8 });
-      s += glint(372, 400, 12, 80, 0.35);
+      const cx = 400, topY = 350, botY = 580, topR = 54, botR = 46;
+      const bodyId = nid('shakerbody');
+      defs.push(linearGrad(bodyId, [[0, mix(T.paperRaised, fSteel, 0.2)], [0.55, fSteelDark], [1, fSteelDark]], { x1: 0, y1: 0, x2: 1, y2: 0 }));
+      s += ellipse(cx, botY, botR, 15, fSteelDark, rim(false)); // base (narrower than the shoulder -- the taper)
+      s += pth(`M ${cx - topR} ${topY} L ${cx - botR} ${botY} L ${cx + botR} ${botY} L ${cx + topR} ${topY} Z`, `url(#${bodyId})`);
+      s += line(cx - topR, topY, cx - botR, botY, RIM.light, 2, { strokeOpacity: 0.12 });
+      s += line(cx + topR, topY, cx + botR, botY, RIM.light, 2, { strokeOpacity: 0.12 });
+      for (const y of [420, 460, 500]) s += line(cx - topR + 8, y, cx - topR + 28, y, fSteelDark, 3, { strokeOpacity: 0.4 }); // measurement ticks
+      s += circle(cx, 522, 11, mix(fSteelDark, '#FFFFFF', 0.2), rim(false)); // wire whisk ball
+      s += line(cx - 9, 522, cx + 9, 522, fDark, 2, { strokeOpacity: 0.6 });
+      s += line(cx, 513, cx, 531, fDark, 2, { strokeOpacity: 0.6 });
+      s += ellipse(cx, topY, topR, 15, mix(fSteelDark, '#FFFFFF', 0.08), rim(false)); // shoulder under the lid
+      s += cylinderV(defs, cx, 300, topY, 72, 18, mix(fSteelDark, '#FFFFFF', 0.14), fDark, true); // screw-top lid -- clearly wider than the body
+      // flip spout, projecting at the lid's top edge, offset toward one side
+      s += rect(360, 266, 40, 36, 13, mix(fDark, '#000', 0.1), rim(true));
+      s += ellipse(380, 266, 14, 5, fSteel, { opacity: 0.8 });
+      s += glint(cx - topR + 20, 420, 11, 75, 0.32);
       return s;
     },
   },

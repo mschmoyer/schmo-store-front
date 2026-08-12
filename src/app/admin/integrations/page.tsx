@@ -16,7 +16,9 @@ import { IntegrationConfiguration } from '@/types/database';
 
 interface Integration {
   id?: string;
-  integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal';
+  // 'shipengine' is a legacy value that may still exist in stored rows; it is
+  // filtered out below and never rendered.
+  integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal' | 'shipengine';
   isActive: boolean;
   hasApiKey: boolean;
   configuration: IntegrationConfiguration;
