@@ -5,11 +5,14 @@ import { useRouter } from 'next/navigation';
 
 import {
   normalizeSections,
+  resolveTheme,
   storefrontScope,
   themeToCss,
   type Section,
   type StorefrontThemeInput,
 } from '@/lib/storefront-theme';
+
+import { THEME_BLOCK_SENTINEL, rendererVars, themeDataAttributes } from './vars';
 
 interface PreviewBridgeProps {
   /** The store being previewed. Scopes both the token block and the token check. */
@@ -59,19 +62,32 @@ export function PreviewBridge({ storeId }: PreviewBridgeProps) {
     const selfOrigin = window.location.origin;
 
     /**
-     * Replace the token half of the storefront style block.
-     * The base rules and any sanitized merchant CSS after it are preserved by
-     * rewriting only up to the first closing brace of the token rule.
-     * @param theme - The draft theme pushed by the customizer
+     * Replace the theme-derived half of the storefront style block.
+     *
+     * The block is laid out as `tokens · renderer vars · SENTINEL · base rules ·
+     * merchant CSS`, so rewriting everything up to the sentinel swaps the whole
+     * theme while leaving the static rules and the merchant's own CSS intact.
+     *
+     * @param input - The draft theme pushed by the customizer
      */
-    const repaint = (theme: StorefrontThemeInput): void => {
+    const repaint = (input: StorefrontThemeInput): void => {
       const styleEl = document.getElementById('storefront-theme');
       if (!(styleEl instanceof HTMLStyleElement)) return;
 
-      const next = themeToCss(theme, scope);
+      const theme = resolveTheme(input);
+      const head = `${themeToCss(theme, scope)}\n${rendererVars(theme, scope)}\n`;
       const current = styleEl.textContent ?? '';
-      const end = current.indexOf('}');
-      styleEl.textContent = end === -1 ? next : `${next}${current.slice(end + 1)}`;
+      const at = current.indexOf(THEME_BLOCK_SENTINEL);
+      styleEl.textContent = at === -1 ? head : head + current.slice(at);
+
+      // Attributes drive the rules a custom property cannot select — hover
+      // effect, card alignment, header layout.
+      const root = document.querySelector<HTMLElement>(`.storefront[data-store-id]`);
+      if (root) {
+        for (const [name, value] of Object.entries(themeDataAttributes(theme))) {
+          root.setAttribute(name, value);
+        }
+      }
     };
 
     /**

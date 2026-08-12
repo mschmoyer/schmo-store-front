@@ -8,19 +8,29 @@
  *
  * Usage:
  *   node public/demo/generate-art.js
+ *   node public/demo/build.js            (the actual runner -- see that file)
+ *   node public/demo/build.js --qa        (also writes silhouette QA renders to .scratch)
  *
  * Regenerating overwrites everything under public/demo/products, public/demo/hero
  * and public/demo/logo. The output is deterministic (no Math.random with a
  * volatile seed), so a re-run produces byte-identical files.
  *
  * Layout conventions (all product SVGs, 800x800 viewBox):
- *   - Ground line sits at y=630. Every product's contact shadow is centered there.
+ *   - Every product is drawn in its own convenient "native" coordinate space and
+ *     declares a `bbox` (its true drawn extent). `fitToStage()` then normalizes
+ *     every product uniformly so its longest dimension is ~65% of the canvas
+ *     (TARGET_MAX / 800), bottom-anchored on the shared ground line y=630. This
+ *     is what keeps a keyboard and a candle at the same optical weight instead
+ *     of one filling the frame and the other floating tiny in it.
  *   - Key light comes from the top-left (gradients run 0,0 -> 1,1 light-to-dark).
  *   - Stroke weight is a constant 3px hairline at 14% ink-900 opacity (or a
  *     4% paper rim-light on very dark fills) -- never mixed within one piece.
- *   - Every product carries exactly one small "signal" accent (an LED dot, a
- *     wax seal, a stitched tab) using the store's ember/mint/amber token --
- *     the recurring brand thread across the whole catalog.
+ *   - The store background is a bold, store-specific ground color (not a pale
+ *     wash) with a soft paper-toned glow behind the product -- the three demo
+ *     stores must be sortable by background color alone at grid scale.
+ *   - The signal-dot brand accent is used ONLY on products that have a real
+ *     indicator light in life (speaker, smartwatch, charging dock, power
+ *     bank). Everywhere else it reads as a defect pixel, not a motif.
  */
 
 const fs = require('fs');
@@ -51,12 +61,31 @@ const T = {
   rose50: '#FEECEB', rose500: '#D92D20',
 };
 
+/** Blend two hex tokens from the design system to derive an in-palette mid-tone. */
+function mix(hexA, hexB, t) {
+  const a = hexA.replace('#', '');
+  const b = hexB.replace('#', '');
+  const ar = parseInt(a.slice(0, 2), 16), ag = parseInt(a.slice(2, 4), 16), ab = parseInt(a.slice(4, 6), 16);
+  const br = parseInt(b.slice(0, 2), 16), bg = parseInt(b.slice(2, 4), 16), bb = parseInt(b.slice(4, 6), 16);
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return '#' + [r, g, bl].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
 // ---------------------------------------------------------------------------
-// Tiny SVG builder -- every draw() call returns { defs, body } fragments that
-// renderProduct() assembles into a full document.
+// Tiny SVG builder -- every draw() call returns a body string; renderProduct()
+// / renderHero() / renderLogo() assemble the full document.
 // ---------------------------------------------------------------------------
 let uid = 0;
 const nid = (p) => `${p}${uid++}`;
+
+// Silhouette QA mode: when on, every fill/stroke the primitives below emit is
+// forced to solid black so a naming test can be run on shape alone. Toggled
+// only by renderProductSilhouette(); catalog.js never touches this directly
+// except through isSilhouette() for the couple of raw <text> labels.
+let SILHOUETTE = false;
+const isSilhouette = () => SILHOUETTE;
 
 function linearGrad(id, stops, { x1 = 0, y1 = 0, x2 = 1, y2 = 1 } = {}) {
   const stopEls = stops
@@ -72,43 +101,32 @@ function radialGrad(id, stops, { cx = 0.35, cy = 0.3, r = 0.75 } = {}) {
   return `<radialGradient id="${id}" cx="${cx}" cy="${cy}" r="${r}">${stopEls}</radialGradient>`;
 }
 
-/** Blend two hex tokens from the design system to derive an in-palette mid-tone. */
-function mix(hexA, hexB, t) {
-  const a = hexA.replace('#', '');
-  const b = hexB.replace('#', '');
-  const ar = parseInt(a.slice(0, 2), 16), ag = parseInt(a.slice(2, 4), 16), ab = parseInt(a.slice(4, 6), 16);
-  const br = parseInt(b.slice(0, 2), 16), bg = parseInt(b.slice(2, 4), 16), bb = parseInt(b.slice(4, 6), 16);
-  const r = Math.round(ar + (br - ar) * t);
-  const g = Math.round(ag + (bg - ag) * t);
-  const bl = Math.round(ab + (bb - ab) * t);
-  return '#' + [r, g, bl].map((v) => v.toString(16).padStart(2, '0')).join('');
-}
-
 function attrs(opts) {
   const a = [];
-  if (opts.stroke) a.push(`stroke="${opts.stroke}"`);
+  const strokeColor = SILHOUETTE ? (opts.stroke ? '#000000' : undefined) : opts.stroke;
+  if (strokeColor) a.push(`stroke="${strokeColor}"`);
   if (opts.strokeWidth) a.push(`stroke-width="${opts.strokeWidth}"`);
-  if (opts.strokeOpacity != null) a.push(`stroke-opacity="${opts.strokeOpacity}"`);
+  if (!SILHOUETTE && opts.strokeOpacity != null) a.push(`stroke-opacity="${opts.strokeOpacity}"`);
   if (opts.strokeLinecap) a.push(`stroke-linecap="${opts.strokeLinecap}"`);
   if (opts.strokeDasharray) a.push(`stroke-dasharray="${opts.strokeDasharray}"`);
-  if (opts.opacity != null) a.push(`opacity="${opts.opacity}"`);
+  if (!SILHOUETTE && opts.opacity != null) a.push(`opacity="${opts.opacity}"`);
   if (opts.transform) a.push(`transform="${opts.transform}"`);
   return a.length ? ' ' + a.join(' ') : '';
 }
 
 const rect = (x, y, w, h, rx, fill, opts = {}) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}"${attrs(opts)}/>`;
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${SILHOUETTE ? '#000000' : fill}"${attrs(opts)}/>`;
 
 const ellipse = (cx, cy, rx, ry, fill, opts = {}) =>
-  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}"${attrs(opts)}/>`;
+  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${SILHOUETTE ? '#000000' : fill}"${attrs(opts)}/>`;
 
 const circle = (cx, cy, r, fill, opts = {}) =>
-  `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"${attrs(opts)}/>`;
+  `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${SILHOUETTE ? '#000000' : fill}"${attrs(opts)}/>`;
 
-const path_ = (d, fill, opts = {}) => `<path d="${d}" fill="${fill}"${attrs(opts)}/>`;
+const path_ = (d, fill, opts = {}) => `<path d="${d}" fill="${SILHOUETTE ? '#000000' : fill}"${attrs(opts)}/>`;
 
 const line = (x1, y1, x2, y2, stroke, w, opts = {}) =>
-  `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${w}"${attrs(opts)}/>`;
+  `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${SILHOUETTE ? '#000000' : stroke}" stroke-width="${w}"${attrs(opts)}/>`;
 
 const group = (inner, opts = {}) => `<g${attrs(opts)}>${inner}</g>`;
 
@@ -165,7 +183,9 @@ function glint(cx, cy, rx, ry, opacity = 0.4) {
   return ellipse(cx, cy, rx, ry, '#FFFFFF', { opacity });
 }
 
-/** The one recurring brand-thread accent: a small signal dot. */
+/** The recurring brand-thread accent -- an LED/indicator dot. Use sparingly:
+ *  only on products with a genuine indicator light (speaker, smartwatch,
+ *  charging dock, power bank). Everywhere else it reads as a defect pixel. */
 function signalDot(cx, cy, r, color) {
   return group([
     circle(cx, cy, r * 1.8, color, { opacity: 0.18 }),
@@ -174,54 +194,84 @@ function signalDot(cx, cy, r, color) {
   ].join(''));
 }
 
-function groundShadow(defs, cx, cy, rx, ry, opacity = 0.15) {
+function groundShadowMarkup(defs, cx, cy, rx, ry, opacity) {
   const fid = nid('blur');
   defs.push(`<filter id="${fid}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="10"/></filter>`);
-  return ellipse(cx, cy, rx, ry, T.ink900, { opacity, transform: undefined }).replace(
-    '/>',
-    ` filter="url(#${fid})"/>`
-  );
+  return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${T.ink900}" opacity="${opacity}" filter="url(#${fid})"/>`;
+}
+
+// ---------------------------------------------------------------------------
+// Uniform optical sizing. Every product declares the true bounding box of
+// what it drew (native coordinates); this maps that box onto a shared target
+// so every product occupies the same visual weight in the frame, bottom-
+// anchored on the shared ground line -- regardless of whether it's a
+// keyboard or a candle.
+// ---------------------------------------------------------------------------
+const TARGET_MAX = 490; // ~61% of the 800 canvas in the longest dimension
+const STAGE_CX = 400;
+const GROUND_Y = 630;
+
+function fitToStage(inner, bbox) {
+  const scale = TARGET_MAX / Math.max(bbox.w, bbox.h);
+  const bboxCx = bbox.x + bbox.w / 2;
+  const bboxBottom = bbox.y + bbox.h;
+  const tx = STAGE_CX - bboxCx * scale;
+  const ty = GROUND_Y - bboxBottom * scale;
+  return {
+    markup: `<g transform="translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${scale.toFixed(4)})">${inner}</g>`,
+    scaledW: bbox.w * scale,
+    scaledH: bbox.h * scale,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Full-document assembly for a square product image
 // ---------------------------------------------------------------------------
-function renderProduct({ washTint, draw }) {
+function renderProduct({ bgBase, bgGlow, draw, bbox }) {
   const defs = [];
-  const bgWashId = nid('wash');
-  const vignetteId = nid('vig');
-  defs.push(radialGrad(bgWashId, [
-    [0, T.paperRaised, 1], [0.55, T.paper, 1], [1, washTint, 1],
-  ], { cx: 0.32, cy: 0.26, r: 0.95 }));
-  defs.push(radialGrad(vignetteId, [
-    [0, T.ink900, 0], [1, T.ink900, 0.06],
-  ], { cx: 0.5, cy: 0.55, r: 0.75 }));
+  const glowId = nid('glow');
+  defs.push(radialGrad(glowId, [
+    [0, bgGlow, 0.95], [0.5, bgGlow, 0.55], [1, bgGlow, 0],
+  ], { cx: 0.42, cy: 0.34, r: 0.8 }));
 
-  const groundY = 630;
-  const bodyParts = draw(defs);
+  const { markup, scaledW } = fitToStage(draw(defs), bbox);
+  const shadowRx = Math.max(85, Math.min(230, scaledW * 0.5));
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
 <defs>${defs.join('')}</defs>
-<rect width="800" height="800" fill="${T.paper}"/>
-<rect width="800" height="800" fill="url(#${bgWashId})"/>
-${groundShadow(defs, 400, groundY + 24, 210, 26, 0.13)}
-${bodyParts}
-<rect width="800" height="800" fill="url(#${vignetteId})"/>
+<rect width="800" height="800" fill="${bgBase}"/>
+<rect width="800" height="800" fill="url(#${glowId})"/>
+${groundShadowMarkup(defs, 400, GROUND_Y + 20, shadowRx, 24, 0.16)}
+${markup}
 </svg>`;
   return svg;
 }
 
-function renderHero({ washTint, draw }) {
+/** QA-only: renders the same product at the same scale/position, but every
+ *  shape forced to solid black on white -- so silhouette legibility can be
+ *  judged directly. Not part of the shipped catalog. */
+function renderProductSilhouette({ draw, bbox }) {
+  SILHOUETTE = true;
   const defs = [];
-  const bgWashId = nid('hwash');
-  defs.push(radialGrad(bgWashId, [
-    [0, T.paperRaised, 1], [0.5, T.paper, 1], [1, washTint, 1],
-  ], { cx: 0.24, cy: 0.32, r: 1.05 }));
+  const { markup } = fitToStage(draw(defs), bbox);
+  SILHOUETTE = false;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+<rect width="800" height="800" fill="#FFFFFF"/>
+${markup}
+</svg>`;
+}
+
+function renderHero({ bgBase, bgGlow, draw }) {
+  const defs = [];
+  const glowId = nid('hglow');
+  defs.push(radialGrad(glowId, [
+    [0, bgGlow, 0.95], [0.5, bgGlow, 0.5], [1, bgGlow, 0],
+  ], { cx: 0.26, cy: 0.36, r: 0.9 }));
   const body = draw(defs);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
 <defs>${defs.join('')}</defs>
-<rect width="1600" height="900" fill="${T.paper}"/>
-<rect width="1600" height="900" fill="url(#${bgWashId})"/>
+<rect width="1600" height="900" fill="${bgBase}"/>
+<rect width="1600" height="900" fill="url(#${glowId})"/>
 ${body}
 </svg>`;
   return svg;
@@ -237,9 +287,9 @@ ${body}
 }
 
 module.exports = {
-  T, mix, nid, defs: { linearGrad, radialGrad }, shapes: {
-    rect, ellipse, circle, path: path_, line, group, cylinderV, capsuleH, sphere, box, glint, signalDot, groundShadow, rim,
+  T, mix, nid, isSilhouette, defs: { linearGrad, radialGrad }, shapes: {
+    rect, ellipse, circle, path: path_, line, group, cylinderV, capsuleH, sphere, box, glint, signalDot, rim,
   },
-  render: { renderProduct, renderHero, renderLogo },
+  render: { renderProduct, renderProductSilhouette, renderHero, renderLogo },
   dirs: { PRODUCTS_DIR, HERO_DIR, LOGO_DIR },
 };
