@@ -177,7 +177,9 @@ export function TopBar({
         leftIcon={<IconRocket size={15} aria-hidden="true" />}
         onClick={onPublish}
       >
-        {unpublished ? 'Publish' : 'Published'}
+        {/* Copy deck §5.1 says "Publish changes"; it pairs with "Discard
+            changes" beside it and names what is actually going live. */}
+        {unpublished ? 'Publish changes' : 'Published'}
       </Button>
     </div>
   );

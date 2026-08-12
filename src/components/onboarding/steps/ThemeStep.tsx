@@ -126,9 +126,26 @@ export default function ThemeStep({ api }: { api: OnboardingApi }): React.ReactE
         ))}
       </div>
 
+      {/*
+        The deck's line here was "This is your real store. Nobody can see it
+        until you publish." It read well and had no referent: this screen is six
+        preset tiles, not a preview of the merchant's shop, so "this" pointed at
+        nothing. Half of it was also wrong — pressing the primary button on this
+        step *does* publish.
+
+        What is said instead is what is true: these are complete themes, the
+        words in them are examples, and nothing is written on the merchant's
+        behalf above their header.
+      */}
       <p className={styles.inlineNote}>
-        This is your real store. Nobody can see it until you publish — &ldquo;Save as draft&rdquo;
-        finishes setup and leaves it private.
+        Each of these is a whole look — colours, type and a home page laid out for that kind of
+        shop — with example copy you can rewrite in Design. We will not put any claim about
+        shipping, returns or delivery on your storefront that you have not written yourself.
+      </p>
+      <p className={styles.inlineNote}>
+        <strong>Publish my store</strong> makes it live at your address.{' '}
+        <strong>Save as draft</strong> finishes setup and leaves it private until you publish from
+        the dashboard.
       </p>
     </StepPanel>
   );
