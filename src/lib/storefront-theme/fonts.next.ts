@@ -36,83 +36,87 @@ import {
 import { FONTS } from './fonts';
 import { FONT_IDS, type FontId } from './types';
 
-const LATIN = ['latin'] as const;
+// NOTE: every option below must be an explicitly written literal.
+// next/font/google is a build-time macro, and a spread, a variable, or any
+// property access fails compilation of the WHOLE APP with 'Font loader values
+// must be explicitly written literals'. A shared `const LATIN = ['latin']`
+// spread into `subsets` looks harmless and is not. Repeat the literal.
 
 const inter = Inter({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-inter',
 });
 
 const spaceGrotesk = Space_Grotesk({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-space-grotesk',
 });
 
 const manrope = Manrope({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-manrope',
 });
 
 const dmSans = DM_Sans({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-dm-sans',
 });
 
 const plusJakarta = Plus_Jakarta_Sans({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-plus-jakarta',
 });
 
 const outfit = Outfit({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-outfit',
 });
 
 const playfairDisplay = Playfair_Display({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-playfair-display',
 });
 
 const fraunces = Fraunces({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-fraunces',
 });
 
 const instrumentSerif = Instrument_Serif({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   weight: '400',
   variable: '--st-font-instrument-serif',
 });
 
 const lora = Lora({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-lora',
 });
 
 const bricolageGrotesque = Bricolage_Grotesque({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-bricolage-grotesque',
 });
 
 const archivo = Archivo({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-archivo',
 });
 
 const jetbrainsMono = JetBrains_Mono({
-  subsets: [...LATIN],
+  subsets: ['latin'],
   display: 'swap',
   variable: '--st-font-jetbrains-mono',
 });

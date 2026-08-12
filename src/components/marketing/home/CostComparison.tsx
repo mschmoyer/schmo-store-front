@@ -95,7 +95,12 @@ export function CostComparison(): React.JSX.Element {
         />
 
         <Reveal delay={0.06} className={styles.tableWrap}>
-          <div className={styles.tableScroll}>
+          <div
+            className={styles.tableScroll}
+            role="region"
+            aria-label="Twelve-month cost comparison"
+            tabIndex={0}
+          >
             <table className={styles.table}>
               <caption className={styles.caption}>
                 Platform fee only, first twelve months, US pricing.

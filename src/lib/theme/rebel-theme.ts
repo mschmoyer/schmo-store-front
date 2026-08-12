@@ -35,7 +35,7 @@ import {
   type MantineColorsTuple,
   type MantineThemeOverride,
 } from '@mantine/core';
-import { amber, ember, ink, mint, rose } from '@/lib/design/tokens';
+import { amber, azure, ember, ink, mint, rose } from '@/lib/design/tokens';
 
 /** Turns a 10-key palette ramp into the tuple shape Mantine expects. */
 const toTuple = (ramp: Record<number, string>): MantineColorsTuple =>
@@ -51,6 +51,25 @@ const toTuple = (ramp: Record<number, string>): MantineColorsTuple =>
     ramp[800],
     ramp[900],
   ] as unknown as MantineColorsTuple;
+
+/*
+ * Mantine ships `blue` as its own #228BE6 and any `color="blue"` in the admin
+ * renders it, which is a third live colour system next to ours. Overriding the
+ * ramp means a stray `color="blue"` lands on --azure-500 instead. §2: azure is
+ * informational only, never a CTA.
+ */
+const azureTuple = [
+  azure[50],
+  '#DBE7FF',
+  '#BFD2FE',
+  '#93B4FD',
+  '#6094F9',
+  '#3B7AF2',
+  azure[500],
+  azure[600],
+  azure[700],
+  '#1B3480',
+] as unknown as MantineColorsTuple;
 
 const emberTuple = toTuple(ember);
 const mintTuple = toTuple(mint);
@@ -98,7 +117,7 @@ const fieldStyles = {
     minHeight: 40,
     height: 40,
     backgroundColor: 'var(--surface-raised)',
-    borderColor: 'var(--border)',
+    borderColor: 'var(--border-control)',
     borderRadius: 'var(--radius-sm)',
     color: 'var(--text-primary)',
     fontSize: '0.9375rem',
@@ -130,10 +149,15 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
     rose: roseTuple,
     gray: inkTuple,
     dark: darkTuple,
+    blue: azureTuple,
   },
   primaryColor: 'ember',
-  /** ember-500 is index 5 of our ramp, not Mantine's usual 6. */
-  primaryShade: { light: 5, dark: 5 },
+  /*
+   * Index 6 = ember-600 (#DC3A0C). White on it measures 4.51:1 and passes AA;
+   * ember-500 at index 5 measures 3.42:1 and fails, so a Mantine filled button
+   * must not resolve to it. See docs/design-system.md §2.
+   */
+  primaryShade: { light: 6, dark: 6 },
 
   fontFamily: FONT_SANS,
   fontFamilyMonospace: FONT_MONO,
@@ -153,12 +177,13 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
   defaultRadius: 'sm',
   radius: { xs: '6px', sm: '8px', md: '12px', lg: '16px', xl: '24px' },
 
+  /* Warm-tinted (R > G > B), matching --shadow-* in globals.css. */
   shadows: {
-    xs: '0 1px 2px rgba(16,18,22,.06)',
-    sm: '0 1px 2px rgba(16,18,22,.06), 0 2px 6px rgba(16,18,22,.05)',
-    md: '0 2px 4px rgba(16,18,22,.05), 0 8px 20px -4px rgba(16,18,22,.10)',
-    lg: '0 4px 8px rgba(16,18,22,.04), 0 20px 44px -8px rgba(16,18,22,.14)',
-    xl: '0 8px 16px rgba(16,18,22,.05), 0 36px 80px -16px rgba(16,18,22,.20)',
+    xs: '0 1px 2px rgba(38,26,20,.06), 0 1px 3px rgba(38,26,20,.03)',
+    sm: '0 1px 2px rgba(38,26,20,.07), 0 2px 6px rgba(38,26,20,.05)',
+    md: '0 2px 4px rgba(38,26,20,.05), 0 8px 20px -4px rgba(38,26,20,.11)',
+    lg: '0 4px 8px rgba(38,26,20,.05), 0 20px 44px -8px rgba(38,26,20,.15)',
+    xl: '0 8px 16px rgba(38,26,20,.06), 0 36px 80px -16px rgba(38,26,20,.20)',
   },
 
   spacing: { xs: '8px', sm: '12px', md: '16px', lg: '24px', xl: '32px' },

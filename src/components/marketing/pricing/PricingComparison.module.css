@@ -208,9 +208,9 @@
 
   .table tbody td {
     display: grid;
-    grid-template-columns: 11ch minmax(0, 1fr);
-    gap: 10px;
-    padding: 6px 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    padding: 7px 0 3px;
     background: none;
     border: 0;
   }
@@ -222,7 +222,6 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--ink-500);
-    padding-top: 3px;
   }
 
   .usCol::before {

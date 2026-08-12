@@ -46,7 +46,6 @@
 }
 
 .mantine-Button-root[data-variant='filled']:hover:not(:disabled):not([data-disabled]) {
-  transform: translateY(-1px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.24),
     var(--shadow-ember);
@@ -54,14 +53,25 @@
 
 .mantine-Button-root[data-variant='default']:hover:not(:disabled):not([data-disabled]),
 .mantine-Button-root[data-variant='outline']:hover:not(:disabled):not([data-disabled]) {
-  transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
   border-color: var(--border-strong);
 }
 
 .mantine-Button-root:active:not(:disabled):not([data-disabled]) {
-  transform: translateY(0);
   box-shadow: var(--shadow-xs);
+}
+
+/* The lift lives behind the motion guard — see globals.css §8. */
+@media (prefers-reduced-motion: no-preference) {
+  .mantine-Button-root[data-variant='filled']:hover:not(:disabled):not([data-disabled]),
+  .mantine-Button-root[data-variant='default']:hover:not(:disabled):not([data-disabled]),
+  .mantine-Button-root[data-variant='outline']:hover:not(:disabled):not([data-disabled]) {
+    transform: translateY(-1px);
+  }
+
+  .mantine-Button-root:active:not(:disabled):not([data-disabled]) {
+    transform: translateY(0);
+  }
 }
 
 .mantine-Button-root:disabled,
@@ -76,8 +86,10 @@
     transform var(--duration-micro) var(--ease-out);
 }
 
-.mantine-ActionIcon-root:active:not(:disabled):not([data-disabled]) {
-  transform: translateY(1px);
+@media (prefers-reduced-motion: no-preference) {
+  .mantine-ActionIcon-root:active:not(:disabled):not([data-disabled]) {
+    transform: translateY(1px);
+  }
 }
 
 /* ============================================================= Inputs === */
@@ -89,9 +101,15 @@
   color: var(--text-tertiary);
 }
 
+.mantine-Input-input {
+  /* WCAG 1.4.11: the field edge is the affordance. See globals.css. */
+  border-color: var(--border-control);
+  box-shadow: var(--shadow-xs);
+}
+
 .mantine-Input-input:hover:not(:disabled):not([data-error]),
 .mantine-InputWrapper-root:hover .mantine-Input-input:not(:disabled):not([data-error]) {
-  border-color: var(--border-strong);
+  border-color: var(--text-secondary);
 }
 
 .mantine-Input-input:focus,
@@ -226,4 +244,13 @@
 .mantine-ActionIcon-root:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/*
+ * Filled controls need a ring that contrasts with the CONTROL, not just the
+ * page — an ember ring on an ember button measures 1.00:1.
+ */
+.mantine-Button-root[data-variant='filled']:focus-visible,
+.mantine-ActionIcon-root[data-variant='filled']:focus-visible {
+  box-shadow: var(--focus-ring-accent);
 }

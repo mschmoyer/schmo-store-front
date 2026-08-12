@@ -87,7 +87,8 @@ export default function ProductEditForm({
     // Images
     featured_image_url: product.featured_image_url || '',
     gallery_images: product.gallery_images || [],
-    thumbnail_url: product.thumbnail_url || '',
+    // `products` has no thumbnail column, so there is nothing to prefill here.
+    thumbnail_url: '',
     
     // SEO
     meta_title: product.meta_title || '',

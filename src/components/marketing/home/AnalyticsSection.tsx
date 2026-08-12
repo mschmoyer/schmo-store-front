@@ -81,7 +81,12 @@ export function AnalyticsSection({
                 <span className={styles.figureTitle}>Searches with no results</span>
                 <span className={styles.figureMeta}>Live, from the demo storefronts</span>
               </figcaption>
-              <div className={styles.tableScroll}>
+              <div
+                className={styles.tableScroll}
+                role="region"
+                aria-label="Searches with no results"
+                tabIndex={0}
+              >
                 <table className={styles.table}>
                   <thead>
                     <tr>

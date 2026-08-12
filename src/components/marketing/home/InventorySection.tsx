@@ -95,7 +95,12 @@ export function InventorySection({
               <span className={styles.reportMeta}>5 SKUs flagged · 90+ days</span>
             </figcaption>
 
-            <div className={styles.tableScroll}>
+            <div
+              className={styles.tableScroll}
+              role="region"
+              aria-label="Dead stock report"
+              tabIndex={0}
+            >
               <table className={styles.table}>
                 <thead>
                   <tr>

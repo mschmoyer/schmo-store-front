@@ -94,7 +94,12 @@ export function SyncSection(): React.JSX.Element {
               <span className={styles.logMeta}>4 of 5 operations succeeded · 14,137ms</span>
             </figcaption>
 
-            <div className={styles.tableScroll}>
+            <div
+              className={styles.tableScroll}
+              role="region"
+              aria-label="Sync log"
+              tabIndex={0}
+            >
               <table className={styles.table}>
                 <thead>
                   <tr>

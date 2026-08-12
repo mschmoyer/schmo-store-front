@@ -47,7 +47,12 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
           <span className={styles.panelMeta}>{store.productCount} SKUs</span>
         </figcaption>
 
-        <div className={styles.tableWrap}>
+        <div
+          className={styles.tableWrap}
+          role="region"
+          aria-label="ShipStation product rows"
+          tabIndex={0}
+        >
           <table className={styles.table}>
             <thead>
               <tr>

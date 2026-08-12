@@ -106,7 +106,12 @@ export function PricingComparison(): React.JSX.Element {
         />
 
         <Reveal delay={0.06} className={styles.tableWrap}>
-          <div className={styles.tableScroll}>
+          <div
+            className={styles.tableScroll}
+            role="region"
+            aria-label="RebelShops compared with Shopify Basic"
+            tabIndex={0}
+          >
             <table className={styles.table}>
               <caption className={styles.caption}>
                 US published pricing. Verify against the vendor pages linked below.

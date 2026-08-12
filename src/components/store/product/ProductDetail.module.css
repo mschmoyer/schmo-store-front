@@ -1,0 +1,214 @@
+/*
+ * Product detail page.
+ *
+ * A shipping-centric product deserves its shipping facts surfaced rather than
+ * buried, so weight and boxed dimensions get a real place in the buy box.
+ */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+  gap: var(--st-space-9);
+  align-items: start;
+}
+
+@media (max-width: 940px) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: var(--st-space-7);
+  }
+}
+
+/* -- Breadcrumbs ---------------------------------------------------------- */
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-2);
+  margin-bottom: var(--st-space-6);
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+}
+
+.crumbLink {
+  color: var(--st-text-muted);
+  text-decoration: none;
+}
+
+.crumbLink:hover {
+  color: var(--st-brand);
+}
+
+.crumbCurrent {
+  color: var(--st-text);
+}
+
+.crumbSep {
+  opacity: 0.5;
+}
+
+/* -- Gallery -------------------------------------------------------------- */
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  position: sticky;
+  top: var(--st-space-6);
+}
+
+@media (max-width: 940px) {
+  .gallery {
+    position: static;
+  }
+}
+
+.stage {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+  border: var(--stx-border-visible) solid var(--st-border);
+}
+
+.stage img {
+  object-fit: contain;
+}
+
+.thumbs {
+  display: flex;
+  gap: var(--st-space-3);
+  flex-wrap: wrap;
+}
+
+.thumb {
+  position: relative;
+  inline-size: 74px;
+  block-size: 74px;
+  padding: 0;
+  border: 2px solid var(--st-border);
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.thumb:hover {
+  border-color: var(--st-border-strong);
+}
+
+/* The selected thumbnail is marked by border *and* by `aria-selected` on the
+   tab, so the state is not carried by colour alone. */
+.thumbActive {
+  border-color: var(--st-brand);
+}
+
+.thumb img {
+  object-fit: contain;
+}
+
+/* -- Buy box -------------------------------------------------------------- */
+
+.buy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-5);
+  min-width: 0;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+}
+
+.category {
+  font-size: var(--st-small);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--st-text-muted);
+}
+
+.sku {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.priceRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-4);
+}
+
+.buyActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-3);
+}
+
+.buyActions > form,
+.addWrap {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.summary {
+  color: var(--st-text-muted);
+  line-height: 1.65;
+}
+
+/* -- Shipping facts ------------------------------------------------------- */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--st-space-4);
+  padding: var(--st-space-5);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-sunken);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.factLabel {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.factValue {
+  font-size: var(--st-body);
+  color: var(--st-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- Description ---------------------------------------------------------- */
+
+.description {
+  margin-top: var(--st-space-10);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 76ch;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+  margin-top: var(--st-space-5);
+}

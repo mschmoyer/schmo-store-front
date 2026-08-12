@@ -156,7 +156,7 @@ export function TopBar({
       <SaveStatus state={saveState} lastSavedAt={lastSavedAt} />
 
       {unpublished ? (
-        <Badge tone="warning" dot size="sm">
+        <Badge tone="amber" dot size="sm">
           Not live yet
         </Badge>
       ) : (

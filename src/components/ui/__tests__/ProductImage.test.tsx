@@ -1,6 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import { ProductImage, getProductMark } from '../ProductImage';
-import { fallbackGradients } from '@/lib/design/tokens';
+import {
+  MARK_HUE_ARC,
+  MARK_INK_RAMP,
+  MARK_MIN_CONTRAST,
+  contrastWithWhite,
+} from '@/lib/design/tokens';
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -17,6 +22,24 @@ jest.mock('next/image', () => ({
     <img alt={alt} src={src} className={className} />
   ),
 }));
+
+
+/** Hue in degrees of a #rrggbb string, for the brand-arc assertions. */
+function hueOf(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0;
+  let h: number;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
 
 describe('getProductMark', () => {
   it('is deterministic for the same SKU', () => {
@@ -53,14 +76,58 @@ describe('getProductMark', () => {
     expect(gradients.size).toBeGreaterThan(1);
   });
 
-  it('always picks a gradient from the palette', () => {
-    const known = new Set<string>(fallbackGradients.map((entry) => entry.from));
+  /**
+   * §1's anti-goal is "do not look like a generic purple/blue SaaS template".
+   * The old implementation picked from a fixed list that contained violet,
+   * teal and blue entries, so 25% of a catalogue rendered off-brand. Hue is
+   * now confined to the ember→amber arc, and this asserts it stays there.
+   */
+  it('keeps every generated hue inside the ember-to-amber brand arc', () => {
+    const offBrand: string[] = [];
 
-    for (let i = 0; i < 200; i += 1) {
+    for (let i = 0; i < 600; i += 1) {
       const mark = getProductMark({ sku: `SKU-${i}`, name: `Product ${i}` });
-      const from = mark.gradient.match(/#[0-9A-Fa-f]{6}/)?.[0];
-      expect(known.has(from ?? '')).toBe(true);
+      const stops = mark.gradient.match(/#[0-9A-Fa-f]{6}/g) ?? [];
+
+      // The graphite tiles are the deliberate ink off-ramp, not a hue.
+      const inkRamp: string[] = [MARK_INK_RAMP.from, MARK_INK_RAMP.to];
+      if (stops.every((stop) => inkRamp.includes(stop.toUpperCase()))) continue;
+
+      for (const stop of stops) {
+        const hue = hueOf(stop);
+        if (hue < MARK_HUE_ARC.min - 2 || hue > MARK_HUE_ARC.max + 2) {
+          offBrand.push(`${stop} (hue ${hue.toFixed(1)})`);
+        }
+      }
     }
+
+    expect(offBrand).toEqual([]);
+  });
+
+  it('never emits the purple, violet or teal the old palette shipped', () => {
+    const banned = ['#7C3AED', '#4C1D95', '#14B8A6', '#2563EB', '#1E40AF'];
+    const seen = new Set<string>();
+
+    for (let i = 0; i < 600; i += 1) {
+      for (const stop of getProductMark({ sku: `SKU-${i}` }).gradient.match(/#[0-9A-Fa-f]{6}/g) ?? []) {
+        seen.add(stop.toUpperCase());
+      }
+    }
+
+    for (const hex of banned) expect(seen.has(hex)).toBe(false);
+  });
+
+  it('keeps white legible on the lighter gradient stop of every tile', () => {
+    const failures: string[] = [];
+
+    for (let i = 0; i < 600; i += 1) {
+      const mark = getProductMark({ sku: `SKU-${i}`, name: `Product ${i}` });
+      const lighter = (mark.gradient.match(/#[0-9A-Fa-f]{6}/g) ?? [])[0];
+      const ratio = contrastWithWhite(lighter);
+      if (ratio < MARK_MIN_CONTRAST) failures.push(`${lighter} @ ${ratio.toFixed(2)}:1`);
+    }
+
+    expect(failures).toEqual([]);
   });
 
   it('derives two initials from a multi-word name', () => {
@@ -69,6 +136,34 @@ describe('getProductMark', () => {
 
   it('takes the first two letters of a single-word name', () => {
     expect(getProductMark({ sku: 'X', name: 'Kettlebell' }).initials).toBe('KE');
+  });
+
+  it.each([
+    ['3M Command Hooks', 'CH'],
+    ['24kg Cast Iron Kettlebell', 'CI'],
+    ['#1 Best Seller Mug', 'BS'],
+    ['iPhone 15 Pro Max Case', 'IP'],
+    ['5-Pack', 'PA'],
+  ])('skips numeric leading words in %s', (name, expected) => {
+    // A digit initial reads as noise; commerce names lead with them constantly.
+    expect(getProductMark({ sku: 'X', name }).initials).toBe(expected);
+  });
+
+  it('falls back to digits only when the name has no letters at all', () => {
+    expect(getProductMark({ sku: 'X', name: '2024 500' }).initials).toBe('25');
+  });
+
+  it('returns a single glyph for a short single word and flags it', () => {
+    const mark = getProductMark({ sku: 'X', name: 'A' });
+    expect(mark.initials).toBe('A');
+    expect(mark.single).toBe(true);
+  });
+
+  it('flags non-Latin initials so the tile can switch typeface', () => {
+    // Space Grotesk is loaded latin-only; an unflagged CJK tile would silently
+    // fall back to a system face mid-grid.
+    expect(getProductMark({ sku: 'X', name: '马克杯' }).nonLatin).toBe(true);
+    expect(getProductMark({ sku: 'X', name: 'Stoneware Mug' }).nonLatin).toBe(false);
   });
 
   it('falls back to the SKU when the name has no letters', () => {

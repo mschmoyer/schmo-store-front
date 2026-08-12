@@ -21,14 +21,12 @@ import {
   getSectionDefinition,
   type FontId,
   type Section,
-  type SectionType,
   type StorefrontThemeInput,
 } from '@/lib/storefront-theme';
 
 import type { ContrastFinding } from '../contrast/findings';
 import { findingsForPath } from '../contrast/findings';
 import { ContrastNoticeList } from '../controls/ContrastNotice';
-import { SectionIcon } from '../SectionIcon';
 import type { RailTab, Selection, ThemeGroupId } from '../state/types';
 import { AddSectionButton } from './AddSectionPicker';
 import { CustomCssPanel } from './CustomCssPanel';
@@ -149,9 +147,16 @@ export function Rail(props: RailProps): React.ReactElement {
 
   // Every panel starts at the top; keeping the previous scroll offset when the
   // contents change entirely is disorienting.
+  const panelKey =
+    selection.kind === 'section'
+      ? `section:${selection.id}`
+      : selection.kind === 'theme'
+        ? `theme:${selection.group}`
+        : `root:${tab}`;
+
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
-  }, [selection.kind, selection.kind === 'section' ? selection.id : selection.kind === 'theme' ? selection.group : '']);
+  }, [panelKey]);
 
   const failureCount = findings.filter((finding) => finding.level === 'fail').length;
   const adjustedCount = findings.filter((finding) => finding.level === 'adjusted').length;
@@ -361,7 +366,7 @@ export function Rail(props: RailProps): React.ReactElement {
                     subtitle={group.description}
                     badge={
                       count > 0 ? (
-                        <Badge tone="warning" size="sm">
+                        <Badge tone="amber" size="sm">
                           {count}
                         </Badge>
                       ) : undefined
@@ -393,5 +398,3 @@ export function Rail(props: RailProps): React.ReactElement {
     </aside>
   );
 }
-
-export { SectionIcon };

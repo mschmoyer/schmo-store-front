@@ -369,24 +369,32 @@ const craft = [
     },
   },
   {
-    // Bold, thick cords and a wide dowel -- built to survive at 120px, not
-    // the previous hairline strands.
+    // Macrame's defining feature is the *lattice*, not the cords: a dense
+    // diamond mesh of crossing knotted cord, widest at the vertical middle
+    // and pinched narrow just under the dowel and again above the fringe --
+    // a kite silhouette filled with a 45-degree crosshatch, clipped to that
+    // outline. No joint dots, no individually-descending angular strands.
     slug: 'driftwood-macrame-hanging',
-    bbox: { x: 273, y: 294, w: 254, h: 276 },
+    bbox: { x: 280, y: 300, w: 240, h: 279 },
     draw(defs) {
       let s = '';
-      s += rect(280, 300, 240, 18, 9, cWood, rim(true));
-      const cords = [340, 400, 460];
-      cords.forEach((x, i) => {
-        const len = i === 1 ? 230 : 190;
-        s += pth(`M ${x} 318 L ${x - 22} ${318 + len * 0.35} L ${x + 22} ${318 + len * 0.62} L ${x} ${318 + len}`,
-          'none', { stroke: cLinenDark, strokeWidth: 16, strokeLinecap: 'round', strokeOpacity: 0.92 });
-        s += circle(x, 318 + len * 0.35, 11, cWoodLight, rim(false));
-        s += circle(x, 318 + len * 0.68, 11, cWoodLight, rim(false));
-        // fringe fan at the bottom
-        for (let f = -1; f <= 1; f++) {
-          s += line(x, 318 + len, x + f * 16, 318 + len + 36, cLinenDark, 6, { strokeLinecap: 'round', strokeOpacity: 0.8 });
-        }
+      const cx = 400;
+      s += rect(280, 300, 240, 18, 9, cWood, rim(true)); // dowel
+      const topY = 322, bottomY = 515, midY = (topY + bottomY) / 2, halfW = 110;
+      const clipId = nid('lattice');
+      defs.push(`<clipPath id="${clipId}"><path d="M ${cx} ${topY} C ${cx + 48} ${topY + 18} ${cx + halfW} ${topY + 63} ${cx + halfW} ${midY} C ${cx + halfW} ${midY + 33.5} ${cx + 48} ${bottomY - 18} ${cx} ${bottomY} C ${cx - 48} ${bottomY - 18} ${cx - halfW} ${midY + 33.5} ${cx - halfW} ${midY} C ${cx - halfW} ${topY + 63} ${cx - 48} ${topY + 18} ${cx} ${topY} Z"/></clipPath>`);
+      let mesh = '';
+      for (let o = -260; o <= 260; o += 26) {
+        mesh += line(cx + o - 200, midY - 200, cx + o + 200, midY + 200, cLinenDark, 4, { strokeLinecap: 'round' });
+        mesh += line(cx + o - 200, midY + 200, cx + o + 200, midY - 200, cLinenDark, 4, { strokeLinecap: 'round' });
+      }
+      s += `<g clip-path="url(#${clipId})">${mesh}</g>`;
+      // loose parallel fringe strands below the lattice's bottom point
+      const fringeTopY = bottomY - 2;
+      const fringeXs = [346, 360, 374, 388, 400, 412, 426, 440, 454];
+      const fringeLen = [46, 58, 50, 64, 42, 60, 48, 66, 44];
+      fringeXs.forEach((x, i) => {
+        s += line(x, fringeTopY, x, fringeTopY + fringeLen[i], cLinenDark, 5, { strokeLinecap: 'round', strokeOpacity: 0.85 });
       });
       return s;
     },
@@ -442,19 +450,27 @@ const craft = [
     },
   },
   {
-    // A single smooth flaring trapezoid -- no separate limb-like elements.
-    // A V-notch cut *into* the top edge reads as a neckline without adding
-    // a head-and-shoulders gestalt; a bow knot sits flush on the body
-    // instead of ties splaying out to the sides like arms.
+    // What makes an apron legible is the bib silhouette: a narrow rectangular
+    // bib stepping abruptly out to a wider skirt (a right-angle step, not a
+    // diagonal taper -- the taper is what read as a milk carton). Two thin
+    // rope-like neck ties rise from the bib's top corners, two thin rope-like
+    // waist ties sit at the step -- short and curved enough to stay clearly
+    // rope-like, never limb-like.
     slug: 'market-linen-apron',
-    bbox: { x: 328, y: 320, w: 144, h: 302 },
+    bbox: { x: 278, y: 258, w: 244, h: 364 },
     draw(defs) {
       let s = '';
       const id = nid('apron');
       defs.push(linearGrad(id, [[0, mix(cLinen, '#FFFFFF', 0.2)], [1, cLinenDark]]));
-      s += pth('M 372 322 L 393 322 L 400 340 L 407 322 L 428 322 L 468 402 L 468 620 L 332 620 L 332 402 Z',
+      s += pth('M 366 320 L 384 320 L 400 336 L 416 320 L 434 320 L 434 400 L 478 400 L 478 620 L 322 620 L 322 400 L 366 400 Z',
         `url(#${id})`, rim(false));
-      s += line(332, 402, 468, 402, cLinenDark, 2, { strokeOpacity: 0.25 }); // waist seam, straight across (no hip taper)
+      s += line(322, 400, 478, 400, cLinenDark, 2, { strokeOpacity: 0.28 }); // bib-to-skirt step seam
+      // neck ties -- thin rope-like curves rising from the bib's top corners
+      s += pth('M 366 320 C 356 300 370 282 360 264', 'none', { stroke: cLinenDark, strokeWidth: 7, strokeLinecap: 'round', strokeOpacity: 0.85 });
+      s += pth('M 434 320 C 444 300 430 282 440 264', 'none', { stroke: cLinenDark, strokeWidth: 7, strokeLinecap: 'round', strokeOpacity: 0.85 });
+      // waist ties -- thin rope-like curves at the step
+      s += pth('M 322 402 C 296 406 280 422 290 444', 'none', { stroke: cLinenDark, strokeWidth: 7, strokeLinecap: 'round', strokeOpacity: 0.85 });
+      s += pth('M 478 402 C 504 406 520 422 510 444', 'none', { stroke: cLinenDark, strokeWidth: 7, strokeLinecap: 'round', strokeOpacity: 0.85 });
       // seamed patch pocket
       s += rect(360, 470, 80, 68, 8, mix(cLinenDark, '#FFFFFF', 0.12), rim(false));
       s += line(400, 476, 400, 532, cLinenDark, 2, { strokeOpacity: 0.4 });

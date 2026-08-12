@@ -31,7 +31,7 @@ import {
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 
-interface PurchaseOrderItem {
+export interface PurchaseOrderItem {
   id?: string;
   product_id?: string;
   product_sku: string;

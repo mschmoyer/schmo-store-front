@@ -44,7 +44,7 @@ export default function InventoryEditDemo() {
     status: 'in_stock' as const
   };
 
-  const handleEditSuccess = (updatedItem: { id: string; name: string; [key: string]: unknown }) => {
+  const handleEditSuccess = (updatedItem: typeof sampleInventoryItem) => {
     console.log('Item updated successfully:', updatedItem);
     // In real implementation, this would update the inventory list
   };

@@ -50,7 +50,7 @@ import { useDisclosure } from '@mantine/hooks';
 import InventoryEditModal from '@/components/admin/InventoryEditModal';
 import type { ForecastPeriod, ForecastResult } from '@/lib/inventory-forecasting-types';
 import { FORECAST_PERIODS, calculateClientSideForecast } from '@/lib/inventory-forecasting-types';
-import PurchaseOrderModal from '@/components/admin/PurchaseOrderModal';
+import PurchaseOrderModal, { type PurchaseOrderItem } from '@/components/admin/PurchaseOrderModal';
 import ReceivingModal from '@/components/admin/ReceivingModal';
 import SupplierModal from '@/components/admin/SupplierModal';
 import SmartReorderWidget from '@/components/admin/SmartReorderWidget';
@@ -148,7 +148,7 @@ export default function InventoryPage() {
   const [forecastPeriod, setForecastPeriod] = useState<ForecastPeriod>(30 as ForecastPeriod);
   const [forecastData, setForecastData] = useState<Record<string, ForecastResult>>({});
   const [loadingForecast, setLoadingForecast] = useState(false);
-  const [prefilledPOItems, setPrefilledPOItems] = useState<Array<{product_id: string; product_name: string; product_sku: string; recommended_quantity: number; unit_cost: number; supplier: string}>>([]);
+  const [prefilledPOItems, setPrefilledPOItems] = useState<PurchaseOrderItem[]>([]);
 
   const fetchInventoryData = useCallback(async () => {
     try {
@@ -227,7 +227,7 @@ export default function InventoryPage() {
     }
   };
 
-  const handleCreatePurchaseOrder = (prefilledItems?: Array<{product_id: string; product_name: string; product_sku: string; recommended_quantity: number; unit_cost: number; supplier: string}>) => {
+  const handleCreatePurchaseOrder = (prefilledItems?: PurchaseOrderItem[]) => {
     if (prefilledItems) {
       setPrefilledPOItems(prefilledItems);
     } else {
