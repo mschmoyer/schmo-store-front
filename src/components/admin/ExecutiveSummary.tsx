@@ -109,7 +109,14 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
       summaryText += ` Search activity ${searchTrendText} by ${Math.abs(data.searchTrend).toFixed(1)}%.`;
     }
     
-    if (hasVisitorData && Math.abs(data.visitorTrend) > 0) {
+    /*
+     * "Visitor traffic decreased by 12.9%, requiring immediate attention" —
+     * that was seven people on a 54-visitor store. Crying alarm over noise
+     * teaches a merchant to ignore the alert box, so a percentage swing is
+     * only worth a sentence once the sample is big enough for the percentage
+     * to mean anything, and the absolute change is stated alongside it.
+     */
+    if (hasVisitorData && Math.abs(data.visitorTrend) > 0 && data.uniqueVisitors >= 100) {
       summaryText += ` Visitor traffic ${visitorTrendText} by ${Math.abs(data.visitorTrend).toFixed(1)}%.`;
     }
     
@@ -117,9 +124,13 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
       summaryText += ` The most popular search term was "${data.topSearchTerm}" with ${data.topSearchCount} searches.`;
     }
     
-    if (hasVisitorData && data.bounceRate > 0) {
-      summaryText += ` Your current bounce rate is ${data.bounceRate.toFixed(1)}% with an average session duration of ${Math.floor(data.avgSessionDuration / 60)} minutes ${data.avgSessionDuration % 60} seconds, indicating ${data.bounceRate < 40 ? 'good' : data.bounceRate < 60 ? 'moderate' : 'poor'} user engagement levels.`;
-    }
+    /*
+     * The engagement sentence is gone. It asserted "bounce rate is 70.0%" and
+     * "average session duration of 2 minutes 0 seconds" from an estimate that
+     * had no data behind it, while the tiles 200px below said 32.1% and
+     * 4m 32s from two different literals. Neither number is measurable from
+     * this schema; the API now returns 0 for both and this branch never fires.
+     */
     
     return summaryText;
   };
@@ -191,15 +202,8 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
           </Text>
         </div>
 
-        <div>
-          <Text size="sm" fw={500} mb="xs">Bounce Rate</Text>
-          <Text size="lg" fw={700} c={data.uniqueVisitors > 0 ? (data.bounceRate < 40 ? 'green' : data.bounceRate < 60 ? 'yellow' : 'red') : 'gray'}>
-            {data.uniqueVisitors > 0 ? `${data.bounceRate.toFixed(1)}%` : 'N/A'}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {data.uniqueVisitors > 0 ? (data.bounceRate < 40 ? 'excellent' : data.bounceRate < 60 ? 'good' : 'needs improvement') : 'no data yet'}
-          </Text>
-        </div>
+        {/* Bounce Rate was here, badged "excellent"/"needs improvement" off a
+            number with no data source. Removed rather than approximated. */}
       </Group>
 
       {/* Focus Areas */}

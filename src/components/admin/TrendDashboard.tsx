@@ -46,8 +46,9 @@ interface TrendData {
 interface TrendStats {
   totalSearches: number;
   uniqueVisitors: number;
-  avgSessionDuration: number;
-  bounceRate: number;
+  totalPageViews: number;
+  /** Metrics the schema cannot support, with the reason. See the API route. */
+  unavailable: Array<{ metric: string; reason: string }>;
   trendsData: {
     searchTrends: TrendData[];
     visitorTrends: TrendData[];
@@ -206,8 +207,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
       stats: {
         totalSearches: data.totalSearches,
         uniqueVisitors: data.uniqueVisitors,
-        avgSessionDuration: data.avgSessionDuration,
-        bounceRate: data.bounceRate
+        totalPageViews: data.totalPageViews
       },
       trends: data.trendsData
     };
@@ -409,64 +409,61 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
             )}
           </Card>
 
+          {/*
+            * These two cards used to read `Avg Session Duration 4m 32s` and
+            * `Bounce Rate 32.1%`, badged "Lower is better" and "needs
+            * improvement". Both were literals in the API with no data source,
+            * identical for every store forever, and contradicted by the AI
+            * narrative on the same page saying 2m 0s and 70.0%.
+            *
+            * They are replaced by page views, which is measured, and by an
+            * honest statement of what is not. Billing is the model here: it
+            * explains its degraded state in plain language instead of
+            * resolving to a confident-looking placeholder.
+            */}
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Group justify="space-between" mb="xs">
               <Text size="sm" c="dimmed" fw={500}>
-                Avg Session Duration
+                Page Views
               </Text>
               <ThemeIcon color="ink" variant="light" size="lg">
                 <IconEye style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
-            
+
             <Group align="flex-end" gap="xs">
               <Text size="xl" fw={700}>
-                {Math.floor(data.avgSessionDuration / 60)}m {data.avgSessionDuration % 60}s
+                {data.totalPageViews.toLocaleString()}
               </Text>
             </Group>
-            
-            <Group gap="xs" mt="sm">
-              <ThemeIcon 
-                size="sm" 
-                variant="light" 
-                color="gray"
-              >
-                <IconTrendingUp size="0.8rem" />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed">
-                vs last period
-              </Text>
-            </Group>
+
+            <Text size="xs" c="dimmed" mt="sm">
+              Recorded page loads in this period
+            </Text>
           </Card>
 
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Group justify="space-between" mb="xs">
               <Text size="sm" c="dimmed" fw={500}>
-                Bounce Rate
+                Not measured yet
               </Text>
-              <ThemeIcon color="orange" variant="light" size="lg">
+              <ThemeIcon color="gray" variant="light" size="lg">
                 <IconChartLine style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
-            
-            <Group align="flex-end" gap="xs">
-              <Text size="xl" fw={700}>
-                {data.bounceRate.toFixed(1)}%
-              </Text>
-            </Group>
-            
-            <Group gap="xs" mt="sm">
-              <ThemeIcon 
-                size="sm" 
-                variant="light" 
-                color="green"
-              >
-                <IconTrendingDown size="0.8rem" />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed">
-                Lower is better
-              </Text>
-            </Group>
+
+            <Stack gap={4}>
+              {(data.unavailable ?? []).map((item) => (
+                <div key={item.metric}>
+                  <Text size="sm" fw={600}>
+                    {item.metric}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {item.reason}
+                  </Text>
+                </div>
+              ))}
+            </Stack>
           </Card>
         </SimpleGrid>
       )}

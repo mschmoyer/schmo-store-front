@@ -458,7 +458,16 @@ export function CheckoutView({
   };
 
   if (cartLoading && lines.length === 0) {
-    return <div className={styles.skeletonBlock} role="status" aria-label="Loading your cart" />;
+    return (
+      <div className={styles.layout} role="status" aria-label="Loading your cart">
+        <div className={styles.column}>
+          <div className={cx(styles.skeletonCard, styles.skeletonReview)} />
+          <div className={cx(styles.skeletonCard, styles.skeletonContact)} />
+          <div className={cx(styles.skeletonCard, styles.skeletonShipping)} />
+        </div>
+        <div className={cx(styles.skeletonCard, styles.skeletonSummary)} />
+      </div>
+    );
   }
 
   if (lines.length === 0) {

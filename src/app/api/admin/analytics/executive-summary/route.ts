@@ -173,11 +173,26 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Get real visitor data
+        /*
+         * Get real visitor data.
+         *
+         * `avgSessionDuration` and `bounceRate` are pinned to 0 and stay there.
+         * They used to default to 180 and 45.0 and then get "estimated" by a
+         * three-branch ladder off pages-per-session
+         * (`avgPagesPerSession <= 1.5 ? 70 : …`), which produced the 70.0% and
+         * 2m 0s that this page's own narrative asserted 200px above tiles
+         * reading 32.1% and 4m 32s. Neither figure had a data source; the
+         * `visitors` table records one row per visitor per day, so
+         * pages-per-session is 1 by construction and the ladder was measuring
+         * a UNIQUE constraint.
+         *
+         * Zero means "not measured" here, and the narrative below skips any
+         * sentence about engagement rather than asserting a made-up one.
+         */
         let uniqueVisitors = 0;
         let visitorTrend = 0;
-        let avgSessionDuration = 180; // 3 minutes default
-        let bounceRate = 45.0; // Default bounce rate
+        const avgSessionDuration = 0;
+        const bounceRate = 0;
 
         if (hasVisitorTracking) {
           try {
@@ -201,34 +216,10 @@ export async function GET(request: NextRequest) {
               visitorTrend = ((uniqueVisitors - previousTotal) / previousTotal) * 100;
             }
 
-            // Calculate simple bounce rate based on single page visits
-            const bounceRateQuery = await db.query<{ total_sessions: string; total_page_views: string }>(`
-              SELECT 
-                COUNT(DISTINCT ip_address) as total_sessions,
-                COUNT(*) as total_page_views
-              FROM visitors
-              ${dateCondition}
-            `, dateParams);
-            
-            if (bounceRateQuery.rows.length > 0) {
-              const stats = bounceRateQuery.rows[0];
-              const totalSessions = parseInt(stats.total_sessions || '1');
-              const totalPageViews = parseInt(stats.total_page_views || '0');
-              
-              // Simple bounce rate estimation: if page views per session is close to 1, higher bounce rate
-              const avgPagesPerSession = totalPageViews / totalSessions;
-              bounceRate = avgPagesPerSession <= 1.5 ? 70 : avgPagesPerSession <= 2.5 ? 45 : 25;
-              
-              // Simple session duration estimation based on activity
-              avgSessionDuration = Math.max(120, Math.min(300, avgPagesPerSession * 45));
-            }
           } catch (error) {
             console.error('Error querying visitor data:', error);
-            // Fall back to showing no data message
             uniqueVisitors = 0;
             visitorTrend = 0;
-            avgSessionDuration = 0;
-            bounceRate = 0;
           }
         }
 

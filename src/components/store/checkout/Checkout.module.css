@@ -536,8 +536,39 @@
   }
 }
 
-.skeletonBlock {
-  block-size: 120px;
+/*
+ * The loading state mirrors the real geometry, card for card.
+ *
+ * The cart lives in the visitor's browser, so the checkout body cannot be
+ * server-rendered and there will always be one frame of "waiting". What the
+ * frame must not do is guess at a shape: a single 120px block resolving into a
+ * 1,500px form pushed the footer down the page and measured 0.157 CLS on its
+ * own. Design system section 5 — skeletons matching final layout geometry.
+ */
+.skeletonCard {
   border-radius: var(--st-radius-card);
+  border: 1px solid var(--st-border);
   background-color: var(--st-surface-sunken);
+}
+
+.skeletonReview {
+  block-size: 172px;
+}
+
+.skeletonContact {
+  block-size: 268px;
+}
+
+.skeletonShipping {
+  block-size: 660px;
+}
+
+.skeletonSummary {
+  block-size: 470px;
+}
+
+@media (max-width: 900px) {
+  .skeletonShipping {
+    block-size: 880px;
+  }
 }

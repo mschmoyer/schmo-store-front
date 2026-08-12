@@ -73,14 +73,15 @@ async function walk(page, until) {
 test.describe('browser Back', () => {
   test('goes back a step instead of leaving the wizard', async ({ page }) => {
     await walk(page, 'shipstation');
-    expect(page.url()).toContain('step=shipstation');
+    // The address bar is written by an effect, a tick behind the render.
+    await expect.poll(() => page.url(), { timeout: 20_000 }).toContain('step=shipstation');
 
     await page.goBack();
 
     await expect(page.getByRole('heading', { name: 'Name your store' })).toBeVisible({
       timeout: 30_000,
     });
-    expect(page.url()).toContain('step=store');
+    await expect.poll(() => page.url(), { timeout: 20_000 }).toContain('step=store');
     // And it kept what was typed.
     await expect(page.getByLabel('Store name')).not.toHaveValue('');
 
@@ -102,7 +103,8 @@ test.describe('the launch screen', () => {
 
     const rail = page.getByRole('list').first();
     await expect(rail.getByText(/^Skipped/).first()).toBeVisible();
-    await expect(page.getByText('3 of 5 done · 2 skipped')).toBeVisible();
+    // Two places say it — the rail and the launch eyebrow — and they agree.
+    await expect(page.getByText('3 of 5 done · 2 skipped')).toHaveCount(2);
 
     const main = page.locator('main');
     await expect(main).not.toContainText('Anyone with this address can shop it right now');
