@@ -2,14 +2,18 @@ import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import {
   UUID,
-  Order,
   OrderStatusUpdateData,
   ShipmentData,
   ShipStationWebhookPayload,
-  ShipmentNotification,
-  IntegrationLog,
   InventoryAdjustment
 } from '@/lib/types/database';
+import {
+  IntegrationLogRow,
+  OrderItemRow,
+  OrderRow,
+  ProductRow,
+  ShipmentNotificationRow
+} from '@/lib/types/db-rows';
 
 /**
  * Order Status Service - Handle ShipStation order processing and integration
@@ -37,7 +41,7 @@ export class OrderStatusService {
    */
   async processShipmentNotification(payload: ShipStationWebhookPayload): Promise<boolean> {
     const startTime = Date.now();
-    let integrationLog: IntegrationLog | null = null;
+    let integrationLog: IntegrationLogRow | null = null;
 
     try {
       // Log the incoming webhook
@@ -366,28 +370,28 @@ export class OrderStatusService {
   /**
    * Find order by ShipStation order ID
    * @param shipstationOrderId - ShipStation order ID
-   * @returns Promise<Order | null>
+   * @returns Promise<OrderRow | null>
    */
-  private async findOrderByShipStationId(shipstationOrderId: string): Promise<Order | null> {
+  private async findOrderByShipStationId(shipstationOrderId: string): Promise<OrderRow | null> {
     try {
       // First try to find by shipstation_order_id
-      let result = await db.query(`
+      let result = await db.query<OrderRow>(`
         SELECT * FROM orders 
         WHERE shipstation_order_id = $1
       `, [shipstationOrderId]);
 
       if (result.rows.length > 0) {
-        return result.rows[0] as Order;
+        return result.rows[0];
       }
 
       // If not found, try to find by order_number (ShipStation might use order number as ID)
-      result = await db.query(`
+      result = await db.query<OrderRow>(`
         SELECT * FROM orders 
         WHERE order_number = $1
       `, [shipstationOrderId]);
 
       if (result.rows.length > 0) {
-        return result.rows[0] as Order;
+        return result.rows[0];
       }
 
       return null;
@@ -428,7 +432,7 @@ export class OrderStatusService {
    */
   private async createShipmentNotification(
     orderId: UUID,
-    notification: Partial<ShipmentNotification>
+    notification: Partial<ShipmentNotificationRow>
   ): Promise<UUID> {
     const notificationId = uuidv4();
     
@@ -498,7 +502,9 @@ export class OrderStatusService {
    */
   private async processInventoryAdjustments(orderId: UUID, reason: string): Promise<void> {
     // Get order items
-    const orderItems = await db.query(`
+    const orderItems = await db.query<
+      Pick<OrderItemRow, 'product_id' | 'product_sku' | 'quantity'> & Pick<ProductRow, 'track_inventory'>
+    >(`
       SELECT oi.product_id, oi.product_sku, oi.quantity, p.track_inventory
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
@@ -590,13 +596,13 @@ export class OrderStatusService {
     integrationType: 'shipstation' | 'shipengine' | 'stripe' | 'other',
     operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing',
     status: 'success' | 'failure' | 'warning',
-    requestData?: Record<string, unknown>,
-    responseData?: Record<string, unknown>,
+    requestData?: Record<string, unknown> | null,
+    responseData?: Record<string, unknown> | null,
     errorMessage?: string
-  ): Promise<IntegrationLog> {
+  ): Promise<IntegrationLogRow> {
     const logId = uuidv4();
-    
-    const result = await db.query(`
+
+    const result = await db.query<IntegrationLogRow>(`
       INSERT INTO integration_logs (
         id, store_id, integration_type, operation, status, 
         request_data, response_data, error_message, created_at
@@ -614,7 +620,7 @@ export class OrderStatusService {
       new Date()
     ]);
 
-    return result.rows[0] as IntegrationLog;
+    return result.rows[0];
   }
 
   /**
@@ -629,7 +635,7 @@ export class OrderStatusService {
   private async updateIntegrationLog(
     logId: UUID,
     status: 'success' | 'failure' | 'warning',
-    responseData?: Record<string, unknown>,
+    responseData?: Record<string, unknown> | null,
     executionTimeMs?: number,
     errorMessage?: string
   ): Promise<void> {
@@ -653,15 +659,15 @@ export class OrderStatusService {
   /**
    * Get order tracking information
    * @param orderId - Order UUID
-   * @returns Promise<Order | null>
+   * @returns Promise<OrderRow | null>
    */
-  async getOrderTrackingInfo(orderId: UUID): Promise<Order | null> {
+  async getOrderTrackingInfo(orderId: UUID): Promise<OrderRow | null> {
     try {
-      const result = await db.query(`
+      const result = await db.query<OrderRow>(`
         SELECT * FROM orders WHERE id = $1
       `, [orderId]);
 
-      return result.rows.length > 0 ? result.rows[0] as Order : null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error getting order tracking info:', error);
       return null;
@@ -671,17 +677,17 @@ export class OrderStatusService {
   /**
    * Get shipment notifications for an order
    * @param orderId - Order UUID
-   * @returns Promise<ShipmentNotification[]>
+   * @returns Promise<ShipmentNotificationRow[]>
    */
-  async getShipmentNotifications(orderId: UUID): Promise<ShipmentNotification[]> {
+  async getShipmentNotifications(orderId: UUID): Promise<ShipmentNotificationRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<ShipmentNotificationRow>(`
         SELECT * FROM shipment_notifications 
         WHERE order_id = $1 
         ORDER BY created_at DESC
       `, [orderId]);
 
-      return result.rows as ShipmentNotification[];
+      return result.rows;
     } catch (error) {
       console.error('Error getting shipment notifications:', error);
       return [];

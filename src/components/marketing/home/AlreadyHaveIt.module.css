@@ -1,0 +1,163 @@
+.root {
+  background: var(--paper-sunken);
+  border-bottom: 1px solid var(--ink-200);
+  padding-block: var(--section-y);
+}
+
+.inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(40px, 6vw, 72px);
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.eyebrow {
+  color: var(--ember-700);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-h2);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  max-width: 18ch;
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--ink-700);
+  max-width: 46ch;
+  font-weight: 500;
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--ink-500);
+  max-width: 52ch;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+
+/* --------------------------------------------------------- the checklist */
+
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  align-self: center;
+  width: 100%;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  background: var(--paper-raised);
+  border: 1px solid var(--ink-200);
+  border-bottom-width: 0;
+}
+
+.row:first-child {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.row:last-child {
+  border-bottom-width: 1px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.rowLabel {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
+}
+
+.rowNote {
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+  text-align: right;
+}
+
+.check {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  background: var(--mint-50);
+  color: var(--mint-700);
+}
+
+.box {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border: 2px dashed var(--ember-400);
+  border-radius: var(--radius-xs);
+  background: var(--ember-50);
+}
+
+/* The fifth row is deliberately louder than the four above it. */
+.rowTodo {
+  background: var(--ink-950);
+  border-color: var(--ink-950);
+  padding-block: 24px;
+}
+
+.rowTodo .rowLabel {
+  color: var(--paper);
+  font-size: 1.1875rem;
+}
+
+.rowTodo .rowNote {
+  color: var(--ember-300);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 1000px) {
+  .inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.88fr);
+    align-items: start;
+  }
+}
+
+@media (max-width: 520px) {
+  .row {
+    grid-template-columns: 26px minmax(0, 1fr);
+    row-gap: 4px;
+  }
+
+  .rowNote {
+    grid-column: 2;
+    text-align: left;
+  }
+}

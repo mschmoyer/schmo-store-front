@@ -22,7 +22,7 @@ export interface FontDefinition {
   /** CSS family name as Google serves it. */
   family: string;
   /** Custom property the `next/font` instance is bound to. */
-  cssVar: string;
+  cssVar: `--${string}`;
   category: FontCategory;
   /** Sample string the customizer renders in the font's own face. */
   previewText: string;

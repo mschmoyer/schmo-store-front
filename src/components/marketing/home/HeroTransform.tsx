@@ -85,19 +85,9 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
         transition={{ duration: 0.4, delay: reduced ? 0 : 0.42 }}
         aria-hidden="true"
       >
-        <motion.span
-          className={styles.connectorLine}
-          initial={{ scaleY: reduced ? 1 : 0 }}
-          animate={{ scaleY: 1 }}
-          transition={{ duration: reduced ? 0.01 : 0.5, delay: reduced ? 0 : 0.42, ease: [0.16, 1, 0.3, 1] }}
-        />
+        <span className={styles.connectorLine} />
         <span className={styles.connectorLabel}>ShipStation API</span>
-        <motion.span
-          className={styles.connectorLine}
-          initial={{ scaleY: reduced ? 1 : 0 }}
-          animate={{ scaleY: 1 }}
-          transition={{ duration: reduced ? 0.01 : 0.5, delay: reduced ? 0 : 0.62, ease: [0.16, 1, 0.3, 1] }}
-        />
+        <span className={styles.connectorLine} />
       </motion.div>
 
       {/* ------------------------------------------- panel two: storefront */}

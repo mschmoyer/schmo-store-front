@@ -5,6 +5,7 @@
  * the schema shape matters as much as the data.
  */
 
+import type { SectionType } from '../types';
 import {
   SECTION_LIST,
   SECTION_REGISTRY,
@@ -130,7 +131,7 @@ describe('defaultSections', () => {
       counts.set(section.type, (counts.get(section.type) ?? 0) + 1);
     }
     for (const [type, count] of counts) {
-      expect(count).toBeLessThanOrEqual(SECTION_REGISTRY[type as never].maxPerPage);
+      expect(count).toBeLessThanOrEqual(SECTION_REGISTRY[type as SectionType].maxPerPage);
     }
   });
 

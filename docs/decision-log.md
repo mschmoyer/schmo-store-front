@@ -912,3 +912,50 @@ The fix ensures reliable ShipStation data synchronization on Heroku by avoiding 
 - [ ] Add integration tests for the report endpoint
 
 The scripts provide both programmatic exports for use in other modules and CLI execution for direct running via npm scripts.
+## 2026-08-12
+
+### Full redesign: RebelShops storefront platform
+
+Goal: a Shopify-quality storefront product on top of ShipStation + Stripe, hosted on
+Vercel with Neon Postgres, on rebelshops.com. Executed with parallel specialist agents
+against two binding contracts, each reviewed by an independent hostile critic.
+
+**Contracts**
+- [x] `docs/design-system.md` — RebelShops chrome: ink/paper/ember palette, Space Grotesk +
+      Inter + JetBrains Mono, fluid type scale, layered warm elevation, accessibility floor
+- [x] `docs/storefront-theme-spec.md` — the merchant-facing theme layer: `StorefrontTheme`,
+      the `--st-*` contract, six presets, section composition, custom-CSS sanitization,
+      customizer preview protocol
+
+**Platform**
+- [x] Retire Heroku: delete `Procfile` and the scheduler doc; remove the hardcoded
+      herokuapp.com production redirect that would have broken rebelshops.com
+- [x] Neon serverless driver selected by hostname rather than by "running on Vercel",
+      which would break against a non-Neon host; pool cached on `globalThis`
+- [x] Rewrite the migration runner. The previous one never wrote tracking rows, so
+      migrations re-ran on every deploy and the non-idempotent ones failed outright.
+      Now keyed on full filename + SHA-256 with a session advisory lock.
+- [x] `vercel.json`: region, per-route function limits, cron schedules, cache headers
+- [x] `docs/deployment-vercel.md` runbook and a real `.env.example`
+
+**Security and integrity**
+- [x] Remove `/api/admin/sync/background`. It accepted `x-heroku-scheduler: true` as proof
+      of identity — verified live returning 200 unauthenticated before removal.
+- [x] Strip fabricated social proof from SEO structured data: an invented 4.8/150-customer
+      aggregateRating, a fake named testimonial, and an FAQ advertising a nonexistent
+      14-day trial plus unsupported payment methods
+- [x] Consolidate four competing product names onto RebelShops
+
+**Design and content**
+- [x] Token layer, Mantine theme mapping and a 20-component primitive kit with 48 tests
+- [x] Marketing copy deck with honesty gating on unshipped features
+- [x] Demo catalog: three stores, 36 products, 74 orders with trigger-accurate stock
+
+**Audits**
+- [x] `docs/audits/shipstation-audit.md` — 10 P0 findings; the integration is not currently
+      the "robust workflow support" the product claims
+- [ ] Act on the ShipStation P0s, including the webhook tenancy hole and order push
+- [ ] Fix `create_inventory_snapshot()` — migration 016 throws on nested aggregates
+- [ ] Fix `backgroundSyncService.getActiveStores()` — queries a nonexistent table
+- [ ] Turn off `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds` once clean
+      (TypeScript errors reduced 500 -> 183 so far)

@@ -1,9 +1,81 @@
 import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
-import { JobQueue, UUID } from '@/lib/types/database';
-import { notificationService } from './notificationService';
+import { UUID } from '@/lib/types/database';
+import { parseShipStationWebhookPayload } from '@/lib/shipstation/webhookPayload';
+import { JobQueueRow } from '@/lib/types/db-rows';
+import {
+  DeliveryData,
+  ExceptionData,
+  ShipmentTrackingData,
+  notificationService
+} from './notificationService';
 import { inventoryService } from './inventoryService';
 import { orderStatusService } from './orderStatusService';
+
+/** Aggregate job counts returned by the queue statistics query. */
+type JobStatsRow = {
+  total: string;
+  pending: string;
+  processing: string;
+  completed: string;
+  failed: string;
+  retrying: string;
+  by_type: Record<string, number> | null;
+  by_priority: Record<string, number> | null;
+};
+
+/**
+ * Read a string member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a string, otherwise undefined
+ */
+function payloadString(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Read a number member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a number, otherwise undefined
+ */
+function payloadNumber(payload: Record<string, unknown>, key: string): number | undefined {
+  const value = payload[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+/**
+ * Read a boolean member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a boolean, otherwise undefined
+ */
+function payloadBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
+  const value = payload[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+/**
+ * Read a nested object member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a plain object, otherwise undefined
+ */
+function payloadObject(
+  payload: Record<string, unknown>,
+  key: string
+): Record<string, unknown> | undefined {
+  const value = payload[key];
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
 
 /**
  * Background Job Queue Service
@@ -91,7 +163,7 @@ export class JobQueueService {
 
     try {
       // Get pending jobs ordered by priority and scheduled time
-      const jobsResult = await db.query(`
+      const jobsResult = await db.query<JobQueueRow>(`
         SELECT * FROM job_queue 
         WHERE status IN ('pending', 'retrying') 
           AND (scheduled_at IS NULL OR scheduled_at <= NOW())
@@ -106,7 +178,7 @@ export class JobQueueService {
         LIMIT $1
       `, [this.BATCH_SIZE]);
 
-      const jobs = jobsResult.rows as JobQueue[];
+      const jobs = jobsResult.rows;
 
       if (jobs.length === 0) {
         return;
@@ -131,7 +203,7 @@ export class JobQueueService {
    * @param job - Job to process
    * @returns Promise<void>
    */
-  private async processJob(job: JobQueue): Promise<void> {
+  private async processJob(job: JobQueueRow): Promise<void> {
     const startTime = Date.now();
 
     try {
@@ -181,21 +253,47 @@ export class JobQueueService {
    */
   private async processOrderNotificationJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { order_id, notification_type, ...data } = payload;
+      const orderId = payloadString(payload, 'order_id');
+      const notificationType = payloadString(payload, 'notification_type');
 
-      if (!order_id || !notification_type) {
+      if (!orderId || !notificationType) {
         throw new Error('Missing required fields: order_id, notification_type');
       }
 
-      switch (notification_type) {
-        case 'shipped':
-          return await notificationService.sendShipmentNotificationEmail(order_id, data);
-        case 'delivered':
-          return await notificationService.sendDeliveryNotificationEmail(order_id, data);
-        case 'exception':
-          return await notificationService.sendExceptionNotificationEmail(order_id, data);
+      switch (notificationType) {
+        case 'shipped': {
+          const trackingData: ShipmentTrackingData = {
+            tracking_number: payloadString(payload, 'tracking_number'),
+            carrier: payloadString(payload, 'carrier'),
+            tracking_url: payloadString(payload, 'tracking_url'),
+            estimated_delivery: payloadString(payload, 'estimated_delivery'),
+            shipment_cost: payloadNumber(payload, 'shipment_cost'),
+            service_code: payloadString(payload, 'service_code')
+          };
+          return await notificationService.sendShipmentNotificationEmail(orderId, trackingData);
+        }
+        case 'delivered': {
+          const deliveryData: DeliveryData = {
+            delivered_date: payloadString(payload, 'delivered_date'),
+            tracking_number: payloadString(payload, 'tracking_number'),
+            carrier: payloadString(payload, 'carrier'),
+            delivery_confirmation: payloadString(payload, 'delivery_confirmation'),
+            signature_required: payloadBoolean(payload, 'signature_required')
+          };
+          return await notificationService.sendDeliveryNotificationEmail(orderId, deliveryData);
+        }
+        case 'exception': {
+          const exceptionData: ExceptionData = {
+            exception_description: payloadString(payload, 'exception_description'),
+            tracking_number: payloadString(payload, 'tracking_number'),
+            carrier: payloadString(payload, 'carrier'),
+            exception_date: payloadString(payload, 'exception_date'),
+            next_steps: payloadString(payload, 'next_steps')
+          };
+          return await notificationService.sendExceptionNotificationEmail(orderId, exceptionData);
+        }
         default:
-          throw new Error(`Unknown notification type: ${notification_type}`);
+          throw new Error(`Unknown notification type: ${notificationType}`);
       }
 
     } catch (error) {
@@ -211,13 +309,18 @@ export class JobQueueService {
    */
   private async processInventoryUpdateJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { order_id, shipment_data } = payload;
+      const orderId = payloadString(payload, 'order_id');
 
-      if (!order_id) {
+      if (!orderId) {
         throw new Error('Missing required field: order_id');
       }
 
-      return await inventoryService.updateInventoryAfterShipment(order_id, shipment_data);
+      const shipmentData = payloadObject(payload, 'shipment_data');
+
+      return await inventoryService.updateInventoryAfterShipment(orderId, {
+        tracking_number: shipmentData ? payloadString(shipmentData, 'tracking_number') : undefined,
+        carrier: shipmentData ? payloadString(shipmentData, 'carrier') : undefined
+      });
 
     } catch (error) {
       console.error('Error processing inventory update job:', error);
@@ -232,13 +335,18 @@ export class JobQueueService {
    */
   private async processShipmentProcessingJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { webhook_payload } = payload;
+      const webhookPayload = payloadObject(payload, 'webhook_payload');
 
-      if (!webhook_payload) {
+      if (!webhookPayload) {
         throw new Error('Missing required field: webhook_payload');
       }
 
-      return await orderStatusService.processShipmentNotification(webhook_payload);
+      const parsedPayload = parseShipStationWebhookPayload(webhookPayload);
+      if (!parsedPayload) {
+        throw new Error('Invalid ShipStation webhook payload in job');
+      }
+
+      return await orderStatusService.processShipmentNotification(parsedPayload);
 
     } catch (error) {
       console.error('Error processing shipment processing job:', error);
@@ -253,18 +361,24 @@ export class JobQueueService {
    */
   private async processWebhookProcessingJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { webhook_type, webhook_data } = payload;
+      const webhookType = payloadString(payload, 'webhook_type');
+      const webhookData = payloadObject(payload, 'webhook_data');
 
-      if (!webhook_type || !webhook_data) {
+      if (!webhookType || !webhookData) {
         throw new Error('Missing required fields: webhook_type, webhook_data');
       }
 
       // Process different webhook types
-      switch (webhook_type) {
-        case 'shipstation_webhook':
-          return await orderStatusService.processShipmentNotification(webhook_data);
+      switch (webhookType) {
+        case 'shipstation_webhook': {
+          const parsedWebhook = parseShipStationWebhookPayload(webhookData);
+          if (!parsedWebhook) {
+            throw new Error('Invalid ShipStation webhook payload in job');
+          }
+          return await orderStatusService.processShipmentNotification(parsedWebhook);
+        }
         default:
-          console.warn(`Unknown webhook type: ${webhook_type}`);
+          console.warn(`Unknown webhook type: ${webhookType}`);
           return false;
       }
 
@@ -280,10 +394,11 @@ export class JobQueueService {
    * @param errorMessage - Error message
    * @returns Promise<void>
    */
-  private async handleJobFailure(job: JobQueue, errorMessage: string): Promise<void> {
-    const newAttempts = job.attempts + 1;
+  private async handleJobFailure(job: JobQueueRow, errorMessage: string): Promise<void> {
+    const newAttempts = (job.attempts ?? 0) + 1;
+    const maxAttempts = job.max_attempts ?? this.MAX_RETRY_ATTEMPTS;
 
-    if (newAttempts >= job.max_attempts) {
+    if (newAttempts >= maxAttempts) {
       // Max attempts reached, mark as failed
       await this.updateJobStatus(job.id, 'failed', errorMessage);
       console.error(`Job failed permanently: ${job.job_type} - ${job.id} (${newAttempts} attempts)`);
@@ -410,7 +525,7 @@ export class JobQueueService {
     try {
       const cutoffTime = new Date(Date.now() - timeRange * 60 * 60 * 1000);
 
-      const result = await db.query(`
+      const result = await db.query<JobStatsRow>(`
         SELECT 
           COUNT(*) as total,
           COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
@@ -433,12 +548,12 @@ export class JobQueueService {
       const stats = result.rows[0];
       
       return {
-        total: parseInt(stats.total),
-        pending: parseInt(stats.pending),
-        processing: parseInt(stats.processing),
-        completed: parseInt(stats.completed),
-        failed: parseInt(stats.failed),
-        retrying: parseInt(stats.retrying),
+        total: parseInt(stats.total, 10),
+        pending: parseInt(stats.pending, 10),
+        processing: parseInt(stats.processing, 10),
+        completed: parseInt(stats.completed, 10),
+        failed: parseInt(stats.failed, 10),
+        retrying: parseInt(stats.retrying, 10),
         by_type: stats.by_type || {},
         by_priority: stats.by_priority || {}
       };
@@ -487,18 +602,18 @@ export class JobQueueService {
   /**
    * Get failed jobs for manual inspection
    * @param limit - Maximum number of jobs to return
-   * @returns Promise<JobQueue[]>
+   * @returns Promise<JobQueueRow[]>
    */
-  async getFailedJobs(limit: number = 100): Promise<JobQueue[]> {
+  async getFailedJobs(limit: number = 100): Promise<JobQueueRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<JobQueueRow>(`
         SELECT * FROM job_queue 
         WHERE status = 'failed'
         ORDER BY updated_at DESC
         LIMIT $1
       `, [limit]);
 
-      return result.rows as JobQueue[];
+      return result.rows;
 
     } catch (error) {
       console.error('Error getting failed jobs:', error);

@@ -1,7 +1,8 @@
-// `coupons.ts` also exposes database-backed loaders, which pull in `pg`. The Node driver needs
-// Web Crypto globals that jsdom does not provide, so the connection module is stubbed. The pure
-// coupon logic under test is untouched.
-jest.mock('@/lib/database/connection', () => ({
+// `coupons.ts` also exposes database-backed loaders, which pull in `pg`. The Node driver needs Web
+// Crypto globals that jsdom does not provide, so the connection module is stubbed. The pure coupon
+// logic under test is untouched. (The path must be relative: `next/jest` does not map the `@/`
+// alias for `jest.mock` specifiers, only for imports.)
+jest.mock('../../database/connection', () => ({
   db: { query: jest.fn(), transaction: jest.fn(), initialize: jest.fn() },
 }));
 

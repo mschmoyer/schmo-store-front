@@ -62,11 +62,20 @@ CREATE TRIGGER trg_storefront_themes_updated_at
 --
 -- Mirrors LEGACY_THEME_MAP in src/lib/storefront-theme/presets.ts. Keep the two
 -- in sync; the unit test `presets.test.ts` asserts the TypeScript side.
+--
+-- This is a function rather than an inline DO block so it can be re-run at any
+-- time -- after a seed, after a store import, or by hand -- and still be a
+-- no-op for stores that already have rows. It returns the number of stores it
+-- touched.
 -- ---------------------------------------------------------------------------
 
-DO $migrate$
+CREATE OR REPLACE FUNCTION public.backfill_storefront_themes()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $migrate$
 DECLARE
     store_row      RECORD;
+    touched        INTEGER := 0;
     mapped_preset  TEXT;
     mapped_color   TEXT;
     mapped_scheme  TEXT;
@@ -177,9 +186,18 @@ BEGIN
         INSERT INTO public.storefront_themes (store_id, status, theme, sections, version)
         VALUES (store_row.id, 'draft', theme_json, default_sections, 1)
         ON CONFLICT (store_id, status) DO NOTHING;
+
+        touched := touched + 1;
     END LOOP;
+
+    RETURN touched;
 END
 $migrate$;
+
+COMMENT ON FUNCTION public.backfill_storefront_themes() IS
+    'Gives every store without one a draft and published storefront theme, derived from its legacy stores.theme_name. Idempotent.';
+
+SELECT public.backfill_storefront_themes();
 
 INSERT INTO public.schema_migrations (version, description)
 VALUES ('019', 'Storefront themes - per-store draft/published theme and section rows, legacy theme_name migrated')

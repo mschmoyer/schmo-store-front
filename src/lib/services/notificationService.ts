@@ -57,7 +57,7 @@ interface ExceptionTemplateVariables extends EmailTemplateVariables {
 }
 
 /** Tracking details supplied when a shipment notification is sent. */
-interface ShipmentTrackingData {
+export interface ShipmentTrackingData {
   tracking_number?: string;
   carrier?: string;
   tracking_url?: string;
@@ -67,7 +67,7 @@ interface ShipmentTrackingData {
 }
 
 /** Delivery details supplied when a delivery notification is sent. */
-interface DeliveryData {
+export interface DeliveryData {
   delivered_date?: string;
   tracking_number?: string;
   carrier?: string;
@@ -76,7 +76,7 @@ interface DeliveryData {
 }
 
 /** Exception details supplied when an exception notification is sent. */
-interface ExceptionData {
+export interface ExceptionData {
   exception_description?: string;
   tracking_number?: string;
   carrier?: string;

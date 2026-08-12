@@ -27,14 +27,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Load theme from localStorage on client side
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme && themes[savedTheme]) {
-      console.log('ThemeProvider: Loading saved theme:', savedTheme);
       setThemeName(savedTheme);
       setCurrentTheme(themes[savedTheme]);
     }
   }, []);
 
   const setTheme = (newThemeName: string) => {
-    console.log('ThemeProvider: Setting theme to:', newThemeName);
     if (themes[newThemeName]) {
       setThemeName(newThemeName);
       setCurrentTheme(themes[newThemeName]);
@@ -52,13 +50,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         (pathname.split('/').length === 2 && pathname !== '/admin' && pathname !== '/');
     
     if (isStorePage) {
-      console.log('ThemeProvider: Detected store page, skipping global theme application');
       return;
     }
     
-    console.log('ThemeProvider: Applying global theme:', themeName);
     const root = document.documentElement;
-    const body = document.body;
     const colors = currentTheme.colors;
 
     root.style.setProperty('--theme-primary', colors.primary);
@@ -91,10 +86,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--theme-header-gradient', colors.headerGradient);
     root.style.setProperty('--theme-hero-gradient', colors.heroGradient);
 
-    // Apply background color to body
-    body.style.backgroundColor = colors.background;
-    body.style.color = colors.text;
-    body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
+    // Deliberately NOT writing body.style.backgroundColor / .color here.
+    //
+    // Inline styles on <body> beat the `--surface` / `--text-primary` tokens that
+    // the design system sets in globals.css, so doing that repainted every admin
+    // and marketing page in the legacy palette regardless of the design tokens.
+    // The `--theme-*` custom properties set above are enough: anything that wants
+    // the legacy palette reads those, and everything else inherits the design
+    // system. See docs/design-system.md.
   }, [currentTheme, themeName]);
 
   return (

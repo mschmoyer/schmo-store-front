@@ -509,6 +509,33 @@ export default function DesignSystemPage(): React.ReactElement {
           </Stack>
         </Row>
 
+        <Divider soft />
+
+        {/* ------------------------------------------------ tailwind bridge */}
+        <Row
+          title="Tailwind bridge"
+          note="Every token is also a utility. These boxes use no CSS Module at all."
+        >
+          <div className="flex flex-wrap gap-4">
+            <div className="rounded-lg border border-border bg-surface-raised p-4 shadow-md">
+              <p className="font-display text-h3 text-text-primary">bg-surface-raised</p>
+              <p className="text-sm text-text-secondary">border-border · shadow-md · rounded-lg</p>
+            </div>
+            <div className="rounded-lg bg-accent-subtle p-4 text-accent-text">
+              <p className="font-display text-h3">bg-accent-subtle</p>
+              <p className="text-sm">text-accent-text</p>
+            </div>
+            <div className="rounded-lg bg-ink-900 p-4">
+              <p className="font-mono text-sm text-ink-100 tabular">bg-ink-900 · font-mono · tabular</p>
+              <p className="text-sm text-ink-400">1,249.00 · 0,000.00</p>
+            </div>
+            <div className="rounded-lg bg-success-subtle p-4 text-success-text">
+              <p className="font-display text-h3">bg-success-subtle</p>
+              <p className="text-sm">Money green, value only</p>
+            </div>
+          </div>
+        </Row>
+
         <div className={styles.tail} />
       </Container>
 

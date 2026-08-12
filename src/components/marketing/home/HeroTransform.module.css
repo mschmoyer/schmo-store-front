@@ -127,7 +127,6 @@
   width: 1px;
   height: 18px;
   background: linear-gradient(to bottom, var(--ember-200), var(--ember-500));
-  transform-origin: top center;
 }
 
 .connectorLabel {
@@ -209,12 +208,6 @@
     width: 20px;
     height: 1px;
     background: linear-gradient(to right, var(--ember-200), var(--ember-500));
-    transform-origin: left center;
-  }
-
-  /* The horizontal run animates on scaleX; scaleY would collapse the hairline. */
-  .connectorLine {
-    transform: none;
   }
 
   .card {

@@ -494,9 +494,13 @@ export function deriveBrandStates(
   const base = hexToOklch(brand);
   const surfaceL = isHexColor(surface) ? hexToOklch(surface).l : 1;
 
+  // Reverse near the ends of the lightness range: brightening an already very
+  // light brand just washes it out to near-white (an acid lime on a black
+  // ground turns into a pale smear), and darkening a near-black brand makes the
+  // state invisible.
   let lighten = surfaceL <= 0.5;
-  if (base.l < 0.22) lighten = true;
-  if (base.l > 0.9) lighten = false;
+  if (base.l < 0.24) lighten = true;
+  if (base.l > 0.82) lighten = false;
 
   const STEP = 0.055;
   const preferred = lighten ? 1 : -1;

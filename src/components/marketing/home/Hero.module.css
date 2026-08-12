@@ -1,0 +1,103 @@
+.root {
+  position: relative;
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink-200);
+  padding-block: clamp(3rem, 7vw, 6rem) clamp(3.5rem, 8vw, 6.5rem);
+  overflow: hidden;
+}
+
+/* A single, barely-there warm wash anchored behind the copy. Not a gradient
+   band across the section — it never crosses a text baseline. */
+.root::before {
+  content: '';
+  position: absolute;
+  inset: -20% auto auto -10%;
+  width: 46rem;
+  height: 46rem;
+  background: radial-gradient(circle, rgb(var(--ember-500-rgb) / 0.055), transparent 62%);
+  pointer-events: none;
+}
+
+.inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(40px, 6vw, 56px);
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 34ch;
+}
+
+.eyebrow {
+  color: var(--ember-700);
+}
+
+.headline {
+  margin: 0;
+  font-size: var(--text-display);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: var(--ink-950);
+  text-wrap: balance;
+}
+
+.subhead {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--ink-500);
+  max-width: 46ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+
+.visual {
+  min-width: 0;
+}
+
+@media (min-width: 1080px) {
+  .root {
+    padding-block: clamp(4rem, 6vw, 6.5rem) clamp(4.5rem, 7vw, 7rem);
+  }
+
+  .inner {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.12fr);
+    align-items: center;
+    gap: 64px;
+  }
+
+  .copy {
+    max-width: 30ch;
+  }
+
+  .subhead {
+    max-width: 42ch;
+  }
+}
+
+.textOnly .inner {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.textOnly .copy {
+  max-width: 40ch;
+}

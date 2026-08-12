@@ -158,6 +158,60 @@ export async function loadShowcaseStores(): Promise<ShowcaseStore[]> {
   }
 }
 
+/** A search a real visitor typed into a demo store that returned nothing. */
+export interface ZeroResultSearch {
+  query: string;
+  /** How many times it has been searched. */
+  searches: number;
+  /** Which demo store it was searched on. */
+  storeSlug: string;
+  /** ISO timestamp of the most recent occurrence. */
+  lastSearched: string;
+}
+
+interface SearchRow extends Record<string, unknown> {
+  search_query: string;
+  searches: number;
+  store_slug: string;
+  last_seen: Date | string;
+}
+
+/**
+ * Loads searches typed into the demo storefronts that returned zero results —
+ * the table the copy deck calls "a shopping list" (§3.8). These are real rows
+ * from `search_tracking`, not an illustration.
+ *
+ * @param limit - Maximum rows to return.
+ * @returns Zero-result searches, most-searched first, or `[]` on failure.
+ */
+export async function loadZeroResultSearches(limit = 5): Promise<ZeroResultSearch[]> {
+  try {
+    const result = await query<SearchRow>(
+      `select st.search_query,
+              count(*)::int as searches,
+              max(st.created_at) as last_seen,
+              s.store_slug
+         from search_tracking st
+         join stores s on s.id = st.store_id
+        where st.results_count = 0
+          and s.store_slug = any($1::text[])
+        group by st.search_query, s.store_slug
+        order by searches desc, last_seen desc
+        limit $2`,
+      [[...DEMO_STORE_SLUGS], limit]
+    );
+
+    return result.rows.map((row) => ({
+      query: row.search_query,
+      searches: row.searches,
+      storeSlug: row.store_slug,
+      lastSearched: new Date(row.last_seen).toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Picks the products used for the storefront showcase grid, interleaving the
  * three stores so the band reads as a catalog rather than one vertical.
