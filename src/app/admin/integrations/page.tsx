@@ -11,14 +11,18 @@ import {
   rem
 } from '@mantine/core';
 import { IconPlug, IconAlertCircle } from '@tabler/icons-react';
-import { IntegrationSettings } from '@/components/admin/IntegrationSettings';
+import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
 import { IntegrationConfiguration } from '@/types/database';
 
-interface Integration {
+/**
+ * An integration row as returned by the API.
+ *
+ * `integrationType` is the raw column value, which may still hold legacy
+ * providers (e.g. `shipengine`) that the UI no longer supports.
+ */
+interface StoredIntegration {
   id?: string;
-  // 'shipengine' is a legacy value that may still exist in stored rows; it is
-  // filtered out below and never rendered.
-  integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal' | 'shipengine';
+  integrationType: string;
   isActive: boolean;
   hasApiKey: boolean;
   configuration: IntegrationConfiguration;
@@ -85,19 +89,19 @@ export default function IntegrationsPage() {
             ];
             
             // Update with existing data (skip any shipengine integrations)
-            existingIntegrations.forEach((existing: Integration) => {
+            existingIntegrations.forEach((existing: StoredIntegration) => {
               // Skip shipengine integrations since we no longer support them
               if (existing.integrationType === 'shipengine') {
                 return;
               }
-              
+
               const index = allIntegrations.findIndex(
                 int => int.integrationType === existing.integrationType
               );
               if (index >= 0) {
                 allIntegrations[index] = {
+                  ...allIntegrations[index],
                   id: existing.id,
-                  integrationType: existing.integrationType,
                   isActive: existing.isActive,
                   hasApiKey: existing.hasApiKey,
                   configuration: existing.configuration || {},

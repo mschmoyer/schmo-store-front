@@ -33,7 +33,7 @@ import {
 } from '@tabler/icons-react';
 import { IntegrationConfiguration } from '@/types/database';
 
-interface Integration {
+export interface Integration {
   id?: string;
   integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal';
   isActive: boolean;

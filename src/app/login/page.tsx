@@ -69,7 +69,11 @@ export default function LoginPage(): React.ReactElement {
                 body: 'We’ve been notified. Try again in a moment.',
               }
         );
+        // Clear the password but un-touch the field: showing "This field is
+        // required" under an empty box we just emptied ourselves is noise on top
+        // of the real message.
         setPassword('');
+        setTouched((current) => ({ ...current, password: false }));
         return;
       }
 

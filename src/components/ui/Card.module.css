@@ -16,9 +16,6 @@
     border-color var(--duration-standard) var(--ease-out),
     box-shadow var(--duration-standard) var(--ease-out),
     transform var(--duration-standard) var(--ease-out);
-
-  /* Buttons inside a card focus against the card, not the page ground. */
-  --focus-ring-gap: var(--surface-raised);
 }
 
 /* Sunken variant for wells and inset panels. */
@@ -79,6 +76,30 @@
   height: 3px;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: linear-gradient(90deg, var(--ember-400), var(--ember-600));
+}
+
+/*
+ * Focus-ring grounds.
+ *
+ * The gap stop in --focus-ring must be the colour the ring is actually drawn
+ * on. That is set on the SLOTS rather than on .root deliberately: an
+ * interactive Card is itself a focusable control, and its own ring sits on the
+ * page, not on its fill. Children get the card's own surface.
+ */
+.root > .header,
+.root > .body,
+.root > .footer {
+  --focus-ring-gap: var(--surface-raised);
+}
+
+.sunken > .header,
+.sunken > .body,
+.sunken > .footer {
+  --focus-ring-gap: var(--surface-sunken);
+}
+
+.root > .footer {
+  --focus-ring-gap: var(--surface-sunken);
 }
 
 /* ----------------------------------------------------------------- pad -- */
@@ -168,8 +189,6 @@
   gap: var(--space-3);
   border-top: 1px solid var(--border);
   background-color: var(--surface-sunken);
-  /* Footer actions focus against the sunken tray they actually sit on. */
-  --focus-ring-gap: var(--surface-sunken);
   border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
 }
 
@@ -184,4 +203,13 @@
 /* When the footer is the only slot after the body, keep it visually attached. */
 .footerPlain {
   background-color: transparent;
+}
+
+/* A plain footer has no tray of its own, so it inherits the card's surface. */
+.root > .footerPlain {
+  --focus-ring-gap: var(--surface-raised);
+}
+
+.sunken > .footerPlain {
+  --focus-ring-gap: var(--surface-sunken);
 }

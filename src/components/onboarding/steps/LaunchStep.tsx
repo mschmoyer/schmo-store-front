@@ -110,6 +110,8 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
           : 'Saved as a draft. Only you can see it until you publish from the dashboard.'}
       </p>
 
+      <p className={styles.sectionLabel}>{STEPS.launch.helper}</p>
+
       <div className={styles.urlCard}>
         <span className={styles.urlText}>{url}</span>
         <Button variant="ghost" size="sm" onClick={copy}>
@@ -117,7 +119,7 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
         </Button>
       </div>
 
-      <p className={styles.sectionLabel}>{STEPS.launch.helper}</p>
+      <p className={styles.sectionLabel}>What to do next</p>
 
       <ul className={styles.nextList}>
         {connected ? (

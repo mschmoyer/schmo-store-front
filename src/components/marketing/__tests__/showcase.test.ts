@@ -1,5 +1,5 @@
-import { interleaveProducts, pickHeroProduct } from '../data/showcase';
-import type { ShowcaseProduct, ShowcaseStore } from '../data/showcase';
+import { interleaveProducts, pickHeroProduct } from '../data/showcase-model';
+import type { ShowcaseProduct, ShowcaseStore } from '../data/showcase-model';
 
 /**
  * Builds a stub product.

@@ -1,0 +1,146 @@
+name: CI
+
+# The repository had no CI at all. A 500-file change could land with a broken
+# build, a failing migration or an unauthenticated endpoint and nothing would
+# say so. These jobs are the floor.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run for the same ref.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # next.config.ts still sets typescript.ignoreBuildErrors, so `next build`
+      # will happily ship type errors. This job is the thing that actually
+      # enforces them; do not remove it when that flag comes off.
+      - run: npx tsc --noEmit
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test:ci
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rebelshops_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rebelshops_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      # Migrations run from the Vercel build command, so a broken migration is a
+      # broken deploy. The previous runner never recorded which files it had
+      # applied, so migrations re-ran on every deploy and the non-idempotent ones
+      # failed. These three steps are precisely the regression test for that.
+      - name: Apply migrations to a clean database
+        run: node database/migrate.js
+
+      - name: Re-run must be a clean no-op
+        run: |
+          out=$(node database/migrate.js 2>&1)
+          echo "$out"
+          if echo "$out" | grep -qiE "applying|running "; then
+            echo "::error::Re-running migrations was not a no-op. Tracking is broken."
+            exit 1
+          fi
+
+      - name: Status reports nothing pending
+        run: |
+          out=$(node database/migrate.js --status 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "0 pending" \
+            || { echo "::error::Migrations still pending after a full apply."; exit 1; }
+
+      - name: Seed demo data, twice, to prove it is idempotent
+        run: |
+          node scripts/seed-demo.js
+          node scripts/seed-demo.js
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rebelshops_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rebelshops_ci
+      # Build-time only. Never a real secret — every Stripe/ShipStation entry
+      # point is required to degrade gracefully when unconfigured, and this job
+      # is part of how we keep that true.
+      JWT_SECRET: ci-build-only-not-a-secret
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: node database/migrate.js
+      - run: npm run build

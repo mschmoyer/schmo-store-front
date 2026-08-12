@@ -1,300 +1,205 @@
 'use client';
 
-import { Group, Container, Text, ActionIcon, Badge, Box } from '@mantine/core';
-import { IconShoppingCart, IconUser } from '@tabler/icons-react';
-import Link from 'next/link';
-import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Badge, Box, Container, Group, Text } from '@mantine/core';
+import { IconShoppingBag, IconUser } from '@tabler/icons-react';
 
+/**
+ * Pull the store slug out of the current path.
+ *
+ * Handles the three shapes that carry one: `/store/{slug}/…`, `/blog/{slug}/…`
+ * and a bare `/{slug}`. Admin and marketing routes have no store context.
+ *
+ * @param pathname - The current path
+ * @returns The slug, or null when this page does not belong to a shop
+ */
+function storeSlugFromPath(pathname: string | null): string | null {
+  const segments = pathname?.split('/').filter(Boolean) ?? [];
+  if (segments.length === 0) return null;
+  if (segments.length === 1) return segments[0];
+  if (segments[0] === 'store' || segments[0] === 'blog') return segments[1] ?? null;
+  return null;
+}
+
+/**
+ * Read the cart count out of shared storage.
+ * @returns The total number of items
+ */
+function readCartCount(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem('cart');
+    if (!raw) return 0;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return 0;
+    return parsed.reduce<number>((sum, item) => {
+      const quantity = Number((item as { quantity?: unknown })?.quantity);
+      return sum + (Number.isFinite(quantity) && quantity > 0 ? quantity : 1);
+    }, 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The shared top navigation for pages outside the themed storefront shell.
+ *
+ * **It shows the merchant's name, not ours.** This component used to render a
+ * hardcoded "RebelShops" wordmark and our logo on top of every merchant's blog
+ * and checkout — a shopper buying a kettlebell has no idea what RebelShops is,
+ * and putting our brand above someone else's checkout is both confusing and
+ * bad for the merchant. When the path identifies a shop, the shop's own name is
+ * fetched and shown; the platform name appears nowhere.
+ *
+ * The store pages themselves no longer use this at all — they render the fully
+ * themed `StoreHeader` inside `StorefrontShell`. This remains for the blog and
+ * checkout routes, which are owned by other tracks.
+ *
+ * @returns The top navigation bar
+ */
 export default function TopNav() {
-  const [cartCount, setCartCount] = useState(0);
   const pathname = usePathname();
-  
-  // Extract store slug from pathname
-  const getStoreSlug = () => {
-    // Handle different URL patterns:
-    // /[storeSlug] -> extract storeSlug
-    // /store/[storeSlug] -> extract storeSlug  
-    // /blog/[storeSlug] -> extract storeSlug
-    const pathSegments = pathname?.split('/').filter(Boolean) || [];
-    
-    if (pathSegments.length === 1) {
-      // Direct store slug: /demo-store
-      return pathSegments[0];
-    } else if (pathSegments.length >= 2) {
-      // Nested routes: /store/demo-store, /blog/demo-store
-      if (pathSegments[0] === 'store' || pathSegments[0] === 'blog') {
-        return pathSegments[1];
-      }
-      // For admin or other routes, no store context
-      return null;
-    }
-    
-    return null;
-  };
-  
-  const storeSlug = getStoreSlug();
+  const storeSlug = storeSlugFromPath(pathname);
+
+  const [cartCount, setCartCount] = useState(0);
+  const [storeName, setStoreName] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get cart count from localStorage
-    const getCartCount = () => {
-      if (typeof window !== 'undefined') {
-        const cart = localStorage.getItem('cart');
-        console.log('TopNav: Getting cart from localStorage:', cart);
-        if (cart) {
-          try {
-            const cartData = JSON.parse(cart);
-            console.log('TopNav: Parsed cart data:', cartData);
-            const count = Array.isArray(cartData) 
-              ? cartData.reduce((sum, item) => sum + (item.quantity || 1), 0)
-              : 0;
-            console.log('TopNav: Calculated cart count:', count);
-            setCartCount(count);
-          } catch (error) {
-            console.error('TopNav: Error parsing cart data:', error);
-            setCartCount(0);
-          }
-        } else {
-          console.log('TopNav: No cart found in localStorage');
-          setCartCount(0);
-        }
-      }
-    };
+    const sync = (): void => setCartCount(readCartCount());
+    sync();
 
-    getCartCount();
-
-    // Listen for storage changes to update cart count
-    const handleStorageChange = (event?: Event | CustomEvent) => {
-      console.log('TopNav: handleStorageChange called', event);
-      getCartCount();
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Custom event for cart updates within the same tab
-    window.addEventListener('cartUpdated', handleStorageChange);
-
+    // `storage` covers other tabs; the custom event covers this one.
+    window.addEventListener('storage', sync);
+    window.addEventListener('cartUpdated', sync);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('cartUpdated', handleStorageChange);
+      window.removeEventListener('storage', sync);
+      window.removeEventListener('cartUpdated', sync);
     };
   }, []);
+
+  useEffect(() => {
+    if (!storeSlug) {
+      setStoreName(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/stores/public?slug=${encodeURIComponent(storeSlug)}`,
+        );
+        if (!response.ok) return;
+        const payload = await response.json();
+        const name = payload?.data?.store_name;
+        if (!cancelled && typeof name === 'string') setStoreName(name);
+      } catch {
+        // Falling back to the slug is fine; showing our brand instead is not.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storeSlug]);
+
+  const homeHref = storeSlug ? `/store/${storeSlug}` : '/store';
+  // Until the name arrives, the slug is a far better placeholder than our name.
+  const displayName = storeName ?? (storeSlug ? storeSlug.replace(/-/g, ' ') : 'Shops');
 
   return (
     <Box
       style={{
-        borderBottom: `1px solid var(--theme-border)`,
-        background: `var(--theme-header-gradient)`,
+        borderBottom: '1px solid var(--theme-border)',
+        background: 'var(--theme-background)',
         position: 'sticky',
         top: 0,
         zIndex: 1000,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
       }}
     >
-      <Container size="xl" py="md">
-        <Group justify="space-between" align="center">
-          {/* Logo Section */}
-          <Link href={storeSlug ? `/store/${storeSlug}` : '/store'} style={{ textDecoration: 'none' }}>
-            <Group gap="sm" align="center" style={{ 
-              transition: 'transform 0.2s ease'
-            }}>
-              <div style={{ 
-                padding: '8px', 
-                borderRadius: '50%', 
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(10px)',
-                transition: 'all 0.3s ease'
-              }}>
-                <Image
-                  src="/logo.svg"
-                  alt="Store Logo"
-                  width={32}
-                  height={32}
-                  style={{ 
-                    cursor: 'pointer',
-                    filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
-                  }}
-                />
-              </div>
-              <Text
-                size="lg"
-                fw={700}
-                style={{ 
-                  cursor: 'pointer',
-                  textShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                  letterSpacing: '0.5px',
-                  color: 'var(--theme-text-on-primary)'
-                }}
-                visibleFrom="sm"
-              >
-                RebelShops
-              </Text>
-            </Group>
+      <Container size="xl" py="sm">
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Link href={homeHref} style={{ textDecoration: 'none', minWidth: 0 }}>
+            <Text
+              size="lg"
+              fw={700}
+              style={{
+                color: 'var(--theme-text)',
+                textTransform: 'capitalize',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {displayName}
+            </Text>
           </Link>
 
-          {/* Navigation Links */}
-          <Group gap="lg" visibleFrom="sm">
-            <Link href={storeSlug ? `/store/${storeSlug}` : '/store'} style={{ textDecoration: 'none' }}>
-              <Text
-                size="md"
-                fw={500}
-                style={{
-                  color: 'var(--theme-text-on-primary)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  padding: '8px 16px',
-                  borderRadius: '8px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
+          <Group gap="lg" visibleFrom="sm" wrap="nowrap">
+            <Link href={homeHref} style={{ textDecoration: 'none' }}>
+              <Text size="sm" style={{ color: 'var(--theme-text)' }}>
                 Shop
               </Text>
             </Link>
-            <Link href={storeSlug ? `/blog/${storeSlug}` : '/blog'} style={{ textDecoration: 'none' }}>
-              <Text
-                size="md"
-                fw={500}
-                style={{
-                  color: 'var(--theme-text-on-primary)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  padding: '8px 16px',
-                  borderRadius: '8px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                Blog
-              </Text>
-            </Link>
+            {storeSlug ? (
+              <Link href={`/blog/${storeSlug}`} style={{ textDecoration: 'none' }}>
+                <Text size="sm" style={{ color: 'var(--theme-text)' }}>
+                  Journal
+                </Text>
+              </Link>
+            ) : null}
           </Group>
 
-          {/* Account and Cart Section */}
-          <Group gap="sm">
-            {/* Account Icon */}
-            <Link href={storeSlug ? `/store/${storeSlug}/account` : '/account'} style={{ textDecoration: 'none' }}>
-              <ActionIcon
-                variant="subtle"
-                size="lg"
-                style={{ 
-                  cursor: 'pointer',
-                  backgroundColor: 'var(--theme-hoverOverlay)',
-                  backdropFilter: 'blur(10px)',
-                  border: `1px solid var(--theme-hoverOverlay)`,
-                  borderRadius: '12px',
-                  transition: 'all 0.3s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                <IconUser size={24} color="var(--theme-text-on-primary)" style={{ 
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
-                }} />
-              </ActionIcon>
+          <Group gap="xs" wrap="nowrap">
+            <Link
+              href={storeSlug ? `/store/${storeSlug}/account` : '/account'}
+              aria-label="Account"
+              style={{ display: 'inline-flex', padding: 8, color: 'var(--theme-text)' }}
+            >
+              <IconUser size={22} aria-hidden="true" />
             </Link>
 
-            {/* Cart Icon */}
-            <Link href={storeSlug ? `/store/${storeSlug}/cart` : '/cart'} style={{ textDecoration: 'none' }}>
-              <div style={{ position: 'relative', display: 'inline-block' }}>
-                <ActionIcon
-                  variant="subtle"
-                  size="lg"
-                  style={{ 
-                    cursor: 'pointer',
-                    backgroundColor: 'var(--theme-hoverOverlay)',
-                    backdropFilter: 'blur(10px)',
-                    border: `1px solid var(--theme-hoverOverlay)`,
-                    borderRadius: '12px',
-                    transition: 'all 0.3s ease',
-                    ':hover': {
-                      backgroundColor: 'var(--theme-hoverOverlay)',
-                      transform: 'translateY(-2px)'
-                    }
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--theme-hoverOverlay)';
-                    e.currentTarget.style.transform = 'translateY(0)';
+            <Link
+              href={storeSlug ? `/store/${storeSlug}/cart` : '/cart'}
+              aria-label={
+                cartCount > 0
+                  ? `Cart, ${cartCount} item${cartCount === 1 ? '' : 's'}`
+                  : 'Cart, empty'
+              }
+              style={{
+                position: 'relative',
+                display: 'inline-flex',
+                padding: 8,
+                color: 'var(--theme-text)',
+              }}
+            >
+              <IconShoppingBag size={22} aria-hidden="true" />
+              {cartCount > 0 ? (
+                <Badge
+                  size="xs"
+                  variant="filled"
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    minWidth: 18,
+                    height: 18,
+                    padding: 0,
+                    borderRadius: 999,
+                    backgroundColor: 'var(--theme-primary)',
+                    color: 'var(--theme-text-on-primary)',
                   }}
                 >
-                  <IconShoppingCart size={24} color="var(--theme-text-on-primary)" style={{ 
-                    filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
-                  }} />
-                </ActionIcon>
-                {cartCount > 0 && (
-                  <Badge
-                    size="xs"
-                    variant="filled"
-                    color="red"
-                    style={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      minWidth: 20,
-                      height: 20,
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '10px',
-                      fontWeight: 'bold',
-                      padding: 0,
-                      zIndex: 10,
-                      backgroundColor: 'var(--theme-error)',
-                      boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
-                      animation: 'pulse 2s infinite',
-                      border: '2px solid var(--theme-text-on-primary)'
-                    }}
-                  >
-                    {cartCount > 99 ? '99+' : cartCount}
-                  </Badge>
-                )}
-              </div>
+                  {cartCount > 99 ? '99+' : cartCount}
+                </Badge>
+              ) : null}
             </Link>
           </Group>
         </Group>
       </Container>
-      
-      {/* Add CSS animations */}
-      <style jsx>{`
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.1); }
-          100% { transform: scale(1); }
-        }
-        
-        .logo-hover:hover {
-          transform: scale(1.05);
-        }
-        
-        .cart-hover:hover {
-          transform: translateY(-2px);
-          background-color: rgba(255,255,255,0.2);
-        }
-      `}</style>
     </Box>
   );
 }

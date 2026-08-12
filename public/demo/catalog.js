@@ -53,7 +53,7 @@ const electronics = [
     // wells suggested through the lid, one bud resting loose beside it --
     // an unambiguous capsule, no hinge-arm risk.
     slug: 'pulse-earbuds-case',
-    bbox: { x: 306, y: 355, w: 302, h: 228 },
+    bbox: { x: 306, y: 436, w: 258, h: 148 },
     draw(defs) {
       let s = '';
       const cx = 400, topY = 450, w = 180, h = 130;
@@ -64,11 +64,13 @@ const electronics = [
       s += ellipse(cx + 44, topY + 40, 24, 20, mix(eDark, '#000000', 0.3)); // well R
       s += glint(cx - 40, topY + 22, 14, 8, 0.35);
       s += glint(cx - 20, topY - 6, 16, 8, 0.3);
-      // loose earbud floating beside the case
-      const bx = cx + 165, by = 400;
-      s += sphere(defs, bx, by, 42, eLight, eMid);
-      s += pth(`M ${bx + 18} ${by + 26} q 26 18 22 54`, 'none', { stroke: eMid, strokeWidth: 13, strokeLinecap: 'round' });
-      s += glint(bx - 13, by - 14, 11, 7, 0.4);
+      // loose earbud resting against the case, bottom-aligned on the same
+      // ground so it reads as "fell out of this case", not an unrelated
+      // floating sphere off to the side.
+      const bx = cx + w / 2 + 32, by = topY + h - 40;
+      s += sphere(defs, bx, by, 40, eLight, eMid);
+      s += pth(`M ${bx - 32} ${by - 4} q -12 -6 -14 -26`, 'none', { stroke: eMid, strokeWidth: 11, strokeLinecap: 'round' });
+      s += glint(bx - 12, by - 14, 10, 6, 0.4);
       return s;
     },
   },
@@ -361,10 +363,14 @@ const craft = [
     // Three distinctly-hued, offset bowls with visible rim rings, not three
     // shades of the same smear.
     slug: 'nested-ceramic-bowls',
-    bbox: { x: 302, y: 456, w: 238, h: 144 },
+    bbox: { x: 296, y: 434, w: 260, h: 168 },
     draw(defs) {
       let s = '';
-      const sizes = [[400, 560, 135, 36], [382, 515, 96, 26], [368, 478, 60, 17]];
+      // Wider vertical gaps and a bigger horizontal stagger than a true
+      // concentric nest, plus deeper (taller ry) bowls, so each rim ring is
+      // clearly visible above the one below -- countable as three, not a
+      // flat smear of one shape.
+      const sizes = [[412, 570, 140, 40], [380, 508, 100, 29], [356, 458, 64, 19]];
       const cols = [cCream, cClay, cWoodLight];
       sizes.forEach(([cx, cy, rx, ry], i) => {
         const id = nid('bowl');
@@ -661,8 +667,8 @@ const fitness = [
       defs.push(linearGrad(bodyId, [[0, mix(T.paperRaised, fSteel, 0.2)], [0.55, fSteelDark], [1, fSteelDark]], { x1: 0, y1: 0, x2: 1, y2: 0 }));
       s += ellipse(cx, botY, botR, 15, fSteelDark, rim(false)); // base (narrower than the shoulder -- the taper)
       s += pth(`M ${cx - topR} ${topY} L ${cx - botR} ${botY} L ${cx + botR} ${botY} L ${cx + topR} ${topY} Z`, `url(#${bodyId})`);
-      s += line(cx - topR, topY, cx - botR, botY, RIM.light, 2, { strokeOpacity: 0.12 });
-      s += line(cx + topR, topY, cx + botR, botY, RIM.light, 2, { strokeOpacity: 0.12 });
+      s += line(cx - topR, topY, cx - botR, botY, T.ink900, 2, { strokeOpacity: 0.12 });
+      s += line(cx + topR, topY, cx + botR, botY, T.ink900, 2, { strokeOpacity: 0.12 });
       for (const y of [420, 460, 500]) s += line(cx - topR + 8, y, cx - topR + 28, y, fSteelDark, 3, { strokeOpacity: 0.4 }); // measurement ticks
       s += circle(cx, 522, 11, mix(fSteelDark, '#FFFFFF', 0.2), rim(false)); // wire whisk ball
       s += line(cx - 9, 522, cx + 9, 522, fDark, 2, { strokeOpacity: 0.6 });
