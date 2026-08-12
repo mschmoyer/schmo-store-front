@@ -296,6 +296,22 @@ The application uses PostgreSQL with a comprehensive schema including:
 ### Background Services
 - `npm run sync:background` - Run background sync (invoked by Vercel Cron via `/api/cron/sync`)
 
+### Integration Checks
+- `npm run shipstation:probe` - Probe every ShipStation V2 endpoint the app depends on
+
+```bash
+SHIPSTATION_API_KEY=<key> npm run shipstation:probe
+```
+
+Read-only, and it checks more than reachability: for each endpoint it also verifies the
+response is shaped the way the calling code parses it. A `200` whose collection sits under
+a different key, or whose records lack the fields a sync writer reads, is reported as a
+failure — that combination syncs zero rows without raising an error, which the unit tests
+cannot catch because they mock the network. Exits non-zero if any probe fails.
+
+Not covered, deliberately: `POST /v2/shipments` and the webhook create/delete calls, which
+would create real records in the merchant's ShipStation account.
+
 ## Deployment
 
 ### Environment Variables
