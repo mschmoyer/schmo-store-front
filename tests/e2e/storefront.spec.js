@@ -192,7 +192,7 @@ test.describe('the purchase journey stays inside the merchant\'s shop', () => {
 
     // The page ground is the merchant's, not a white admin form.
     const surface = await page
-      .locator('[data-store-id]')
+      .locator('div.storefront[data-store-id]')
       .evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(surface).not.toBe('rgb(255, 255, 255)');
   });
