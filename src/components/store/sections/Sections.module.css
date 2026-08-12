@@ -129,12 +129,41 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background-color: var(--st-overlay);
-  opacity: var(--_scrim, 0.35);
+  background-color: var(--stx-hero-scrim, var(--st-overlay));
+  opacity: var(--_scrim, 0.55);
 }
 
 .heroOverlay .heroCopy {
   padding: var(--st-space-9) var(--st-space-7);
+}
+
+/*
+ * Copy over a photograph is only as legible as the scrim under it, and the
+ * scrim is only ever dark — `--st-overlay` is a near-black tinted with the
+ * surface hue on both schemes. So the ink here cannot be `--st-text`: on a
+ * light theme that is near-black over a dark scrim, and on a dark theme over a
+ * pale product photograph the un-scrimmed original was white on light grey.
+ * Both grounds want the palette's lightest neutral, which is the raised surface
+ * on a light theme and the text colour on a dark one. Neither is invented; both
+ * come out of the merchant's own palette.
+ *
+ * `Hero.tsx` floors the scrim opacity to match, so the pair is a guarantee
+ * rather than a hope.
+ */
+:global(.storefront[data-scheme='light']) .heroOverlay .heroCopy,
+:global(.storefront[data-scheme='light']) .heroOverlay .heroCopy :is(h1, p) {
+  color: var(--st-surface-raised);
+}
+
+:global(.storefront[data-scheme='dark']) .heroOverlay .heroCopy,
+:global(.storefront[data-scheme='dark']) .heroOverlay .heroCopy :is(h1, p) {
+  color: var(--st-text);
+}
+
+/* The eyebrow's brand colour has no contrast promise against a scrim either. */
+.heroOverlay .heroCopy .heroEyebrow {
+  color: inherit;
+  opacity: 0.85;
 }
 
 .heightSmall {

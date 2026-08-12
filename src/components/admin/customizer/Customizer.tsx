@@ -323,7 +323,7 @@ export function Customizer({ fontScopeClassName }: CustomizerProps): React.React
       setDialog({ kind: 'none' });
       setReloadToken((n) => n + 1);
       notifications.show({
-        color: 'teal',
+        color: 'green',
         title: 'Your storefront is live',
         message: 'Every visitor now sees these changes.',
         icon: <IconCheck size={16} />,

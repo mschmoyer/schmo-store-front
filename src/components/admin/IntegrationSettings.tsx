@@ -86,7 +86,6 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     shipstation: {
       name: 'ShipStation',
       description: 'Connect your ShipStation account to manage products, inventory, and shipping',
-      color: 'blue',
       icon: IconPlug,
       apiKeyLabel: 'ShipStation API Key',
       apiKeyPlaceholder: 'ukyI...',
@@ -97,7 +96,6 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     stripe: {
       name: 'Stripe',
       description: 'Connect Stripe to process payments securely',
-      color: 'indigo',
       icon: IconPlug,
       apiKeyLabel: 'Stripe Secret Key',
       apiKeyPlaceholder: 'sk_live_... or sk_test_...',
@@ -115,7 +113,6 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     square: {
       name: 'Square',
       description: 'Accept payments with Square - great for omnichannel businesses',
-      color: 'dark',
       icon: IconPlug,
       apiKeyLabel: 'Square Access Token',
       apiKeyPlaceholder: 'sq0atp-...',
@@ -133,7 +130,6 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     paypal: {
       name: 'PayPal',
       description: 'Accept PayPal payments - trusted by customers worldwide',
-      color: 'blue',
       icon: IconPlug,
       apiKeyLabel: 'PayPal Client ID',
       apiKeyPlaceholder: 'AY...',
@@ -386,7 +382,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
       <Stack gap="md">
         <Group justify="space-between" align="flex-start">
           <Group>
-            <ThemeIcon color={config.color} variant="light" size="lg">
+            <ThemeIcon variant="light" size="lg">
               <config.icon style={{ width: rem(20), height: rem(20) }} />
             </ThemeIcon>
             <div>
@@ -417,7 +413,6 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
             {!integration.isActive && (
               <Button
                 variant="filled"
-                color={config.color}
                 size="sm"
                 leftSection={<IconPlug style={{ width: rem(14), height: rem(14) }} />}
                 onClick={() => setIsExpanded(true)}

@@ -429,9 +429,9 @@ function voltageSections(): Section[] {
       secondaryLabel: 'New arrivals',
       secondaryHref: '/products?sort=newest',
       layout: 'overlay',
-      height: 'large',
+      height: 'medium',
       align: 'left',
-      overlayOpacity: 55,
+      overlayOpacity: 60,
     }),
     createSection('value-props', '1', {
       style: 'bar',

@@ -366,7 +366,6 @@ export default function InventoryPage() {
         id: 'export-loading',
         title: 'Exporting Data',
         message: 'Generating CSV file...',
-        color: 'blue',
         loading: true,
         autoClose: false
       });

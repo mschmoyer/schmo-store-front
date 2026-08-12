@@ -275,7 +275,7 @@ export default function TrendChart({
           <ThemeIcon size="xl" color="red" variant="light" mb="md">
             <IconAlertTriangle size="1.5rem" />
           </ThemeIcon>
-          <Text mb="md" c="red">
+          <Text mb="md" c="var(--danger-text)">
             Failed to load chart data
           </Text>
           <Text size="sm" c="dimmed" mb="md">

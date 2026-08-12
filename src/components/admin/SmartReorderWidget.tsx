@@ -307,7 +307,7 @@ export default function SmartReorderWidget({
               {rec.days_until_stockout <= 14 && (
                 <Group gap={4} mt={2}>
                   <IconAlertTriangle size="0.8rem" color="var(--warning-text)" />
-                  <Text size="xs" c="orange">
+                  <Text size="xs" c="var(--warning-text)">
                     {rec.days_until_stockout} days until stockout
                   </Text>
                 </Group>
@@ -370,11 +370,11 @@ export default function SmartReorderWidget({
           </Group>
           <Group justify="space-between" mb="xs">
             <Text size="xs">Urgent Items:</Text>
-            <Text size="xs" fw={500} c="red">{urgentCount}</Text>
+            <Text size="xs" fw={500} c="var(--danger-text)">{urgentCount}</Text>
           </Group>
           <Group justify="space-between" mb="xs">
             <Text size="xs">High Priority:</Text>
-            <Text size="xs" fw={500} c="orange">{highCount}</Text>
+            <Text size="xs" fw={500} c="var(--warning-text)">{highCount}</Text>
           </Group>
           <Group justify="space-between">
             <Text size="xs">Estimated Cost:</Text>

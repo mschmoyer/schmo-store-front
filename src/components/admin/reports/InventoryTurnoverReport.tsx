@@ -389,9 +389,9 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
         <Stack gap="md">
           <Group justify="space-between" align="flex-start">
             <div>
-              <Title order={2}>Inventory Turnover Report</Title>
-              <Text c="dimmed" size="sm" mt="xs">
-                Analyze product movement and identify optimization opportunities
+              {/* The route wrapper renders the page's h1; this repeated it. */}
+              <Text c="dimmed" size="sm">
+                Analyse product movement and identify optimisation opportunities.
               </Text>
             </div>
             <Group gap="xs">
@@ -507,7 +507,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Fast Moving
                 </Text>
-                <Text fw={700} size="xl" c="green">
+                <Text fw={700} size="xl" c="var(--success-text)">
                   {stats.fast_moving_count}
                 </Text>
               </Box>
@@ -523,7 +523,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Slow Moving
                 </Text>
-                <Text fw={700} size="xl" c="orange">
+                <Text fw={700} size="xl" c="var(--warning-text)">
                   {stats.slow_moving_count}
                 </Text>
               </Box>
@@ -539,7 +539,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Dead Stock
                 </Text>
-                <Text fw={700} size="xl" c="red">
+                <Text fw={700} size="xl" c="var(--danger-text)">
                   {stats.dead_stock_count}
                 </Text>
               </Box>

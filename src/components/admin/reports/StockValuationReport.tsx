@@ -8,7 +8,6 @@ import {
   Button,
   Stack,
   Text,
-  Badge,
   Table,
   LoadingOverlay,
   Alert,
@@ -52,6 +51,7 @@ import {
 } from 'chart.js';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { seriesColor, seriesFill } from '@/components/admin/chartPalette';
+import table from '@/components/admin/adminTable.module.css';
 
 // Register Chart.js components
 ChartJS.register(
@@ -471,9 +471,11 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
         <Stack gap="md">
           <Group justify="space-between" align="flex-start">
             <div>
-              <Title order={2}>Stock Valuation Report</Title>
-              <Text c="dimmed" size="sm" mt="xs">
-                Comprehensive analysis of inventory value and profitability
+              {/* The route wrapper already renders "Stock Valuation Report"
+                  as the page's h1; repeating it here gave the screen two
+                  identical headings 60px apart. */}
+              <Text c="dimmed" size="sm">
+                Comprehensive analysis of inventory value and profitability.
               </Text>
             </div>
             <Group gap="xs">
@@ -753,18 +755,26 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                             </Text>
                           </Table.Td>
                           {breakdownView !== 'warehouse' && (
-                            <Table.Td>
-                              <Badge 
-                                size="sm" 
-                                color={
-                                  'margin_percentage' in item && item.margin_percentage > 50 ? 'green' : 
-                                  'margin_percentage' in item && item.margin_percentage > 30 ? 'blue' : 
-                                  'orange'
+                            <Table.Td className={table.numeric}>
+                              {/* Was a three-colour pill (green / blue /
+                                  orange) that the narrow column clipped to
+                                  "110…". A margin is a number: set it as one,
+                                  right-aligned and tabular. Colour is reserved
+                                  for the one case worth flagging — a margin
+                                  thin enough to be a problem. */}
+                              <Text
+                                size="sm"
+                                fw={500}
+                                c={
+                                  'margin_percentage' in item && item.margin_percentage <= 30
+                                    ? 'var(--warning-text)'
+                                    : undefined
                                 }
-                                variant="light"
                               >
-                                {'margin_percentage' in item ? `${item.margin_percentage.toFixed(1)}%` : 'N/A'}
-                              </Badge>
+                                {'margin_percentage' in item
+                                  ? `${item.margin_percentage.toFixed(1)}%`
+                                  : '—'}
+                              </Text>
                             </Table.Td>
                           )}
                         </Table.Tr>
@@ -866,18 +876,14 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                           />
                         </Text>
                       </Table.Td>
-                      <Table.Td>
-                        <Badge 
-                          size="sm" 
-                          color={
-                            product.margin_percentage > 50 ? 'green' : 
-                            product.margin_percentage > 30 ? 'blue' : 
-                            'orange'
-                          }
-                          variant="light"
+                      <Table.Td className={table.numeric}>
+                        <Text
+                          size="sm"
+                          fw={500}
+                          c={product.margin_percentage <= 30 ? 'var(--warning-text)' : undefined}
                         >
                           {product.margin_percentage.toFixed(1)}%
-                        </Badge>
+                        </Text>
                       </Table.Td>
                     </Table.Tr>
                   ))}

@@ -10,6 +10,18 @@ import type { SectionProps } from './types';
 import styles from './Sections.module.css';
 
 /**
+ * Minimum dimming on an overlay hero, as a percentage.
+ *
+ * A floor, not a clamp. Text over a photograph is the one place in the
+ * storefront where the ground is unknowable at build time, so the scrim has to
+ * be dark enough that the worst case — light copy over a white product shot —
+ * is still legible. 55% of the palette's overlay tint takes a pure-white image
+ * to roughly 5:1 against the light ink `Sections.module.css` pairs with it. A
+ * merchant can dim further; they cannot dim below readable.
+ */
+const OVERLAY_SCRIM_FLOOR = 55;
+
+/**
  * Read a hero string setting, but only when the merchant actually wrote it.
  *
  * Three sources want to fill the headline, and they rank in this order:
@@ -90,7 +102,8 @@ export function Hero({ section, ctx }: SectionProps) {
   const layout = image ? requested : 'text-only';
   const height = pick(settings, 'height', ['small', 'medium', 'large'] as const, 'medium');
   const align = pick(settings, 'align', ['left', 'center'] as const, 'left');
-  const scrim = num(settings, 'overlayOpacity', 35, 0, 80) / 100;
+  const scrim =
+    Math.max(num(settings, 'overlayOpacity', 35, 0, 80), OVERLAY_SCRIM_FLOOR) / 100;
 
   const heightClass = {
     small: styles.heightSmall,
@@ -100,7 +113,9 @@ export function Hero({ section, ctx }: SectionProps) {
 
   const copy = (
     <div className={cx(styles.heroCopy, align === 'center' && styles.heroCopyCenter)}>
-      {eyebrow ? <span className={storeUi.eyebrow}>{eyebrow}</span> : null}
+      {eyebrow ? (
+        <span className={cx(storeUi.eyebrow, styles.heroEyebrow)}>{eyebrow}</span>
+      ) : null}
       <h1>{heading}</h1>
       {subheading ? <p className={styles.heroLead}>{subheading}</p> : null}
       {primaryLabel || secondaryLabel ? (

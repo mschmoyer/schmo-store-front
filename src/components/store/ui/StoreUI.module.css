@@ -49,7 +49,23 @@
   color: var(--st-on-brand);
 }
 
-.bandBrand :is(h1, h2, h3, h4, h5, h6) {
+/*
+ * A brand-filled band changes what "readable ink" means for everything inside
+ * it. `--st-text` and `--st-text-muted` are lifted to 4.5:1 against the *page*,
+ * not against the brand fill, so on this band they are the wrong colour by
+ * construction — a muted caption on a saturated fill was the least readable
+ * thing on the home page. Everything that paints text here is re-pointed at
+ * `--st-on-brand`, which the engine did compute against this exact fill.
+ *
+ * Controls that bring their own surface (the newsletter input, cards) are
+ * deliberately not in this list: they are still sitting on `--st-surface-raised`
+ * and their own tokens are already right for it.
+ */
+.bandBrand :is(h1, h2, h3, h4, h5, h6),
+.bandBrand p,
+.bandBrand .sectionSub,
+.bandBrand .eyebrow,
+.bandBrand .muted {
   color: var(--st-on-brand);
 }
 

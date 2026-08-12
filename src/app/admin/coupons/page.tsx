@@ -1098,7 +1098,7 @@ export default function CouponsManagementPage() {
           <Text>
             Are you sure you want to delete this {itemToDelete?.type}?
           </Text>
-          <Text fw={500} c="red">
+          <Text fw={500} c="var(--danger-text)">
             {itemToDelete?.name}
           </Text>
           <Text size="sm" c="dimmed">

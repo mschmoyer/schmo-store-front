@@ -1,9 +1,11 @@
 import {
   CONTRAST_TEXT,
   CONTRAST_UI,
+  deriveShadowTint,
   deriveTokens,
   ensureContrast,
   mix,
+  rgba,
   type ResolvedTheme,
 } from '@/lib/storefront-theme';
 
@@ -129,6 +131,14 @@ export function rendererVars(theme: ResolvedTheme, scope: string): string {
 
   const lines = [
     ...buttonVars(theme),
+    // An *opaque* scrim colour for the overlay hero.
+    //
+    // `--st-overlay` already carries an alpha (0.55 light / 0.72 dark), and the
+    // hero also applies the merchant's dimming as `opacity`, so the two
+    // multiplied: a scrim asked to be 55% landed at 40% and left white copy at
+    // 2.9:1 over a pale product shot. With an opaque tint the merchant's
+    // percentage is the only alpha in play and means exactly what it says.
+    `--stx-hero-scrim: ${rgba(deriveShadowTint(theme.brand.surface), 1)}`,
     `--stx-card-align: ${centered ? 'center' : 'left'}`,
     `--stx-card-items: ${centered ? 'center' : 'flex-start'}`,
     `--stx-image-fit: ${theme.productCard.imageFit}`,

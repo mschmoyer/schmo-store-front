@@ -97,7 +97,7 @@ export default function RichTextEditor({
 
         {/* Error Message */}
         {error && (
-          <Text size="xs" c="red">
+          <Text size="xs" c="var(--danger-text)">
             {error}
           </Text>
         )}

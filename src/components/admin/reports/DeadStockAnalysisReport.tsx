@@ -517,7 +517,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Carrying Cost
                 </Text>
-                <Text fw={700} size="xl" c="orange">
+                <Text fw={700} size="xl" c="var(--warning-text)">
                   ${stats.total_carrying_cost.toLocaleString()}
                 </Text>
               </Box>
@@ -549,7 +549,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   High Risk Items
                 </Text>
-                <Text fw={700} size="xl" c="red">
+                <Text fw={700} size="xl" c="var(--danger-text)">
                   {stats.highest_risk_items}
                 </Text>
               </Box>
@@ -565,7 +565,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Recovery Value
                 </Text>
-                <Text fw={700} size="xl" c="green">
+                <Text fw={700} size="xl" c="var(--success-text)">
                   ${stats.potential_recovery_value.toLocaleString()}
                 </Text>
               </Box>
@@ -740,7 +740,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm" c="orange">
+                      <Text size="sm" c="var(--warning-text)">
                         ${item.carrying_cost.toFixed(2)}
                       </Text>
                     </Table.Td>
@@ -821,7 +821,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
             <SimpleGrid cols={2}>
               <div>
                 <Text size="xs" c="dimmed">Carrying Cost</Text>
-                <Text fw={500} c="orange">${selectedItem.carrying_cost.toFixed(2)}</Text>
+                <Text fw={500} c="var(--warning-text)">${selectedItem.carrying_cost.toFixed(2)}</Text>
               </div>
               <div>
                 <Text size="xs" c="dimmed">Risk Score</Text>
@@ -835,7 +835,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
               </div>
               <div>
                 <Text size="xs" c="dimmed">Liquidation Value</Text>
-                <Text fw={500} c="green">${selectedItem.liquidation_value.toFixed(2)}</Text>
+                <Text fw={500} c="var(--success-text)">${selectedItem.liquidation_value.toFixed(2)}</Text>
               </div>
             </SimpleGrid>
 

@@ -31,7 +31,16 @@ interface StorefrontStyleProps {
  *     from the theme, so `headingCase: 'uppercase'` actually changes headings
  *     rather than being a variable nothing reads.
  *
- * **Why the link reset is wrapped in `:where()`.** Links must inherit their
+ * **Why the resets are wrapped in `:where()`.** The heading block has the same
+ * problem the link reset had, with the same cause: written as `${scope} h2` it
+ * scores (0,2,1) and outranks any component class that colours or sizes a
+ * heading. `.bandBrand :is(h1…h6) { color: var(--st-on-brand) }` is (0,1,1), so
+ * a heading sitting on a brand-filled newsletter band was painted in the page's
+ * ink instead of the ink computed for that fill — white on green rather than
+ * near-black on green. A reset is a floor, not an opinion, so both blocks are
+ * wrapped and every class that means something wins over them.
+ *
+ * **The link reset specifically.** Links must inherit their
  * colour instead of going UA blue, but that reset has no business outranking a
  * component. Written as `${scope} a` it scored (0,2,1) and beat every class
  * that legitimately colours a link: `.btn` resolves its foreground from
@@ -93,7 +102,8 @@ ${scope} {
   --shadow-lg: var(--st-shadow-popover);
 }
 
-${scope} h1, ${scope} h2, ${scope} h3, ${scope} h4, ${scope} h5, ${scope} h6 {
+/* Zero-specificity for the same reason the link reset is -- see baseRules. */
+:where(${scope}) :is(h1, h2, h3, h4, h5, h6) {
   font-family: var(--st-font-heading);
   font-weight: var(--st-heading-weight);
   text-transform: var(--st-heading-case);
@@ -104,14 +114,14 @@ ${scope} h1, ${scope} h2, ${scope} h3, ${scope} h4, ${scope} h5, ${scope} h6 {
   text-wrap: balance;
 }
 
-${scope} h1 { font-size: var(--st-h1); }
-${scope} h2 { font-size: var(--st-h2); }
-${scope} h3 { font-size: var(--st-h3); }
-${scope} h4 { font-size: var(--st-h4); }
-${scope} h5 { font-size: var(--st-h5); }
-${scope} h6 { font-size: var(--st-h6); }
+:where(${scope}) h1 { font-size: var(--st-h1); }
+:where(${scope}) h2 { font-size: var(--st-h2); }
+:where(${scope}) h3 { font-size: var(--st-h3); }
+:where(${scope}) h4 { font-size: var(--st-h4); }
+:where(${scope}) h5 { font-size: var(--st-h5); }
+:where(${scope}) h6 { font-size: var(--st-h6); }
 
-${scope} p { margin: 0; }
+:where(${scope}) p { margin: 0; }
 
 /* Zero-specificity on purpose -- see the note on baseRules. */
 :where(${scope}) a { color: inherit; }

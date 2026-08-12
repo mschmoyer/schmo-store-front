@@ -50,9 +50,11 @@ import {
   Timeline,
   Tooltip,
   createTheme,
+  defaultVariantColorsResolver,
   type CSSVariablesResolver,
   type MantineColorsTuple,
   type MantineThemeOverride,
+  type VariantColorsResolver,
 } from '@mantine/core';
 import { amber, azure, ember, ink, mint, rose } from '@/lib/design/tokens';
 
@@ -123,6 +125,78 @@ const darkTuple = [
   ink[950],
   '#050609',
 ] as unknown as MantineColorsTuple;
+
+/**
+ * How every Mantine variant resolves to a colour.
+ *
+ * Mantine derives `light` and `filled` from the ramp plus `primaryShade`, and
+ * `primaryShade: 9` is correct for the ink primary — but it applies to every
+ * colour, so a `color="red"` alert came out as `rose[900]` (`#3D0A06`) text on
+ * a 10% wash of the same. Measured on screen that is `rgb(61,10,6)` on
+ * `rgba(61,10,6,.1)`: a brown-grey box with near-black type. Legible, and
+ * completely mute — a danger alert that does not read as danger, a success
+ * badge that does not read as success. Colour that is present but unreadable
+ * as *meaning* is worse than no colour, because the reader learns to ignore it.
+ *
+ * So the three semantic families resolve to the measured pairs in §2 rather
+ * than to shade arithmetic, and everything else stays on the neutral surfaces.
+ *
+ * @param input - Mantine's resolver input (colour name, variant, theme).
+ * @returns The background / text / border triple for that variant.
+ */
+const rebelVariantColorResolver: VariantColorsResolver = (input) => {
+  const base = defaultVariantColorsResolver(input);
+
+  const family =
+    input.color === 'green' || input.color === 'mint'
+      ? 'success'
+      : input.color === 'orange' || input.color === 'yellow' || input.color === 'amber'
+        ? 'warning'
+        : input.color === 'red' || input.color === 'rose'
+          ? 'danger'
+          : null;
+
+  if (input.variant === 'light' || input.variant === 'outline') {
+    if (family) {
+      return {
+        background: `var(--${family}-subtle)`,
+        hover: `var(--${family}-subtle)`,
+        color: `var(--${family}-text)`,
+        border: `1px solid var(--${family}-border)`,
+      };
+    }
+    return {
+      background: input.variant === 'outline' ? 'transparent' : 'var(--surface-2)',
+      hover: 'var(--surface-inset)',
+      color: 'var(--text-primary)',
+      border: '1px solid var(--border)',
+    };
+  }
+
+  if (input.variant === 'filled' && family) {
+    return {
+      background: `var(--${family}-solid)`,
+      hover: `var(--${family}-solid)`,
+      color: '#ffffff',
+      border: `1px solid var(--${family}-solid)`,
+    };
+  }
+
+  /* Subtle/transparent: an icon-only delete button is the common case. It has
+     no fill, so all it has to say "destructive" with is its glyph colour —
+     which makes shade 9 (`#3D0A06`, indistinguishable from body ink at 18px)
+     exactly the wrong answer. */
+  if ((input.variant === 'subtle' || input.variant === 'transparent') && family) {
+    return {
+      background: 'transparent',
+      hover: `var(--${family}-subtle)`,
+      color: `var(--${family}-text)`,
+      border: '1px solid transparent',
+    };
+  }
+
+  return base;
+};
 
 const FONT_SANS = 'var(--font-sans)';
 const FONT_DISPLAY = 'var(--font-display)';
@@ -218,6 +292,8 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
     orange: amberTuple,
     red: roseTuple,
   },
+  variantColorResolver: rebelVariantColorResolver,
+
   primaryColor: 'ink',
   /*
    * Index 9 = ink-900 (#111214), the primary button fill. White on it measures

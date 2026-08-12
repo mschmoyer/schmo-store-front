@@ -190,7 +190,6 @@ export default function ShipStationIntegrationPage() {
       notifications.show({
         title: 'Copied!',
         message: `${label} copied to clipboard`,
-        color: 'blue',
         icon: <IconCopy size="1rem" />
       });
     } catch {

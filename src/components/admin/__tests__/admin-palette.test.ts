@@ -100,7 +100,28 @@ describe('admin — no colour outside the palette', () => {
      * Only the three SEMANTIC names survive — green (signal), orange/yellow
      * (warning) and red (danger).
      */
-    const banned = /\b(?:c|color|bg|bd)="(?:blue|cyan|indigo|violet|grape|pink|purple|teal|lime)(?:\.\d)?"/;
+    const HUES = 'blue|cyan|indigo|violet|grape|pink|purple|teal|lime';
+    const banned = [
+      // JSX props: color="violet"
+      new RegExp(`\\b(?:c|color|bg|bd)="(?:${HUES})(?:\\.\\d)?"`),
+      // Config objects: `color: 'indigo'` — how the integration cards carried a
+      // brand hue per vendor, which a prop-only grep walks straight past.
+      new RegExp(`\\bcolor:\\s*'(?:${HUES})'`),
+    ];
+    const offenders = adminFiles(/\.tsx?$/)
+      .filter(({ src }) => banned.some((re) => re.test(stripComments(src))))
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+  });
+
+  it('never hands a raw CSS colour keyword to an icon', () => {
+    /*
+     * `<IconTrendingUp color="green" />` is not a Mantine prop — it is an SVG
+     * attribute, so the theme never sees it and the browser paints the CSS
+     * keyword `green` (#008000). Sixteen of these were live in the admin, and
+     * they were invisible to every check that only looked at Mantine colours.
+     */
+    const banned = /<Icon[A-Za-z0-9]+\b[^>]*?\bcolor="(?:red|green|orange|yellow|blue|purple|teal|cyan|pink|gray|grey|violet|indigo)"/;
     const offenders = adminFiles(/\.tsx?$/)
       .filter(({ src }) => banned.test(stripComments(src)))
       .map(({ file }) => file);
