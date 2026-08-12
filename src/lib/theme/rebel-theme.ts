@@ -10,25 +10,44 @@
  */
 
 import {
+  Accordion,
+  ActionIcon,
+  Alert,
+  Anchor,
+  AppShell,
+  Avatar,
   Badge,
   Button,
   Card,
   Checkbox,
+  Code,
   Divider,
   Drawer,
+  Indicator,
   Input,
+  Loader,
   Menu,
   Modal,
   MultiSelect,
+  NavLink,
   NumberInput,
   Paper,
   Pagination,
+  PasswordInput,
+  Progress,
+  RingProgress,
+  SegmentedControl,
   Select,
+  Skeleton,
+  Slider,
+  Stepper,
   Switch,
   Table,
   Tabs,
   Textarea,
   TextInput,
+  ThemeIcon,
+  Timeline,
   Tooltip,
   createTheme,
   type CSSVariablesResolver,
@@ -53,10 +72,11 @@ const toTuple = (ramp: Record<number, string>): MantineColorsTuple =>
   ] as unknown as MantineColorsTuple;
 
 /*
- * Mantine ships `blue` as its own #228BE6 and any `color="blue"` in the admin
- * renders it, which is a third live colour system next to ours. Overriding the
- * ramp means a stray `color="blue"` lands on --azure-500 instead. §2: azure is
- * informational only, never a CTA.
+ * `azure` is the one informational hue §2 still permits, and it never appears
+ * on the marketing site. It is NOT wired to any Mantine name — nothing in the
+ * admin should reach for it by accident — but the ramp stays exported so an
+ * explicit `color="azure"` remains possible for a genuinely informational
+ * state.
  */
 const azureTuple = [
   azure[50],
@@ -151,9 +171,52 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
     mint: mintTuple,
     amber: amberTuple,
     rose: roseTuple,
+    azure: azureTuple,
     gray: inkTuple,
     dark: darkTuple,
-    blue: azureTuple,
+
+    /*
+     * ------------------------------------------------------------------
+     * Every Mantine hue name, re-pointed at the palette.
+     * ------------------------------------------------------------------
+     * The admin is ~11k lines of Mantine written before the design system
+     * existed, and it names hues directly: `color="blue"` on an active nav
+     * item, `color="violet"` on "View Store", `color="teal"` on an
+     * integration icon. Migrating all ~240 call sites by hand is necessary
+     * but not SUFFICIENT — the next person to type `color="cyan"` would put
+     * the hue straight back.
+     *
+     * So the hue names are redefined rather than merely avoided. There is no
+     * string an author can pass that produces a colour outside the palette:
+     *
+     *   decorative hues -> ink        (blue, cyan, indigo, violet, grape,
+     *                                  pink, purple, lime, teal)
+     *   green           -> mint       the ONE signal: money, stock, success
+     *   yellow / orange -> amber      warning
+     *   red             -> rose       destructive and error
+     *
+     * `teal` and `lime` deliberately land on INK, not on mint. They were used
+     * decoratively (an integration icon, a chart series); routing them to the
+     * signal would spray green across the admin and destroy exactly the
+     * discipline §2 is about — green means money, stock or success and
+     * nothing else. Only the literal name `green` earns the signal.
+     */
+    blue: inkTuple,
+    cyan: inkTuple,
+    indigo: inkTuple,
+    violet: inkTuple,
+    grape: inkTuple,
+    pink: inkTuple,
+    teal: inkTuple,
+    lime: inkTuple,
+    /* Not a Mantine hue at all — which is why `color="purple"` fell through to
+       the CSS named colour and rendered actual #800080 in the sidebar. */
+    purple: inkTuple,
+
+    green: mintTuple,
+    yellow: amberTuple,
+    orange: amberTuple,
+    red: roseTuple,
   },
   primaryColor: 'ink',
   /*
@@ -248,8 +311,12 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
       styles: { ...fieldStyles, input: { ...fieldStyles.input, height: 'auto' } },
     }),
 
+    PasswordInput: PasswordInput.extend({ styles: fieldStyles }),
+
     Checkbox: Checkbox.extend({ defaultProps: { radius: 'xs' } }),
-    Switch: Switch.extend({ defaultProps: { color: 'ember' } }),
+    /* Was `color: 'ember'`. The primary colour is ink, and an "on" switch is an
+       active state, not a success — §2 forbids using the signal for that. */
+    Switch: Switch.extend({ defaultProps: { color: 'ink' } }),
 
     Badge: Badge.extend({
       defaultProps: { radius: 'xl', variant: 'light' },
@@ -274,6 +341,10 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
           textTransform: 'uppercase',
           color: 'var(--text-secondary)',
         },
+        /* §5: numeric columns are tabular so digits line up down the column.
+           Applied to every cell — proportional figures in a table of money is
+           the single most common way an admin grid reads as amateur. */
+        td: { fontVariantNumeric: 'tabular-nums' },
       },
     }),
 
@@ -307,7 +378,110 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
 
     Divider: Divider.extend({ styles: { root: { borderColor: 'var(--border)' } } }),
 
-    Pagination: Pagination.extend({ defaultProps: { radius: 'xs', color: 'ember' } }),
+    Pagination: Pagination.extend({ defaultProps: { radius: 'xs' } }),
+
+    /* ----------------------------------------------------------------------
+     * Below: components the admin leans on that had no mapping at all, so they
+     * rendered stock Mantine. Each one was a visible off-palette surface.
+     * ------------------------------------------------------------------- */
+
+    /* The app shell itself. Without this the header and navbar inherit
+       Mantine's own `--mantine-color-body`, and the admin header was painting
+       a near-black gradient over the top of it. */
+    AppShell: AppShell.extend({
+      styles: {
+        header: {
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+        },
+        navbar: {
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+        },
+        main: { backgroundColor: 'var(--surface)' },
+      },
+    }),
+
+    /*
+     * §2's active-state rule, expressed once: an active nav item is weight, a
+     * `--surface-2` fill and an ink left rule — never a colour. Mantine's
+     * default paints `--mantine-primary-color-light`, which is how the sidebar
+     * ended up with a blue Dashboard, a purple View Store and a red Logout.
+     */
+    NavLink: NavLink.extend({
+      defaultProps: { color: 'ink' },
+      styles: {
+        root: {
+          borderRadius: 'var(--radius-sm)',
+          paddingBlock: 9,
+          color: 'var(--text-secondary)',
+          borderLeft: '2px solid transparent',
+        },
+        label: { fontSize: '0.9375rem', fontWeight: 500 },
+      },
+    }),
+
+    Alert: Alert.extend({
+      defaultProps: { radius: 'md', variant: 'light' },
+      styles: {
+        root: { borderWidth: 1, borderStyle: 'solid' },
+        title: { fontWeight: 600, fontSize: '0.9375rem' },
+        message: { fontSize: '0.875rem' },
+      },
+    }),
+
+    ThemeIcon: ThemeIcon.extend({ defaultProps: { variant: 'light', color: 'ink', radius: 'sm' } }),
+
+    ActionIcon: ActionIcon.extend({ defaultProps: { variant: 'subtle', color: 'ink' } }),
+
+    Anchor: Anchor.extend({
+      styles: { root: { color: 'var(--accent-text)', textUnderlineOffset: '0.2em' } },
+    }),
+
+    /* Progress bars sit under stat cards. A coloured bar per card is exactly
+       the "one tint each" pattern the dashboard was rebuilt to remove. */
+    Progress: Progress.extend({
+      defaultProps: { color: 'ink', radius: 'xl', size: 'sm' },
+      styles: { root: { backgroundColor: 'var(--surface-inset)' } },
+    }),
+
+    RingProgress: RingProgress.extend({ defaultProps: { rootColor: 'var(--surface-inset)' } }),
+
+    Loader: Loader.extend({ defaultProps: { color: 'ink', type: 'oval' } }),
+
+    Skeleton: Skeleton.extend({ defaultProps: { radius: 'sm' } }),
+
+    SegmentedControl: SegmentedControl.extend({
+      defaultProps: { radius: 'sm', color: 'ink' },
+      styles: {
+        root: { backgroundColor: 'var(--surface-inset)', border: '1px solid var(--border)' },
+        label: { fontWeight: 600, fontSize: '0.875rem' },
+      },
+    }),
+
+    Stepper: Stepper.extend({ defaultProps: { color: 'ink' } }),
+    Timeline: Timeline.extend({ defaultProps: { color: 'ink' } }),
+    Slider: Slider.extend({ defaultProps: { color: 'ink' } }),
+    Indicator: Indicator.extend({ defaultProps: { color: 'ink' } }),
+    Accordion: Accordion.extend({
+      defaultProps: { radius: 'md' },
+      styles: { control: { fontWeight: 600 }, item: { borderColor: 'var(--border)' } },
+    }),
+
+    Avatar: Avatar.extend({
+      defaultProps: { color: 'ink', radius: 'sm' },
+      styles: { root: { backgroundColor: 'var(--surface-inset)' } },
+    }),
+
+    Code: Code.extend({
+      styles: {
+        root: {
+          fontFamily: FONT_MONO,
+          backgroundColor: 'var(--surface-inset)',
+          color: 'var(--text-primary)',
+        },
+      },
+    }),
   },
 });
 

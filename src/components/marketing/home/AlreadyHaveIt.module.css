@@ -188,3 +188,13 @@
     border-inline-end: 0;
   }
 }
+
+/*
+ * TAP TARGET. `Button variant="link"` renders as inline text, which is right
+ * inside a sentence and wrong for a standalone call to action: at 24px tall it
+ * is under the 44px thumb target and it sits beside a 48px primary. Raising
+ * the box, not the type, keeps the visual weight of a link.
+ */
+.actions > a {
+  min-height: 44px;
+}

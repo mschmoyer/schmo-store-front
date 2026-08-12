@@ -57,6 +57,8 @@
 .brand {
   display: inline-flex;
   align-items: center;
+  /* The wordmark is 26–30px tall; the tappable box is not. */
+  min-height: 44px;
   text-decoration: none;
   border-radius: var(--radius-sm);
   flex: none;

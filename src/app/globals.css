@@ -410,7 +410,7 @@
    * phone's scroll on air. Scaling the scale — rather than letting each section
    * hand-roll a mobile value — is what keeps that from drifting back.
    */
-  --section-y: clamp(1.25rem, 4.5vw, 4rem);
+  --section-y: clamp(1.125rem, 4.5vw, 4rem);
   --section-y-tight: clamp(1.5rem, 3vw, 2.75rem);
 
   --stack-xs: clamp(0.5rem, 2vw, 0.75rem);
