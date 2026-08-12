@@ -83,6 +83,46 @@ async function tryConnect(url, timeoutMs = 4000) {
 }
 
 /**
+ * Hides the password in a connection string so it is safe to print.
+ *
+ * @param {string} url - Connection string.
+ * @returns {string} The same string with any password removed.
+ */
+const redact = (url) => url.replace(/:\/\/([^:@/]+)(:[^@]*)?@/, '://$1@');
+
+/**
+ * Turns a failed connection attempt into a sentence that names the real cause.
+ *
+ * The distinction that matters is "nothing is listening" versus "something is
+ * listening and rejected us" — those have completely different fixes, and
+ * conflating them is what sends people off to restart a database that was
+ * already running.
+ *
+ * @param {{code?: string, message: string}} failure - Result from `tryConnect`.
+ * @returns {{reason: string, reachable: boolean}} Explanation and whether the
+ *   server answered at all.
+ */
+function explainFailure(failure) {
+  switch (failure.code) {
+    case '28P01':
+    case '28000':
+      return { reason: `${failure.message} (${failure.code})`, reachable: true };
+    case 'ECONNREFUSED':
+      return { reason: 'nothing is listening on that host and port', reachable: false };
+    case 'ENOTFOUND':
+    case 'EAI_AGAIN':
+      return { reason: 'that hostname does not resolve', reachable: false };
+    case 'ETIMEDOUT':
+      return { reason: 'the connection timed out', reachable: false };
+    default:
+      return {
+        reason: failure.code ? `${failure.message} (${failure.code})` : failure.message,
+        reachable: false,
+      };
+  }
+}
+
+/**
  * Finds a connection string that actually works on this machine.
  *
  * Order matters: an explicit DATABASE_URL always wins, because someone who set
@@ -90,7 +130,13 @@ async function tryConnect(url, timeoutMs = 4000) {
  * `3D000` (database does not exist) counts as a success for the *server*, since
  * it proves the credentials are good and only the database is missing.
  *
- * @returns {Promise<{url: string, needsCreate: boolean} | null>} A usable target.
+ * On failure this reports every attempt and why it failed. An explicit
+ * DATABASE_URL that is merely wrong is the common case, and it looks nothing
+ * like a Postgres that is not running.
+ *
+ * @returns {Promise<{ok: true, url: string, needsCreate: boolean}
+ *   | {ok: false, explicit: boolean, attempts: Array<{url: string, reason: string, reachable: boolean}>}>}
+ *   A usable target, or the diagnosis.
  */
 async function resolveDatabaseUrl() {
   const env = readEnvFile();
@@ -106,13 +152,76 @@ async function resolveDatabaseUrl() {
         `postgresql://postgres@127.0.0.1:5432/${DB_NAME}`,
       ];
 
+  /** @type {Array<{url: string, reason: string, reachable: boolean}>} */
+  const attempts = [];
+
   for (const url of candidates) {
     const result = await tryConnect(url);
-    if (result.ok) return { url, needsCreate: false };
-    if (result.code === '3D000') return { url, needsCreate: true };
+    if (result.ok) return { ok: true, url, needsCreate: false };
+    if (result.code === '3D000') return { ok: true, url, needsCreate: true };
     // Anything else (bad password, refused) means try the next candidate.
+    attempts.push({ url, ...explainFailure(result) });
   }
-  return null;
+  return { ok: false, explicit: Boolean(explicit), attempts };
+}
+
+/**
+ * Prints why no candidate connected, and the fix that matches the cause.
+ *
+ * @param {{explicit: boolean, attempts: Array<{url: string, reason: string, reachable: boolean}>}} failure
+ * @returns {void}
+ */
+function reportConnectionFailure(failure) {
+  const { explicit, attempts } = failure;
+  const reachable = attempts.some((a) => a.reachable);
+  const user = process.env.USER || 'your-username';
+  const source = process.env.DATABASE_URL ? 'the environment' : '.env.local';
+
+  const lines = [
+    '',
+    `${C.red}Could not connect to Postgres.${C.reset}`,
+    '',
+    explicit
+      ? `Using the DATABASE_URL from ${source}:`
+      : 'Tried the usual local candidates:',
+    '',
+    ...attempts.map((a) => `  ${redact(a.url)}\n    ${C.dim}${a.reason}${C.reset}`),
+    '',
+  ];
+
+  if (reachable) {
+    // Something answered and turned us away. Restarting Postgres will not help.
+    lines.push(
+      'That server is running and accepting connections — it rejected the',
+      'credentials. Postgres does not need restarting; the connection string',
+      `does need correcting in ${source}.`,
+      '',
+      'If Postgres runs in Docker, its user and password come from the',
+      'container, and the port is the host side of its mapping:',
+      '',
+      `  ${C.dim}docker ps --format '{{.Names}}\\t{{.Ports}}'${C.reset}`,
+      `  ${C.dim}docker inspect <name> --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES${C.reset}`,
+      '',
+    );
+  } else {
+    lines.push(
+      'Nothing answered. Is Postgres running?',
+      process.platform === 'darwin'
+        ? '  brew services start postgresql@16'
+        : '  sudo service postgresql start',
+      '',
+      'Or start one in Docker:',
+      `  ${C.dim}docker run -d --name rebelshops-postgres -p 5436:5432 \\${C.reset}`,
+      `  ${C.dim}  -e POSTGRES_USER=rebelshops -e POSTGRES_PASSWORD=rebelshops_dev \\${C.reset}`,
+      `  ${C.dim}  -e POSTGRES_DB=${DB_NAME} postgres:17${C.reset}`,
+      '',
+      `Then set the matching value in ${source}:`,
+      `  DATABASE_URL=postgresql://${explicit ? 'rebelshops:rebelshops_dev@127.0.0.1:5436' : `${user}@127.0.0.1:5432`}/${DB_NAME}`,
+      '',
+    );
+  }
+
+  process.stderr.write(`${lines.join('\n')}\n`);
 }
 
 /**
@@ -228,20 +337,11 @@ async function main() {
 
   step('Finding Postgres');
   const resolved = await resolveDatabaseUrl();
-  if (!resolved) {
-    const user = process.env.USER || 'your-username';
-    process.stderr.write(
-      `\n${C.red}Could not connect to Postgres.${C.reset}\n\n`
-      + `Is it running?\n`
-      + (process.platform === 'darwin'
-        ? '  brew services start postgresql@16\n'
-        : '  sudo service postgresql start\n')
-      + `\nIf it is running under credentials this could not guess, set them in .env.local:\n`
-      + `  DATABASE_URL=postgresql://${user}@127.0.0.1:5432/${DB_NAME}\n\n`,
-    );
+  if (!resolved.ok) {
+    reportConnectionFailure(resolved);
     process.exit(1);
   }
-  ok(`connected as ${resolved.url.replace(/:\/\/([^:@/]+)(:[^@]*)?@/, '://$1@')}`);
+  ok(`connected as ${redact(resolved.url)}`);
 
   if (resolved.needsCreate) {
     step(`Creating database "${DB_NAME}"`);

@@ -75,12 +75,43 @@ auth and usually no `postgres` role at all. Docker and most Linux packages do cr
 whichever actually connects, rather than documenting one and hoping.
 
 If you already have a `DATABASE_URL` in `.env.local` it is always used as-is, on the
-assumption that you meant it.
+assumption that you meant it. That also means a stale one is not routed around — if it
+fails, `dev-local` reports the actual Postgres error and whether the server answered at
+all, so you can tell "not running" apart from "wrong password".
+
+### Running Postgres in Docker
+
+There is no native install requirement. A dedicated container keeps this project's data
+separate from anything else on your machine:
+
+```bash
+docker run -d --name rebelshops-postgres \
+  -e POSTGRES_USER=rebelshops \
+  -e POSTGRES_PASSWORD=rebelshops_dev \
+  -e POSTGRES_DB=rebelshops \
+  -p 5436:5432 --restart unless-stopped postgres:17
+```
+
+Port 5436 is deliberate — 5432 is often already taken by another project's container.
+Put the matching URL in `.env.local` before the first `dev-local` run, since the probe
+only guesses at 5432:
+
+```
+DATABASE_URL=postgresql://rebelshops:rebelshops_dev@127.0.0.1:5436/rebelshops
+```
+
+To find the values for a container you already have, the user and password come from its
+environment and the port is the host side of its mapping:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Ports}}'
+docker inspect <name> --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES
+```
 
 ### Prerequisites
 
 - **Node 22** — `nvm use` reads `.nvmrc`
-- **PostgreSQL 16+** running locally
+- **PostgreSQL 16+** — running locally or in Docker (see above)
 - Nothing else. Stripe, ShipStation and OpenAI keys are optional; every feature that needs
   one degrades to a labelled "not configured" state rather than crashing.
 
@@ -137,9 +168,11 @@ npm run test:e2e       # Playwright; needs the dev server running
 
 ### Troubleshooting
 
-- **`password authentication failed`** — run `npm run dev-local`, which probes for working
-  credentials. `scripts/seed-demo.js` also prints platform-specific guidance on this error
-  rather than a stack trace.
+- **`password authentication failed`** — with no `DATABASE_URL` set, `npm run dev-local`
+  probes for working credentials. With one set it is used as-is, so fix it there;
+  `dev-local` will tell you whether the server rejected the credentials or never answered.
+  `scripts/seed-demo.js` also prints platform-specific guidance on this error rather than
+  a stack trace.
 - **Sign-in fails** — `npm run dev-local -- --fresh` resets the demo users.
 - **A storefront 404s** — the store must be `is_public`. The seed sets this; if you toggled
   visibility in the admin, toggle it back.
