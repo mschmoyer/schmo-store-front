@@ -71,6 +71,8 @@ interface ValuationSummary {
   total_quantity: number;
   total_products: number;
   average_margin_percentage: number;
+  /** The same spread over cost. Merchants use both words; they are not the same number. */
+  average_markup_percentage: number;
   total_potential_profit: number;
 }
 
@@ -592,17 +594,27 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
           <Card withBorder p="md">
             <Group justify="space-between">
               <Box>
+                {/*
+                  * Labelled "Potential Profit" and set in the same visual
+                  * register as money the merchant has. It is neither profit
+                  * nor realisable — it is the spread on stock that has not
+                  * sold, and it only becomes profit if every unit sells at
+                  * full price. The label now says which.
+                  */}
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                  Potential Profit
+                  Unrealised Spread
                 </Text>
                 <Text fw={700} size="xl">
-                  <NumberFormatter 
-                    value={data.summary.total_potential_profit} 
-                    prefix="$" 
-                    thousandSeparator 
+                  <NumberFormatter
+                    value={data.summary.total_potential_profit}
+                    prefix="$"
+                    thousandSeparator
                     decimalScale={2}
                     fixedDecimalScale
                   />
+                </Text>
+                <Text size="xs" c="dimmed">
+                  If all stock sold at list price
                 </Text>
               </Box>
               <ThemeIcon size="lg" variant="light" color="ink">
@@ -619,6 +631,12 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                 </Text>
                 <Text fw={700} size="xl">
                   {data.summary.average_margin_percentage.toFixed(1)}%
+                </Text>
+                {/* The old figure, under its real name. It read 97.3% here
+                    while the tile said "margin", which is a 48-point error in
+                    the direction that loses a merchant money on pricing. */}
+                <Text size="xs" c="dimmed">
+                  {data.summary.average_markup_percentage.toFixed(1)}% markup on cost
                 </Text>
               </Box>
               <ThemeIcon size="lg" variant="light" color="ink">

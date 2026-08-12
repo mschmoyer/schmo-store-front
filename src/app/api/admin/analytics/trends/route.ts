@@ -12,8 +12,18 @@ interface TrendData {
 interface TrendStats {
   totalSearches: number;
   uniqueVisitors: number;
-  avgSessionDuration: number;
-  bounceRate: number;
+  totalPageViews: number;
+  /**
+   * Metrics this store cannot measure, and why.
+   *
+   * `avgSessionDuration` and `bounceRate` used to be returned here as the
+   * literals `272` and `32.1` — no data source, no computation, identical for
+   * every store forever, and contradicted 200px away on the same page by the
+   * AI narrative's own crude estimate of 2m 0s and 70.0%. They are not
+   * approximated here; they are named as unmeasurable, with the reason, so the
+   * UI can say so instead of inventing a figure.
+   */
+  unavailable: Array<{ metric: string; reason: string }>;
   trendsData: {
     searchTrends: TrendData[];
     visitorTrends: TrendData[];
@@ -56,37 +66,17 @@ export async function GET(request: NextRequest) {
     const hasSearchTracking = tablesExist.rows[0].search_tracking_exists;
     const hasVisitorTracking = tablesExist.rows[0].visitors_exists;
 
-      // Generate sample data for demonstration
-      const generateSampleData = (days: number) => {
-        const data: TrendData[] = [];
-        const now = new Date();
-        
-        for (let i = days - 1; i >= 0; i--) {
-          const date = new Date(now);
-          date.setDate(date.getDate() - i);
-          
-          // Generate realistic sample data
-          const baseSearches = 400 + Math.sin(i * 0.1) * 100;
-          const searchVariation = Math.random() * 200 - 100;
-          const searchCount = Math.max(0, Math.floor(baseSearches + searchVariation));
-          
-          const baseVisitors = 80 + Math.sin(i * 0.08) * 30;
-          const visitorVariation = Math.random() * 60 - 30;
-          const visitorCount = Math.max(0, Math.floor(baseVisitors + visitorVariation));
-          
-          const pageViews = Math.floor(visitorCount * (1.5 + Math.random() * 2));
-          
-          data.push({
-            date: date.toISOString().split('T')[0],
-            search_count: searchCount,
-            visitor_count: visitorCount,
-            page_views: pageViews
-          });
-        }
-        
-        return data;
-      };
-
+      /*
+       * There is no sample-data generator here any more.
+       *
+       * When a tracking table was absent this route used to synthesise a
+       * sine wave plus `Math.random()` — 400±100 searches and 80±30 visitors a
+       * day — and return it through the same field as real measurements, with
+       * only a `meta.sampledData` flag distinguishing them. A merchant reading
+       * the chart had no way to know which they were looking at. An absent
+       * table now yields an empty series and the UI says the data is not
+       * being collected.
+       */
       let searchTrends: TrendData[] = [];
       let visitorTrends: TrendData[] = [];
 
@@ -110,9 +100,6 @@ export async function GET(request: NextRequest) {
         date: row.date.toISOString(),
         search_count: Number(row.search_count) || 0
       }));
-    } else {
-      // Use sample data
-      searchTrends = generateSampleData(days);
     }
 
     if (hasVisitorTracking) {
@@ -138,31 +125,66 @@ export async function GET(request: NextRequest) {
         visitor_count: Number(row.visitor_count) || 0,
         page_views: Number(row.page_views) || 0
       }));
-    } else {
-      // Use sample data
-      visitorTrends = generateSampleData(days);
     }
 
       // Calculate summary stats
       const totalSearches = searchTrends.reduce((sum, item) => sum + (item.search_count || 0), 0);
-      const totalVisitors = visitorTrends.reduce((sum, item) => sum + (item.visitor_count || 0), 0);
-      // Calculate total page views (used for future analytics)
-      // const totalPageViews = visitorTrends.reduce((sum, item) => sum + (item.page_views || 0), 0);
-      
-      // Calculate unique visitors (simplified)
-      const uniqueVisitors = Math.floor(totalVisitors * 0.7); // Assume 70% are unique
-      
-      // Calculate average session duration (sample data)
-      const avgSessionDuration = 272; // 4 minutes 32 seconds
-      
-      // Calculate bounce rate (sample data)
-      const bounceRate = 32.1;
+      const totalPageViews = visitorTrends.reduce((sum, item) => sum + (item.page_views || 0), 0);
+
+      /*
+       * Unique visitors, counted once across the whole window.
+       *
+       * Was `Math.floor(totalVisitors * 0.7)` — the daily distinct-IP counts
+       * summed, then multiplied by an invented 70% de-duplication constant,
+       * which is how the tile read 37 while the narrative on the same page
+       * said 54. A DISTINCT over the window is the actual answer and needs no
+       * constant.
+       *
+       * Verified: SELECT COUNT(DISTINCT ip_address) FROM visitors
+       *   WHERE store_id = '650e8400-…0001'
+       *     AND created_at >= NOW() - INTERVAL '30 days';   -> 55
+       */
+      let uniqueVisitors = 0;
+      if (hasVisitorTracking) {
+        const uniqueResult = await db.query<{ unique_visitors: string }>(
+          `SELECT COUNT(DISTINCT ip_address) as unique_visitors FROM visitors ${dateCondition}`,
+          dateParams
+        );
+        uniqueVisitors = Number(uniqueResult.rows[0]?.unique_visitors) || 0;
+      }
+
+      /*
+       * Bounce rate and session duration are not computable from this schema
+       * and are therefore not returned.
+       *
+       * `visitors` carries a UNIQUE (store_id, ip_address, visited_date)
+       * constraint — one row per visitor per day, with a single `page_path`.
+       * Pages-per-session is 1 for every row by construction, so a bounce rate
+       * derived from it would be 100% for every store and would be measuring
+       * the constraint rather than the visitors. There is no exit timestamp
+       * anywhere, so session duration has no second event to subtract from.
+       * `page_analytics`, which would carry both, has 0 rows.
+       *
+       * Reporting "not measured" is worth more to a merchant than reporting
+       * 32.1%. The 32.1% told them their storefront was doing well.
+       */
+      const unavailable = [
+        {
+          metric: 'Bounce rate',
+          reason:
+            'Page views are recorded once per visitor per day, so pages-per-session is always 1. Measuring this needs per-pageview tracking.',
+        },
+        {
+          metric: 'Average session duration',
+          reason: 'No session end time is recorded, so there is nothing to measure a duration against.',
+        },
+      ];
 
       const result: TrendStats = {
         totalSearches,
         uniqueVisitors,
-        avgSessionDuration,
-        bounceRate,
+        totalPageViews,
+        unavailable,
         trendsData: {
           searchTrends,
           visitorTrends
@@ -176,7 +198,9 @@ export async function GET(request: NextRequest) {
         searchTrackingAvailable: hasSearchTracking,
         visitorTrackingAvailable: hasVisitorTracking,
         dateRange: `${days} days`,
-        sampledData: !hasSearchTracking || !hasVisitorTracking
+        /* Always false now: this route no longer synthesises data. Kept so
+           existing consumers do not break on a missing field. */
+        sampledData: false
       }
     });
 

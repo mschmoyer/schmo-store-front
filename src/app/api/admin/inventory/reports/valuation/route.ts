@@ -36,7 +36,10 @@ interface ValuationSummary {
   total_retail_value: number;
   total_quantity: number;
   total_products: number;
+  /** Spread over **retail**. See the summary construction below. */
   average_margin_percentage: number;
+  /** The same spread over **cost**. A different number with a different name. */
+  average_markup_percentage: number;
   total_potential_profit: number;
 }
 
@@ -98,11 +101,18 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(p.stock_quantity), 0) as quantity,
         COALESCE(SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)), 0) as cost_value,
         COALESCE(SUM(p.stock_quantity * p.base_price), 0) as retail_value,
-        CASE 
+        -- Margin divides by RETAIL. Dividing by cost is markup, and it is why
+        -- this report displayed 97.3% against a true 49.3%.
+        CASE
+          WHEN SUM(p.stock_quantity * p.base_price) = 0 THEN 0
+          ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) /
+                SUM(p.stock_quantity * p.base_price)) * 100
+        END as margin_percentage,
+        CASE
           WHEN SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)) = 0 THEN 0
-          ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) / 
+          ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) /
                 SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) * 100
-        END as margin_percentage
+        END as markup_percentage
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.store_id = $1
@@ -125,11 +135,16 @@ export async function GET(request: NextRequest) {
           COALESCE(SUM(p.stock_quantity), 0) as quantity,
           COALESCE(SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)), 0) as cost_value,
           COALESCE(SUM(p.stock_quantity * p.base_price), 0) as retail_value,
-          CASE 
+          CASE
+            WHEN SUM(p.stock_quantity * p.base_price) = 0 THEN 0
+            ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) /
+                  SUM(p.stock_quantity * p.base_price)) * 100
+          END as margin_percentage,
+          CASE
             WHEN SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)) = 0 THEN 0
-            ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) / 
+            ELSE ((SUM(p.stock_quantity * p.base_price) - SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) /
                   SUM(p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6))) * 100
-          END as margin_percentage
+          END as markup_percentage
         FROM products p
         LEFT JOIN purchase_order_items poi ON p.sku = poi.product_sku
         LEFT JOIN purchase_orders po ON poi.purchase_order_id = po.id
@@ -181,10 +196,16 @@ export async function GET(request: NextRequest) {
         p.base_price as retail_price,
         p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6) as total_cost_value,
         p.stock_quantity * p.base_price as total_retail_value,
-        CASE 
+        -- Per-row values of 108%, 117% and 110% were the giveaway: a margin
+        -- above 100% is arithmetically impossible. Those were markups.
+        CASE
+          WHEN p.base_price = 0 THEN 0
+          ELSE ((p.base_price - COALESCE(p.cost_price, p.base_price * 0.6)) / p.base_price) * 100
+        END as margin_percentage,
+        CASE
           WHEN COALESCE(p.cost_price, p.base_price * 0.6) = 0 THEN 0
           ELSE ((p.base_price - COALESCE(p.cost_price, p.base_price * 0.6)) / COALESCE(p.cost_price, p.base_price * 0.6)) * 100
-        END as margin_percentage
+        END as markup_percentage
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.store_id = $1
@@ -236,9 +257,38 @@ export async function GET(request: NextRequest) {
       total_retail_value: Number(currentValue.total_retail_value) || 0,
       total_quantity: Number(currentValue.total_quantity) || 0,
       total_products: Number(currentValue.total_products) || 0,
-      average_margin_percentage: Number(currentValue.total_cost_value) > 0
+      /*
+       * MARGIN vs MARKUP.
+       *
+       * This divided the spread by COST and called the result "margin", so the
+       * report headlined AVG MARGIN 97.3% where the true gross margin is 49.3%.
+       * A merchant reading 97.3% believes they keep 97 cents on the dollar;
+       * they keep 49, and pricing decisions made on that number lose money.
+       *
+       * Both figures are now returned under their real names. Merchants use
+       * both words and mean different things by them.
+       *
+       * Verified:
+       *   SELECT SUM(stock_quantity * base_price) AS retail,
+       *          SUM(stock_quantity * COALESCE(cost_price, base_price*0.6)) AS cost
+       *     FROM products WHERE store_id = '650e8400-…0001'
+       *      AND is_active AND stock_quantity > 0;
+       *   -> retail 43958.00, cost 22275.99
+       *      margin (43958.00-22275.99)/43958.00 = 49.3%
+       *      markup (43958.00-22275.99)/22275.99 = 97.3%
+       */
+      average_margin_percentage: Number(currentValue.total_retail_value) > 0
+        ? ((Number(currentValue.total_retail_value) - Number(currentValue.total_cost_value)) / Number(currentValue.total_retail_value)) * 100
+        : 0,
+      average_markup_percentage: Number(currentValue.total_cost_value) > 0
         ? ((Number(currentValue.total_retail_value) - Number(currentValue.total_cost_value)) / Number(currentValue.total_cost_value)) * 100
         : 0,
+      /*
+       * Unrealised spread on stock that has not sold. It is not profit, it is
+       * not realisable, and it was presented in the same visual register as
+       * money the merchant has. The name now says so; the component labels it
+       * accordingly.
+       */
       total_potential_profit: Number(currentValue.total_retail_value) - Number(currentValue.total_cost_value)
     };
 
@@ -270,7 +320,12 @@ export async function GET(request: NextRequest) {
           total_retail_value: Number(previous.total_retail_value) || 0,
           total_quantity: Number(previous.total_quantity) || 0,
           total_products: Number(previous.total_products) || 0,
-          average_margin_percentage: Number(previous.total_cost_value) > 0
+          // Same denominator fix as the current period, so the two halves of
+          // the comparison are the same measurement.
+          average_margin_percentage: Number(previous.total_retail_value) > 0
+            ? ((Number(previous.total_retail_value) - Number(previous.total_cost_value)) / Number(previous.total_retail_value)) * 100
+            : 0,
+          average_markup_percentage: Number(previous.total_cost_value) > 0
             ? ((Number(previous.total_retail_value) - Number(previous.total_cost_value)) / Number(previous.total_cost_value)) * 100
             : 0,
           total_potential_profit: Number(previous.total_retail_value) - Number(previous.total_cost_value)

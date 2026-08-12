@@ -109,10 +109,16 @@ describe('reallyCompletedSteps', () => {
  * ------------------------------------------------------------------ */
 
 describe('presets never write a promise on the merchant’s behalf', () => {
-  it('ships the announcement bar off, and empty', () => {
+  // `announcement` is optional on the theme. Omitting it entirely is the
+  // strongest form of "no promise", so absent passes; if a preset does define
+  // one it must be off and empty.
+  it('ships the announcement bar absent, or off and empty', () => {
     for (const [id, preset] of Object.entries(PRESETS)) {
-      expect(preset.theme.header.announcement.enabled).toBe(false);
-      expect(preset.theme.header.announcement.text).toBe('');
+      const announcement = preset.theme.header?.announcement;
+      if (announcement !== undefined) {
+        expect(announcement.enabled).toBe(false);
+        expect(announcement.text).toBe('');
+      }
       expect(id).toBeTruthy();
     }
   });
@@ -123,7 +129,7 @@ describe('presets never write a promise on the merchant’s behalf', () => {
     const forbidden =
       /next-day|same-day|free shipping|free samples|net-30|subscribe and save|\d+% off|\bwithin \d+ days\b/i;
     for (const preset of Object.values(PRESETS)) {
-      expect(preset.theme.header.announcement.text).not.toMatch(forbidden);
+      expect(preset.theme.header?.announcement?.text ?? '').not.toMatch(forbidden);
     }
   });
 });
