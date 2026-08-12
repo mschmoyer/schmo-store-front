@@ -136,7 +136,9 @@ test.describe('the purchase journey stays inside the merchant\'s shop', () => {
       const addToCart = page.getByRole('button', { name: /add to cart/i });
       await expect(addToCart).toBeVisible();
       await addToCart.click();
-      await expect(page.getByRole('status')).toContainText(/added to your cart/i);
+      await expect(
+        page.getByRole('status').filter({ hasText: /added to your cart/i }),
+      ).toBeVisible();
 
       // Cart.
       await page.goto(`${base}/cart`);
@@ -146,7 +148,9 @@ test.describe('the purchase journey stays inside the merchant\'s shop', () => {
       await page.goto(`${base}/checkout`);
       await expect(page.locator('div.storefront[data-store-id]')).toHaveCount(1);
       await expect(page.getByRole('heading', { name: /review your order/i })).toBeVisible();
-      await expect(page.getByLabel(/^email/i)).toBeVisible();
+      // `#email` and not `getByLabel`: the footer newsletter also labels an
+      // email field, and the point here is the *checkout* form.
+      await expect(page.locator('#email')).toBeVisible();
 
       // Order confirmation, forced — no demo store can complete a Stripe
       // payment, so the confirmation is reached directly. Its *error* branch is
@@ -203,69 +207,113 @@ test.describe('the purchase journey stays inside the merchant\'s shop', () => {
  * ------------------------------------------------------------------ */
 
 test.describe('auto-contrast survives the tag a button is written with', () => {
-  for (const store of STORES) {
-    test(`an <a class=btn> and a <button class=btn> match on ${store.slug}`, async ({ page }) => {
-      await page.goto(`/store/${store.slug}`);
+  /**
+   * Plant three identical `.btn` controls in one container and measure all
+   * three, in a single round trip.
+   *
+   * Two reasons it is one `evaluate` rather than an inject-then-locate pair.
+   * Correctness: sampling real buttons off the page compares different grounds
+   * — the hero CTA sits on a band, quick-add sits on a card's image tile — so a
+   * difference in measured contrast would prove nothing about the tag. And
+   * stability: the dev server hot-reloads, and a fast refresh between injecting
+   * a probe and reading it takes the probe with it.
+   *
+   * @param {import('@playwright/test').Page} page - The page under test
+   * @returns {Promise<{link: object, button: object, disabled: object}>} Composited colours
+   */
+  function measureProbes(page) {
+    return page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const paint = (color, backdrop) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = backdrop;
+        ctx.fillRect(0, 0, 1, 1);
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1, 1);
+        const data = ctx.getImageData(0, 0, 1, 1).data;
+        return [data[0], data[1], data[2]];
+      };
+      const read = (el) => {
+        const chain = [];
+        for (let node = el; node; node = node.parentElement) {
+          chain.unshift(getComputedStyle(node).backgroundColor);
+        }
+        let bg = [255, 255, 255];
+        for (const layer of chain) bg = paint(layer, `rgb(${bg.join(',')})`);
+        const style = getComputedStyle(el);
+        return { fg: paint(style.color, `rgb(${bg.join(',')})`), bg, fgCss: style.color };
+      };
 
-      // Same class, same variable, different tag, in the same container: the
-      // exact comparison the specificity bug failed. A probe pair is injected
-      // rather than sampled from the page so the two provably share a ground.
-      const probe = await page.evaluate(() => {
-        const model = document.querySelector('a[class*="btn"]');
-        if (!model) return null;
-        const host = document.createElement('div');
-        host.id = '__contrast-probe';
-        const link = document.createElement('a');
-        link.className = model.className;
-        link.href = '#';
-        link.textContent = 'Probe';
-        const button = document.createElement('button');
-        button.className = model.className;
-        button.textContent = 'Probe';
-        host.append(link, button);
-        model.parentElement.append(host);
-        return {
-          link: getComputedStyle(link).color,
-          button: getComputedStyle(button).color,
-          linkBg: getComputedStyle(link).backgroundColor,
-          buttonBg: getComputedStyle(button).backgroundColor,
-        };
-      });
+      const model = document.querySelector('[data-section-type="hero"] a[class*="btn"]');
+      if (!model) throw new Error('the hero has no button-shaped link to model');
 
-      expect(probe, 'the store should render at least one button-shaped link').not.toBeNull();
-      expect(probe.link).toBe(probe.button);
-      expect(probe.linkBg).toBe(probe.buttonBg);
-    });
+      const host = document.createElement('div');
+      host.style.display = 'flex';
+      host.style.gap = '8px';
 
-    test(`the primary hero CTA clears AA on ${store.slug}`, async ({ page }) => {
-      await page.goto(`/store/${store.slug}`);
-      const cta = page.locator('[data-section-type="hero"] a[class*="btn"]').first();
-      await expect(cta).toBeVisible();
+      const link = document.createElement('a');
+      link.className = model.className;
+      link.href = '#';
+      link.textContent = 'Probe';
 
-      const { fg, bg } = await inkAndGround(cta);
-      const ratio = contrast(fg, bg);
-      expect(ratio, `hero CTA measured ${ratio.toFixed(2)}:1 on ${store.slug}`).toBeGreaterThanOrEqual(AA_TEXT);
+      const button = document.createElement('button');
+      button.className = model.className;
+      button.textContent = 'Probe';
+
+      const dead = document.createElement('button');
+      dead.className = model.className;
+      dead.disabled = true;
+      dead.textContent = 'Out of stock';
+
+      host.append(link, button, dead);
+      model.parentElement.append(host);
+
+      const result = {
+        link: read(link),
+        button: read(button),
+        disabled: read(dead),
+      };
+      host.remove();
+      return result;
     });
   }
 
-  test('a disabled button stays readable', async ({ page }) => {
-    await page.goto('/store/demo-electronics');
+  for (const store of STORES) {
+    test(`an <a class=btn> and a <button class=btn> match on ${store.slug}`, async ({ page }) => {
+      await page.goto(`/store/${store.slug}`);
+      const { link, button } = await measureProbes(page);
 
-    // Disabled is information — "Out of stock" is the highest-intent message on
-    // a product page — and `opacity: .5` on a brand fill took it to 1.71:1.
-    const probe = page.locator('#__disabled-probe');
-    await page.evaluate(() => {
-      const model = document.querySelector('button[class*="btn"]');
-      const clone = model.cloneNode(true);
-      clone.id = '__disabled-probe';
-      clone.disabled = true;
-      model.parentElement.append(clone);
+      // Same class, same variable, same parent, different tag: the exact
+      // comparison the specificity bug failed.
+      expect(link.fgCss, `<a> and <button> must resolve the same ink on ${store.slug}`).toBe(
+        button.fgCss,
+      );
+      expect(link.fg).toEqual(button.fg);
+      expect(link.bg).toEqual(button.bg);
     });
 
-    const { fg, bg } = await inkAndGround(probe);
-    const ratio = contrast(fg, bg);
-    expect(ratio, `disabled button measured ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_TEXT);
-  });
+    test(`the primary CTA and its disabled twin clear AA on ${store.slug}`, async ({ page }) => {
+      await page.goto(`/store/${store.slug}`);
+      const { link, disabled } = await measureProbes(page);
+
+      const cta = contrast(link.fg, link.bg);
+      expect(cta, `primary CTA measured ${cta.toFixed(2)}:1 on ${store.slug}`).toBeGreaterThanOrEqual(
+        AA_TEXT,
+      );
+
+      // Disabled is information — "Out of stock" is the highest-intent message
+      // on a product page — and a blanket `opacity: .5` on a brand fill took it
+      // to 1.71:1 on a solid preset and 1.75:1 on an outline one.
+      const dead = contrast(disabled.fg, disabled.bg);
+      expect(
+        dead,
+        `disabled button measured ${dead.toFixed(2)}:1 on ${store.slug}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    });
+  }
 });
 
 /* ------------------------------------------------------------------ *

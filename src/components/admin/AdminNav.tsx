@@ -47,12 +47,33 @@ interface NavGroup {
  * hue — Dashboard blue, Products orange, Inventory teal, Coupons purple, AI
  * violet, Blog indigo — which is decoration standing in for structure: eleven
  * hues told you nothing about which screens belong together. Four headings do.
+ *
+ * Fourteen declared items (eleven enabled) was too many for a merchant with one
+ * employee and ten minutes. The list is now eight, and the changes are all
+ * about matching the nav to the jobs rather than to the database:
+ *
+ * - **Orders is added, second.** It is the most-visited screen in any store
+ *   admin and it had no route at all — 27 orders and 51 tracking numbers with
+ *   no door into them.
+ * - **Purchase Orders is removed** as a top-level item. It is already a tab
+ *   inside Inventory, and two doors to one room cost a slot each.
+ * - **Coupons is removed** as a top-level item and reached from Products. A
+ *   merchant edits promotions monthly, not daily, and a coupon is part of
+ *   pricing the catalog.
+ * - **AI Assistant is removed.** Four of its seven cards read "Coming Soon";
+ *   a top-level slot advertising unbuilt features to a paying customer is the
+ *   worst trade in the nav. The three working generators stay reachable at
+ *   `/admin/ai` for anyone who has the link.
+ *
+ * The routes still exist and still work — this is an information-architecture
+ * change, not a deletion.
  */
 const NAV_GROUPS: NavGroup[] = [
   {
     heading: 'Overview',
     items: [
       { label: 'Dashboard', icon: IconDashboard, href: '/admin', enabled: true },
+      { label: 'Orders', icon: IconTruckDelivery, href: '/admin/orders', enabled: true },
       { label: 'Analytics', icon: IconChartLine, href: '/admin/analytics', enabled: true },
     ],
   },
@@ -61,22 +82,25 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Products', icon: IconShoppingCart, href: '/admin/products', enabled: true },
       { label: 'Inventory', icon: IconPackage, href: '/admin/inventory', enabled: true },
+      { label: 'Categories', icon: IconCategory, href: '/admin/categories', enabled: false },
+      /* Reached from Products → Pricing & promotions. */
+      { label: 'Coupons & Discounts', icon: IconTicket, href: '/admin/coupons', enabled: false },
+      /* Reached from Inventory → Purchase Orders. */
       {
         label: 'Purchase Orders',
         icon: IconTruckDelivery,
         href: '/admin/purchase-orders',
-        enabled: true,
+        enabled: false,
       },
-      { label: 'Categories', icon: IconCategory, href: '/admin/categories', enabled: false },
     ],
   },
   {
     heading: 'Selling',
     items: [
-      { label: 'Coupons & Discounts', icon: IconTicket, href: '/admin/coupons', enabled: true },
       { label: 'Page Design', icon: IconPalette, href: '/admin/design', enabled: true },
       { label: 'Blog', icon: IconArticle, href: '/admin/blog', enabled: true },
-      { label: 'AI Assistant', icon: IconBrain, href: '/admin/ai', enabled: true },
+      /* Three working generators behind four "Coming Soon" cards. Not a destination. */
+      { label: 'AI Assistant', icon: IconBrain, href: '/admin/ai', enabled: false },
     ],
   },
   {

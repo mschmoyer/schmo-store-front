@@ -27,6 +27,7 @@ import {
   IconPlug,
   IconShoppingCart,
   IconTrendingUp,
+  IconTruckDelivery,
   IconUsers,
   IconWorld,
   IconX,
@@ -46,6 +47,16 @@ interface Product {
   stock_quantity: number;
   featured_image_url: string | null;
   sales_count?: number;
+  gross_profit?: number | string;
+}
+
+interface ProfitPeriod {
+  revenue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number;
+  orderCount: number;
+  units: number;
 }
 
 interface DashboardData {
@@ -56,12 +67,33 @@ interface DashboardData {
       createdAt: string;
     };
     siteVisitors: number;
+    siteVisitorsAllTime: number;
     lowStockCount: number;
     revenue: {
       totalRevenue: number;
       monthlyRevenue: number;
       totalOrders: number;
       monthlyOrders: number;
+    };
+    profit: {
+      windowDays: number;
+      allTime: ProfitPeriod;
+      window: ProfitPeriod;
+      prior: ProfitPeriod;
+      delta: {
+        revenue: number | null;
+        grossProfit: number | null;
+        marginPoints: number | null;
+        orderCount: number | null;
+      };
+    };
+    orders: {
+      unshippedCount: number;
+      unshippedValue: number;
+      ageingCount: number;
+      ageingValue: number;
+      oldestUnshippedDays: number;
+      ageingThresholdDays: number;
     };
   };
   recentActivity: unknown[];
@@ -73,6 +105,27 @@ const ICON = { size: 18, stroke: 1.6 } as const;
 
 /** Pluralises a count into "1 order" / "3 orders". */
 const orders = (count: number) => `${count.toLocaleString('en-US')} ${count === 1 ? 'order' : 'orders'}`;
+
+const money = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+/**
+ * Renders a period-over-period change as a signed percentage.
+ *
+ * A number with nothing to compare it to cannot tell you whether the month was
+ * good, which is why every headline figure on this page now carries one. When
+ * the prior period was zero the API sends `null` rather than an infinity
+ * dressed up as `+100%`, and this renders the honest version of that.
+ *
+ * @param delta - Percentage change, or `null` when there is no baseline.
+ * @param label - What the comparison is against.
+ * @returns The meta line for a stat card.
+ */
+function deltaLine(delta: number | null, label: string): string {
+  if (delta === null) return `No ${label} to compare against`;
+  const sign = delta >= 0 ? '+' : '−';
+  return `${sign}${Math.abs(delta).toFixed(1)}% vs ${label}`;
+}
 
 export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -305,25 +358,102 @@ export default function AdminDashboard() {
        * `format="currency"` means no caller has to reach for `Math.round` to
        * make money fit a number-shaped hole again.
        */}
+      {/*
+       * WHAT IS STUCK.
+       *
+       * Placed above the tiles because it is the only thing on this page that
+       * is losing the merchant a customer right now. The number existed in the
+       * database the whole time; the closest the admin came to showing it was
+       * an Inventory tile reading "Pending orders / 5 / Awaiting delivery",
+       * which a merchant reads as five restocks arriving, not as five people
+       * who have been waiting two months for something they paid for.
+       */}
+      {stats.orders.ageingCount > 0 ? (
+        <Alert
+          icon={<IconAlertTriangle size="1rem" />}
+          color="red"
+          variant="light"
+          title={`${stats.orders.ageingCount} order${stats.orders.ageingCount === 1 ? '' : 's'} unshipped for more than ${stats.orders.ageingThresholdDays} days`}
+        >
+          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+            <Text size="sm">
+              {money(stats.orders.ageingValue)} is paid for and has not left the building. The
+              oldest has been waiting <strong>{stats.orders.oldestUnshippedDays} days</strong>.
+            </Text>
+            <Button size="xs" onClick={() => router.push('/admin/orders?status=unshipped')}>
+              Open orders
+            </Button>
+          </Group>
+        </Alert>
+      ) : null}
+
+      {/*
+       * THE PROFIT ROW.
+       *
+       * "Track your profits" was not a true claim: the word *profit* appeared
+       * in exactly one place in the whole admin, on the valuation report, where
+       * it meant unrealised spread on unsold stock and divided by the wrong
+       * denominator. Everything needed was already in the database —
+       * `cost_price` on all 36 products, `unit_price` on every line — and is
+       * now four tiles.
+       *
+       * Each carries a prior-period comparison because a number with no
+       * comparison cannot answer "was this a good month".
+       */}
       <StatGrid min={172}>
         <StatCard
-          label="Total revenue"
-          value={stats.revenue.totalRevenue}
+          label={`Revenue, last ${stats.profit.windowDays} days`}
+          value={stats.profit.window.revenue}
           format="currency"
-          meta={`${orders(stats.revenue.totalOrders)} all time`}
+          meta={deltaLine(stats.profit.delta.revenue, `prior ${stats.profit.windowDays} days`)}
           icon={<IconCurrencyDollar {...ICON} />}
+          href="/admin/orders"
         />
         <StatCard
-          label="Revenue this month"
-          value={stats.revenue.monthlyRevenue}
+          label={`Gross profit, last ${stats.profit.windowDays} days`}
+          value={stats.profit.window.grossProfit}
           format="currency"
-          meta={`${orders(stats.revenue.monthlyOrders)} this month`}
+          meta={`${money(stats.profit.window.cogs)} cost of goods`}
+          tone={stats.profit.window.grossProfit > 0 ? 'signal' : 'neutral'}
           icon={<IconTrendingUp {...ICON} />}
+        />
+        <StatCard
+          label="Gross margin"
+          value={`${stats.profit.window.marginPct.toFixed(1)}%`}
+          format="raw"
+          meta={
+            stats.profit.delta.marginPoints === null
+              ? 'Share of revenue kept after cost of goods'
+              : `${stats.profit.delta.marginPoints >= 0 ? '+' : '−'}${Math.abs(stats.profit.delta.marginPoints).toFixed(1)} points vs prior period`
+          }
+        />
+        <StatCard
+          label="Needs shipping"
+          value={stats.orders.unshippedCount}
+          meta={`${money(stats.orders.unshippedValue)} paid, nothing dispatched`}
+          tone={stats.orders.ageingCount > 0 ? 'danger' : stats.orders.unshippedCount > 0 ? 'warning' : 'neutral'}
+          icon={<IconTruckDelivery {...ICON} />}
+          href="/admin/orders?status=unshipped"
+        />
+      </StatGrid>
+
+      <StatGrid min={172}>
+        <StatCard
+          label="Booked revenue, all time"
+          value={stats.revenue.totalRevenue}
+          format="currency"
+          meta={`${orders(stats.revenue.totalOrders)}, cancellations excluded`}
+        />
+        <StatCard
+          label="Gross profit, all time"
+          value={stats.profit.allTime.grossProfit}
+          format="currency"
+          meta={`${stats.profit.allTime.marginPct.toFixed(1)}% margin on ${money(stats.profit.allTime.revenue)} of goods`}
         />
         <StatCard
           label="Site visitors"
           value={stats.siteVisitors}
-          meta="This month"
+          meta={`Last ${stats.profit.windowDays} days · ${stats.siteVisitorsAllTime.toLocaleString('en-US')} all time`}
           icon={<IconUsers {...ICON} />}
         />
         <StatCard
@@ -339,7 +469,11 @@ export default function AdminDashboard() {
           value={stats.lowStockCount}
           /* Tone tracks the number, not the card's position in the row. */
           tone={stats.lowStockCount > 0 ? 'warning' : 'neutral'}
-          meta={stats.lowStockCount > 0 ? 'Products need restocking' : 'Everything is stocked'}
+          meta={
+            stats.lowStockCount > 0
+              ? 'At or below their reorder point'
+              : 'Everything is above its reorder point'
+          }
           icon={<IconAlertTriangle {...ICON} />}
           href="/admin/inventory"
         />
@@ -361,13 +495,15 @@ export default function AdminDashboard() {
             </Title>
 
             {data.topProducts.length > 0 ? (
-              <Table.ScrollContainer minWidth={380}>
+              <Table.ScrollContainer minWidth={420}>
                 <Table>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Product</Table.Th>
-                      <Table.Th className={styles.numeric}>Price</Table.Th>
                       <Table.Th className={styles.numeric}>Sold</Table.Th>
+                      {/* Best-selling and most-profitable are different lists,
+                          and the merchant needs to see both in one glance. */}
+                      <Table.Th className={styles.numeric}>Gross profit</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -387,10 +523,10 @@ export default function AdminDashboard() {
                             </Text>
                           </Group>
                         </Table.Td>
-                        <Table.Td className={styles.numeric}>
-                          <Price value={Number(product.base_price)} size="sm" />
-                        </Table.Td>
                         <Table.Td className={styles.numeric}>{product.sales_count || 0}</Table.Td>
+                        <Table.Td className={styles.numeric}>
+                          <Price value={Number(product.gross_profit ?? 0)} size="sm" />
+                        </Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>

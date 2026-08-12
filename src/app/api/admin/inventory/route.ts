@@ -228,9 +228,35 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Calculate inventory statistics
+    /*
+     * INVENTORY STATISTICS — THE JOIN FAN-OUT.
+     *
+     * This query used to aggregate over
+     *   FROM products p LEFT JOIN inventory_logs il ON p.id = il.product_id
+     * which multiplies every product by its number of log rows. Each aggregate
+     * in the tile row was therefore inflated by however much stock movement a
+     * product happened to have had:
+     *
+     *   Total products    45  ->  12   (+275%)
+     *   Total value  $77,755.47 -> $22,275.99  (+249%)
+     *   Low stock          4  ->   2
+     *   Out of stock       4  ->   1
+     *
+     * The grid immediately below the tiles listed 12 products and one
+     * out-of-stock item, so the page visibly contradicted itself — and this is
+     * the number a merchant uses for insurance and for loan applications.
+     *
+     * The fix is to aggregate `products` alone and get the one figure that
+     * genuinely needs `inventory_logs` from a scalar subquery, where a
+     * many-rows-per-product relationship cannot fan anything out.
+     *
+     * Verified:
+     *   SELECT COUNT(*), SUM(stock_quantity * COALESCE(cost_price, base_price))
+     *     FROM products WHERE store_id = '650e8400-…0001';
+     *   -> 12 | 22275.99   — which now matches the valuation report exactly.
+     */
     const statsQuery = `
-      SELECT 
+      SELECT
         COUNT(*) as total_products,
         COUNT(CASE WHEN stock_quantity > low_stock_threshold THEN 1 END) as in_stock_items,
         COUNT(CASE WHEN stock_quantity <= low_stock_threshold AND stock_quantity > 0 THEN 1 END) as low_stock_items,
@@ -238,16 +264,32 @@ export async function GET(request: NextRequest) {
         SUM(stock_quantity * COALESCE(cost_price, base_price)) as total_value,
         SUM(stock_quantity) as total_on_hand,
         AVG(COALESCE(cost_price, base_price)) as average_cost_per_item,
-        COUNT(CASE WHEN il.created_at >= NOW() - INTERVAL '30 days' AND il.change_type = 'restock' THEN 1 END) as restocked_this_month
-      FROM products p
-      LEFT JOIN inventory_logs il ON p.id = il.product_id
-      WHERE p.store_id = $1
+        (
+          SELECT COUNT(*)
+          FROM inventory_logs il
+          WHERE il.store_id = p_outer.store_id
+            AND il.change_type = 'restock'
+            AND il.created_at >= NOW() - INTERVAL '30 days'
+        ) as restocked_this_month
+      FROM products p_outer
+      WHERE p_outer.store_id = $1
+      GROUP BY p_outer.store_id
     `;
 
     const statsResult = await db.query(statsQuery, [user.storeId]);
     const stats = statsResult.rows[0] || {};
 
-    // Get pending purchase orders count (mock for now)
+    /*
+     * Customer orders awaiting fulfilment — NOT inbound purchase orders.
+     *
+     * The comment here used to read "Get pending purchase orders count (mock
+     * for now)" and the tile it fed was labelled "Pending orders / Awaiting
+     * delivery" in a row of inventory tiles, so a merchant read five restocks
+     * arriving. It is in fact five *customers* who have been waiting, and for
+     * this store they had been waiting 61 to 73 days. The count is unchanged;
+     * the naming now says what it counts, and the Orders page is where it is
+     * properly surfaced.
+     */
     const pendingOrdersQuery = `
       SELECT COUNT(*) as pending_orders
       FROM orders

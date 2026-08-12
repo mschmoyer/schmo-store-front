@@ -80,6 +80,20 @@ export interface ProductImageProps extends Omit<React.HTMLAttributes<HTMLDivElem
  * @param src - Candidate image URL.
  * @returns True when the value is safe to hand to `next/image`.
  */
+/**
+ * Whether a src points at a host we do not control.
+ *
+ * Exported for tests: asserting on Next's rendered output is unreliable, since
+ * jsdom does not rewrite optimized sources through /_next/image the way a real
+ * server does. The decision itself is what matters and is worth testing.
+ *
+ * @param src - Image URL.
+ * @returns True for absolute http(s) URLs, false for root-relative paths.
+ */
+export function isRemoteSrc(src: string): boolean {
+  return /^https?:\/\//i.test(src.trim());
+}
+
 function isRenderableSrc(src: string | null | undefined): src is string {
   if (!src) return false;
   const value = src.trim();
@@ -186,6 +200,24 @@ export const ProductImage = React.forwardRef<HTMLDivElement, ProductImageProps>(
             blurDataURL={mark.blurDataURL}
             className={cn(styles.image, styles[fit], imageClassName)}
             onError={() => setFailed(true)}
+            // Remote images bypass the optimizer.
+            //
+            // These URLs come from merchant ShipStation catalogues and point at
+            // hosts we do not control and cannot enumerate: their own domain,
+            // cdn.shopify.com, S3, Cloudinary. Relying on `images.remotePatterns`
+            // meant a host we had not listed threw "Invalid src prop" during
+            // render and took the entire page down — and because next.config is
+            // only read at server start, the fix did not even apply until the
+            // dev server was restarted. Two different merchant hosts crashed two
+            // different admin pages that way.
+            //
+            // `unoptimized` removes the dependency on that config completely, so
+            // no future merchant host can ever crash a page. The cost is that we
+            // do not resize or re-encode these; that is the right trade, since
+            // they are already served from the merchant's own CDN and a crash is
+            // infinitely worse than an unoptimised image. Our own assets, which
+            // are root-relative, still go through the optimizer.
+            unoptimized={isRemoteSrc(src as string)}
           />
         )}
       </div>

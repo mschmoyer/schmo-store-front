@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { ProductImage, getProductMark } from '../ProductImage';
+import { ProductImage, getProductMark, isRemoteSrc } from '../ProductImage';
 import {
   MARK_HUE_ARC,
   MARK_INK_RAMP,
@@ -253,5 +253,35 @@ describe('unusable src values fall back to the generated mark', () => {
   ])('%s is passed through to next/image', (_label, value) => {
     const { container } = render(<ProductImage src={value} name="Aviator Headphones" sku="BCA-1001" />);
     expect(container.querySelector('img')).not.toBeNull();
+  });
+});
+
+describe('remote merchant images bypass the image optimizer', () => {
+  // Merchant image URLs point at hosts we neither control nor can enumerate.
+  // Depending on images.remotePatterns meant an unlisted host threw "Invalid
+  // src prop" during render and took the whole page down — and since
+  // next.config is read only at server start, the config fix did not even
+  // apply until a restart. Two different merchant hosts crashed two admin
+  // pages that way. `unoptimized` removes the dependency entirely.
+  it.each([
+    'https://cdn.shopify.com/s/files/1/0573/IMG_0968.jpg',
+    'https://shopsunnytails.com/cdn/shop/files/collar.jpg',
+    'http://images.example.com/a.png',
+  ])('treats %s as remote', (src) => {
+    expect(isRemoteSrc(src)).toBe(true);
+  });
+
+  it.each([
+    '/demo/products/hearth-ceramic-mug.svg',
+    '/brand/logo-horizontal.svg',
+  ])('treats %s as ours, so it keeps the optimizer', (src) => {
+    expect(isRemoteSrc(src)).toBe(false);
+  });
+
+  it('renders an external URL without crashing', () => {
+    const { container } = render(
+      <ProductImage src="https://cdn.shopify.com/s/files/1/0573/IMG_0968.jpg" name="Collar" sku="X-1" />,
+    );
+    expect(container.querySelector('img')?.getAttribute('src')).toContain('cdn.shopify.com');
   });
 });
