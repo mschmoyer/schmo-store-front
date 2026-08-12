@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
 import { Rail } from '../parts/Rail';
@@ -158,7 +157,7 @@ export function WhatYouGet(): React.JSX.Element {
       </Rail>
 
       <div className={styles.actions}>
-        <Button as={Link} href={ROUTES.features} variant="secondary" size="md">
+        <Button href={ROUTES.features} variant="secondary" size="md">
           See what&rsquo;s included
         </Button>
         <p className={styles.microcopy}>

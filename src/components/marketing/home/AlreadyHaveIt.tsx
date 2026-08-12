@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button, Eyebrow } from '@/components/ui';
 import { ROUTES } from '../data/routes';
 import { Section } from '../parts/Section';
@@ -49,7 +48,7 @@ export function AlreadyHaveIt(): React.JSX.Element {
         </p>
 
         <div className={styles.actions}>
-          <Button as={Link} href={ROUTES.signUp} size="lg">
+          <Button href={ROUTES.signUp} size="lg">
             Connect ShipStation
           </Button>
           <p className={styles.microcopy}>

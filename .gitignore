@@ -49,3 +49,6 @@ next-env.d.ts
 /playwright-report
 /test-results
 .scratch/
+
+# vercel — local project link (project/org ids), not shared state
+.vercel

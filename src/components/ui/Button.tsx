@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import NextLink from 'next/link';
 import { cn } from '@/lib/design/cn';
 import { Spinner } from './Spinner';
 import styles from './Button.module.css';
@@ -31,10 +32,15 @@ export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonE
    * Render as a different element — `'a'`, `next/link`, or any component that
    * forwards `className` and `ref`. Lets a link carry button styling without
    * nesting an `<a>` inside a `<button>`.
-   * @default 'button'
+   *
+   * Server Components must not pass a component here: a function cannot cross
+   * the Server/Client boundary (React throws "Functions cannot be passed
+   * directly to Client Components"). Pass `href` on its own instead — the
+   * button then renders `next/link` itself, from inside this client module.
+   * @default 'button', or `next/link` when `href` is set
    */
   as?: React.ElementType;
-  /** Convenience passthrough when `as` renders an anchor. */
+  /** Renders the button as a `next/link` unless `as` overrides the element. */
   href?: string;
 }
 
@@ -56,6 +62,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
     fullWidth = false,
     iconOnly = false,
     as,
+    href,
     className,
     children,
     disabled,
@@ -64,13 +71,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   },
   ref
 ) {
-  const Component: React.ElementType = as ?? 'button';
+  const Component: React.ElementType = as ?? (href ? NextLink : 'button');
   const isNativeButton = Component === 'button';
   const isInert = Boolean(disabled) || loading;
 
   return (
     <Component
       ref={ref}
+      href={href}
       className={cn(
         styles.root,
         styles[variant],

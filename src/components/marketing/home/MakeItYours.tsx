@@ -37,7 +37,7 @@ export function MakeItYours({ stores }: MakeItYoursProps): React.JSX.Element {
           subhead="Set your store name, description and hero copy, pick a color theme, and publish. Your products render in a responsive catalog with search, a cart and a checkout. Every store gets clean URLs and product metadata search engines can read."
         />
         <div className={styles.headActions}>
-          <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
+          <Button href={ROUTES.demoStores} variant="secondary" size="lg">
             See a live store
           </Button>
           <p className={styles.microcopy}>Change anything later. Republishing takes a click.</p>

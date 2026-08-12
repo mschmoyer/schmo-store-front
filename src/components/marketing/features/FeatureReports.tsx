@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import type { ZeroResultSearch } from '../data/showcase';
 import { ROUTES } from '../data/routes';
@@ -124,7 +123,7 @@ export function FeatureReports({ searches }: FeatureReportsProps): React.JSX.Ele
               supplier record, export it as a PDF, and receive it back into stock.
             </p>
             <div className={styles.actions}>
-              <Button as={Link} href={ROUTES.signUp} size="md">
+              <Button href={ROUTES.signUp} size="md">
                 Start for $1
               </Button>
               <p className={styles.microcopy}>Export any inventory view to CSV.</p>

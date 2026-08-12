@@ -88,7 +88,7 @@ export function DemoStoreCard({ store, priority = false }: DemoStoreCardProps): 
         ) : null}
 
         <div className={styles.actions}>
-          <Button as={Link} href={storeUrl(store.slug)} size="md">
+          <Button href={storeUrl(store.slug)} size="md">
             Open this store
           </Button>
           <span className={styles.note}>Search it, add to cart, walk the checkout.</span>

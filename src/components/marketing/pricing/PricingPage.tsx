@@ -1,6 +1,5 @@
 import * as React from 'react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Button, Eyebrow } from '@/components/ui';
 import { SiteHeader } from '../chrome/SiteHeader';
 import { SiteFooter } from '../chrome/SiteFooter';
@@ -63,7 +62,7 @@ export function PricingPage(): React.JSX.Element {
             </p>
 
             <div className={styles.headActions}>
-              <Button as={Link} href={ROUTES.signUp} size="lg">
+              <Button href={ROUTES.signUp} size="lg">
                 Start for $1
               </Button>
               {/* The card carries "No card required to start" at the point of

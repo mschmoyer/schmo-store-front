@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
 import { Section } from '../parts/Section';
@@ -19,10 +18,10 @@ export function FinalCta(): React.JSX.Element {
         Connect ShipStation, see your products in a real store, and decide in twenty minutes.
       </p>
       <div className={styles.actions}>
-        <Button as={Link} href={ROUTES.signUp} size="lg">
+        <Button href={ROUTES.signUp} size="lg">
           Start for $1
         </Button>
-        <Button as={Link} href={ROUTES.demoStores} variant="link" size="lg">
+        <Button href={ROUTES.demoStores} variant="link" size="lg">
           Open a demo store
         </Button>
       </div>

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { SiteHeader } from '@/components/marketing/chrome/SiteHeader';
 import { SiteFooter } from '@/components/marketing/chrome/SiteFooter';
@@ -46,7 +45,7 @@ export default async function DemoStoresPage() {
             </>
           }
         >
-          <Button as={Link} href={ROUTES.signUp} size="lg">
+          <Button href={ROUTES.signUp} size="lg">
             Start for $1
           </Button>
         </PageHead>

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
 import { Rail } from '../parts/Rail';
@@ -76,7 +75,7 @@ export function ProofSection(): React.JSX.Element {
           <div key={card.title} className={styles.card}>
             <h3 className={styles.cardTitle}>{card.title}</h3>
             <p className={styles.cardBody}>{card.body}</p>
-            <Button as={Link} href={card.href} variant="link" size="md">
+            <Button href={card.href} variant="link" size="md">
               {card.cta}
               <span aria-hidden="true"> →</span>
             </Button>

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button, Eyebrow } from '@/components/ui';
 import type { ShowcaseProduct, ShowcaseStore } from '../data/showcase';
 import { ROUTES } from '../data/routes';
@@ -47,10 +46,10 @@ export function Hero({ store, rows, focus }: HeroProps): React.JSX.Element {
           </p>
 
           <div className={styles.actions}>
-            <Button as={Link} href={ROUTES.signUp} size="lg">
+            <Button href={ROUTES.signUp} size="lg">
               Start for $1
             </Button>
-            <Button as={Link} href={ROUTES.demoStores} variant="link" size="lg">
+            <Button href={ROUTES.demoStores} variant="link" size="lg">
               See a live store
             </Button>
           </div>

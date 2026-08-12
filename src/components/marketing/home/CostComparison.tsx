@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import {
   MONTHLY_PRICE,
@@ -108,7 +107,7 @@ export function CostComparison(): React.JSX.Element {
       </div>
 
       <div className={styles.actions}>
-        <Button as={Link} href={ROUTES.comparison} variant="link" size="md">
+        <Button href={ROUTES.comparison} variant="link" size="md">
           See the full twelve-month table
           <span aria-hidden="true"> →</span>
         </Button>

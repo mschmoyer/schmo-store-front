@@ -1,11 +1,11 @@
 # Schmo Store Front
 
-A modern e-commerce storefront built with Next.js 15, TypeScript, and Mantine UI, integrated with ShipStation APIs for real-time product and inventory management.
+A modern e-commerce storefront built with Next.js 16, TypeScript, and Mantine UI, integrated with ShipStation APIs for real-time product and inventory management.
 
 ## Tech Stack
 
 ### Frontend
-- **Framework**: Next.js 15 (App Router) with Turbopack
+- **Framework**: Next.js 16 (App Router) with Turbopack, the default bundler for both `dev` and `build`
 - **UI Library**: Mantine v8 with form validation and notifications
 - **Styling**: TailwindCSS v4 with PostCSS
 - **Icons**: Tabler Icons (@tabler/icons-react), FontAwesome
@@ -294,8 +294,7 @@ The application uses PostgreSQL with a comprehensive schema including:
 - `npm run test:e2e:ui` - Run Playwright with interactive UI
 
 ### Background Services
-- `npm run sync:background` - Run background sync (Heroku Scheduler)
-- `npm run sync:test` - Test sync operations manually
+- `npm run sync:background` - Run background sync (invoked by Vercel Cron via `/api/cron/sync`)
 
 ## Deployment
 
@@ -320,14 +319,22 @@ OPENAI_API_KEY=your_openai_key
 SYNC_AUTH_TOKEN=your_sync_token
 ```
 
-### Heroku Deployment
-1. Set up PostgreSQL database
-2. Configure environment variables
-3. Deploy application
-4. Run database migrations
-5. Set up Heroku Scheduler for background sync
+### Vercel Deployment
 
-See `docs/heroku-scheduler-setup.md` for detailed deployment instructions.
+Production runs on Vercel at **rebelshops.com**.
+
+1. Provision Postgres. Neon through the Vercel Marketplace (`vercel integration add neon`) sets
+   `DATABASE_URL`, `DATABASE_URL_UNPOOLED` and `POSTGRES_URL_NON_POOLING` on the project itself —
+   `database/migrate.js` reads the unpooled one, because its advisory lock needs a direct
+   (non-PgBouncer) connection.
+2. Set `CRON_SECRET` and `SYNC_AUTH_TOKEN`, plus the Stripe, OpenAI and ShipStation keys.
+3. Migrations run from the build command in `vercel.json`
+   (`node database/migrate.js && npm run build`), so a missing connection string fails the deploy
+   before Next.js ever builds.
+4. Cron schedules are declared in `vercel.json` under `crons`; Vercel calls
+   `GET /api/cron/sync` with `Authorization: Bearer $CRON_SECRET`.
+
+See `docs/deployment-vercel.md` for the full runbook.
 
 ## Development Guidelines
 

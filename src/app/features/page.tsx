@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { SiteHeader } from '@/components/marketing/chrome/SiteHeader';
 import { SiteFooter } from '@/components/marketing/chrome/SiteFooter';
@@ -43,10 +42,10 @@ export default async function FeaturesPage() {
           title="In the box, not in an app store."
           lede="Inventory valuation, dead-stock and turnover reports, purchase orders and supplier records ship in the box. On Shopify Basic those are apps."
         >
-          <Button as={Link} href={ROUTES.signUp} size="lg">
+          <Button href={ROUTES.signUp} size="lg">
             Start for $1
           </Button>
-          <Button as={Link} href={ROUTES.comparison} variant="secondary" size="lg">
+          <Button href={ROUTES.comparison} variant="secondary" size="lg">
             See the 12-month math
           </Button>
         </PageHead>

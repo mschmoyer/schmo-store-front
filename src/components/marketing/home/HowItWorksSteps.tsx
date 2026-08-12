@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Badge, Button, Input } from '@/components/ui';
 import { ROUTES } from '../data/routes';
 import { Rail } from '../parts/Rail';
@@ -105,7 +104,7 @@ export function HowItWorksSteps({
           Realistically: under 20 minutes from API key to a live store you can send someone.
         </p>
         {hideCta ? null : (
-          <Button as={Link} href={ROUTES.signUp} size="lg">
+          <Button href={ROUTES.signUp} size="lg">
             Start for $1
           </Button>
         )}

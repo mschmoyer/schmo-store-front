@@ -1,5 +1,4 @@
 import * as React from 'react';
-import Link from 'next/link';
 import { Badge, Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
 import { Rail } from '../parts/Rail';
@@ -100,7 +99,7 @@ export function PlanCard({
       {/* Not `fullWidth`: stretched to the card it rendered 505px wide, which
           made the same label ship at five different widths down the page. */}
       <div className={styles.cta}>
-        <Button as={Link} href={ROUTES.signUp} size="lg">
+        <Button href={ROUTES.signUp} size="lg">
           Start for $1
         </Button>
         <p className={styles.microcopy}>

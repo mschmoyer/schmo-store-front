@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { SiteHeader } from '@/components/marketing/chrome/SiteHeader';
 import { SiteFooter } from '@/components/marketing/chrome/SiteFooter';
@@ -48,10 +47,10 @@ export default function HowItWorksPage() {
           title="Three steps. One sitting."
           lede="Times below are real, measured on a catalog of a few hundred SKUs. A very large catalog takes longer to sync — you don’t have to sit and watch it."
         >
-          <Button as={Link} href={ROUTES.signUp} size="lg">
+          <Button href={ROUTES.signUp} size="lg">
             Start for $1
           </Button>
-          <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
+          <Button href={ROUTES.demoStores} variant="secondary" size="lg">
             See a live store
           </Button>
         </PageHead>
