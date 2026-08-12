@@ -231,24 +231,24 @@
 
 /* Two columns from the tablet breakpoint up: copy left, facsimile right. */
 @media (min-width: 860px) {
-  .withFigures .step {
+  .steps .step {
     grid-template-columns: 40px minmax(0, 1fr) minmax(0, 0.92fr);
     column-gap: var(--space-6);
     align-items: start;
   }
 
-  .withFigures .stepTime {
+  .steps .stepTime {
     grid-column: 3;
     justify-self: end;
   }
 
-  .withFigures .stepCopy {
+  .steps .stepCopy {
     grid-column: 2;
     grid-row: 2;
     margin-top: -32px;
   }
 
-  .withFigures .figure {
+  .steps .figure {
     grid-column: 3;
     grid-row: 2;
     margin-top: -32px;
@@ -256,37 +256,32 @@
 }
 
 /* ------------------------------------------------------------ compact --
- * The homepage variant: three columns side by side instead of a vertical
- * rail. Same three steps, same timings, same copy — 420px instead of 1,040px.
- * The deep version with the screen facsimiles stays on /how-it-works.
+ * The homepage variant, laid out by `parts/Rail`: three cards in a horizontal
+ * snap rail below 760px, three bordered-off columns above it. Same three
+ * steps, same timings, same copy — the deep version with the screen facsimiles
+ * stays on /how-it-works.
  */
 
 .compact {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6);
-  border-top: 1px solid var(--border);
   margin-top: var(--stack-md);
 }
 
-.compact .step {
+.compactStep {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-3);
-  padding-block: var(--space-6);
-  border-top: 0;
-  border-bottom: 0;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 
-.compact .step::before {
-  display: none;
-}
-
-.compact .stepHead {
+.compactHead {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  margin-bottom: var(--space-1);
 }
 
 .compact .stepNumber {
@@ -295,22 +290,20 @@
   font-size: 0.9375rem;
 }
 
-.compact .stepCopy {
-  gap: var(--space-2);
-}
-
-@media (min-width: 860px) {
-  .compact {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-8);
-  }
-
-  .compact .step {
+@media (min-width: 760px) {
+  /*
+   * Above the rail breakpoint the cards lose their boxes and become columns
+   * divided by the site's hairline — the composition the desktop rebuild was
+   * approved at. `li` is the wrapper `parts/Rail` puts around each child.
+   */
+  .compactStep {
+    padding: 0 0 0 var(--space-6);
+    border: 0;
     border-inline-start: 1px solid var(--border);
-    padding-inline-start: var(--space-6);
+    border-radius: 0;
   }
 
-  .compact .step:first-child {
+  .compact > li:first-child > .compactStep {
     border-inline-start: 0;
     padding-inline-start: 0;
   }

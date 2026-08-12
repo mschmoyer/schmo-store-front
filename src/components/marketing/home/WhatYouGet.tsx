@@ -2,6 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
+import { Rail } from '../parts/Rail';
 import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './WhatYouGet.module.css';
@@ -141,14 +142,20 @@ export function WhatYouGet(): React.JSX.Element {
         </figure>
       </div>
 
-      <ul className={styles.list}>
+      {/*
+        Three long paragraphs stacked were 650px of phone scroll. As a rail
+        they are one card tall, and — because these three entries are what is
+        left of three whole sections — being able to see that there are three
+        of them is part of the argument.
+      */}
+      <Rail label="What the price includes" divided className={styles.list}>
         {CAPABILITIES.map((item) => (
-          <li key={item.title} className={styles.entry}>
+          <div key={item.title} className={styles.entry}>
             <h3 className={styles.entryTitle}>{item.title}</h3>
             <p className={styles.entryBody}>{item.body}</p>
-          </li>
+          </div>
         ))}
-      </ul>
+      </Rail>
 
       <div className={styles.actions}>
         <Button as={Link} href={ROUTES.features} variant="secondary" size="md">

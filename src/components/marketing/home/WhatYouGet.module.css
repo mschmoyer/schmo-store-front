@@ -21,17 +21,11 @@
 /* ------------------------------------------------------------ capabilities */
 
 .list {
-  list-style: none;
-  margin: var(--stack-md) 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  border-top: 1px solid var(--border);
+  margin-top: var(--stack-md);
 }
 
 .entry {
-  padding-block: var(--space-5);
-  border-bottom: 1px solid var(--border);
+  height: 100%;
 }
 
 .entryTitle {
@@ -184,21 +178,22 @@
   color: var(--danger);
 }
 
-@media (min-width: 860px) {
-  .list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    border-bottom: 1px solid var(--border);
+/*
+ * The log table is the one artifact kept from three deleted sections, and at
+ * 390px its four columns ran 447px wide inside a 342px measure. Tightening the
+ * cells and letting the single long operation name break brings it inside the
+ * screen, so the labelled scroll region it sits in never actually has to
+ * scroll on a phone.
+ */
+@media (max-width: 759px) {
+  .table thead th,
+  .table tbody td {
+    padding-inline: var(--space-2-5);
   }
 
-  .entry {
-    border-bottom: 0;
-    border-inline-start: 1px solid var(--border);
-    padding-inline: var(--space-6);
-  }
-
-  .entry:first-child {
-    border-inline-start: 0;
-    padding-inline-start: 0;
+  .op {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

@@ -33,13 +33,24 @@ const ALL_SOURCE = sourceFiles(MARKETING_DIR)
   .join('\n');
 
 /**
- * Strips JSDoc and line comments so notes-to-maintainers are not scanned, and
- * removes the copy deck's own sanctioned "No testimonials yet" eyebrow so the
- * banned-phrase sweep below does not trip on the disclaimer itself.
+ * Strips JSDoc and line comments so notes-to-maintainers are not scanned, then
+ * removes *honestly negated* mentions of proof before the banned-phrase sweep.
+ *
+ * The rule being enforced is "publish no fabricated proof", not "never type the
+ * word testimonial". Those are different, and conflating them makes it
+ * impossible to state the absence out loud — which is exactly what the copy
+ * deck §3.9 requires us to do, with an eyebrow reading "No testimonials yet".
+ *
+ * An earlier version stripped the literal string "No testimonials yet" and
+ * nothing else, so it broke the moment an adjacent aria-label read "Evidence
+ * instead of testimonials". A list of sanctioned literals grows forever and
+ * fails on the next honest phrasing; matching the negation itself does not.
  */
+const NEGATED_PROOF = /\b(no|not|zero|without|instead of|never)\b[^.;<>{}]{0,40}?\b(testimonials?|reviews?|ratings?|logos?)\b/gi;
+
 const RENDERED_SOURCE = ALL_SOURCE.replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '')
-  .replace(/[Nn]o testimonials( yet)?/g, '');
+  .replace(NEGATED_PROOF, '');
 
 describe('proof rules (copy deck §3.9)', () => {
   it.each([
@@ -58,6 +69,17 @@ describe('proof rules (copy deck §3.9)', () => {
     const json = JSON.stringify(landingPageStructuredData);
     expect(json).not.toContain('aggregateRating');
     expect(json).not.toContain('"review"');
+  });
+
+  it('renders no attributed quote, which is the shape fabricated proof takes', () => {
+    // Banning words catches a lie phrased one way. This catches the *form*: a
+    // quotation attributed to a person or company. The page previously shipped
+    // exactly this, as an invented review from a "Sarah Johnson" fed to search
+    // engines as structured data.
+    expect(RENDERED_SOURCE).not.toMatch(/<blockquote/i);
+    expect(RENDERED_SOURCE).not.toMatch(/\bcite=/i);
+    // An em-dash attribution: — Name, Company
+    expect(RENDERED_SOURCE).not.toMatch(/[—–]\s*[A-Z][a-z]+ [A-Z][a-z]+\s*,\s*[A-Z]/);
   });
 });
 
