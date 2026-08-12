@@ -415,7 +415,7 @@
 
   --stack-xs: clamp(0.5rem, 2vw, 0.75rem);
   --stack-sm: clamp(0.875rem, 2.5vw, 1.25rem);
-  --stack-md: clamp(1.25rem, 4vw, 2rem);
+  --stack-md: clamp(1rem, 4vw, 2rem);
   --stack-lg: clamp(1.75rem, 5vw, 3rem);
 
   /*

@@ -76,7 +76,8 @@
 }
 
 .note {
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  line-height: 1.5;
   color: var(--text-muted);
   max-width: 46ch;
 }
@@ -110,7 +111,7 @@
 .fairPara {
   margin: 0;
   font-size: var(--text-sm);
-  line-height: 1.65;
+  line-height: 1.55;
   color: var(--text-muted);
   max-width: 78ch;
 }
@@ -169,6 +170,10 @@
   .rowLabel,
   .note {
     grid-column: auto;
+  }
+
+  .note {
+    font-size: var(--text-sm);
   }
 
   /* The row header and column position carry the meaning at this width. */

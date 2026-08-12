@@ -61,7 +61,7 @@
   grid-auto-columns: min(46vw, 240px);
 }
 
-@media (min-width: 760px) {
+@media (min-width: 860px) {
   .rail {
     grid-auto-flow: row;
     grid-auto-columns: auto;
@@ -90,7 +90,7 @@
   padding-inline-start: var(--space-5);
 }
 
-@media (min-width: 760px) {
+@media (min-width: 860px) {
   .divided {
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);

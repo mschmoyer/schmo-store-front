@@ -38,7 +38,7 @@
   color: var(--text-muted);
 }
 
-@media (min-width: 760px) {
+@media (min-width: 860px) {
   .card {
     padding: var(--space-6);
   }

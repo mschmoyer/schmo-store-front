@@ -290,7 +290,7 @@
   font-size: 0.9375rem;
 }
 
-@media (min-width: 760px) {
+@media (min-width: 860px) {
   /*
    * Above the rail breakpoint the cards lose their boxes and become columns
    * divided by the site's hairline — the composition the desktop rebuild was

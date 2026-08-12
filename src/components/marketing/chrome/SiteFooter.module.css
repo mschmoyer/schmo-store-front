@@ -26,7 +26,7 @@
   margin: 0;
   max-width: 42ch;
   font-size: var(--text-sm);
-  line-height: 1.65;
+  line-height: 1.55;
   color: #85898f;
 }
 
@@ -78,7 +78,7 @@
   justify-content: space-between;
   width: 100%;
   max-width: var(--container-content);
-  margin: clamp(24px, 7vw, 64px) auto 0;
+  margin: clamp(16px, 7vw, 64px) auto 0;
   padding: 20px var(--gutter) 0;
   border-top: 1px solid #2a2c30;
 }
