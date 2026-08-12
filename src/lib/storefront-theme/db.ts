@@ -192,7 +192,7 @@ export async function getDraftTheme(storeId: string): Promise<ResolvedThemeRecor
   // their own shop rather than from a blank slate.
   const published = await getPublishedTheme(storeId);
   const seedTheme = published?.raw ?? {};
-  const seedSections = published?.sections ?? defaultSections();
+  const seedSections = published?.sections ?? presetSections(published?.raw?.preset);
   return saveDraft(storeId, seedTheme, seedSections);
 }
 
@@ -346,9 +346,9 @@ export async function resetDraft(storeId: string): Promise<ResolvedThemeRecord> 
     : ({} as StorefrontThemeInput);
   const sections = publishedRow
     ? normalizeSections(parseJson(publishedRow.sections) ?? []).sections
-    : defaultSections();
+    : presetSections(theme.preset);
 
-  return saveDraft(storeId, theme, sections.length > 0 ? sections : defaultSections());
+  return saveDraft(storeId, theme, sections.length > 0 ? sections : presetSections(theme.preset));
 }
 
 /**

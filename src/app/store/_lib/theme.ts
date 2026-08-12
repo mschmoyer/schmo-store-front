@@ -1,6 +1,6 @@
 import {
-  defaultSections,
   isPreviewAuthorized,
+  presetSections,
   resolveTheme,
   themeFromLegacyName,
   type ResolvedTheme,
@@ -58,7 +58,10 @@ export async function getStorefrontTheme(
     if (record) {
       return {
         theme: record.theme,
-        sections: record.sections.length > 0 ? record.sections : defaultSections(),
+        // A row with no sections falls back to the *preset's* page, not to one
+        // generic list: the composition is part of the look the merchant chose.
+        sections:
+          record.sections.length > 0 ? record.sections : presetSections(record.theme.preset),
         isPreview: wantsDraft,
         source: wantsDraft ? 'draft' : 'published',
       };
@@ -68,9 +71,10 @@ export async function getStorefrontTheme(
     console.error('[storefront] theme lookup failed, falling back to legacy mapping', error);
   }
 
+  const legacy = themeFromLegacyName(store.themeName);
   return {
-    theme: resolveTheme(themeFromLegacyName(store.themeName)),
-    sections: defaultSections(),
+    theme: resolveTheme(legacy),
+    sections: presetSections(legacy.preset),
     isPreview: wantsDraft,
     source: 'legacy',
   };

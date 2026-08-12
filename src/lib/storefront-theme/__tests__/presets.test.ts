@@ -6,9 +6,18 @@
  */
 
 import { FONTS } from '../fonts';
-import { LEGACY_THEME_MAP, PRESETS, PRESET_IDS, PRESET_LIST, getPreset, themeFromLegacyName } from '../presets';
+import {
+  LEGACY_THEME_MAP,
+  PRESETS,
+  PRESET_IDS,
+  PRESET_LIST,
+  getPreset,
+  presetSections,
+  themeFromLegacyName,
+} from '../presets';
 import { resolveTheme } from '../resolve';
-import { storefrontThemeInputSchema } from '../types';
+import { SECTION_REGISTRY, normalizeSections } from '../sections';
+import { sectionsSchema, storefrontThemeInputSchema } from '../types';
 
 describe('preset registry', () => {
   it('ships the six presets the contract names', () => {
@@ -121,6 +130,28 @@ describe('presets are six designs, not six hues', () => {
     expect(PRESET_LIST.some((p) => p.theme.brand.scheme === 'dark')).toBe(true);
   });
 
+  it('gives every preset its own section composition', () => {
+    const compositions = spread((p) => JSON.stringify(p.sections));
+    expect(compositions.size).toBe(6);
+  });
+
+  it('varies the *order and choice* of sections, not only their copy', () => {
+    // Two presets could carry different words in the same seven boxes and still
+    // be one design. The sequence of types is the composition itself.
+    const sequences = spread((p) => p.sections.map((s) => s.type).join(' > '));
+    expect(sequences.size).toBe(6);
+  });
+
+  it('opens each preset on a headline of its own', () => {
+    const headlines = PRESET_LIST.map((p) => {
+      const hero = p.sections.find((section) => section.type === 'hero');
+      expect(hero).toBeDefined();
+      return String(hero?.settings.heading ?? '');
+    });
+    for (const headline of headlines) expect(headline.length).toBeGreaterThan(10);
+    expect(new Set(headlines).size).toBe(6);
+  });
+
   it('makes every preset structurally distinct from every other', () => {
     const fingerprints = PRESET_LIST.map((p) =>
       JSON.stringify({
@@ -133,6 +164,64 @@ describe('presets are six designs, not six hues', () => {
       }),
     );
     expect(new Set(fingerprints).size).toBe(6);
+  });
+});
+
+describe('preset section compositions', () => {
+  it('ships a usable home page with every preset', () => {
+    for (const preset of PRESET_LIST) {
+      expect(preset.sections.length).toBeGreaterThan(3);
+      const parsed = sectionsSchema.safeParse(preset.sections);
+      expect(parsed.success ? 'ok' : JSON.stringify(parsed.error.issues)).toBe('ok');
+    }
+  });
+
+  it('survives the same normalisation a stored section list goes through', () => {
+    for (const preset of PRESET_LIST) {
+      const { sections, problems } = normalizeSections(preset.sections);
+      expect(problems).toEqual([]);
+      expect(sections).toHaveLength(preset.sections.length);
+    }
+  });
+
+  it('respects each section type\'s per-page cap', () => {
+    for (const preset of PRESET_LIST) {
+      const counts = new Map<string, number>();
+      for (const section of preset.sections) {
+        counts.set(section.type, (counts.get(section.type) ?? 0) + 1);
+      }
+      for (const [type, count] of counts) {
+        expect(count).toBeLessThanOrEqual(SECTION_REGISTRY[type as never].maxPerPage);
+      }
+    }
+  });
+
+  it('leads with a hero and enables every section it ships', () => {
+    for (const preset of PRESET_LIST) {
+      expect(preset.sections[0].type).toBe('hero');
+      expect(preset.sections.every((section) => section.enabled)).toBe(true);
+    }
+  });
+
+  it('hands out a deep copy so one store cannot edit the shipped preset', () => {
+    const first = presetSections('voltage');
+    first[0].settings.heading = 'mutated';
+    first.pop();
+    expect(presetSections('voltage')[0].settings.heading).not.toBe('mutated');
+    expect(presetSections('voltage')).toHaveLength(PRESETS.voltage.sections.length);
+    expect(PRESETS.voltage.sections[0].settings.heading).not.toBe('mutated');
+  });
+
+  it('falls back to the generic starter page for an unknown preset', () => {
+    expect(presetSections('who-knows').length).toBeGreaterThan(0);
+    expect(presetSections(undefined).length).toBeGreaterThan(0);
+  });
+
+  it('leaves hero art to the store so a merchant sees their own photograph', () => {
+    for (const preset of PRESET_LIST) {
+      const hero = preset.sections.find((section) => section.type === 'hero');
+      expect(hero?.settings.image).toBe('');
+    }
   });
 });
 

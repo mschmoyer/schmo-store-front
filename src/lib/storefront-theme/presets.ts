@@ -835,9 +835,11 @@ export function getPreset(id: string | undefined): PresetDefinition | undefined 
 export function presetSections(id: string | undefined): Section[] {
   const preset = getPreset(id);
   const source = preset ? preset.sections : defaultSections();
+  // Settings are JSONB by definition, so a JSON round-trip is a complete deep
+  // copy here and works in every runtime this module is imported from.
   return source.map((section) => ({
     ...section,
-    settings: structuredClone(section.settings),
+    settings: JSON.parse(JSON.stringify(section.settings)) as Record<string, unknown>,
   }));
 }
 

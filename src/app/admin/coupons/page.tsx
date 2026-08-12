@@ -17,7 +17,6 @@ import {
   NumberInput,
   Textarea,
   Tabs,
-  SimpleGrid,
   Loader,
   Center,
   Collapse,
@@ -43,6 +42,9 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { EmptyState, Price } from '@/components/ui';
+import { StatCard, StatGrid } from '@/components/admin/StatCard';
+import table from '@/components/admin/adminTable.module.css';
 
 interface Discount {
   id: string;
@@ -529,62 +531,46 @@ export default function CouponsManagementPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} mb="xs">
-            Coupons & Discounts
-          </Title>
-          <Text c="dimmed">
-            Manage promotional codes and discount offers for your store
-          </Text>
-        </div>
-      </Group>
+      <AdminPageHeader
+        title="Coupons & discounts"
+        description="Promotional codes and automatic discounts for your store."
+      />
 
-      {/* Stats Cards */}
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Active Coupons</Text>
-            <IconTicket size={20} color="var(--text-primary)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {coupons.filter(c => c.is_active).length}
-          </Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Discounts</Text>
-            <IconPercentage size={20} color="var(--success-text)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {discounts.length}
-          </Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Uses</Text>
-            <IconCurrencyDollar size={20} color="var(--warning-text)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {coupons.reduce((sum, c) => sum + c.current_uses, 0)}
-          </Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Avg. Discount</Text>
-            <IconPercentage size={20} color="var(--text-primary)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {discounts.length > 0 
+      {/*
+        Four cards, one treatment. The icons used to be tinted individually — a
+        green percent, an amber dollar — which is decoration: none of those
+        numbers is money, stock or success, so none of them earns a colour.
+        Average discount is a percentage, hence `format="raw"`.
+      */}
+      <StatGrid min={190}>
+        <StatCard
+          label="Active coupons"
+          value={coupons.filter((c) => c.is_active).length}
+          meta={`${coupons.length} total`}
+          icon={<IconTicket size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Automatic discounts"
+          value={discounts.length}
+          icon={<IconPercentage size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Total redemptions"
+          value={coupons.reduce((sum, c) => sum + c.current_uses, 0)}
+          meta="Across every code"
+          icon={<IconCurrencyDollar size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Average discount"
+          format="raw"
+          value={
+            discounts.length > 0
               ? `${(discounts.reduce((sum, d) => sum + (Number(d.discount_value) || 0), 0) / discounts.length).toFixed(1)}%`
               : '0%'
-            }
-          </Text>
-        </Card>
-      </SimpleGrid>
+          }
+          icon={<IconPercentage size={18} stroke={1.6} />}
+        />
+      </StatGrid>
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'coupons')}>
@@ -607,17 +593,18 @@ export default function CouponsManagementPage() {
             </Group>
 
             {coupons.length === 0 ? (
-              <Stack align="center" py="xl">
-                <IconTicket size={48} color="var(--text-quaternary)" />
-                <Text size="lg" c="dimmed">No coupons created yet</Text>
-                <Button onClick={openCreateCouponModal}>Create your first coupon</Button>
-              </Stack>
+              <EmptyState
+                titleAs="p"
+                title="No coupon codes yet"
+                description="A coupon is a code a shopper types at checkout. Create one to run a promotion, reward a mailing list or win back an abandoned cart."
+                action={<Button onClick={openCreateCouponModal}>Create your first coupon</Button>}
+              />
             ) : (
               <Table>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Code</Table.Th>
-                    <Table.Th>Discount</Table.Th>
+                    <Table.Th className={table.numeric}>Discount</Table.Th>
                     <Table.Th>Applies To</Table.Th>
                     <Table.Th>Usage</Table.Th>
                     <Table.Th>Status</Table.Th>
@@ -633,8 +620,8 @@ export default function CouponsManagementPage() {
                           <Text size="sm" c="dimmed">{coupon.description}</Text>
                         </Stack>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
+                      <Table.Td className={table.numeric}>
+                        <Group gap="xs" justify="flex-end" wrap="nowrap">
                           {getDiscountTypeIcon(coupon.discount?.discount_type || 'percentage')}
                           <Text>
                             {coupon.discount?.discount_type === 'percentage' 
@@ -652,7 +639,7 @@ export default function CouponsManagementPage() {
                           <Text size="sm">{getAppliesTo(coupon)}</Text>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td className={table.numeric}>
                         <Text>
                           {coupon.current_uses}
                           {coupon.max_uses && ` / ${coupon.max_uses}`}
@@ -691,20 +678,21 @@ export default function CouponsManagementPage() {
             </Group>
 
             {discounts.length === 0 ? (
-              <Stack align="center" py="xl">
-                <IconPercentage size={48} color="var(--text-quaternary)" />
-                <Text size="lg" c="dimmed">No discounts created yet</Text>
-                <Button onClick={openCreateDiscountModal}>Create your first discount</Button>
-              </Stack>
+              <EmptyState
+                titleAs="p"
+                title="No automatic discounts yet"
+                description="An automatic discount applies itself at checkout — no code to type. Use one for bulk pricing or a site-wide sale."
+                action={<Button onClick={openCreateDiscountModal}>Create your first discount</Button>}
+              />
             ) : (
               <Table>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Name</Table.Th>
                     <Table.Th>Type</Table.Th>
-                    <Table.Th>Value</Table.Th>
-                    <Table.Th>Min. Order</Table.Th>
-                    <Table.Th>Coupons</Table.Th>
+                    <Table.Th className={table.numeric}>Value</Table.Th>
+                    <Table.Th className={table.numeric}>Min. order</Table.Th>
+                    <Table.Th className={table.numeric}>Coupons</Table.Th>
                     <Table.Th>Status</Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
@@ -726,18 +714,16 @@ export default function CouponsManagementPage() {
                           </Text>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td className={table.numeric}>
                         <Text fw={500}>
                           {getDiscountValue(discount)}
                         </Text>
                       </Table.Td>
-                      <Table.Td>
-                        <Text>${(Number(discount.minimum_order_amount) || 0).toFixed(2)}</Text>
+                      <Table.Td className={table.numeric}>
+                        <Price value={Number(discount.minimum_order_amount) || 0} size="sm" />
                       </Table.Td>
-                      <Table.Td>
-                        <Badge variant="light">
-                          {discount.coupon_count || 0} coupons
-                        </Badge>
+                      <Table.Td className={table.numeric}>
+                        {discount.coupon_count || 0}
                       </Table.Td>
                       <Table.Td>
                         <Badge color={discount.is_active ? 'green' : 'gray'} variant="light">
