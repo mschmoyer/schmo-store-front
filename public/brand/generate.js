@@ -537,7 +537,7 @@ async function png(svgString, size, out, { height } = {}) {
   return out;
 }
 
-/** Multi-size ICO with PNG payloads (16 / 32 / 48). */
+/** Multi-size ICO with PNG payloads (16 / 32 / 48). Returns the bytes it wrote. */
 async function ico(svgString, sizes, out) {
   const images = [];
   for (const size of sizes) {
@@ -569,8 +569,9 @@ async function ico(svgString, sizes, out) {
     offset += img.data.length;
   });
 
-  fs.writeFileSync(out, Buffer.concat([header, dir, ...images.map((i) => i.data)]));
-  return out;
+  const bytes = Buffer.concat([header, dir, ...images.map((i) => i.data)]);
+  fs.writeFileSync(out, bytes);
+  return bytes;
 }
 
 /** Render the poster in Chromium so the copy can use the vendored Geist. */
@@ -674,8 +675,20 @@ async function main() {
     'public/brand/apple-touch-icon.png'
   );
 
-  await ico(tileRounded, [16, 32, 48], path.join(PUBLIC, 'favicon.ico'));
+  const icoBytes = await ico(tileRounded, [16, 32, 48], path.join(PUBLIC, 'favicon.ico'));
   written.push('public/favicon.ico');
+
+  /* src/app/favicon.ico is the Next 15 app-router convention and it is the one
+     the framework actually links. It currently CONFLICTS with the public/ copy
+     — Next answers /favicon.ico with a 500, "conflicting public file and page
+     file" — so exactly one of the two should exist. Deleting a file in src/app
+     is out of this script's remit; `BRAND_APP_ICO=1` rewrites it with the same
+     bytes so at least the artwork cannot be stale while the conflict stands. */
+  if (process.env.BRAND_APP_ICO === '1') {
+    const appIco = path.join(ROOT, 'src', 'app', 'favicon.ico');
+    fs.writeFileSync(appIco, icoBytes);
+    written.push('src/app/favicon.ico');
+  }
 
   /* logo.png — horizontal lockup, ink, transparent ground, 1200 wide */
   const lh = horizontalSvg('rs-lh', onLight);

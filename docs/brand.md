@@ -297,6 +297,19 @@ anywhere.
 |---|---|
 | `favicon.ico` | multi-size ICO — 16 / 32 / 48, real PNG payloads at each size, the ink tile |
 
+> ### ⚠ `/favicon.ico` currently returns 500
+>
+> `src/app/favicon.ico` (the Next 15 app-router convention) and `public/favicon.ico` both exist, and
+> Next refuses to resolve the collision: *"A conflicting public file and page file was found for
+> path /favicon.ico."* Every request for `/favicon.ico` 500s. This predates the palette-C work.
+>
+> **Exactly one of the two may exist.** Since `src/app/icon.tsx` already serves the tile at `/icon`
+> and is what the framework links from `<head>`, the simplest fix is to delete
+> `src/app/favicon.ico` and keep the generated `public/favicon.ico`. Until someone does,
+> `src/app/favicon.ico` is still the old vermilion tile; `BRAND_APP_ICO=1 node
+> public/brand/generate.js` overwrites it with the correct bytes, which fixes the artwork but not
+> the 500.
+
 > **Stale duplicates.** `public/icon.svg`, `public/apple-icon.png` and `public/logo.png` are
 > leftovers from before these assets moved under `public/brand/`. Nothing in `src/` references
 > them, and `src/app/icon.tsx` / `src/app/apple-icon.tsx` supersede them at the framework level, so

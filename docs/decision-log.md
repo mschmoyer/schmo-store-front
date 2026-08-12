@@ -959,3 +959,45 @@ against two binding contracts, each reviewed by an independent hostile critic.
 - [ ] Fix `backgroundSyncService.getActiveStores()` — queries a nonexistent table
 - [ ] Turn off `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds` once clean
       (TypeScript errors reduced 500 -> 183 so far)
+
+### Marketing site rebuilt on palette C
+
+Owner rejected the ember scheme and the page composition outright: "looks like
+trash… some dark on top of light… it looks disjointed and I hate the existing
+colour scheme." An independent critic graded the page **D** and measured why.
+
+- [x] Owner picked **palette C** — near-monochrome plus one signal green
+      (`#0F7B4A`), reserved for money, stock and savings only - 2026-08-12
+- [x] Homepage **12,381px → 6,382px** (−48%), against a ≤6,500 target - 2026-08-12
+- [x] Grounds 4 → 2 · containers 5 → 1 (1120px) · left edges 4 → 1 · signal-green
+      usages 14 (10 out of contract) → 11 (0 out of contract) - 2026-08-12
+- [x] Deleted `src/components/landing/**`, an orphaned 7-file duplicate of the
+      marketing site whose only reference was a comment - 2026-08-12
+- [x] Fixed the biggest lever: `ROUTES.pricing` was `/#pricing`, an anchor
+      scrolling 7,533px, while a real `/pricing` sat unlinked. That is *why* the
+      homepage had to carry a duplicate pricing block, comparison table and FAQ.
+      Found `marketing/pricing/PricingPage.tsx` orphaned behind a 336-line
+      inline-styled stopgap that had no site header or footer - 2026-08-12
+- [x] `/features` and `/how-it-works` no longer share section modules with the
+      homepage; 5,937px (48%) was byte-identical to pages the nav links to - 2026-08-12
+- [x] No-JS rendering fixed: the page shipped 65 elements at `opacity: 0` and
+      rendered **zero words** without JavaScript. Now renders 1,213 - 2026-08-12
+- [x] Primary button moved to `#111214` on white (18.9:1). The previous
+      white-on-`#F94E1B` measured **3.42:1** and failed AA on every primary
+      button in the product - 2026-08-12
+- [x] Guard tests added: one container token, no bespoke widths, padding from
+      the shared scale, no raw `--ink-*`/`--ember-*` in marketing CSS, and any
+      solid fill carrying white text must clear **5.0:1** — not 4.5, because
+      ember-600 "passed" at 4.51 and that near-miss is what shipped the defect - 2026-08-12
+- [x] `npm run dev-local`: one-command local setup that probes for working
+      Postgres credentials rather than documenting one platform's - 2026-08-12
+- [x] Seed password was a hash whose plaintext nobody knew, so a fresh seed
+      produced accounts nobody could log into. Now `rebeldev`, documented - 2026-08-12
+
+Open:
+- [ ] Mobile is 10,772px against a 7,000 target — needs a mobile-specific pass
+- [ ] Brand assets, favicon and OG image still ember; the header wordmark still
+      renders an orange R, the most visible remaining item
+- [ ] `--text-subtle #8A8E96` is 3.29:1, below AA; restricted to meta that
+      repeats information available elsewhere
+- [ ] No e2e coverage for marketing; `tests/e2e/` is admin-only
