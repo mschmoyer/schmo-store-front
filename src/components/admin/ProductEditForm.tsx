@@ -295,9 +295,7 @@ export default function ProductEditForm({
               placeholder="Brief description for product listings"
               value={formData.short_description}
               onChange={(e) => handleFieldChange('short_description', e.target.value)}
-              autosize
-              minRows={2}
-              maxRows={4}
+              rows={3}
             />
 
             <RichTextEditor
@@ -439,9 +437,7 @@ export default function ProductEditForm({
               onChange={(e) => handleFieldChange('meta_description', e.target.value)}
               error={validationErrors.meta_description}
               description={`${formData.meta_description.length}/160 characters`}
-              autosize
-              minRows={2}
-              maxRows={4}
+              rows={3}
             />
           </Stack>
         </Card>

@@ -4,24 +4,27 @@ const { AdminNavigation } = require('../pages/admin/navigation');
 const { AdminLoginPage } = require('../pages/admin/login-page');
 
 adminAuthFixture.describe('Admin Navigation', () => {
-  adminAuthFixture.beforeEach(async ({ page }) => {
-    // Each test starts fresh - fixture handles login
-  });
-
   adminAuthFixture('should login successfully and load admin dashboard', async ({ adminPage }) => {
     const navigation = new AdminNavigation(adminPage);
     
     // Verify we're on the admin dashboard
-    await expect(adminPage).toHaveURL('/admin');
+    await expect(adminPage).toHaveURL(/\/admin(\?.*)?$/);
     await navigation.waitForNavigation();
     
     // Check that admin dashboard elements are present
-    await expect(adminPage.locator('text=Admin Dashboard')).toBeVisible();
+    await expect(adminPage.locator('h1')).toContainText('Dashboard');
     
     console.log('✓ Admin login and dashboard load successful');
   });
 
   adminAuthFixture('should navigate to all admin pages successfully', async ({ adminPage }) => {
+    /*
+     * Nine routes visited in sequence. In dev each one is compiled on first
+     * request, so the default 30s budget expires around the fifth page and the
+     * test fails for a reason that has nothing to do with the navigation.
+     */
+    adminAuthFixture.setTimeout(180000);
+
     const navigation = new AdminNavigation(adminPage);
     
     // Wait for navigation to be ready
@@ -51,7 +54,10 @@ adminAuthFixture.describe('Admin Navigation', () => {
     console.log(`\n📈 Summary: ${successfulPages.length}/${results.length} pages loaded successfully`);
     
     // Assert that at least the main pages work
-    const criticalPages = ['Dashboard', 'Products', 'AI Assistant'];
+    // Orders replaces AI Assistant in the critical set. AI Assistant is no
+    // longer a nav item (four of its seven cards read "Coming Soon"); Orders is
+    // the screen a merchant opens most.
+    const criticalPages = ['Dashboard', 'Orders', 'Products'];
     const criticalResults = results.filter(r => criticalPages.includes(r.page));
     const criticalSuccesses = criticalResults.filter(r => r.success);
     
@@ -66,13 +72,13 @@ adminAuthFixture.describe('Admin Navigation', () => {
     
     // Test individual page navigation
     await navigation.clickNavItem('Products');
-    await expect(adminPage).toHaveURL('/admin/products');
+    await expect(adminPage).toHaveURL(/\/admin\/products/);
     
     await navigation.clickNavItem('Dashboard');
-    await expect(adminPage).toHaveURL('/admin');
+    await expect(adminPage).toHaveURL(/\/admin(\?.*)?$/);
     
-    await navigation.clickNavItem('AI Assistant');
-    await expect(adminPage).toHaveURL('/admin/ai');
+    await navigation.clickNavItem('Orders');
+    await expect(adminPage).toHaveURL(/\/admin\/orders/);
     
     console.log('✓ Individual page navigation works correctly');
   });
@@ -87,8 +93,8 @@ adminAuthFixture.describe('Admin Navigation', () => {
     await navigation.logout();
     
     // Verify redirect to login page
-    await expect(adminPage).toHaveURL('/admin/login');
-    
+    await expect(adminPage).toHaveURL(/\/login/);
+
     console.log('✓ Logout successful');
   });
 });
@@ -98,12 +104,13 @@ test.describe('Admin Login (without fixture)', () => {
     const loginPage = new AdminLoginPage(page);
     
     await loginPage.goto();
-    await loginPage.login('mikeschmoyer+test3@gmail.com', 'warhammer');
+    // The seeded demo merchant. The previous credentials belonged to a user
+    // that exists in no database, so this test could never have passed.
+    await loginPage.login('demo@schmostore.com', 'rebeldev');
     await loginPage.waitForLoginSuccess();
-    
-    // Verify successful login
-    await expect(page).toHaveURL('/admin');
-    await expect(page.locator('text=Admin Dashboard')).toBeVisible();
+
+    await expect(page).toHaveURL(/\/admin(\?.*)?$/);
+    await expect(page.locator('h1')).toContainText('Dashboard');
     
     console.log('✓ Manual login test successful');
   });
@@ -114,8 +121,8 @@ test.describe('Admin Login (without fixture)', () => {
     await loginPage.goto();
     await loginPage.login('invalid@email.com', 'wrongpassword');
     
-    // Should stay on login page
-    await expect(page).toHaveURL('/admin/login');
+    // Should stay on the login page
+    await expect(page).toHaveURL(/\/login/);
     
     // Check for error message (might need to adjust selector based on actual implementation)
     const hasErrorIndicator = await page.locator('text=Invalid').isVisible().catch(() => false) ||

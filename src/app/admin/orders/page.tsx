@@ -24,6 +24,7 @@ import {
   IconSearch,
   IconTruckDelivery,
 } from '@tabler/icons-react';
+import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
@@ -113,7 +114,19 @@ export default function OrdersPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [status, setStatus] = useState('unshipped');
+  /*
+   * The dashboard's ageing banner links here as `?status=unshipped`, so the
+   * filter honours the query parameter. Defaulting to "Needs shipping" is
+   * deliberate: the merchant opening this screen almost always wants the
+   * orders that need an action, not a reverse-chronological archive.
+   */
+  const searchParams = useSearchParams();
+  const requestedStatus = searchParams?.get('status');
+  const [status, setStatus] = useState(
+    requestedStatus !== null && STATUS_FILTERS.some((f) => f.value === requestedStatus)
+      ? requestedStatus
+      : 'unshipped'
+  );
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);

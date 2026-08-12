@@ -361,7 +361,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
             const label = context.dataset.label || '';
             const value = context.parsed.y;
             if (context.datasetIndex === 1) {
-              return `${label}: $${value.toLocaleString()}`;
+              return `${label}: $${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             }
             return `${label}: ${value}`;
           }
@@ -512,7 +512,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   Total Value
                 </Text>
                 <Text fw={700} size="xl">
-                  ${stats.total_dead_stock_value.toLocaleString()}
+                  ${stats.total_dead_stock_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </Box>
               <ThemeIcon size="lg" variant="light" color="ink">
@@ -528,7 +528,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   Carrying Cost
                 </Text>
                 <Text fw={700} size="xl" c="var(--warning-text)">
-                  ${stats.total_carrying_cost.toLocaleString()}
+                  ${stats.total_carrying_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </Box>
               <ThemeIcon size="lg" variant="light">
@@ -576,7 +576,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   Recovery Value
                 </Text>
                 <Text fw={700} size="xl" c="var(--success-text)">
-                  ${stats.potential_recovery_value.toLocaleString()}
+                  ${stats.potential_recovery_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </Box>
               <ThemeIcon size="lg" variant="light">
@@ -735,7 +735,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                       <Text size="sm">{item.current_stock}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm" fw={500}>${item.total_value.toLocaleString()}</Text>
+                      <Text size="sm" fw={500}>${item.total_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
                     </Table.Td>
                     <Table.Td>
                       <Group gap="xs">
@@ -811,7 +811,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
               </div>
               <div>
                 <Text size="xs" c="dimmed">Total Value</Text>
-                <Text fw={500}>${selectedItem.total_value.toLocaleString()}</Text>
+                <Text fw={500}>${selectedItem.total_value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
               </div>
               <div>
                 <Text size="xs" c="dimmed">Last Sale</Text>

@@ -290,24 +290,48 @@ export async function GET(request: NextRequest) {
           };
         }
 
-        // Convert insights to simple arrays for frontend compatibility
-        const keyInsights = businessAnalysis.keyInsights.map(insight => 
-          insight.actionItems && insight.actionItems.length > 0 
-            ? `${insight.description} ${insight.actionItems.join(' ')}`
-            : insight.description
-        );
-        
-        const alerts = businessAnalysis.alerts.map(alert => 
-          alert.actionItems && alert.actionItems.length > 0 
-            ? `${alert.description} ${alert.actionItems.join(' ')}`
-            : alert.description
-        );
-        
-        const recommendations = businessAnalysis.recommendations.map(rec => 
-          rec.actionItems && rec.actionItems.length > 0 
-            ? `${rec.description} ${rec.actionItems.join(' ')}`
-            : rec.description
-        );
+        /*
+         * FILTERING OUT WHAT CANNOT BE MEASURED, AND WHAT IS ONLY NOISE.
+         *
+         * `analyzeStorePerformance` (src/lib/ai/business-advisor.ts) branches
+         * on `bounceRate` and `avgSessionDuration` to produce lines like "Your
+         * bounce rate of 0.0% is excellent, indicating high-quality traffic"
+         * and "Users are leaving quickly, which may indicate content or
+         * usability issues". Neither figure is derivable from this schema — see
+         * the note where they are pinned to 0 above — so with the fabricated
+         * inputs removed the advisor now confidently praises a bounce rate of
+         * zero. A statement about a metric that is not measured is worthless
+         * whichever direction it points, so those lines are dropped here.
+         *
+         * The traffic alert is dropped too when the sample is tiny. "Visitor
+         * traffic decreased by 12.9%, requiring immediate attention" was seven
+         * people on a 54-visitor store; an alert box that cries wolf over noise
+         * trains the merchant to ignore the alert box.
+         */
+        const UNMEASURABLE = /bounce rate|session duration|leaving quickly/i;
+        const SMALL_SAMPLE_VISITORS = 100;
+
+        const describe = (item: { description: string; actionItems?: string[] }) =>
+          item.actionItems && item.actionItems.length > 0
+            ? `${item.description} ${item.actionItems.join(' ')}`
+            : item.description;
+
+        const keyInsights = businessAnalysis.keyInsights
+          .filter((insight) => !UNMEASURABLE.test(insight.description))
+          .map(describe);
+
+        const alerts = businessAnalysis.alerts
+          .filter((alert) => !UNMEASURABLE.test(alert.description))
+          .filter(
+            (alert) =>
+              !/visitor traffic (decreased|increased)/i.test(alert.description) ||
+              uniqueVisitors >= SMALL_SAMPLE_VISITORS
+          )
+          .map(describe);
+
+        const recommendations = businessAnalysis.recommendations
+          .filter((rec) => !UNMEASURABLE.test(rec.description))
+          .map(describe);
 
         return {
           period: businessMetrics.period,

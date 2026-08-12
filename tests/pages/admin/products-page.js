@@ -12,15 +12,31 @@ class AdminProductsPage {
     this.refreshButton = 'text=Refresh';
     this.actionsButton = 'text=Actions';
     
-    // Stats cards
-    this.totalProductsCard = 'text=Total Products';
-    this.activeProductsCard = 'text=Active';
-    this.inStockCard = 'text=In Stock';
-    this.outOfStockCard = 'text=Out of Stock';
-    this.inventoryValueCard = 'text=Inventory Value';
-    
+    /*
+     * Stat cards and the search box.
+     *
+     * These selectors were written against copy the page no longer uses —
+     * title-cased tile labels and a bare "Search products..." placeholder —
+     * so every test in this suite failed in `verifyPageElements` rather than
+     * on anything it was meant to check.
+     *
+     * The tiles now also carry a **Margin** column alongside them in the
+     * table: price and cost were already on every row, and one column turns
+     * the catalog into a pricing tool. It divides by retail, not by cost.
+     */
+    // Scoped to the stat card's own label element. A bare `text=Active` also
+    // matches the status filter's options and the per-row status badges.
+    // Scoped to the stat card's own label element. A bare `text=Active` also
+    // matches the status filter's options and the per-row status badges.
+    this.totalProductsCard = '[class*="StatCard-module"]:text-is("Total products")';
+    this.activeProductsCard = '[class*="StatCard-module"]:text-is("Active")';
+    this.inStockCard = '[class*="StatCard-module"]:text-is("In stock")';
+    this.outOfStockCard = '[class*="StatCard-module"]:text-is("Out of stock")';
+    this.inventoryValueCard = '[class*="StatCard-module"]:text-is("Inventory value")';
+    this.marginColumn = 'th:has-text("Margin")';
+
     // Search and filters
-    this.searchInput = 'input[placeholder="Search products..."]';
+    this.searchInput = 'input[placeholder="Search products (min 3 characters)..."]';
     this.statusFilter = 'select[data-testid="status-filter"]';
     this.stockFilter = 'select[data-testid="stock-filter"]';
     this.advancedFiltersButton = 'text=Advanced Filters';
@@ -89,22 +105,71 @@ class AdminProductsPage {
     await this.page.waitForLoadState('networkidle');
   }
 
-  /**
-   * Filter by status
+  /*
+   * The filters and the sort control are Mantine `Select`s, not native
+   * `<select>` elements — they render a text input plus a portalled option
+   * list — so `selectOption()` had nothing to act on and every filter and sort
+   * test timed out. They are driven the way a user drives them: click the
+   * control, click the option.
    */
-  async filterByStatus(status) {
-    const statusSelect = this.page.locator('select').first();
-    await statusSelect.selectOption(status);
-    await this.page.waitForLoadState('networkidle');
+
+  /**
+   * Pick an option from one of the toolbar's Mantine Selects.
+   *
+   * Two hazards are handled here, both of which produced intermittent red
+   * rather than honest failures:
+   *
+   * - **The control is addressed by accessible name, not placeholder.** A
+   *   Select that already holds a value renders no placeholder, so a
+   *   placeholder locator worked on a pristine page and broke the moment a
+   *   workflow had set a filter.
+   * - **The dropdown detaches mid-click.** The products list re-renders when a
+   *   fetch resolves, and the search box debounces by 300ms — so the network
+   *   can be idle while a fetch is still queued, land during the click, and
+   *   tear the portalled option list out of the DOM. Settling past the
+   *   debounce and then to idle again makes the toolbar genuinely still; one
+   *   retry covers the rest.
+   *
+   * @param controlName - The Select's accessible name.
+   * @param optionLabel - The visible option label.
+   */
+  async selectOption(controlName, optionLabel) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await this.page.waitForLoadState('networkidle');
+        await this.page.waitForTimeout(700);
+        await this.page.waitForLoadState('networkidle');
+
+        await this.page.getByRole('textbox', { name: controlName }).click();
+        const option = this.page.getByRole('option', { name: optionLabel, exact: true });
+        await option.waitFor({ state: 'visible', timeout: 5000 });
+        await option.click({ timeout: 5000 });
+        await this.page.waitForLoadState('networkidle');
+        return;
+      } catch (error) {
+        if (attempt === 2) throw error;
+        await this.page.keyboard.press('Escape');
+        await this.page.waitForTimeout(500);
+      }
+    }
   }
 
   /**
-   * Filter by stock status
+   * Filter by status.
+   *
+   * @param status - The visible option label, e.g. `Active`.
+   */
+  async filterByStatus(status) {
+    await this.selectOption('Filter by status', status);
+  }
+
+  /**
+   * Filter by stock status.
+   *
+   * @param stockStatus - The visible option label, e.g. `In Stock`.
    */
   async filterByStock(stockStatus) {
-    const stockSelect = this.page.locator('select').nth(1);
-    await stockSelect.selectOption(stockStatus);
-    await this.page.waitForLoadState('networkidle');
+    await this.selectOption('Filter by stock', stockStatus);
   }
 
   /**
@@ -130,18 +195,22 @@ class AdminProductsPage {
   /**
    * Change sort order
    */
+  /**
+   * Sort by a field.
+   *
+   * @param sortField - The visible option label, e.g. `Name`.
+   */
   async sortBy(sortField) {
-    const sortSelect = this.page.locator('select').last();
-    await sortSelect.selectOption(sortField);
-    await this.page.waitForLoadState('networkidle');
+    await this.selectOption('Sort by', sortField);
   }
 
   /**
    * Toggle sort order (asc/desc)
    */
   async toggleSortOrder() {
-    const sortToggle = this.page.locator('button').filter({ hasText: /sort/i }).last();
-    await sortToggle.click();
+    // The control is icon-only; it now carries an aria-label, so it can be
+    // reached by role instead of by a text filter that matched nothing.
+    await this.page.getByRole('button', { name: /^Sort (ascending|descending)/ }).click();
     await this.page.waitForLoadState('networkidle');
   }
 
@@ -233,9 +302,10 @@ class AdminProductsPage {
    * Get first product's edit button and click it
    */
   async editFirstProduct() {
+    // Icon-only buttons carry no text, so `hasText: /edit/i` matched nothing.
+    // They now have aria-labels of the form `Edit <product name>`.
     const firstRow = this.page.locator(this.productRows).first();
-    const editBtn = firstRow.locator('button').filter({ hasText: /edit/i }).first();
-    await editBtn.click();
+    await firstRow.getByRole('button', { name: /^Edit / }).click();
   }
 
   /**
@@ -243,8 +313,7 @@ class AdminProductsPage {
    */
   async openProductActionMenu(productIndex = 0) {
     const productRow = this.page.locator(this.productRows).nth(productIndex);
-    const actionBtn = productRow.locator('button').last();
-    await actionBtn.click();
+    await productRow.getByRole('button', { name: /^More actions for / }).click();
   }
 
   /**

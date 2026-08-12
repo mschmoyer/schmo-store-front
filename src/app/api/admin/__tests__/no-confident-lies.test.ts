@@ -66,7 +66,7 @@ function source(relativePath: string): string {
     .replace(/\{\s*\}/g, '');
 }
 
-describe.skip('dashboard', () => {
+describe('dashboard', () => {
   const route = source('src/app/api/admin/dashboard/route.ts');
 
   it('does not filter revenue to completed orders', () => {
@@ -102,7 +102,7 @@ describe.skip('dashboard', () => {
   });
 });
 
-describe.skip('inventory statistics', () => {
+describe('inventory statistics', () => {
   const route = source('src/app/api/admin/inventory/route.ts');
 
   it('does not aggregate products across a join to inventory_logs', () => {
@@ -128,7 +128,7 @@ describe.skip('inventory statistics', () => {
   });
 });
 
-describe.skip('valuation report', () => {
+describe('valuation report', () => {
   const route = source('src/app/api/admin/inventory/reports/valuation/route.ts');
 
   it('divides margin by retail and reports markup separately', () => {
@@ -139,7 +139,7 @@ describe.skip('valuation report', () => {
   });
 });
 
-describe.skip('turnover report', () => {
+describe('turnover report', () => {
   const route = source('src/app/api/admin/inventory/reports/turnover/route.ts');
 
   it('does not return zeroes behind a "no order data available" comment', () => {
@@ -156,7 +156,7 @@ describe.skip('turnover report', () => {
   });
 });
 
-describe.skip('dead-stock report', () => {
+describe('dead-stock report', () => {
   const route = source('src/app/api/admin/inventory/reports/dead-stock/route.ts');
   const router = source('src/app/admin/inventory/reports/[reportType]/page.tsx');
 
@@ -184,7 +184,7 @@ describe.skip('dead-stock report', () => {
   });
 });
 
-describe.skip('reorder recommendations', () => {
+describe('reorder recommendations', () => {
   const route = source('src/app/api/admin/purchase-orders/recommendations/route.ts');
 
   it('does not floor every recommendation at 20 units', () => {
@@ -211,7 +211,7 @@ describe.skip('reorder recommendations', () => {
   });
 });
 
-describe.skip('analytics', () => {
+describe('analytics', () => {
   const trends = source('src/app/api/admin/analytics/trends/route.ts');
   const summary = source('src/app/api/admin/analytics/executive-summary/route.ts');
 
@@ -242,7 +242,7 @@ describe.skip('analytics', () => {
   });
 });
 
-describe.skip('coupons', () => {
+describe('coupons', () => {
   const route = source('src/app/api/admin/coupons/route.ts');
   const detail = source('src/app/api/admin/coupons/[id]/route.ts');
   const page = source('src/app/admin/coupons/page.tsx');
@@ -282,7 +282,7 @@ describe.skip('coupons', () => {
   });
 });
 
-describe.skip('purchase orders list', () => {
+describe('purchase orders list', () => {
   const page = source('src/app/admin/purchase-orders/page.tsx');
 
   it('does not render hardcoded orders', () => {
@@ -299,7 +299,7 @@ describe.skip('purchase orders list', () => {
   });
 });
 
-describe.skip('the abandoned refactor leaves nothing behind', () => {
+describe('the abandoned refactor leaves nothing behind', () => {
   it('has no migrations directory the runner never reads', () => {
     // `src/lib/database/migrations/` looked like migrations and could never
     // run: the runner reads `database/migrations/`.
@@ -315,7 +315,7 @@ describe.skip('the abandoned refactor leaves nothing behind', () => {
   });
 });
 
-describe.skip('the nav', () => {
+describe('the nav', () => {
   const nav = source('src/components/admin/AdminNav.tsx');
 
   it('has an Orders item', () => {

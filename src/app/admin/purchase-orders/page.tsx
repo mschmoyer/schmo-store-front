@@ -19,17 +19,37 @@ import {
 } from '@mantine/core';
 import { IconPlus, IconSearch, IconEye, IconDownload, IconFilter } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { PurchaseOrder } from '@/lib/types/database';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { TableSkeleton } from '@/components/admin/AdminSkeletons';
 import table from '@/components/admin/adminTable.module.css';
 
-interface PurchaseOrderListItem extends PurchaseOrder {
+/**
+ * A purchase order row exactly as `GET /api/admin/purchase-orders` returns it.
+ *
+ * Declared here rather than extending `PurchaseOrder` from
+ * `@/lib/types/database`, because that interface describes a schema the
+ * database does not have — `purchase_order_number`, `total_amount`,
+ * `expected_delivery_date`, `payment_status`. The real columns are
+ * `po_number`, `total_cost`, `expected_delivery`, and there is no payment
+ * status on a purchase order at all. Rendering the interface's field names
+ * produced a table of `undefined`s; the mock array was hiding that too.
+ */
+interface PurchaseOrderListItem {
+  id: string;
+  po_number: string;
+  status: string;
+  order_date: string;
+  expected_delivery: string | null;
+  actual_delivery: string | null;
+  subtotal: string | number;
+  tax_amount: string | number | null;
+  shipping_amount: string | number | null;
+  total_cost: string | number;
   supplier_name: string;
-  supplier_contact: string;
-  items_count: number;
+  supplier_contact: string | null;
+  items_count: string | number;
 }
 
 /**
@@ -104,7 +124,7 @@ export default function PurchaseOrdersPage() {
       const filtered = term
         ? rows.filter(
             (po) =>
-              po.purchase_order_number?.toLowerCase().includes(term) ||
+              po.po_number?.toLowerCase().includes(term) ||
               po.supplier_name?.toLowerCase().includes(term)
           )
         : rows;
@@ -176,7 +196,8 @@ export default function PurchaseOrdersPage() {
     }).format(amount);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: string | null) => {
+    if (!date) return '—';
     return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'short',
@@ -193,16 +214,6 @@ export default function PurchaseOrdersPage() {
       case 'received': return 'green';
       case 'partially_received': return 'orange';
       case 'cancelled': return 'red';
-      default: return 'gray';
-    }
-  };
-
-  const getPaymentStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'yellow';
-      case 'paid': return 'green';
-      case 'partial': return 'orange';
-      case 'overdue': return 'red';
       default: return 'gray';
     }
   };
@@ -287,7 +298,6 @@ export default function PurchaseOrdersPage() {
                 <Table.Th>Order Date</Table.Th>
                 <Table.Th>Expected Delivery</Table.Th>
                 <Table.Th>Status</Table.Th>
-                <Table.Th>Payment Status</Table.Th>
                 <Table.Th className={table.numeric}>Total</Table.Th>
                 <Table.Th className={table.numeric}>Items</Table.Th>
                 <Table.Th>Actions</Table.Th>
@@ -299,7 +309,7 @@ export default function PurchaseOrdersPage() {
                   <Table.Td>
                     <Link href={`/admin/purchase-orders/${po.id}`} style={{ textDecoration: 'none' }}>
                       <Text fw={500} className={table.code}>
-                        {po.purchase_order_number}
+                        {po.po_number}
                       </Text>
                     </Link>
                   </Table.Td>
@@ -310,20 +320,13 @@ export default function PurchaseOrdersPage() {
                     </div>
                   </Table.Td>
                   <Table.Td>{formatDate(po.order_date)}</Table.Td>
-                  <Table.Td>
-                    {po.expected_delivery_date ? formatDate(po.expected_delivery_date) : 'N/A'}
-                  </Table.Td>
+                  <Table.Td>{formatDate(po.expected_delivery)}</Table.Td>
                   <Table.Td>
                     <Badge color={getStatusColor(po.status)} variant="light">
                       {po.status.toUpperCase()}
                     </Badge>
                   </Table.Td>
-                  <Table.Td>
-                    <Badge color={getPaymentStatusColor(po.payment_status)} variant="light">
-                      {po.payment_status.toUpperCase()}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td className={table.numeric}>{formatCurrency(po.total_amount)}</Table.Td>
+                  <Table.Td className={table.numeric}>{formatCurrency(Number(po.total_cost))}</Table.Td>
                   <Table.Td className={table.numeric}>{po.items_count}</Table.Td>
                   <Table.Td>
                     <Group gap="xs">
@@ -338,7 +341,7 @@ export default function PurchaseOrdersPage() {
                         <ActionIcon
                           variant="light"
                           size="sm"
-                          onClick={() => handleDownloadPDF(po.id, po.purchase_order_number)}
+                          onClick={() => handleDownloadPDF(po.id, po.po_number)}
                           loading={pdfLoading === po.id}
                         >
                           <IconDownload size={14} />

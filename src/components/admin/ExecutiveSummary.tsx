@@ -149,13 +149,17 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
         </div>
         {data.overallScore !== undefined && (
           <div style={{ marginLeft: 'auto' }}>
-            <Text size="xs" c="dimmed" ta="center">Business Score</Text>
+            {/* Quoted to two decimals as `61.39/100`, which claims a precision
+                the inputs do not have — the score is a handful of ±10
+                adjustments off search and visitor counts. Rounded, and labelled
+                with what it is rather than presented as a measurement. */}
+            <Text size="xs" c="dimmed" ta="center">Activity score</Text>
             <Text size="xl" fw={700} ta="center" c={
               data.overallScore >= 80 ? 'green' : 
               data.overallScore >= 60 ? 'blue' : 
               data.overallScore >= 40 ? 'orange' : 'red'
             }>
-              {data.overallScore}/100
+              {Math.round(data.overallScore)}/100
             </Text>
           </div>
         )}

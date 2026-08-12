@@ -522,9 +522,7 @@ export default function AIPage() {
                 <Textarea
                   value={generatedContent}
                   onChange={(e) => setGeneratedContent(e.currentTarget.value)}
-                  minRows={6}
-                  maxRows={12}
-                  autosize
+                  rows={8}
                 />
                 <Group mt="sm">
                   <Button variant="light" size="sm">

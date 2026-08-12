@@ -348,8 +348,7 @@ export default function ReceivingModal({
                     value={item.quality_notes}
                     onChange={(e) => updateItem(index, 'quality_notes', e.target.value)}
                     size="sm"
-                    minRows={1}
-                    autosize
+                    rows={2}
                     style={{ minWidth: 120 }}
                   />
                 </Table.Td>

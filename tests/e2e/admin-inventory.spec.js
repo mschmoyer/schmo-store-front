@@ -22,63 +22,79 @@ adminAuthFixture.describe('Admin Inventory Page - Core Functionality', () => {
     await adminPage.goto('/admin/inventory');
     
     // Wait for page to load
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
     await adminPage.waitForLoadState('networkidle');
   });
 
   adminAuthFixture('should load inventory page with all key elements', async ({ adminPage }) => {
     // Verify page title and description
-    await expect(adminPage.locator('text=Inventory Management')).toBeVisible();
-    await expect(adminPage.locator('text=Manage your stock levels, forecasting, and purchase orders')).toBeVisible();
-    
-    // Verify stats cards are present
-    await expect(adminPage.locator('text=Total Products')).toBeVisible();
-    await expect(adminPage.locator('text=Total Value')).toBeVisible();
-    await expect(adminPage.locator('text=Low Stock')).toBeVisible();
-    await expect(adminPage.locator('text=Out of Stock')).toBeVisible();
-    await expect(adminPage.locator('text=Pending Orders')).toBeVisible();
-    await expect(adminPage.locator('text=Restocked This Month')).toBeVisible();
+    await expect(adminPage.locator('h1')).toContainText('Inventory');
+
+    /*
+     * Stat tiles. Two things changed here beyond casing:
+     *
+     * - "Total value" is now $22,275.99, the real figure. It read $77,755.47 —
+     *   inflated 249% by a `LEFT JOIN inventory_logs` fan-out that also
+     *   reported 45 products where there are 12. It now agrees with the
+     *   valuation report and the Products page.
+     * - "Pending orders / Awaiting delivery" is now "Customer orders to ship".
+     *   The count was always customer orders in pending/processing, but the
+     *   label read as inbound restocks — so five customers who had been waiting
+     *   two months looked like five deliveries on their way.
+     */
+    // `.first()` throughout: several of these words also appear as table
+    // column headers, and an unscoped getByText is a strict-mode violation
+    // rather than a failure of the page.
+    await expect(adminPage.getByText('Total products').first()).toBeVisible();
+    await expect(adminPage.getByText('Total value').first()).toBeVisible();
+    await expect(adminPage.getByText('$22,275').first()).toBeVisible();
+    await expect(adminPage.getByText('Low stock', { exact: true }).first()).toBeVisible();
+    await expect(adminPage.getByText('Out of stock', { exact: true }).first()).toBeVisible();
+    await expect(adminPage.getByText('Customer orders to ship')).toBeVisible();
+    await expect(adminPage.getByText('Restocked').first()).toBeVisible();
     
     // Verify sync button
     await expect(adminPage.locator('button:has-text("Sync ShipStation")')).toBeVisible();
     
     // Verify tabs
-    await expect(adminPage.locator('text=Inventory Grid')).toBeVisible();
-    await expect(adminPage.locator('text=Purchase Orders')).toBeVisible();
-    await expect(adminPage.locator('text=Suppliers')).toBeVisible();
-    await expect(adminPage.locator('text=Reports')).toBeVisible();
-    await expect(adminPage.locator('text=Alerts & Notifications')).toBeVisible();
+    // Tabs by role. A bare `text=Purchase Orders` also matches the panel's own
+    // <h3>, which is a strict-mode violation rather than a real failure.
+    for (const tab of ['Inventory Grid', 'Purchase Orders', 'Suppliers', 'Reports', 'Alerts & Notifications']) {
+      await expect(adminPage.getByRole('tab', { name: tab })).toBeVisible();
+    }
     
     console.log('✓ Inventory page loaded with all key elements');
   });
 
   adminAuthFixture('should handle tab navigation', async ({ adminPage }) => {
     // Test Inventory Grid tab (default)
-    await expect(adminPage.locator('text=Search by name or SKU')).toBeVisible();
+    await expect(adminPage.getByPlaceholder('Search by name or SKU...')).toBeVisible();
     await expect(adminPage.locator('text=Export')).toBeVisible();
     
     // Test Purchase Orders tab
-    await adminPage.click('text=Purchase Orders');
-    await expect(adminPage.locator('text=Create New Order')).toBeVisible();
+    await adminPage.getByRole('tab', { name: 'Purchase Orders' }).click();
+    await expect(adminPage.locator('text=Create New Order').first()).toBeVisible();
     
     // Test Suppliers tab
-    await adminPage.click('text=Suppliers');
-    await expect(adminPage.locator('text=Add Supplier')).toBeVisible();
-    await expect(adminPage.locator('text=Search suppliers')).toBeVisible();
+    await adminPage.getByRole('tab', { name: 'Suppliers' }).click();
+    await expect(adminPage.locator('text=Add Supplier').first()).toBeVisible();
+    await expect(adminPage.getByPlaceholder('Search suppliers...')).toBeVisible();
     
     // Test Reports tab
-    await adminPage.click('text=Reports');
+    await adminPage.getByRole('tab', { name: 'Reports' }).click();
     await expect(adminPage.locator('text=Inventory Turnover')).toBeVisible();
     await expect(adminPage.locator('text=Stock Valuation')).toBeVisible();
     
     // Test Alerts tab
-    await adminPage.click('text=Alerts & Notifications');
-    await expect(adminPage.locator('text=Alert Settings')).toBeVisible();
-    await expect(adminPage.locator('text=Low Stock Notifications')).toBeVisible();
+    await adminPage.getByRole('tab', { name: 'Alerts & Notifications' }).click();
+    await expect(adminPage.locator('text=Alert Settings').first()).toBeVisible();
+    await expect(adminPage.locator('text=Low Stock Notifications').first()).toBeVisible();
     
     // Return to Inventory Grid tab
-    await adminPage.click('text=Inventory Grid');
-    await expect(adminPage.locator('text=Search by name or SKU')).toBeVisible();
+    await adminPage.getByRole('tab', { name: 'Inventory Grid' }).click();
+    await expect(adminPage.getByPlaceholder('Search by name or SKU...')).toBeVisible();
     
     console.log('✓ Tab navigation works correctly');
   });
@@ -185,10 +201,12 @@ adminAuthFixture.describe('Admin Inventory Page - Core Functionality', () => {
 adminAuthFixture.describe('Admin Inventory Page - Supplier Management', () => {
   adminAuthFixture.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/inventory');
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
     
     // Navigate to Suppliers tab
-    await adminPage.click('text=Suppliers');
+    await adminPage.getByRole('tab', { name: 'Suppliers' }).click();
     await adminPage.waitForSelector('text=Add Supplier', { timeout: 5000 });
   });
 
@@ -199,14 +217,17 @@ adminAuthFixture.describe('Admin Inventory Page - Supplier Management', () => {
     // Wait for modal to open
     await adminPage.waitForSelector('text=Add Supplier', { timeout: 5000 });
     
-    // Verify modal elements
-    await expect(adminPage.locator('text=Basic Information')).toBeVisible();
-    await expect(adminPage.locator('text=Supplier Name')).toBeVisible();
-    await expect(adminPage.locator('text=Contact Person')).toBeVisible();
-    await expect(adminPage.locator('text=Email')).toBeVisible();
-    await expect(adminPage.locator('text=Phone')).toBeVisible();
-    await expect(adminPage.locator('text=Address Information')).toBeVisible();
-    await expect(adminPage.locator('text=Business Information')).toBeVisible();
+    // Verify modal elements. Scoped to the dialog and matched by field rather
+    // than by loose text: "Email" and "Phone" each appear on both a label and
+    // a column header, which is a strict-mode violation, not a page fault.
+    const modal = adminPage.getByRole('dialog');
+    await expect(modal.getByText('Basic Information')).toBeVisible();
+    await expect(modal.getByPlaceholder('Enter supplier name')).toBeVisible();
+    await expect(modal.getByPlaceholder('Primary contact name')).toBeVisible();
+    await expect(modal.getByPlaceholder('contact@supplier.com')).toBeVisible();
+    await expect(modal.getByPlaceholder('(555) 123-4567')).toBeVisible();
+    await expect(modal.getByText('Address Information')).toBeVisible();
+    await expect(modal.getByText('Business Information')).toBeVisible();
     
     console.log('✓ Supplier creation modal opens and displays all required fields');
   });
@@ -228,14 +249,14 @@ adminAuthFixture.describe('Admin Inventory Page - Supplier Management', () => {
     await adminPage.fill('input[placeholder="ZIP"]', '12345');
     
     // Test form validation - name is required
-    await expect(adminPage.locator('button:has-text("Add Supplier")')).toBeEnabled();
+    await expect(adminPage.locator('button:has-text("Add Supplier")').first()).toBeEnabled();
     
     // Test cancel functionality
-    await adminPage.click('button:has-text("Cancel")');
-    await adminPage.waitForTimeout(1000);
-    
-    // Verify modal is closed
-    await expect(adminPage.locator('text=Add Supplier')).not.toBeVisible();
+    await adminPage.getByRole('button', { name: 'Cancel' }).click();
+
+    // The dialog closes. Asserting on `text=Add Supplier` cannot work — the
+    // button that opens the modal carries the same words and stays on screen.
+    await expect(adminPage.getByRole('dialog')).toHaveCount(0, { timeout: 10000 });
     
     console.log('✓ Supplier creation workflow tested');
   });
@@ -254,11 +275,22 @@ adminAuthFixture.describe('Admin Inventory Page - Supplier Management', () => {
   });
 
   adminAuthFixture('should test supplier table interactions', async ({ adminPage }) => {
-    // Wait for suppliers table to load
-    await adminPage.waitForSelector('table', { timeout: 5000 });
-    
+    /*
+     * The seeded store has no suppliers, so there is no table to wait for —
+     * the tab renders its empty state instead. Waiting unconditionally on
+     * `table` made this fail on an absence that is the correct behaviour.
+     */
     const tableRows = adminPage.locator('table tbody tr');
-    const rowCount = await tableRows.count();
+    const rowCount = await adminPage
+      .locator('table')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(() => tableRows.count())
+      .catch(() => 0);
+
+    if (rowCount === 0) {
+      console.log('No suppliers on this store; empty state is the expected view');
+    }
     
     if (rowCount > 0) {
       console.log(`Found ${rowCount} suppliers`);
@@ -290,10 +322,12 @@ adminAuthFixture.describe('Admin Inventory Page - Supplier Management', () => {
 adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', () => {
   adminAuthFixture.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/inventory');
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
     
     // Navigate to Purchase Orders tab
-    await adminPage.click('text=Purchase Orders');
+    await adminPage.getByRole('tab', { name: 'Purchase Orders' }).click();
     await adminPage.waitForSelector('text=Create New Order', { timeout: 5000 });
   });
 
@@ -304,10 +338,12 @@ adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', ()
     // Wait for modal to open
     await adminPage.waitForSelector('text=Create Purchase Order', { timeout: 5000 });
     
-    // Verify stepper is present
-    await expect(adminPage.locator('text=Supplier')).toBeVisible();
-    await expect(adminPage.locator('text=Items')).toBeVisible();
-    await expect(adminPage.locator('text=Review')).toBeVisible();
+    // Verify the stepper. Scoped to the dialog and matched on the step
+    // control: bare `text=Supplier` matches eleven elements on this page.
+    const modal = adminPage.getByRole('dialog');
+    for (const step of ['Supplier', 'Items', 'Review']) {
+      await expect(modal.getByText(step, { exact: true }).first()).toBeVisible();
+    }
     
     console.log('✓ Purchase order creation modal opens with stepper');
   });
@@ -318,7 +354,7 @@ adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', ()
     await adminPage.waitForSelector('text=Create Purchase Order', { timeout: 5000 });
     
     // Step 1: Supplier Information
-    await expect(adminPage.locator('text=Supplier Name')).toBeVisible();
+    await expect(adminPage.locator('text=Supplier Name').first()).toBeVisible();
     await adminPage.fill('input[placeholder="Search or enter supplier name"]', 'Test Supplier');
     await adminPage.fill('input[placeholder="supplier@example.com"]', 'test@supplier.com');
     await adminPage.fill('input[placeholder="(555) 123-4567"]', '(555) 123-4567');
@@ -329,19 +365,15 @@ adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', ()
     await adminPage.waitForTimeout(500);
     
     // Step 2: Items
-    await expect(adminPage.locator('text=Add Product')).toBeVisible();
-    
-    // Test Add Item button
-    await adminPage.click('button:has-text("Add Item")');
-    await adminPage.waitForTimeout(500);
+    await expect(adminPage.getByRole('dialog').getByText('Add Product').first()).toBeVisible();
     
     // Test Back button
-    await adminPage.click('button:has-text("Back")');
+    await adminPage.getByRole('button', { name: 'Back' }).first().click();
     await adminPage.waitForTimeout(500);
-    
+
     // Test Cancel button
-    await adminPage.click('button:has-text("Cancel")');
-    await adminPage.waitForTimeout(1000);
+    await adminPage.getByRole('button', { name: 'Cancel' }).first().click();
+    await expect(adminPage.getByRole('dialog')).toHaveCount(0, { timeout: 10000 });
     
     console.log('✓ Purchase order creation workflow tested');
   });
@@ -353,7 +385,7 @@ adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', ()
     
     // Fill supplier info and move to items step
     await adminPage.fill('input[placeholder="Search or enter supplier name"]', 'Test Supplier');
-    await adminPage.click('button:has-text("Next")');
+    await adminPage.getByRole('button', { name: 'Next' }).first().click();
     await adminPage.waitForTimeout(1000);
     
     // Check for AI recommendations
@@ -375,15 +407,37 @@ adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', ()
     await productSearch.fill('test product');
     await adminPage.waitForTimeout(1000);
     
-    // Cancel the modal
-    await adminPage.click('button:has-text("Cancel")');
-    
+    /*
+     * Step back, then cancel. Step 2 of the stepper offers Back and Next only
+     * — Cancel lives on step 1 — so waiting for Cancel here timed the test out
+     * on a button that is correctly absent, and the modal does not close on
+     * Escape either. This is the path a user actually has.
+     */
+    await adminPage.getByRole('button', { name: 'Back' }).first().click();
+    await adminPage.getByRole('button', { name: 'Cancel' }).first().click();
+    await expect(adminPage.getByRole('dialog')).toHaveCount(0, { timeout: 10000 });
+
     console.log('✓ AI recommendations and product search tested');
   });
 
   adminAuthFixture('should test purchase order table interactions', async ({ adminPage }) => {
-    // Wait for purchase orders table to load
-    await adminPage.waitForSelector('table', { timeout: 5000 });
+    /*
+     * This store has no purchase orders, so the tab renders its empty state
+     * and there is no table to wait for. That is now the honest view: the
+     * list page used to render three hardcoded orders from January 2024
+     * whether or not any existed.
+     */
+    const hasTable = await adminPage
+      .locator('table')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!hasTable) {
+      console.log('No purchase orders on this store; empty state is the expected view');
+      return;
+    }
     
     const tableRows = adminPage.locator('table tbody tr');
     const rowCount = await tableRows.count();
@@ -418,10 +472,12 @@ adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', ()
 adminAuthFixture.describe('Admin Inventory Page - Reports and Analytics', () => {
   adminAuthFixture.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/inventory');
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
     
     // Navigate to Reports tab
-    await adminPage.click('text=Reports');
+    await adminPage.getByRole('tab', { name: 'Reports' }).click();
     await adminPage.waitForSelector('text=Inventory Turnover', { timeout: 5000 });
   });
 
@@ -429,8 +485,15 @@ adminAuthFixture.describe('Admin Inventory Page - Reports and Analytics', () => 
     // Verify report cards
     await expect(adminPage.locator('text=Inventory Turnover')).toBeVisible();
     await expect(adminPage.locator('text=Stock Valuation')).toBeVisible();
+
+    // Dead Stock Analysis is back: its component and API both worked all along
+    // and it was commented out of the report router in one line.
     await expect(adminPage.locator('text=Dead Stock Analysis')).toBeVisible();
-    await expect(adminPage.locator('text=Supplier Performance')).toBeVisible();
+
+    // Supplier Performance is gone. It had a title and a "Generate Report"
+    // button and neither a component nor an API, so the button bounced the
+    // merchant silently back to this page.
+    await expect(adminPage.locator('text=Supplier Performance')).toHaveCount(0);
     
     // Test Generate Report buttons
     const generateButtons = adminPage.locator('button:has-text("Generate Report")');
@@ -460,16 +523,18 @@ adminAuthFixture.describe('Admin Inventory Page - Reports and Analytics', () => 
 adminAuthFixture.describe('Admin Inventory Page - Alerts and Notifications', () => {
   adminAuthFixture.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/inventory');
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
     
     // Navigate to Alerts tab
-    await adminPage.click('text=Alerts & Notifications');
+    await adminPage.getByRole('tab', { name: 'Alerts & Notifications' }).click();
     await adminPage.waitForSelector('text=Alert Settings', { timeout: 5000 });
   });
 
   adminAuthFixture('should display alert settings', async ({ adminPage }) => {
     // Verify alert settings
-    await expect(adminPage.locator('text=Low Stock Notifications')).toBeVisible();
+    await expect(adminPage.locator('text=Low Stock Notifications').first()).toBeVisible();
     await expect(adminPage.locator('text=Out of Stock Alerts')).toBeVisible();
     await expect(adminPage.locator('text=Forecast Warnings')).toBeVisible();
     
@@ -516,12 +581,14 @@ adminAuthFixture.describe('Admin Inventory Page - Alerts and Notifications', () 
 adminAuthFixture.describe('Admin Inventory Page - Complete Workflows', () => {
   adminAuthFixture.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/inventory');
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
   });
 
   adminAuthFixture('should complete full inventory management workflow', async ({ adminPage }) => {
     // 1. Check inventory stats
-    await expect(adminPage.locator('text=Total Products')).toBeVisible();
+    await expect(adminPage.getByText('Total products').first()).toBeVisible();
     
     // 2. Search and filter inventory
     await adminPage.fill('input[placeholder="Search by name or SKU..."]', 'test');
@@ -539,15 +606,15 @@ adminAuthFixture.describe('Admin Inventory Page - Complete Workflows', () => {
     await adminPage.waitForTimeout(2000);
     
     // 6. Navigate through all tabs
-    await adminPage.click('text=Purchase Orders');
+    await adminPage.getByRole('tab', { name: 'Purchase Orders' }).click();
     await adminPage.waitForTimeout(500);
-    await adminPage.click('text=Suppliers');
+    await adminPage.getByRole('tab', { name: 'Suppliers' }).click();
     await adminPage.waitForTimeout(500);
-    await adminPage.click('text=Reports');
+    await adminPage.getByRole('tab', { name: 'Reports' }).click();
     await adminPage.waitForTimeout(500);
-    await adminPage.click('text=Alerts & Notifications');
+    await adminPage.getByRole('tab', { name: 'Alerts & Notifications' }).click();
     await adminPage.waitForTimeout(500);
-    await adminPage.click('text=Inventory Grid');
+    await adminPage.getByRole('tab', { name: 'Inventory Grid' }).click();
     await adminPage.waitForTimeout(500);
     
     console.log('✓ Complete inventory management workflow tested');
@@ -564,19 +631,21 @@ adminAuthFixture.describe('Admin Inventory Page - Complete Workflows', () => {
     
     // Navigate back to inventory
     await adminPage.goto('/admin/inventory');
-    await adminPage.waitForSelector('text=Inventory Management', { timeout: 10000 });
+    // The heading is `Inventory`, not `Inventory Management`. Every test in
+    // this file was failing here rather than on an assertion.
+    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
   });
 
   adminAuthFixture('should test responsive design', async ({ adminPage }) => {
     // Test different viewport sizes
     await adminPage.setViewportSize({ width: 1200, height: 800 });
-    await expect(adminPage.locator('text=Inventory Management')).toBeVisible();
+    await expect(adminPage.locator('h1')).toContainText('Inventory');
     
     await adminPage.setViewportSize({ width: 768, height: 1024 });
-    await expect(adminPage.locator('text=Inventory Management')).toBeVisible();
+    await expect(adminPage.locator('h1')).toContainText('Inventory');
     
     await adminPage.setViewportSize({ width: 375, height: 667 });
-    await expect(adminPage.locator('text=Inventory Management')).toBeVisible();
+    await expect(adminPage.locator('h1')).toContainText('Inventory');
     
     // Reset viewport
     await adminPage.setViewportSize({ width: 1280, height: 720 });

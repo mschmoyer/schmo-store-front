@@ -236,14 +236,23 @@ export async function GET(request: NextRequest) {
         : 999999;
 
       /*
-       * Velocity band. A product that sold within the window is not dead
-       * merely because its annualised ratio rounds to zero — the old
-       * `turnoverRatio === 0` test caught every SKU because every ratio was
-       * the literal 0. Dead now means: nothing sold in the window AND nothing
-       * sold in the last 90 days.
+       * Velocity band.
+       *
+       * "Dead" is a fact about the product, not about the window you happened
+       * to select. The old test was `daysSinceLastSale > 90 || turnoverRatio
+       * === 0`, and since every ratio was the literal 0 it caught all twelve
+       * products. Restoring real ratios is not enough on its own: with the
+       * default 30-day window, a SKU that last sold nine weeks ago has no
+       * sales *in the window* and would still be branded dead stock, which is
+       * how a merchant ends up marking down a slow line rather than a dead
+       * one.
+       *
+       * Dead therefore means: never sold, or not sold in 90 days — the same
+       * definition the dead-stock report uses, so the two agree. Everything
+       * that has sold recently but is turning slowly is `slow`.
        */
       let velocityCategory: 'fast' | 'medium' | 'slow' | 'dead';
-      if (daysSinceLastSale > 90 || (turnoverRatio === 0 && Number(row.total_sales_quantity) === 0)) {
+      if (daysSinceLastSale > 90) {
         velocityCategory = 'dead';
       } else if (turnoverRatio >= 6) {
         velocityCategory = 'fast';

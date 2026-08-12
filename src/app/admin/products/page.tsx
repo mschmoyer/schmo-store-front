@@ -714,6 +714,7 @@ export default function ProductsAdminPage() {
             />
             
             <Select
+              aria-label="Filter by status"
               placeholder="Status"
               data={[
                 { value: '', label: 'All Status' },
@@ -726,6 +727,7 @@ export default function ProductsAdminPage() {
             />
             
             <Select
+              aria-label="Filter by stock"
               placeholder="Stock"
               data={[
                 { value: '', label: 'All Stock' },
@@ -749,6 +751,7 @@ export default function ProductsAdminPage() {
             </Button>
             
             <Select
+              aria-label="Sort by"
               placeholder="Sort by"
               data={[
                 { value: 'created_at', label: 'Date Created' },
@@ -760,8 +763,12 @@ export default function ProductsAdminPage() {
               onChange={(value) => setSortBy(value as 'name' | 'price' | 'created_at' | 'updated_at')}
             />
             
+            {/* An icon-only control with no accessible name: a screen-reader
+                user heard "button" and nothing else, and it could not be
+                targeted by role in a test either. */}
             <ActionIcon
               variant="light"
+              aria-label={sortOrder === 'asc' ? 'Sort ascending, switch to descending' : 'Sort descending, switch to ascending'}
               onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
             >
               {sortOrder === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
@@ -914,11 +921,18 @@ export default function ProductsAdminPage() {
                 </Table.Td>
                 
                 <Table.Td>
+                  {/* Row actions are icon-only. A Mantine Tooltip is not an
+                      accessible name, so all three read as "button" to a
+                      screen reader and to any test trying to reach them by
+                      role. Each now names both the action and the product it
+                      acts on, which matters in a forty-row table where three
+                      dozen buttons otherwise share one label. */}
                   <Group gap="xs">
                     <Tooltip label="View Details">
                       <ActionIcon
                         variant="light"
                         size="md"
+                        aria-label={`View ${product.name}`}
                         onClick={() => {
                           window.location.href = `/admin/products/${product.id}`;
                         }}
@@ -926,11 +940,12 @@ export default function ProductsAdminPage() {
                         <IconEye size={18} />
                       </ActionIcon>
                     </Tooltip>
-                    
+
                     <Tooltip label="Edit Product">
                       <ActionIcon
                         variant="light"
                         size="md"
+                        aria-label={`Edit ${product.name}`}
                         onClick={() => {
                           window.location.href = `/admin/products/${product.id}`;
                         }}
@@ -938,10 +953,10 @@ export default function ProductsAdminPage() {
                         <IconEdit size={18} />
                       </ActionIcon>
                     </Tooltip>
-                    
+
                     <Menu shadow="md" width={200} position="bottom-end">
                       <Menu.Target>
-                        <ActionIcon variant="light" size="md">
+                        <ActionIcon variant="light" size="md" aria-label={`More actions for ${product.name}`}>
                           <IconDots size={18} />
                         </ActionIcon>
                       </Menu.Target>

@@ -582,8 +582,7 @@ export default function CouponsPage(): React.ReactElement {
             placeholder="10% off a first order"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.currentTarget.value })}
-            autosize
-            minRows={2}
+            rows={2}
           />
 
           <Group grow align="flex-start">
