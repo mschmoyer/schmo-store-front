@@ -1,0 +1,278 @@
+/*
+ * Button — §5.
+ * Heights 32 / 40 / 48. The press must feel physical: the button lifts on
+ * hover (translateY + deeper shadow) and settles on press (translateY(0) +
+ * shallower shadow), all at the 120ms micro duration.
+ */
+
+.root {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  appearance: none;
+
+  transition:
+    transform var(--duration-micro) var(--ease-out),
+    box-shadow var(--duration-micro) var(--ease-out),
+    background-color var(--duration-micro) var(--ease-out),
+    border-color var(--duration-micro) var(--ease-out),
+    color var(--duration-micro) var(--ease-out);
+}
+
+.root:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.root[aria-disabled='true'],
+.root:disabled {
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ---------------------------------------------------------------- sizes -- */
+
+.sm {
+  height: 32px;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+  gap: 6px;
+}
+
+.md {
+  height: 40px;
+  padding-inline: 16px;
+  font-size: 0.9375rem;
+}
+
+.lg {
+  height: 48px;
+  padding-inline: 22px;
+  font-size: 1rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Icon-only buttons stay square and meet the 40px touch floor (§7). */
+.iconOnly.sm {
+  width: 32px;
+  padding-inline: 0;
+}
+.iconOnly.md {
+  width: 40px;
+  padding-inline: 0;
+}
+.iconOnly.lg {
+  width: 48px;
+  padding-inline: 0;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* ------------------------------------------------------------- variants -- */
+
+/* Primary — ember fill. The inset highlight gives the fill a lit top edge so
+   it reads as a raised object rather than a flat rectangle. */
+.primary {
+  background-color: var(--accent);
+  color: var(--accent-fg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    var(--shadow-ember-sm);
+}
+
+.primary:hover:not(:disabled):not([aria-disabled='true']) {
+  background-color: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    var(--shadow-ember);
+}
+
+.primary:active:not(:disabled):not([aria-disabled='true']) {
+  background-color: var(--accent-active);
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 2px rgba(94, 25, 7, 0.35),
+    0 1px 1px rgba(249, 78, 27, 0.2);
+}
+
+/* Secondary — paper fill + hairline. Hover moves border AND elevation, not
+   just the background, so it does not read as a flat swap. */
+.secondary {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+  border-color: var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.secondary:hover:not(:disabled):not([aria-disabled='true']) {
+  border-color: var(--border-strong);
+  background-color: var(--surface-raised);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.secondary:active:not(:disabled):not([aria-disabled='true']) {
+  transform: translateY(0);
+  background-color: var(--surface-sunken);
+  box-shadow: inset 0 1px 2px rgba(16, 18, 22, 0.08);
+}
+
+/* Ghost — transparent until touched. */
+.ghost {
+  background-color: transparent;
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+.ghost:hover:not(:disabled):not([aria-disabled='true']) {
+  background-color: var(--surface-inset);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.ghost:active:not(:disabled):not([aria-disabled='true']) {
+  transform: translateY(0);
+  background-color: var(--surface-sunken);
+}
+
+/* Destructive — rose fill, same physics as primary. */
+.destructive {
+  background-color: var(--danger);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(217, 45, 32, 0.2);
+}
+
+.destructive:hover:not(:disabled):not([aria-disabled='true']) {
+  background-color: var(--rose-600);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    var(--shadow-rose);
+}
+
+.destructive:active:not(:disabled):not([aria-disabled='true']) {
+  background-color: var(--rose-700);
+  transform: translateY(0);
+  box-shadow: inset 0 1px 2px rgba(74, 10, 7, 0.34);
+}
+
+.destructive:focus-visible {
+  box-shadow: var(--focus-ring-danger);
+}
+
+/* Link — inline text action. Underline grows from the baseline on hover. */
+.link {
+  height: auto;
+  padding: 0;
+  background: none;
+  border-color: transparent;
+  color: var(--accent-text);
+  border-radius: var(--radius-xs);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 28%, transparent);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+  transition:
+    color var(--duration-micro) var(--ease-out),
+    text-decoration-color var(--duration-micro) var(--ease-out);
+}
+
+.link:hover:not(:disabled):not([aria-disabled='true']) {
+  color: var(--ember-800);
+  text-decoration-color: currentColor;
+  transform: none;
+}
+
+.link:active:not(:disabled):not([aria-disabled='true']) {
+  transform: none;
+}
+
+:global(:root[data-theme='dark']) .link:hover:not(:disabled),
+:global(:root:not([data-theme='light'])) .link:hover:not(:disabled) {
+  color: var(--ember-200);
+}
+
+/* ------------------------------------------------------------- disabled -- */
+
+.root:disabled,
+.root[aria-disabled='true'] {
+  box-shadow: none;
+}
+
+.primary:disabled,
+.primary[aria-disabled='true'],
+.destructive:disabled,
+.destructive[aria-disabled='true'] {
+  background-color: var(--border);
+  color: var(--text-disabled);
+}
+
+.secondary:disabled,
+.secondary[aria-disabled='true'],
+.ghost:disabled,
+.ghost[aria-disabled='true'],
+.link:disabled,
+.link[aria-disabled='true'] {
+  color: var(--text-disabled);
+  border-color: var(--border-subtle);
+  background-color: transparent;
+}
+
+/* -------------------------------------------------------------- loading -- */
+
+/*
+ * Width stability: the label keeps occupying its box while invisible, and the
+ * spinner is absolutely centred on top. The button never resizes mid-request.
+ */
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: inherit;
+  transition: opacity var(--duration-micro) var(--ease-out);
+}
+
+.loading .label {
+  opacity: 0;
+}
+
+.spinnerSlot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.icon > svg {
+  display: block;
+}

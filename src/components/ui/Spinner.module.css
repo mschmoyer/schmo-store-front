@@ -1,0 +1,51 @@
+.root {
+  display: inline-block;
+  flex: none;
+  color: currentColor;
+  vertical-align: middle;
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: spin 720ms linear infinite;
+}
+
+.track {
+  opacity: 0.22;
+}
+
+.head {
+  transform-origin: center;
+  animation: spinner-dash 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes spinner-dash {
+  0% {
+    stroke-dasharray: 1 62;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 38 62;
+    stroke-dashoffset: -12;
+  }
+  100% {
+    stroke-dasharray: 1 62;
+    stroke-dashoffset: -48;
+  }
+}
+
+/*
+ * Reduced motion: a spinner that cannot spin is not a spinner, so we keep a
+ * slow single rotation and drop the dash animation rather than freezing it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .svg {
+    animation: spin 2.4s linear infinite !important;
+  }
+  .head {
+    animation: none !important;
+    stroke-dasharray: 24 62;
+  }
+}

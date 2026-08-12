@@ -1,0 +1,157 @@
+/*
+ * Badge — a status pill. §7 says colour is never the sole signal, so the
+ * optional dot is there to give stock/order state a second, non-colour cue
+ * alongside the label text.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------- sizes -- */
+
+.sm {
+  height: 20px;
+  padding-inline: 8px;
+  font-size: 0.6875rem;
+  gap: 5px;
+}
+
+.md {
+  height: 24px;
+  padding-inline: 10px;
+  font-size: 0.75rem;
+}
+
+.lg {
+  height: 28px;
+  padding-inline: 12px;
+  font-size: 0.8125rem;
+}
+
+.square {
+  border-radius: var(--radius-xs);
+}
+
+/* ---------------------------------------------------------------- tones -- */
+
+.neutral {
+  background-color: var(--surface-inset);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+.neutral .dot {
+  background-color: var(--ink-400);
+}
+
+.ember {
+  background-color: var(--accent-subtle);
+  border-color: var(--accent-subtle-border);
+  color: var(--accent-text);
+}
+.ember .dot {
+  background-color: var(--ember-500);
+}
+
+.mint {
+  background-color: var(--success-subtle);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+.mint .dot {
+  background-color: var(--mint-500);
+}
+
+.amber {
+  background-color: var(--warning-subtle);
+  border-color: var(--warning-border);
+  color: var(--warning-text);
+}
+.amber .dot {
+  background-color: var(--amber-500);
+}
+
+.rose {
+  background-color: var(--danger-subtle);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+.rose .dot {
+  background-color: var(--rose-500);
+}
+
+/* Solid — for the rare badge that must win against a busy background. */
+.solid.neutral {
+  background-color: var(--ink-700);
+  border-color: transparent;
+  color: #ffffff;
+}
+.solid.ember {
+  background-color: var(--ember-500);
+  border-color: transparent;
+  color: #ffffff;
+}
+.solid.mint {
+  background-color: var(--mint-600);
+  border-color: transparent;
+  color: #ffffff;
+}
+.solid.amber {
+  background-color: var(--amber-600);
+  border-color: transparent;
+  color: #ffffff;
+}
+.solid.rose {
+  background-color: var(--rose-500);
+  border-color: transparent;
+  color: #ffffff;
+}
+.solid .dot {
+  background-color: currentColor;
+}
+
+/* ------------------------------------------------------------------ dot -- */
+
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.sm .dot {
+  width: 5px;
+  height: 5px;
+}
+
+/* A live badge pulses its dot — used for "syncing" / "live" states. */
+.pulse .dot {
+  animation: pulse-ring 2s var(--ease-out) infinite;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-inline-start: -2px;
+}
+
+.icon > svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+}

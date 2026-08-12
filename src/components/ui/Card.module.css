@@ -1,0 +1,173 @@
+/* Card — §5: paper-raised, 1px border, radius-lg, shadow-sm. */
+
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+
+  transition:
+    border-color var(--duration-standard) var(--ease-out),
+    box-shadow var(--duration-standard) var(--ease-out),
+    transform var(--duration-standard) var(--ease-out);
+}
+
+/* Sunken variant for wells and inset panels. */
+.sunken {
+  background-color: var(--surface-sunken);
+  box-shadow: none;
+}
+
+/* Flat variant: hairline only, no elevation. Use inside already-raised chrome. */
+.flat {
+  box-shadow: none;
+}
+
+/*
+ * Interactive cards lift on hover. No scale transform — §5 forbids it on
+ * anything wider than 320px and we cannot know the width here.
+ */
+.interactive {
+  cursor: pointer;
+  text-align: inherit;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.interactive:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+.interactive:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-md);
+}
+
+/* A hairline of ember along the top edge marks a promoted card. */
+.accent::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto -1px;
+  height: 3px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(90deg, var(--ember-400), var(--ember-600));
+}
+
+/* ----------------------------------------------------------------- pad -- */
+
+.padNone > .header,
+.padNone > .body,
+.padNone > .footer {
+  padding: 0;
+}
+
+.padSm > .header {
+  padding: 12px 16px;
+}
+.padSm > .body {
+  padding: 16px;
+}
+.padSm > .footer {
+  padding: 12px 16px;
+}
+
+.padMd > .header {
+  padding: 16px 20px;
+}
+.padMd > .body {
+  padding: 20px;
+}
+.padMd > .footer {
+  padding: 14px 20px;
+}
+
+.padLg > .header {
+  padding: 22px 28px;
+}
+.padLg > .body {
+  padding: 28px;
+}
+.padLg > .footer {
+  padding: 18px 28px;
+}
+
+/* -------------------------------------------------------------- slots --- */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.headerAction {
+  flex: none;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border-subtle);
+  background-color: var(--surface-sunken);
+  border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
+}
+
+.footerEnd {
+  justify-content: flex-end;
+}
+
+.footerBetween {
+  justify-content: space-between;
+}
+
+/* When the footer is the only slot after the body, keep it visually attached. */
+.footerPlain {
+  background-color: transparent;
+}
