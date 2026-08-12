@@ -302,44 +302,44 @@
   --surface-inverse: var(--ink-900);
   --surface-scrim: rgb(var(--ink-900-rgb) / 0.5);
 
-  /* Text — measured on --paper */
-  --text-primary: var(--ink-900); /* 18.25:1 */
-  --text-secondary: var(--ink-500); /* 5.90:1 */
-  --text-tertiary: var(--ink-500); /* was ink-400 (3.21:1); §2 bans ink-400 for read text */
-  --text-quaternary: var(--ink-400); /* decorative marks only — never a sentence */
-  --text-disabled: var(--ink-400);
-  --text-inverse: var(--paper);
+  /* Text — measured on --bg (pure white) */
+  --text-primary: var(--text); /* 18.74:1 */
+  --text-secondary: var(--text-muted); /* 5.05:1 */
+  --text-tertiary: var(--text-muted); /* NOT --text-subtle: 3.29:1 cannot carry prose */
+  --text-quaternary: var(--text-subtle); /* meta and decorative marks only */
+  --text-disabled: var(--text-subtle);
+  --text-inverse: #ffffff;
   --text-on-accent: #ffffff;
 
   /* Borders. --border-control is the only one that must clear 3:1 (WCAG
      1.4.11): it is the boundary that says "you may type here". */
-  --border: #cdd3dc; /* 1.44:1 on paper — decorative hairline, paired with shadow */
-  --border-subtle: #e4e8ee;
-  --border-strong: #a6adb9; /* 2.26:1 */
-  --border-control: var(--ink-400); /* 3.35:1 on white, 3.21:1 on paper */
+  --border-subtle: #eeeef0;
+  --border-control: #8a8e96; /* 3.29:1 on white */
   --border-inverse: var(--ink-700);
 
   /* Accent.
-     --accent        = brand identity. Rings, borders, rules, display >= 24px.
-     --accent-solid  = any fill that carries a white label. 4.51:1.
-     Hover DARKENS, so hover is a contrast increase (6.37:1), not a decrease. */
-  --accent: var(--ember-500);
-  --accent-solid: var(--ember-600);
-  --accent-solid-hover: var(--ember-700);
-  --accent-solid-active: var(--ember-800);
-  --accent-hover: var(--ember-600);
-  --accent-active: var(--ember-700);
-  --accent-subtle: var(--ember-50);
-  --accent-subtle-border: var(--ember-200);
-  --accent-text: var(--ember-700); /* 6.11:1 on paper */
+     There is no brand hue any more. The accent IS the ink, which is why the
+     primary button carries a white label at 18.74:1 instead of the 3.42:1 the
+     old vermilion fill managed. Hover LIGHTENS (13.99:1) rather than darkening,
+     because at this end of the ramp there is nowhere darker to go. */
+  --accent: var(--text);
+  --accent-solid: var(--text);
+  --accent-solid-hover: var(--ink-700);
+  --accent-solid-active: var(--ink-800);
+  --accent-hover: var(--ink-700);
+  --accent-active: var(--ink-800);
+  --accent-subtle: var(--surface-2);
+  --accent-subtle-border: var(--border);
+  --accent-text: var(--text);
   --accent-fg: #ffffff;
 
-  /* Status. `-solid` shades are the ones that carry white labels. */
-  --success: var(--mint-500);
-  --success-solid: var(--mint-700); /* 6.45:1 */
-  --success-subtle: var(--mint-50);
+  /* Status. `-solid` shades are the ones that carry white labels.
+     `success` is the signal green — the palette's one permitted chroma. */
+  --success: var(--signal); /* 5.31:1 on white */
+  --success-solid: var(--signal); /* white on it: 5.31:1 */
+  --success-subtle: var(--signal-soft);
   --success-border: var(--mint-100);
-  --success-text: var(--mint-700);
+  --success-text: var(--signal);
 
   --warning: var(--amber-500);
   --warning-solid: var(--amber-700); /* 5.78:1 */
@@ -366,13 +366,13 @@
    * CardFooter and Modal reset it so a button in a sunken footer gets a sunken
    * gap instead of a page-coloured one.
    *
-   * `--focus-ring-on-accent` exists because an ember ring on an ember button
-   * measures 1.00:1. ink-900 measures 4.22:1 against ember-600 and 3.94:1
-   * against rose-500, so it works on both filled variants.
+   * `--focus-ring-on-accent` exists because an ink ring on an ink button
+   * measures 1.00:1. White measures 18.74:1 against the ink fill and 6.57:1
+   * against the danger fill, so it works on both filled variants.
    */
-  --focus-ring-gap: var(--surface);
-  --focus-ring-color: var(--ember-500);
-  --focus-ring-on-accent: var(--ink-900);
+  --focus-ring-gap: var(--bg);
+  --focus-ring-color: var(--text);
+  --focus-ring-on-accent: #ffffff;
   --focus-ring: 0 0 0 2px var(--focus-ring-gap), 0 0 0 4px var(--focus-ring-color);
   --focus-ring-accent: 0 0 0 2px var(--focus-ring-gap), 0 0 0 4px var(--focus-ring-on-accent);
 
@@ -384,8 +384,28 @@
   --skeleton-base: var(--ink-100);
   --skeleton-sheen: rgba(255, 255, 255, 0.72);
 
-  /* Section rhythm (§4) */
-  --section-y: clamp(5rem, 10vw, 8rem);
+  /*
+   * -- SECTION RHYTHM ----------------------------------------------------
+   * ONE scale, and every marketing section reads it. No section is allowed a
+   * bespoke padding value: that is what produced a single line of text
+   * followed by 200px of nothing. Three steps only.
+   *
+   *   --section-y       the default block padding for a section
+   *   --section-y-tight sections that sit directly under a rule they belong to
+   *   --stack-*         the vertical rhythm INSIDE a section
+   */
+  --section-y: clamp(3.5rem, 6vw, 5.5rem);
+  --section-y-tight: clamp(2.5rem, 4vw, 3.5rem);
+
+  --stack-xs: var(--space-3);
+  --stack-sm: var(--space-5);
+  --stack-md: var(--space-7);
+  --stack-lg: var(--space-9);
+
+  /*
+   * The single left edge. Every section's content starts here — the container
+   * is defined once, in parts/Section.module.css, and nothing overrides it.
+   */
   --gutter: var(--space-6);
   --app-pad: var(--space-6);
 }
@@ -401,58 +421,72 @@
   :root:not([data-theme="light"]):not([data-mantine-color-scheme="light"]) {
     color-scheme: dark;
 
-    --surface: #0e1014;
-    --surface-raised: #171a20;
-    --surface-sunken: #08090b;
-    --surface-inset: #1e222a;
-    --surface-hover: #262c36;
-    --surface-overlay: #1c2027;
+    --bg: #0e0f11;
+    --surface-2: #1b1d20;
+    --border: #2a2c30;
+    --border-strong: #3f434a;
+    --text: #f4f4f5;
+    --text-muted: #a1a5ad;
+    --text-subtle: #85898f;
+    --signal: var(--signal-on-dark);
+    --signal-soft: rgb(var(--mint-500-rgb) / 0.18);
+
+    --surface: #0e0f11;
+    --surface-raised: #17191c;
+    --surface-sunken: #0a0b0c;
+    --surface-inset: #1b1d20;
+    --surface-hover: #24272b;
+    --surface-overlay: #1b1d20;
     --surface-inverse: var(--ink-100);
-    --surface-scrim: rgba(4, 5, 7, 0.68);
+    --surface-scrim: rgba(6, 7, 8, 0.68);
 
-    --text-primary: var(--ink-100);
-    --text-secondary: var(--ink-300);
-    --text-tertiary: #9aa2af;
-    --text-quaternary: var(--ink-400);
-    --text-disabled: #666e7c;
-    --text-inverse: var(--ink-900);
-    --text-on-accent: #ffffff;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a5ad;
+    --text-tertiary: #a1a5ad;
+    --text-quaternary: #85898f;
+    --text-disabled: #6b6f76;
+    --text-inverse: #111214;
+    --text-on-accent: #111214;
 
-    --border: #3a414d;
-    --border-subtle: #333b47;
-    --border-strong: #4e5666;
-    --border-control: #646c7a;
+    --border-subtle: #232629;
+    --border-control: #6b6f76;
     --border-inverse: var(--ink-200);
 
-    --accent: var(--ember-500);
-    --accent-solid: var(--ember-600);
-    --accent-solid-hover: var(--ember-700);
-    --accent-solid-active: var(--ember-800);
-    --accent-hover: var(--ember-400);
-    --accent-active: var(--ember-600);
-    --accent-subtle: rgb(var(--ember-500-rgb) / 0.16);
-    --accent-subtle-border: rgb(var(--ember-500-rgb) / 0.34);
-    --accent-text: var(--ember-300);
+    /* On a dark ground the accent inverts: a white fill with ink type. */
+    --accent: #f4f4f5;
+    --accent-solid: #f4f4f5;
+    --accent-solid-hover: #ffffff;
+    --accent-solid-active: #d2d3d6;
+    --accent-hover: #ffffff;
+    --accent-active: #d2d3d6;
+    --accent-subtle: #1b1d20;
+    --accent-subtle-border: #2a2c30;
+    --accent-text: #f4f4f5;
+    --accent-fg: #111214;
 
-    --success-subtle: rgb(var(--mint-500-rgb) / 0.16);
-    --success-border: rgb(var(--mint-500-rgb) / 0.32);
-    --success-text: #5fd7ab;
+    --success: var(--signal-on-dark);
+    --success-solid: var(--signal-on-dark);
+    --success-subtle: rgb(var(--mint-500-rgb) / 0.18);
+    --success-border: rgb(var(--mint-500-rgb) / 0.36);
+    --success-text: var(--signal-on-dark);
 
-    --warning-subtle: rgb(var(--amber-500-rgb) / 0.17);
-    --warning-border: rgb(var(--amber-500-rgb) / 0.34);
-    --warning-text: #f0b64a;
+    --warning-subtle: rgb(var(--amber-500-rgb) / 0.18);
+    --warning-border: rgb(var(--amber-500-rgb) / 0.36);
+    --warning-text: #e0a55c;
 
-    --danger-subtle: rgb(var(--rose-500-rgb) / 0.17);
-    --danger-border: rgb(var(--rose-500-rgb) / 0.34);
-    --danger-text: #ff8b81;
+    --danger-subtle: rgb(var(--rose-500-rgb) / 0.2);
+    --danger-border: rgb(var(--rose-500-rgb) / 0.38);
+    --danger-text: #f08a80;
 
-    --info-subtle: rgba(37, 99, 235, 0.18);
-    --info-border: rgba(37, 99, 235, 0.36);
-    --info-text: #9dbaff;
+    --info-subtle: rgba(47, 93, 140, 0.22);
+    --info-border: rgba(47, 93, 140, 0.42);
+    --info-text: #9fbcd8;
 
-    /* ink-900 would vanish against a near-black page, so the on-accent ring
-       flips to ink-100: 3.88:1 vs ember-600, 16.39:1 vs the page. */
-    --focus-ring-on-accent: var(--ink-100);
+    /* An ink ring would vanish against a near-black page; white is 17.2:1
+       against the page and 4.0:1 against the white-fill accent's own ink. */
+    --focus-ring-gap: #0e0f11;
+    --focus-ring-color: #f4f4f5;
+    --focus-ring-on-accent: #111214;
 
     /* Elevation ladder: a strengthening top hairline over the surface steps. */
     --shadow-xs: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -461,7 +495,7 @@
     --shadow-lg: inset 0 1px 0 rgba(255, 255, 255, 0.085), 0 18px 40px -10px rgba(0, 0, 0, 0.66);
     --shadow-xl: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 32px 72px -16px rgba(0, 0, 0, 0.74);
 
-    --skeleton-base: #262c36;
+    --skeleton-base: #24272b;
     --skeleton-sheen: rgba(255, 255, 255, 0.07);
   }
 }
@@ -471,64 +505,81 @@
 :root[data-mantine-color-scheme="dark"] {
   color-scheme: dark;
 
-  --surface: #0e1014;
-  --surface-raised: #171a20;
-  --surface-sunken: #08090b;
-  --surface-inset: #1e222a;
-  --surface-hover: #262c36;
-  --surface-overlay: #1c2027;
+  --bg: #0e0f11;
+  --surface-2: #1b1d20;
+  --border: #2a2c30;
+  --border-strong: #3f434a;
+  --text: #f4f4f5;
+  --text-muted: #a1a5ad;
+  --text-subtle: #85898f;
+  --signal: var(--signal-on-dark);
+  --signal-soft: rgb(var(--mint-500-rgb) / 0.18);
+
+  --surface: #0e0f11;
+  --surface-raised: #17191c;
+  --surface-sunken: #0a0b0c;
+  --surface-inset: #1b1d20;
+  --surface-hover: #24272b;
+  --surface-overlay: #1b1d20;
   --surface-inverse: var(--ink-100);
-  --surface-scrim: rgba(4, 5, 7, 0.68);
+  --surface-scrim: rgba(6, 7, 8, 0.68);
 
-  --text-primary: var(--ink-100);
-  --text-secondary: var(--ink-300);
-  --text-tertiary: #9aa2af;
-  --text-quaternary: var(--ink-400);
-  --text-disabled: #666e7c;
-  --text-inverse: var(--ink-900);
-  --text-on-accent: #ffffff;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a5ad;
+  --text-tertiary: #a1a5ad;
+  --text-quaternary: #85898f;
+  --text-disabled: #6b6f76;
+  --text-inverse: #111214;
+  --text-on-accent: #111214;
 
-  --border: #3a414d;
-  --border-subtle: #333b47;
-  --border-strong: #4e5666;
-  --border-control: #646c7a;
+  --border-subtle: #232629;
+  --border-control: #6b6f76;
   --border-inverse: var(--ink-200);
 
-  --accent: var(--ember-500);
-  --accent-solid: var(--ember-600);
-  --accent-solid-hover: var(--ember-700);
-  --accent-solid-active: var(--ember-800);
-  --accent-hover: var(--ember-400);
-  --accent-active: var(--ember-600);
-  --accent-subtle: rgb(var(--ember-500-rgb) / 0.16);
-  --accent-subtle-border: rgb(var(--ember-500-rgb) / 0.34);
-  --accent-text: var(--ember-300);
+  /* On a dark ground the accent inverts: a white fill with ink type. */
+  --accent: #f4f4f5;
+  --accent-solid: #f4f4f5;
+  --accent-solid-hover: #ffffff;
+  --accent-solid-active: #d2d3d6;
+  --accent-hover: #ffffff;
+  --accent-active: #d2d3d6;
+  --accent-subtle: #1b1d20;
+  --accent-subtle-border: #2a2c30;
+  --accent-text: #f4f4f5;
+  --accent-fg: #111214;
 
-  --success-subtle: rgb(var(--mint-500-rgb) / 0.16);
-  --success-border: rgb(var(--mint-500-rgb) / 0.32);
-  --success-text: #5fd7ab;
+  --success: var(--signal-on-dark);
+  --success-solid: var(--signal-on-dark);
+  --success-subtle: rgb(var(--mint-500-rgb) / 0.18);
+  --success-border: rgb(var(--mint-500-rgb) / 0.36);
+  --success-text: var(--signal-on-dark);
 
-  --warning-subtle: rgb(var(--amber-500-rgb) / 0.17);
-  --warning-border: rgb(var(--amber-500-rgb) / 0.34);
-  --warning-text: #f0b64a;
+  --warning-subtle: rgb(var(--amber-500-rgb) / 0.18);
+  --warning-border: rgb(var(--amber-500-rgb) / 0.36);
+  --warning-text: #e0a55c;
 
-  --danger-subtle: rgb(var(--rose-500-rgb) / 0.17);
-  --danger-border: rgb(var(--rose-500-rgb) / 0.34);
-  --danger-text: #ff8b81;
+  --danger-subtle: rgb(var(--rose-500-rgb) / 0.2);
+  --danger-border: rgb(var(--rose-500-rgb) / 0.38);
+  --danger-text: #f08a80;
 
-  --info-subtle: rgba(37, 99, 235, 0.18);
-  --info-border: rgba(37, 99, 235, 0.36);
-  --info-text: #9dbaff;
+  --info-subtle: rgba(47, 93, 140, 0.22);
+  --info-border: rgba(47, 93, 140, 0.42);
+  --info-text: #9fbcd8;
 
-  --focus-ring-on-accent: var(--ink-100);
+  /* An ink ring would vanish against a near-black page; white is 17.2:1
+     against the page and 4.0:1 against the white-fill accent's own ink. */
+  --focus-ring-gap: #0e0f11;
+  --focus-ring-color: #f4f4f5;
+  --focus-ring-on-accent: #111214;
 
+  /* Elevation ladder: a strengthening top hairline over the surface steps. */
   --shadow-xs: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --shadow-sm: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 18px -4px rgba(0, 0, 0, 0.55);
   --shadow-lg: inset 0 1px 0 rgba(255, 255, 255, 0.085), 0 18px 40px -10px rgba(0, 0, 0, 0.66);
   --shadow-xl: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 32px 72px -16px rgba(0, 0, 0, 0.74);
 
-  --skeleton-base: #262c36;
+  --skeleton-base: #24272b;
   --skeleton-sheen: rgba(255, 255, 255, 0.07);
 }
 
