@@ -19,7 +19,6 @@ import {
   Stack,
   NumberInput,
   Alert,
-  Skeleton,
   Tooltip,
   Modal,
   FileInput
@@ -52,6 +51,7 @@ import { Product, ProductFilters } from '@/types/database';
 import { EmptyState, Price } from '@/components/ui';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
+import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
 import table from '@/components/admin/adminTable.module.css';
 
 // Enhanced Product interface with sales data
@@ -545,11 +545,14 @@ export default function ProductsAdminPage() {
   
   
   if (loading && !refreshing) {
+    /* Two grey slabs told you nothing about what was coming. This is the real
+       screen's geometry: a heading, five stat cards and the product grid (§5). */
     return (
-      <Box>
-        <Skeleton height={60} mb="md" />
-        <Skeleton height={400} />
-      </Box>
+      <Stack gap="lg">
+        <AdminPageHeader title="Products" description="Loading your catalog." />
+        <StatGridSkeleton count={5} />
+        <TableSkeleton rows={8} columns={6} label="Loading products" />
+      </Stack>
     );
   }
   

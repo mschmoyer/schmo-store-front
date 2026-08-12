@@ -77,6 +77,29 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
   const connected = api.state.shipstation.connected;
   const [copied, setCopied] = React.useState(false);
 
+  /*
+   * What is actually true about this store, said out loud.
+   *
+   * This screen used to claim "Anyone with this address can shop it right now"
+   * sixty pixels above a bullet explaining that the store "can show products
+   * but not take payments" — and, when ShipStation was skipped, above a store
+   * with nothing in it at all. Both statements cannot be true. "Shop it" means
+   * "buy something", and nothing here can be bought until there is a catalogue
+   * and a payment account, neither of which onboarding sets up.
+   *
+   * Payments are deliberately not part of this wizard: `docs/payments.md`
+   * ships the merchant's own $1 intro plan at `/admin/billing` and Stripe
+   * Connect for taking money from shoppers, both post-launch. That is a
+   * defensible product decision. Silently launching a merchant into a store
+   * that cannot sell, having never mentioned either, is not.
+   */
+  const sellable = imported > 0;
+  const headline = !published
+    ? 'Saved as a draft. Only you can see it until you publish from the dashboard.'
+    : sellable
+      ? 'It is live at this address. Two things left before it can take money — both below.'
+      : 'It is live at this address, but there is nothing in it to sell yet.';
+
   React.useEffect(() => {
     if (published) celebrate();
   }, [published]);
@@ -94,7 +117,9 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
   return (
     <div className={wizardStyles.card}>
       <span className={wizardStyles.stepEyebrow}>
-        {TOTAL_STEPS} of {TOTAL_STEPS} done
+        {connected && imported > 0
+          ? `${TOTAL_STEPS} of ${TOTAL_STEPS} done`
+          : `${TOTAL_STEPS - (connected ? 1 : 2)} of ${TOTAL_STEPS} done · ${connected ? 1 : 2} skipped`}
       </span>
 
       <div className={styles.launchHead}>
@@ -106,11 +131,7 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
         </h1>
       </div>
 
-      <p className={wizardStyles.stepHelper}>
-        {published
-          ? 'Anyone with this address can shop it right now.'
-          : 'Saved as a draft. Only you can see it until you publish from the dashboard.'}
-      </p>
+      <p className={wizardStyles.stepHelper}>{headline}</p>
 
       <p className={styles.sectionLabel}>{STEPS.launch.helper}</p>
 
@@ -158,8 +179,25 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
         <li className={styles.nextItem}>
           <span className={styles.nextDot} aria-hidden="true" />
           <span>
-            <strong>Connect Stripe</strong> before you share the link. Until then the store can
-            show products but not take payments.
+            <strong>Connect Stripe to take payments.</strong> Nothing on the storefront can be
+            bought until you do — a visitor can browse, but there is no checkout. It lives under{' '}
+            <Link href="/admin/billing" className={styles.inlineLink}>
+              Billing
+            </Link>{' '}
+            in your dashboard.
+          </span>
+        </li>
+
+        <li className={styles.nextItem}>
+          <span className={styles.nextDot} aria-hidden="true" />
+          <span>
+            <strong>We haven’t charged you anything.</strong> Setup asked for no card. RebelShops is
+            $1/month for your first three months and $19.99/month after that, and you start it
+            yourself from{' '}
+            <Link href="/admin/billing" className={styles.inlineLink}>
+              Billing
+            </Link>{' '}
+            when you are ready.
           </span>
         </li>
 

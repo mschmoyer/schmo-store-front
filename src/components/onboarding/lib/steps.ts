@@ -143,6 +143,27 @@ export interface OnboardingProgress {
   currentStep: StepId;
   completedSteps: StepId[];
   status: 'in_progress' | 'completed';
+  /**
+   * Steps the merchant moved past without doing.
+   *
+   * A skipped step is still "completed" as far as the state machine is
+   * concerned — the wizard has to be able to move on — but it is emphatically
+   * not *done*, and the indicator must not tell the merchant it is. The server
+   * already records `status: 'skipped'` in `import_state` and
+   * `shipstationSkipped` in `data`; this is that fact, carried into the UI.
+   */
+  skippedSteps?: StepId[];
+}
+
+/**
+ * Which numbered steps the merchant actually finished, as opposed to skipped.
+ *
+ * @param progress - Current progress
+ * @returns Completed numbered steps that were not skipped
+ */
+export function reallyCompletedSteps(progress: OnboardingProgress): StepId[] {
+  const skipped = new Set(progress.skippedSteps ?? []);
+  return progress.completedSteps.filter((id) => STEPS[id].number !== null && !skipped.has(id));
 }
 
 /**
@@ -170,6 +191,7 @@ export function completeStep(
     stepIndex(target) > stepIndex(progress.currentStep) ? target : progress.currentStep;
 
   return {
+    ...progress,
     currentStep,
     completedSteps: sortSteps(completedSteps),
     status: currentStep === 'launch' ? 'completed' : progress.status,

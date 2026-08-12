@@ -1,6 +1,7 @@
 import {
   CONTRAST_TEXT,
   CONTRAST_UI,
+  deriveTokens,
   ensureContrast,
   mix,
   type ResolvedTheme,
@@ -56,16 +57,19 @@ function buttonVars(theme: ResolvedTheme): string[] {
     `--stx-btn-weight: ${uppercase ? '650' : '600'}`,
   ];
 
-  const brand = theme.brand.color;
-  const surface = theme.brand.surface;
-  const raised = theme.brand.surfaceRaised;
+  // Every ground an unfilled button can land on. The sunken one matters more
+  // than it looks: quick-add sits on the product card's image tile, not on the
+  // card, which is why an outline label measured differently in the grid than
+  // it did in the hero.
+  const { brand, surface, surfaceRaised, surfaceSunken } = deriveTokens(theme);
+  const grounds = [surface, surfaceRaised, surfaceSunken];
 
   switch (theme.buttons.style) {
     case 'outline': {
       // An outline button is transparent, so its ground is whatever band or card
       // it lands on. Both are checked.
-      const label = ensureContrast(brand, [surface, raised], CONTRAST_TEXT);
-      const edge = ensureContrast(brand, [surface, raised], CONTRAST_UI);
+      const label = ensureContrast(brand, grounds, CONTRAST_TEXT);
+      const edge = ensureContrast(brand, grounds, CONTRAST_UI);
       return [
         ...shared,
         '--stx-btn-bg: transparent',
@@ -81,12 +85,10 @@ function buttonVars(theme: ResolvedTheme): string[] {
       // The tints are computed rather than left to `color-mix()` so their
       // contrast can be measured against the label before either ships.
       const rest = mix(surface, brand, 0.16);
-      const restOnCard = mix(raised, brand, 0.16);
       const hover = mix(surface, brand, 0.28);
-      const hoverOnCard = mix(raised, brand, 0.28);
       const label = ensureContrast(
         brand,
-        [rest, restOnCard, hover, hoverOnCard],
+        [rest, hover, ...grounds.map((ground) => mix(ground, brand, 0.16))],
         CONTRAST_TEXT,
       );
       return [

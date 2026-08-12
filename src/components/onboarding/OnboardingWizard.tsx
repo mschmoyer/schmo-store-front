@@ -56,12 +56,32 @@ export default function OnboardingWizard(): React.ReactElement {
 
   const Step = STEP_COMPONENTS[api.state.currentStep] ?? AccountStep;
 
+  /*
+   * Which of the five the merchant passed over rather than finished.
+   *
+   * The server already knows — `shipstation.skipped` and an import whose status
+   * is `skipped` — and the indicator is the only place that ever pretended
+   * otherwise. `import` also counts as skipped when ShipStation was never
+   * connected, because there was nothing there to import in the first place.
+   */
+  const skippedSteps: StepId[] = [];
+  if (api.state.shipstation.skipped || (!api.state.shipstation.connected && api.state.completedSteps.includes('shipstation'))) {
+    skippedSteps.push('shipstation');
+  }
+  if (
+    api.state.completedSteps.includes('import') &&
+    (api.state.importProgress.status === 'skipped' || api.state.importProgress.imported === 0)
+  ) {
+    skippedSteps.push('import');
+  }
+
   return (
     <WizardContainer
       progress={{
         currentStep: api.state.currentStep,
         completedSteps: api.state.completedSteps,
         status: api.state.status,
+        skippedSteps,
       }}
       onNavigate={(step) => void api.navigate(step)}
       busy={api.busy}

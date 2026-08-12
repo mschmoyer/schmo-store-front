@@ -34,19 +34,34 @@
   box-shadow: var(--focus-ring);
 }
 
+/*
+ * Two lines' worth of room, always.
+ *
+ * A row of cards is read by scanning the FIGURES, and that only works if the
+ * figures sit on one baseline. When the head sized to its content, "Revenue
+ * this month" wrapped to two lines while "Products" stayed on one, and the two
+ * numbers underneath fell 18px out of alignment — a ragged row that looks like
+ * a rendering bug. Reserving the second line costs nothing and the baseline
+ * holds however long a label gets.
+ */
 .head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2);
-  min-height: 20px;
+  min-height: 34px;
 }
 
 .label {
   font-size: var(--text-xs);
+  line-height: 1.35;
   letter-spacing: 0.02em;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.icon {
+  margin-top: 1px;
 }
 
 /* The mark is furniture. It is never tinted — that was the "pastel per card"

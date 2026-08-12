@@ -577,6 +577,19 @@
   margin: 16px 0 0;
 }
 
+/* A link inside running copy. Underlined rather than colour-only, so it is
+   still findable for anyone who cannot separate the two. */
+.inlineLink {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+
+.inlineLink:hover {
+  text-decoration-thickness: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .progressFill,
   .presetCard,

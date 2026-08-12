@@ -76,6 +76,10 @@ export default async function StoreHomePage({ params, searchParams }: StorePageP
   const { store, theme, sections, categories, isPreview } = result.data;
   const productCount = await countActiveProducts(store.id);
 
+  // A preview token is already proof the viewer is authorised to see the draft,
+  // so it counts as the merchant looking at their own shop.
+  const isOwner = isPreview || (await isStoreOwner(store.id));
+
   // The default sections and `footer.showNewsletter` are both on out of the
   // box, which would stack two identical email forms at the bottom of the page.
   const hasNewsletterSection = sections.some(
@@ -85,11 +89,25 @@ export default async function StoreHomePage({ params, searchParams }: StorePageP
   return (
     <StorefrontShell {...result.data} suppressFooterNewsletter={hasNewsletterSection}>
       {productCount === 0 ? (
-        <StoreBand>
-          <StoreContainer width="narrow">
-            <EmptyCatalogue />
-          </StoreContainer>
-        </StoreBand>
+        <>
+          {/* The merchant's own composition, exactly as they designed it. The
+              sections that need products bow out by themselves. */}
+          <SectionList sections={sections} ctx={{ store, theme, categories, isPreview }} />
+
+          <StoreBand>
+            <StoreContainer width="narrow">
+              {isOwner ? (
+                <EmptyCatalogue />
+              ) : (
+                <SectionHeading
+                  align="center"
+                  heading="Nothing for sale just yet"
+                  subheading="This shop is still being set up. Check back soon."
+                />
+              )}
+            </StoreContainer>
+          </StoreBand>
+        </>
       ) : (
         // Rendered inline, with no Suspense boundary.
         //

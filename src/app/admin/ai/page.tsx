@@ -366,8 +366,9 @@ export default function AIPage() {
             <div>
               <Text fw={500}>AI Features Available</Text>
               <Text size="sm" c="dimmed">
-                {aiFeatures.filter(f => f.status === 'available').length} features ready to use, 
-                {aiFeatures.filter(f => f.status === 'coming-soon').length} more coming soon
+                {aiFeatures.filter((f) => f.status === 'available').length} ready to use
+                {', '}
+                {aiFeatures.filter((f) => f.status === 'coming-soon').length} more coming soon
               </Text>
             </div>
             {/* Was variant="gradient" — §1's anti-goals list "no pastel

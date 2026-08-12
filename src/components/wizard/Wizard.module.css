@@ -277,6 +277,32 @@
   font-weight: 600;
 }
 
+/* A skipped step is *handled*, not *done*. It gets its own muted treatment so
+   a merchant scanning the rail can see at a glance which of the five they
+   actually completed, rather than five identical green ticks over a store with
+   no products in it. */
+.stepItem[data-state='skipped'] .stepMarker {
+  background: var(--surface-sunken);
+  border-color: var(--border-strong);
+  color: var(--text-tertiary);
+}
+
+.stepItem[data-state='skipped'] .stepLabel {
+  color: var(--text-secondary);
+}
+
+.stepSkipped {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.segment[data-state='skipped'] {
+  background: var(--border-strong);
+}
+
 /* -- Step indicator, narrow --------------------------------------------- */
 
 .compact {
