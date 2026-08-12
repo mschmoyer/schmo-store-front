@@ -60,7 +60,7 @@ export function HowItWorksSteps({
         className={[
           styles.steps,
           hideIntro ? styles.stepsFlush : '',
-          showFigures ? styles.withFigures : styles.noFigures,
+          showFigures ? styles.withFigures : styles.compact,
         ]
           .filter(Boolean)
           .join(' ')}

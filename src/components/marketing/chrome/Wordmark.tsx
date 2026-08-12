@@ -8,7 +8,7 @@ export interface WordmarkProps {
   size?: number;
   /** Hides the "RebelShops" lettering, leaving the mark alone. */
   markOnly?: boolean;
-  /** Inverts the lettering for use on `--ink-950` grounds. */
+  /** Inverts the lettering for use on the `--text` ink ground. */
   onDark?: boolean;
   className?: string;
 }
@@ -60,17 +60,17 @@ export function Wordmark({
             aria-label="RebelShops"
             focusable="false"
           >
-            <rect width="32" height="32" rx="8" fill="var(--ink-950)" />
+            <rect width="32" height="32" rx="8" fill="var(--text)" />
             <path
               d="M7.5 14.2 16 8.4l8.5 5.8"
               fill="none"
-              stroke="var(--ember-500)"
+              stroke="#ffffff"
               strokeWidth="2.6"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <path d="M11 16h10v7.6H11z" fill="var(--paper)" opacity="0.94" />
-            <circle cx="16" cy="19.4" r="1.7" fill="var(--ember-500)" />
+            <path d="M11 16h10v7.6H11z" fill="#ffffff" opacity="0.94" />
+            <circle cx="16" cy="19.4" r="1.7" fill="var(--text)" />
           </svg>
           {markOnly ? null : <span className={styles.text}>RebelShops</span>}
         </>

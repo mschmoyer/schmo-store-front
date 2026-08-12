@@ -19,80 +19,113 @@ not "empowering your journey." Short sentences. Real numbers. Never exclamation 
 
 ## 2. Color
 
-The palette is warm ink + paper + a vermilion signal. It is deliberately *not* the blue/violet
-default of the category. Money-green is reserved for value and success, never for chrome.
+**Revised 2026-08-12.** The palette is **near-monochrome plus one signal**: a white ground, a
+near-black ink for type and primary action, and a single green reserved for money, stock and
+success. The previous warm-ink/paper/vermilion scheme was rejected by the owner ("I hate the
+existing color scheme"), and separately it shipped a measured AA failure on every primary button.
+Both problems are answered by the same decision: **the accent is the ink**.
 
-### Neutrals — "Ink" (warm-cooled charcoal, slight blue undertone)
-
-| Token | Hex | Use |
-|---|---|---|
-| `--ink-950` | `#08090B` | Marketing page ground, deepest surface |
-| `--ink-900` | `#0E1014` | Dark section ground |
-| `--ink-800` | `#171A20` | Dark card surface |
-| `--ink-700` | `#22262F` | Dark border / raised surface |
-| `--ink-600` | `#333944` | Dark hairline, disabled dark |
-| `--ink-500` | `#5A626F` | Muted text on light |
-| `--ink-400` | `#858D9A` | Placeholder, tertiary text |
-| `--ink-300` | `#B4BAC4` | Disabled text on light |
-| `--ink-200` | `#DCE0E6` | Border on light |
-| `--ink-100` | `#ECEEF2` | Subtle fill on light |
-| `--ink-50`  | `#F5F6F8` | App background wash |
-
-### Paper — warm off-white, the light-mode ground
+### The palette
 
 | Token | Hex | Use |
 |---|---|---|
-| `--paper` | `#FBFAF8` | Light page ground (warm, never pure white) |
-| `--paper-raised` | `#FFFFFF` | Cards, popovers, inputs |
-| `--paper-sunken` | `#F2F1ED` | Wells, table headers, inset areas |
+| `--bg` | `#FFFFFF` | Page ground. Pure white, not an off-white. |
+| `--surface-2` | `#F4F4F5` | Subtle fill: wells, table headers, inset areas. A *fill*, never a section band. |
+| `--border` | `#E5E5E7` | Hairlines and card borders |
+| `--border-strong` | `#D2D3D6` | Emphasised edges, dashed placeholders |
+| `--text` | `#111214` | Primary text **and** the primary button fill |
+| `--text-muted` | `#6B6F76` | Secondary text |
+| `--text-subtle` | `#8A8E96` | Meta and captions only, never body copy |
+| `--signal` | `#0F7B4A` | Money, in-stock, savings, success. **Nothing else.** |
+| `--signal-soft` | `#E8F5EE` | Signal wash |
+| `--signal-on-dark` | `#3FBF83` | The same role on the one inverted section |
+| `--warning` | `#B45309` | Low stock |
+| `--danger` | `#B42318` | Errors, out of stock |
 
-### Ember — primary action / brand signal (vermilion)
+The neutral ramp (`--ink-950` … `--ink-50`) resolves to those values: `--ink-900` *is* `--text`,
+`--ink-500` *is* `--text-muted`, `--ink-100` *is* `--border`, `--ink-50` *is* `--surface-2`.
+Components should read the semantic names.
 
-| Token | Hex |
-|---|---|
-| `--ember-50` | `#FFF3EE` |
-| `--ember-100` | `#FFE1D5` |
-| `--ember-200` | `#FFC0A8` |
-| `--ember-300` | `#FF9871` |
-| `--ember-400` | `#FF6F3D` |
-| `--ember-500` | `#F94E1B` | ← primary |
-| `--ember-600` | `#DC3A0C` |
-| `--ember-700` | `#B32D09` |
-| `--ember-800` | `#8A230A` |
-| `--ember-900` | `#5E1907` |
+`--azure-*` still exists for informational product states and is desaturated to `#2F5D8C`. It never
+appears on the marketing site.
 
-### Support
+### Buttons
 
-| Token | Hex | Use |
-|---|---|---|
-| `--mint-500` | `#0FA871` | Money, in-stock, success, savings |
-| `--mint-50` | `#E8F8F1` | Success wash |
-| `--amber-500` | `#D98A00` | Warning, low stock |
-| `--amber-50` | `#FEF6E6` | Warning wash |
-| `--rose-500` | `#D92D20` | Destructive, out of stock, error |
-| `--rose-50` | `#FEECEB` | Error wash |
-| `--azure-500` | `#2563EB` | Informational only. Never a CTA. |
+- **Primary:** solid `#111214` fill, white label — **18.74:1**. Hover *lightens* to `#2A2C30`
+  (13.99:1), so hover stays far above AAA.
+- **Secondary:** white fill, `#E5E5E7` border, `#111214` text.
+- **Focus ring:** `0 0 0 2px #FFFFFF, 0 0 0 4px #111214`.
+
+### The signal is the palette's discipline
+
+`--signal` appears on prices, savings, in-stock/quantity states and success rows, and nowhere else.
+It is not for headings, icons, eyebrows, decorative flourishes, or for tinting "our" column of a
+comparison table — a green column-wash reads as *"our side is the good side"*, which is exactly the
+tell that makes a comparison look rigged. **Count the usages before shipping.** The homepage
+currently renders 11, all of them money, stock or sync success.
+
+### Ember is decommissioned
+
+The vermilion ramp is gone. `--ember-*` survives *only* as a shim at the bottom of `globals.css`
+whose every step resolves to the neutral ramp, so that unmigrated code renders monochrome instead of
+orange. It is not part of the palette, it must not be used in new code, and the block should be
+deleted once nothing outside it references `--ember-*`. Because the shim makes stale references
+render *correctly-ish*, grep alone will no longer tell you what is migrated —
+`src/components/marketing/__tests__/palette.test.ts` is the check that will.
 
 ### Contrast rules (non-negotiable)
 
-- Body text on `--paper` uses `--ink-900`. Secondary text uses `--ink-500` (7.0:1). Never `--ink-400`
-  for anything a user must read.
-- **Corrected 2026-08-12.** An earlier version of this document claimed white text on an
-  `--ember-500` fill was acceptable at ≥16px semibold. That was wrong and it shipped a real defect:
-  white on `#F94E1B` measures **3.42:1**, which fails AA for normal text (4.5:1) and only clears the
-  large-text bar (3:1) at ≥24px, or ≥18.66px bold. Primary buttons are 16px semibold, so every
-  primary button in the product failed. Measured ratios of white on each shade:
-  `400` 2.77 · `500` 3.42 · `600` **4.51** · `700` 6.37 · `800` 9.03.
-- **Therefore:** `--ember-600` (`#DC3A0C`) is the *solid-fill* token wherever white text sits on it —
-  primary buttons, filled badges, any ember surface carrying a label. Hover goes to `--ember-700`
-  (6.37:1), which also makes hover a contrast *increase* rather than a decrease. `--ember-500`
-  remains the brand identity color for logo, illustration, focus rings, borders, thin rules and
-  large display type ≥24px, where it is legal and looks better.
-- Ember *text* on a light background must be `--ember-700` or darker.
-- Every interactive element has a visible `:focus-visible` ring. The ring must contrast against the
-  element it surrounds, not just against the page: an ember ring around an ember button measures
-  1.00:1 and is invisible. Use the two-layer construction `0 0 0 2px var(--surface), 0 0 0 4px <ring>`
-  where `<ring>` is `--ember-500` on neutral surfaces and `--ink-900` on ember-filled controls.
+Every pair below is measured, not estimated.
+
+| Pair | Ratio | Verdict |
+|---|---|---|
+| `--text` on `--bg` | 18.74 | PASS |
+| white on the primary button | **18.74** | PASS |
+| white on button hover `#2A2C30` | 13.99 | PASS |
+| `--text-muted` on `--bg` | 5.05 | PASS |
+| `--text-muted` on `--surface-2` | 4.59 | PASS |
+| `--text-subtle` on `--bg` | 3.29 | **Large text / non-text UI only** |
+| `--signal` on `--bg` | 5.31 | PASS |
+| `--signal` on `--surface-2` | 4.83 | PASS |
+| white on `--signal` | 5.31 | PASS |
+| `--warning` on `--bg` | 5.02 | PASS |
+| `--danger` on `--bg` | 6.57 | PASS |
+| `--signal-on-dark` on `#111214` | 8.02 | PASS |
+
+- Body text uses `--text`. Secondary prose uses `--text-muted`. **Never `--text-subtle` for anything
+  a user must read** — at 3.29:1 it clears AA only for large text (3:1) and non-text UI, so it is
+  restricted to meta and captions that repeat information available elsewhere.
+- **The lesson that produced this palette, restated for the new colours.** The previous document
+  claimed white on an `--ember-500` fill was acceptable at ≥16px semibold. That was wrong, and it
+  shipped a real defect: white on `#F94E1B` measures **3.42:1**, failing AA for normal text and
+  clearing the large-text bar only at ≥24px or ≥18.66px bold. Primary buttons are 16px semibold, so
+  every primary button in the product failed. The fix at the time was to move solid fills to
+  `--ember-600` (4.51:1) — one rounding error from failing. **A palette whose primary action needs
+  that much care to stay legal is the wrong palette.** An ink fill has 18.74:1 of headroom, so the
+  entire class of bug is gone by construction rather than by tuning. Prefer contrast headroom over
+  contrast compliance.
+- **A focus ring must contrast with the ELEMENT, not only with the page.** An ink ring around an ink
+  button measures 1.00:1 and is invisible. Use the two-layer construction
+  `0 0 0 2px var(--focus-ring-gap), 0 0 0 4px <ring>`, where `<ring>` is `--text` on neutral
+  surfaces and switches to `--focus-ring-on-accent` (white, 18.74:1) on ink-filled controls.
+- **A colour cannot be its own contrast plan on a dark ground.** `--signal` measures 1.9:1 on
+  `#111214`, so the inverted section switches it to `--signal-on-dark`. Likewise a raised surface on
+  ink needs its own token: when the card fill, the body copy and the button were all `#111214`, the
+  cards measured 1.05:1 against their ground and were effectively invisible. Dark surfaces use
+  `#202327` with a deliberately strong `#383B41` hairline, because there is no shadow on a dark
+  ground to help an edge read.
+- Control boundaries use `--border-control` (`#8A8E96`, 3.29:1), which clears WCAG 1.4.11.
+  Decorative hairlines use `--border` (1.26:1) and must be paired with layout, never left to carry a
+  boundary alone.
+
+### One ground
+
+The marketing site is `--bg` from the header to the footer. Sections are separated by **whitespace,
+a 1px `--border` rule and type hierarchy — never by alternating background colour.** There is
+exactly one permitted exception: the pricing section is a single full-bleed `#111214` block, because
+one deliberate inversion at the decision point reads as emphasis. The footer uses the same
+`#111214`. Adding a second dark section re-creates the banding this replaced — the rejected build
+had four grounds and eleven flips across twelve sections.
 
 ## 3. Typography
 

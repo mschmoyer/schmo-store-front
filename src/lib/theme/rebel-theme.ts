@@ -143,6 +143,10 @@ const fieldStyles = {
  */
 export const rebelMantineTheme: MantineThemeOverride = createTheme({
   colors: {
+    ink: inkTuple,
+    /* Alias. `ember` no longer carries a hue — the tuple resolves to the
+       neutral ramp — but admin/product code still names it, so removing the
+       key would throw rather than merely look wrong. */
     ember: emberTuple,
     mint: mintTuple,
     amber: amberTuple,
@@ -151,13 +155,14 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
     dark: darkTuple,
     blue: azureTuple,
   },
-  primaryColor: 'ember',
+  primaryColor: 'ink',
   /*
-   * Index 6 = ember-600 (#DC3A0C). White on it measures 4.51:1 and passes AA;
-   * ember-500 at index 5 measures 3.42:1 and fails, so a Mantine filled button
-   * must not resolve to it. See docs/design-system.md §2.
+   * Index 9 = ink-900 (#111214), the primary button fill. White on it measures
+   * 18.74:1. The previous mapping used index 6 = ember-600 at 4.51:1, one
+   * rounding error from failing AA, and index 5 (ember-500, 3.42:1) failed
+   * outright. See docs/design-system.md §2.
    */
-  primaryShade: { light: 6, dark: 6 },
+  primaryShade: { light: 9, dark: 0 },
 
   fontFamily: FONT_SANS,
   fontFamilyMonospace: FONT_MONO,
@@ -345,97 +350,9 @@ export const rebelCssVariablesResolver: CSSVariablesResolver = () => ({
 });
 
 /* ==========================================================================
-   LEGACY — the Tailwind class bundles below predate the design system and are
-   still imported by src/components/landing/**. Values have been repointed at
-   the new palette so those pages do not read as a different product, but do
-   not use `rebelTheme` in new code: use the tokens in globals.css instead.
+   The `rebelTheme` legacy class bundles that used to sit here have been
+   DELETED. Their only consumer was `src/components/landing/**`, an orphaned
+   duplicate of the marketing site that the rebuild removed; nothing imports
+   them now. Use the tokens in globals.css or the primitives in
+   `src/components/ui`.
    ========================================================================== */
-
-/**
- * Legacy class-name bundles kept for the landing page components.
- * @deprecated Use design-system tokens / `src/components/ui` primitives.
- */
-export const rebelTheme = {
-  colors: {
-    primary: {
-      orange: ember[500],
-      amber: amber[500],
-      tan: '#D4A574',
-      green: mint[500],
-      blue: '#2563EB',
-      red: rose[500],
-    },
-    text: {
-      primary: ink[900],
-      secondary: ink[500],
-      muted: ink[400],
-      white: '#FFFFFF',
-    },
-    background: {
-      primary: '#FBFAF8',
-      cream: '#FFF8F0',
-      lightOrange: ember[50],
-      lightAmber: amber[50],
-      lightGreen: mint[50],
-      lightBlue: '#F0F8FF',
-      lightTan: '#FDF5E6',
-    },
-    interactive: {
-      primary: ember[500],
-      secondary: mint[500],
-      tertiary: '#2563EB',
-      accent: amber[500],
-      hover: {
-        primary: ember[600],
-        secondary: mint[600],
-        tertiary: '#1D4ED8',
-        accent: amber[600],
-      },
-    },
-  },
-
-  sections: {
-    hero: 'bg-gradient-to-br from-orange-50 to-amber-50',
-    features: 'bg-gradient-to-br from-blue-50 to-cyan-50',
-    howItWorks: 'bg-gradient-to-br from-green-50 to-emerald-50',
-    demoStores: 'bg-gradient-to-br from-amber-50 to-yellow-50',
-    cta: 'bg-gradient-to-br from-orange-100 to-amber-100',
-    footer: 'bg-gradient-to-br from-gray-50 to-stone-50',
-  },
-
-  classes: {
-    button: {
-      primary: '!bg-orange-600 hover:!bg-orange-700 !text-white !border-orange-600',
-      secondary: '!bg-green-600 hover:!bg-green-700 !text-white !border-green-600',
-      tertiary: '!bg-blue-600 hover:!bg-blue-700 !text-white !border-blue-600',
-      accent: '!bg-amber-500 hover:!bg-amber-600 !text-gray-900 !border-amber-500',
-      outline: {
-        primary: '!border-2 !border-orange-600 !text-orange-600 hover:!bg-orange-50 hover:!text-orange-700',
-        primaryDark: '!border-2 !border-orange-700 !text-orange-700 hover:!bg-orange-100 hover:!text-orange-800',
-        secondary: '!border-2 !border-green-600 !text-green-600 hover:!bg-green-50 hover:!text-green-700',
-        tertiary: '!border-2 !border-blue-600 !text-blue-600 hover:!bg-blue-50 hover:!text-blue-700',
-        accent: '!border-2 !border-amber-500 !text-amber-600 hover:!bg-amber-50 hover:!text-amber-700',
-      },
-    },
-    text: {
-      heading: 'text-gray-900',
-      body: 'text-gray-700',
-      muted: 'text-gray-600',
-      light: 'text-gray-500',
-      white: 'text-white',
-    },
-    link: {
-      primary: '!text-orange-600 hover:!text-orange-700',
-      secondary: '!text-green-600 hover:!text-green-700',
-      tertiary: '!text-blue-600 hover:!text-blue-700',
-      accent: '!text-amber-600 hover:!text-amber-700',
-    },
-    card: {
-      background: 'bg-white',
-      border: 'border-gray-200',
-      shadow: 'shadow-sm hover:shadow-md',
-    },
-  },
-} as const;
-
-export type RebelTheme = typeof rebelTheme;

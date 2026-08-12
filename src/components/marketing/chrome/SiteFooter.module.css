@@ -1,7 +1,10 @@
 .root {
-  background: var(--ink-950);
-  color: var(--ink-300);
-  padding-block: clamp(3.5rem, 7vw, 5rem) 32px;
+  /* The same #111214 as the pricing block. The page previously ran a THIRD
+     ink value (#0A0B0C) here, so the footer and the one permitted dark section
+     were visibly different blacks. */
+  background: var(--text);
+  color: #a1a5ad;
+  padding-block: var(--section-y) var(--space-7);
 }
 
 .inner {
@@ -24,7 +27,7 @@
   max-width: 42ch;
   font-size: var(--text-sm);
   line-height: 1.65;
-  color: var(--ink-400);
+  color: #85898f;
 }
 
 .columns {
@@ -44,7 +47,7 @@
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-100);
+  color: #ffffff;
 }
 
 .list {
@@ -58,13 +61,13 @@
 
 .link {
   font-size: var(--text-sm);
-  color: var(--ink-300);
+  color: #a1a5ad;
   text-decoration: none;
   transition: color var(--duration-micro) var(--ease-out);
 }
 
 .link:hover {
-  color: var(--ember-300);
+  color: #ffffff;
 }
 
 .baseline {
@@ -77,14 +80,14 @@
   max-width: var(--container-content);
   margin: clamp(40px, 7vw, 64px) auto 0;
   padding: 24px var(--gutter) 0;
-  border-top: 1px solid var(--ink-800);
+  border-top: 1px solid #2a2c30;
 }
 
 .copyright,
 .disclaimer {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--ink-400);
+  color: #85898f;
 }
 
 .disclaimer {

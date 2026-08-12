@@ -52,7 +52,7 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
                 <th scope="col">SKU</th>
                 <th scope="col">Product</th>
                 <th scope="col" className={styles.numeric}>
-                  On hand
+                  Qty
                 </th>
               </tr>
             </thead>
@@ -98,7 +98,7 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
             name={focus.name}
             sku={focus.sku}
             alt=""
-            ratio="4 / 3"
+            ratio="16 / 9"
             fit="cover"
             rounded="md"
             priority
@@ -120,6 +120,10 @@ export function HeroTransform({ store, rows, focus }: HeroTransformProps): React
           </div>
         </Link>
       </figure>
+
+      <p className={styles.caption}>
+        Synced through the ShipStation API — {store.productCount} SKUs in {store.name}.
+      </p>
     </div>
   );
 }

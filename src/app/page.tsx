@@ -61,7 +61,7 @@ export default async function HomePage() {
   const heroRows = hero
     ? [
         hero.product,
-        ...hero.store.products.filter((p) => p.sku !== hero.product.sku).slice(0, 3),
+        ...hero.store.products.filter((p) => p.sku !== hero.product.sku).slice(0, 2),
       ].sort((a, b) => a.sku.localeCompare(b.sku))
     : [];
 
@@ -77,7 +77,7 @@ export default async function HomePage() {
       <main id="main">
         <Hero store={hero?.store ?? null} rows={heroRows} focus={hero?.product ?? null} />
         <AlreadyHaveIt />
-        <HowItWorksSteps showFigures={false} />
+        <HowItWorksSteps showFigures={false} hideCta />
         <WhatYouGet />
         <ProofSection />
         <PricingSection />

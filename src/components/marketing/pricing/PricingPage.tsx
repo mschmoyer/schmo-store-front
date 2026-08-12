@@ -5,6 +5,7 @@ import { Button, Eyebrow } from '@/components/ui';
 import { SiteHeader } from '../chrome/SiteHeader';
 import { SiteFooter } from '../chrome/SiteFooter';
 import { FinalCta } from '../home/FinalCta';
+import { Section } from '../parts/Section';
 import { ROUTES } from '../data/routes';
 import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
 import { PlanCard } from './PlanCard';
@@ -51,35 +52,30 @@ export function PricingPage(): React.JSX.Element {
       <SiteHeader />
 
       <main id="main">
-        <section className={styles.head}>
-          <div className={styles.headInner}>
-            <div className={styles.headCopy}>
-              <Eyebrow rule className={styles.eyebrow}>
-                Pricing
-              </Eyebrow>
-            
-              <h1 className={styles.title}>One plan. $19.99 a month.</h1>
-            
-              <p className={styles.lede}>
-                Your first three months cost $1 total. We never take a percentage of a sale.
-              </p>
-            
-              <div className={styles.headActions}>
-                <Button as={Link} href={ROUTES.faq} variant="secondary" size="lg">
-                  Read the FAQ
-                </Button>
-                <p className={styles.microcopy}>
-                  Card required. Cancel anytime in your admin.
-                </p>
-              </div>
-            
-            </div>
+        <Section innerClassName={styles.headInner}>
+          <div className={styles.headCopy}>
+            <Eyebrow rule>Pricing</Eyebrow>
 
-            <div className={styles.cardWrap}>
-              <PlanCard eyebrow="Everything, one price" badge="0% transaction fees" />
+            <h1 className={styles.title}>One plan. $19.99 a month.</h1>
+
+            <p className={styles.lede}>
+              Your first three months cost $1 total. We never take a percentage of a sale.
+            </p>
+
+            <div className={styles.headActions}>
+              <Button as={Link} href={ROUTES.signUp} size="lg">
+                Start for $1
+              </Button>
+              <p className={styles.microcopy}>
+                No card required to start. Cancel anytime in your admin.
+              </p>
             </div>
           </div>
-        </section>
+
+          <div className={styles.cardWrap}>
+            <PlanCard eyebrow="Everything, one price" badge="0% transaction fees" />
+          </div>
+        </Section>
 
         <PricingComparison />
         <PricingFaq />

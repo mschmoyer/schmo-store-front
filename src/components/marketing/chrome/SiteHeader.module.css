@@ -5,8 +5,8 @@
   z-index: 60;
   padding: 10px 16px;
   border-radius: var(--radius-sm);
-  background: var(--ink-950);
-  color: var(--paper);
+  background: var(--text);
+  color: var(--bg);
   font-size: var(--text-sm);
   font-weight: 600;
   text-decoration: none;
@@ -21,7 +21,7 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(160%) blur(12px);
   border-bottom: 1px solid transparent;
   transition:
@@ -32,7 +32,7 @@
 
 .scrolled {
   border-bottom-color: var(--border);
-  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
   box-shadow: 0 1px 2px rgba(16, 18, 22, 0.04);
 }
 
@@ -74,7 +74,7 @@
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--ink-700);
+  color: var(--text-muted);
   text-decoration: none;
   white-space: nowrap;
   transition:
@@ -83,12 +83,12 @@
 }
 
 .navLink:hover {
-  color: var(--ink-950);
-  background: var(--ink-100);
+  color: var(--text);
+  background: var(--border);
 }
 
 .navLink[aria-current='page'] {
-  color: var(--ember-700);
+  color: var(--text);
 }
 
 .actions {
@@ -109,7 +109,7 @@
   margin-inline-start: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--paper-raised);
+  background: var(--bg);
   cursor: pointer;
 }
 
@@ -118,7 +118,7 @@
   height: 2px;
   width: 100%;
   border-radius: 2px;
-  background: var(--ink-800);
+  background: var(--text);
   transition:
     transform var(--duration-standard) var(--ease-out),
     opacity var(--duration-micro) var(--ease-out);
@@ -152,7 +152,7 @@
   max-height: calc(100dvh - 76px);
   overflow-y: auto;
   padding: 20px 16px 28px;
-  background: var(--paper-raised);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
 }
@@ -176,12 +176,12 @@
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.015em;
-  color: var(--ink-900);
+  color: var(--text);
   text-decoration: none;
 }
 
 .panelLink:hover {
-  background: var(--ink-100);
+  background: var(--border);
 }
 
 .panelActions {
@@ -193,7 +193,7 @@
 .panelNote {
   margin: 16px 0 0;
   font-size: var(--text-xs);
-  color: var(--ink-500);
+  color: var(--text-muted);
   text-align: center;
 }
 

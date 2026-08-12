@@ -96,11 +96,17 @@
   color: var(--text-primary);
 }
 
+.cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
 .microcopy {
-  margin: calc(-1 * var(--space-1-5)) 0 0;
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  text-align: center;
 }
 
 /*
@@ -145,7 +151,11 @@
   color: var(--text-secondary);
 }
 
-/* A tick is an "you get this" state — a permitted signal usage. */
+/*
+ * Ink, not green. A tick beside "A blog for your store" is not money, stock or
+ * a saving, and ten of them turned the signal into decoration — which is
+ * exactly how a reserved colour stops meaning anything.
+ */
 .tick {
   display: grid;
   place-items: center;
@@ -153,8 +163,8 @@
   height: 18px;
   margin-top: 2px;
   border-radius: var(--radius-full);
-  background: var(--success-subtle);
-  color: var(--signal);
+  background: var(--surface-2);
+  color: var(--text-primary);
 }
 
 .itemOut {

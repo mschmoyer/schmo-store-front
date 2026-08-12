@@ -15,8 +15,14 @@
   margin-top: var(--stack-md);
 }
 
+/*
+ * Centred, not top-aligned. The plan card is unavoidably the tallest thing in
+ * this section; aligning the prose to its top pooled ~600px of empty ink
+ * underneath. Centring splits that space above and below the paragraph, where
+ * it reads as margin rather than as a hole.
+ */
 .catch {
-  align-self: start;
+  align-self: center;
 }
 
 .catchTitle {
@@ -36,9 +42,16 @@
   max-width: 52ch;
 }
 
+/* The two inclusion lists, given the full content width. */
+.listsBand {
+  margin-top: var(--space-9);
+  padding-top: var(--space-7);
+  border-top: 1px solid var(--border);
+}
+
 @media (min-width: 940px) {
   .layout {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
     gap: var(--space-10);
   }
 }

@@ -1,6 +1,6 @@
 .root {
-  background: var(--paper);
-  border-bottom: 1px solid var(--ink-200);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
   padding-block: var(--section-y);
 }
 
@@ -20,8 +20,8 @@
 
 .column {
   padding: clamp(20px, 3vw, 28px);
-  background: var(--paper-raised);
-  border: 1px solid var(--ink-200);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
 
@@ -37,7 +37,7 @@
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 .list {
@@ -55,7 +55,7 @@
   gap: 10px;
   font-size: var(--text-sm);
   line-height: 1.55;
-  color: var(--ink-700);
+  color: var(--text-muted);
 }
 
 .tick {
@@ -65,12 +65,12 @@
   height: 18px;
   margin-top: 2px;
   border-radius: var(--radius-full);
-  background: var(--mint-50);
-  color: var(--mint-700);
+  background: var(--signal-soft);
+  color: var(--signal);
 }
 
 .itemOut {
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 .dash {
@@ -78,11 +78,11 @@
   height: 2px;
   margin: 10px 0 0 4px;
   border-radius: 2px;
-  background: var(--ink-300);
+  background: var(--border-strong);
 }
 
 .itemLead {
-  color: var(--ink-900);
+  color: var(--text);
   font-weight: 600;
 }
 

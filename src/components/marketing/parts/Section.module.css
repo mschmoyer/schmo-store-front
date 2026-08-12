@@ -41,9 +41,21 @@
  * nested inside — buttons, badges, prices — follows without knowing it is on a
  * dark ground.
  */
+/*
+ * NOTE the literal `#111214` background. It cannot be `var(--text)`, because
+ * this block also has to RE-POINT `--text` for everything nested inside it —
+ * marketing CSS modules read `var(--text)` directly for headings and icons, and
+ * while `--text` still resolved to near-black in here those elements rendered
+ * invisibly on the ink ground. Re-pointing the raw tokens as well as the
+ * semantic ones is what makes an arbitrary component safe to drop in here.
+ */
 .dark {
-  background: var(--text);
+  background: #111214;
   color: #ffffff;
+
+  --text: #ffffff;
+  --text-muted: #a1a5ad;
+  --text-subtle: #85898f;
 
   --bg: #111214;
   --surface: #111214;
@@ -101,8 +113,14 @@
 }
 
 /* The single container. Nothing else on the site sets a max-width + gutter. */
+/*
+ * The single container. Nothing else on the site sets a max-width + gutter.
+ * `min-width: 0` stops a wide table inside a grid child from widening the
+ * document instead of scrolling inside its own scroller.
+ */
 .inner {
   width: 100%;
+  min-width: 0;
   max-width: var(--container-content);
   margin-inline: auto;
   padding-inline: var(--gutter);

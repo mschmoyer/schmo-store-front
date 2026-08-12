@@ -253,25 +253,65 @@
     grid-row: 2;
     margin-top: -32px;
   }
+}
 
-  /*
-   * Without the facsimiles the step is a two-column row: number rail, then
-   * copy, with the time chip pushed to the end of the same line. No third
-   * column means no 200px of empty grid track beside a short paragraph.
-   */
-  .noFigures .step {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
-    align-items: baseline;
+/* ------------------------------------------------------------ compact --
+ * The homepage variant: three columns side by side instead of a vertical
+ * rail. Same three steps, same timings, same copy — 420px instead of 1,040px.
+ * The deep version with the screen facsimiles stays on /how-it-works.
+ */
+
+.compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  border-top: 1px solid var(--border);
+  margin-top: var(--stack-md);
+}
+
+.compact .step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-block: var(--space-6);
+  border-top: 0;
+  border-bottom: 0;
+}
+
+.compact .step::before {
+  display: none;
+}
+
+.compact .stepHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.compact .stepNumber {
+  width: 32px;
+  height: 32px;
+  font-size: 0.9375rem;
+}
+
+.compact .stepCopy {
+  gap: var(--space-2);
+}
+
+@media (min-width: 860px) {
+  .compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-8);
   }
 
-  .noFigures .stepTime {
-    grid-column: 3;
-    justify-self: end;
+  .compact .step {
+    border-inline-start: 1px solid var(--border);
+    padding-inline-start: var(--space-6);
   }
 
-  .noFigures .stepCopy {
-    grid-column: 2;
-    grid-row: 2;
-    margin-top: calc(-1 * var(--space-6));
+  .compact .step:first-child {
+    border-inline-start: 0;
+    padding-inline-start: 0;
   }
 }

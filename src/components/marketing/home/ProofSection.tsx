@@ -71,8 +71,9 @@ export function ProofSection(): React.JSX.Element {
             <div className={styles.card}>
               <h3 className={styles.cardTitle}>{card.title}</h3>
               <p className={styles.cardBody}>{card.body}</p>
-              <Button as={Link} href={card.href} variant="secondary" size="md">
+              <Button as={Link} href={card.href} variant="link" size="md">
                 {card.cta}
+                <span aria-hidden="true"> →</span>
               </Button>
             </div>
           </li>

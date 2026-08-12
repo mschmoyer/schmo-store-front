@@ -86,8 +86,8 @@ export const generateLandingPageMeta = ({
     other: {
       'apple-mobile-web-app-capable': 'yes',
       'apple-mobile-web-app-status-bar-style': 'black-translucent',
-      'theme-color': '#F94E1B',
-      'msapplication-TileColor': '#F94E1B',
+      'theme-color': '#111214',
+      'msapplication-TileColor': '#111214',
     },
   };
 };

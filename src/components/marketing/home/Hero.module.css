@@ -13,6 +13,7 @@
 .lead {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--stack-sm);
   min-width: 0;
 }
@@ -59,21 +60,33 @@
   color: var(--text-muted);
 }
 
+/*
+ * `container-type: inline-size` is what lets HeroTransform decide its own
+ * layout from the width IT has rather than from the viewport's. The transform's
+ * three-column arrangement used to switch on `@media (min-width: 900px)`, so at
+ * 1440 it applied inside a ~530px column and clipped both panels — the SKU
+ * table lost its Product column and the price was cut off mid-digit.
+ */
 .visual {
   position: relative;
   min-width: 0;
-  margin-top: var(--stack-lg);
+  margin-top: var(--stack-md);
+  container-type: inline-size;
 }
 
 @media (min-width: 940px) {
   .copy {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: var(--space-10);
-    align-items: end;
+    grid-template-columns: minmax(0, 0.74fr) minmax(0, 1.26fr);
+    gap: var(--space-9);
+    align-items: center;
   }
 
   .headline {
     max-width: 15ch;
+  }
+
+  .visual {
+    margin-top: 0;
   }
 }
 

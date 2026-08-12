@@ -1,121 +1,83 @@
 /*
- * No `.root`/`.inner` — the shared Section owns the ground, width and padding.
- * The RebelShops column is tinted with the signal green because the column is
- * money: it is the price comparison, which is exactly the role the signal is
- * reserved for.
+ * The homepage's three-row cost strip.
+ *
+ * This used to be the full nine-row twelve-month table plus a three-paragraph
+ * fairness block — 1,241px, duplicating `pricing/PricingComparison`, which
+ * renders the same argument at full length on /pricing. The nav now links
+ * there (ROUTES.comparison), so the homepage keeps only the three rows that
+ * change a decision and hands off.
+ *
+ * Ground, container width and block padding come from `parts/Section`.
  */
 
-.tableWrap {
-  margin-top: var(--stack-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-.tableScroll {
-  overflow-x: auto;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-sm);
-  text-align: left;
-}
-
-.caption {
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  text-align: left;
-}
-
-.table thead th {
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-display);
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.table tbody th,
-.table tbody td {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.table tbody tr:last-child th,
-.table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.rowHead {
-  color: var(--text);
-  font-weight: 500;
-  min-width: 15ch;
-}
-
-.usCol {
-  background: rgb(var(--mint-500-rgb) / 0.05);
-  border-inline: 1px solid rgb(var(--mint-500-rgb) / 0.14);
-}
-
-.totalRow th,
-.totalRow td {
-  background: var(--surface-2);
+.strip {
+  list-style: none;
+  margin: var(--stack-md) 0 0;
+  padding: 0;
   border-top: 1px solid var(--border);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  padding-block: var(--space-5);
   border-bottom: 1px solid var(--border);
 }
 
-.totalRow .usCol {
-  background: rgb(var(--mint-500-rgb) / 0.1);
+.rowLabel {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
 }
 
-.totalRow .rowHead {
-  font-weight: 700;
-  color: var(--text);
-}
-
-.totalUs,
-.totalThem {
+.us,
+.them {
   font-family: var(--font-display);
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.2;
 }
 
-/* The twelve-month total is the money line. Signal green, deliberately. */
-.totalUs {
+/*
+ * Ink by default. Green is applied ONLY via `.money`, on the twelve-month
+ * total. "0%" is identical on both sides so colouring it claims an advantage
+ * that does not exist, and "Included" is not money at all.
+ */
+.us {
+  color: var(--text);
+}
+
+.money {
   color: var(--signal);
 }
 
-.totalThem {
+.them {
   color: var(--text);
+}
+
+.note {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 46ch;
 }
 
 /* ------------------------------------------------------------- verdict */
 
 .verdict {
-  margin: var(--space-5) 0 0;
+  margin: var(--space-6) 0 0;
   font-size: var(--text-lg);
   line-height: 1.6;
   color: var(--text-muted);
   max-width: 62ch;
 }
 
-/* The saving is money. */
 .verdict strong {
-  color: var(--signal);
+  color: var(--text);
   font-family: var(--font-display);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -124,22 +86,18 @@
 /* ------------------------------------------------------ fairness block */
 
 .fairness {
-  margin-top: var(--space-7);
+  margin-top: var(--space-6);
   padding: var(--space-5) var(--space-6);
   background: var(--surface-2);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
 
 .fairPara {
-  margin: 0 0 var(--space-3-5);
+  margin: 0;
   font-size: var(--text-sm);
   line-height: 1.65;
   color: var(--text-muted);
-}
-
-.fairPara:last-of-type {
-  margin-bottom: 0;
+  max-width: 78ch;
 }
 
 .fairLead {
@@ -147,87 +105,54 @@
   font-weight: 700;
 }
 
-.sources {
-  margin: var(--space-4) 0 0;
-  font-size: var(--text-xs);
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
-.sources a {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+/*
+ * Stacked, the two figures lose the column headers that told you whose they
+ * were — "$180.91" directly above "$468" with nothing naming either vendor.
+ * Below the breakpoint each figure carries its own label.
+ */
+.us::before,
+.them::before {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
 }
 
-/* --------------------------------------------- stacked layout on mobile */
+.us::before {
+  content: 'RebelShops';
+}
 
-@media (max-width: 719px) {
-  .table,
-  .table tbody,
-  .table tr,
-  .table th,
-  .table td {
-    display: block;
+.them::before {
+  content: 'Shopify Basic';
+}
+
+@media (min-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr);
+    gap: var(--space-6);
+    align-items: baseline;
   }
 
-  .table thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .table tbody tr {
-    padding: var(--space-3-5) var(--space-4);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .table tbody tr:last-child {
-    border-bottom: 0;
-  }
-
-  .table tbody th,
-  .table tbody td {
-    padding: 0;
-    border: 0;
-  }
-
-  .rowHead {
-    margin-bottom: var(--space-2);
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  .table tbody td {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-    padding: 7px 0 3px;
-    background: none;
-    border: 0;
-  }
-
-  .table tbody td::before {
-    content: attr(data-label);
-    font-size: var(--text-xs);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .usCol::before {
-    color: var(--signal);
-  }
-
-  .totalRow {
-    background: var(--surface-2);
-  }
-
-  .totalUs,
-  .totalThem {
-    font-size: 1.375rem;
+  /* The row header and column position carry the meaning at this width. */
+  .us::before,
+  .them::before {
+    display: none;
   }
 }

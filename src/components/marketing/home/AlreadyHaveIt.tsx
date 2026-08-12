@@ -42,10 +42,10 @@ export function AlreadyHaveIt(): React.JSX.Element {
         </p>
 
         <p className={styles.body}>
-          Your SKUs, prices, product images, on-hand quantities and warehouses are all in there.
-          That is the hard, boring, error-prone part of standing up a store, and you finished it
-          years ago. What you have been quoted for is a shop window — at a price that assumes
-          you are starting from nothing. You aren&rsquo;t.
+          Your SKUs, prices, images, quantities and warehouses are already in there — the hard,
+          boring, error-prone part of standing up a store, finished years ago. What you have been
+          quoted for is a shop window, priced as though you were starting from nothing. You
+          aren&rsquo;t.
         </p>
 
         <div className={styles.actions}>

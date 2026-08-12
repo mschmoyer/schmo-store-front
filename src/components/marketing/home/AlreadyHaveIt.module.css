@@ -92,8 +92,8 @@
 }
 
 /*
- * The tick is the signal green: these are things the reader has already got,
- * which is the "in stock / you have this" reading the signal is reserved for.
+ * Ink, not green. "Products" and "Warehouses" are inventory records, not stock
+ * levels or money, so they are outside the signal's contract.
  */
 .check {
   display: grid;
@@ -101,8 +101,8 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-full);
-  background: var(--signal-soft);
-  color: var(--signal);
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .box {

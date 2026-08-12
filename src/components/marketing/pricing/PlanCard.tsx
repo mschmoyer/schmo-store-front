@@ -53,6 +53,14 @@ export interface PlanCardProps {
   eyebrow?: string;
   /** Badge text above the price. @default 'No transaction fees' */
   badge?: string;
+  /**
+   * Renders the Included / Not-included pair inside the card.
+   *
+   * Set `false` where the surrounding layout can give the two lists the full
+   * content width: in a ~510px card column the fifteen rows wrap to three lines
+   * each and the card alone runs past 1,000px. @default true
+   */
+  showLists?: boolean;
 }
 
 /**
@@ -68,6 +76,7 @@ export interface PlanCardProps {
 export function PlanCard({
   eyebrow,
   badge = 'No transaction fees',
+  showLists = true,
 }: PlanCardProps): React.JSX.Element {
   return (
     <div className={styles.card}>
@@ -87,13 +96,34 @@ export function PlanCard({
         <p className={styles.thenLine}>then $19.99/mo</p>
       </div>
 
-      <Button as={Link} href={ROUTES.signUp} size="lg" fullWidth>
-        Start for $1
-      </Button>
-      <p className={styles.microcopy}>Cancel anytime in your admin.</p>
+      {/* Not `fullWidth`: stretched to the card it rendered 505px wide, which
+          made the same label ship at five different widths down the page. */}
+      <div className={styles.cta}>
+        <Button as={Link} href={ROUTES.signUp} size="lg">
+          Start for $1
+        </Button>
+        <p className={styles.microcopy}>
+          No card required to start. You connect ShipStation next.
+        </p>
+      </div>
 
-      <div className={styles.lists}>
-        <section className={styles.list}>
+      {showLists ? <PlanLists /> : null}
+    </div>
+  );
+}
+
+/**
+ * The Included / Not-included pair.
+ *
+ * Exported separately so a layout with the full content width available can
+ * render it outside the card — see `home/PricingSection`.
+ *
+ * @returns The two inclusion lists.
+ */
+export function PlanLists(): React.JSX.Element {
+  return (
+    <div className={styles.lists}>
+      <section className={styles.list}>
           <h3 className={styles.listHeading}>Included</h3>
           <ul className={styles.items}>
             {INCLUDED.map((item) => (
@@ -129,7 +159,6 @@ export function PlanCard({
             ))}
           </ul>
         </section>
-      </div>
     </div>
   );
 }

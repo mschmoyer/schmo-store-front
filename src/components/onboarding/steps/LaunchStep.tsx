@@ -21,7 +21,9 @@ const NEW_TAB = {
 } as unknown as Partial<ButtonProps>;
 
 /** Ember, ink and mint — the brand palette, not a party-supply rainbow. */
-const CONFETTI_COLORS = ['#F94E1B', '#FF9871', '#0FA871', '#22262F', '#FFC0A8'];
+// Palette C: the ink ramp plus the single signal green. A launch is the one
+// moment the product is allowed to be celebratory, but not off-brand.
+const CONFETTI_COLORS = ['#111214', '#0F7B4A', '#6B6F76', '#D2D3D6', '#8A8E96'];
 
 /**
  * Fire one restrained burst of confetti.

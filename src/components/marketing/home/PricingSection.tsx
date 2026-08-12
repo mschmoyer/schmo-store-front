@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
-import { PlanCard } from '../pricing/PlanCard';
+import { PlanCard, PlanLists } from '../pricing/PlanCard';
 import styles from './PricingSection.module.css';
 
 /**
@@ -12,9 +12,11 @@ import styles from './PricingSection.module.css';
  * inversion here reads as emphasis; a second one anywhere else on the page
  * would put the banding back.
  *
- * The plan card and the "what's the catch" answer sit side by side rather than
- * stacked, which halves the block's height and puts the honest paragraph beside
- * the price instead of below the fold from it.
+ * The plan card and the "what's the catch" answer sit side by side, with the
+ * Included / Not-included pair spanning the full content width beneath them.
+ * Inside the ~510px card column those fifteen rows wrapped to three lines each
+ * and the card alone ran to 1,017px; given the whole measure they are two
+ * readable columns and the block is a third shorter.
  *
  * @returns The pricing section.
  */
@@ -28,7 +30,7 @@ export function PricingSection(): React.JSX.Element {
       />
 
       <div className={styles.layout}>
-        <PlanCard />
+        <PlanCard showLists={false} />
 
         <div className={styles.catch}>
           <h3 className={styles.catchTitle}>What&rsquo;s the catch?</h3>
@@ -41,6 +43,10 @@ export function PricingSection(): React.JSX.Element {
             you, cancel. Your catalog was never ours; it&rsquo;s in ShipStation, where it started.
           </p>
         </div>
+      </div>
+
+      <div className={styles.listsBand}>
+        <PlanLists />
       </div>
     </Section>
   );

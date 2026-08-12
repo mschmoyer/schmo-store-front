@@ -11,90 +11,117 @@
  * derived from `/docs/design-system.md` §2.
  */
 
-/** Warm-cooled charcoal neutral ramp. Keys are the design-doc token suffixes. */
+/**
+ * The neutral ramp. This is almost the whole palette: the site is
+ * near-monochrome, and `ink[900]` (#111214) is simultaneously the body text and
+ * the primary button fill — white on it measures 18.74:1.
+ */
 export const ink = {
-  950: '#08090B',
-  900: '#0E1014',
-  800: '#171A20',
-  700: '#22262F',
-  600: '#333944',
-  500: '#5A626F',
-  400: '#858D9A',
-  300: '#B4BAC4',
-  200: '#DCE0E6',
-  100: '#ECEEF2',
-  50: '#F5F6F8',
+  950: '#0A0B0C',
+  900: '#111214',
+  800: '#1B1D20',
+  700: '#2A2C30',
+  600: '#3F434A',
+  500: '#6B6F76',
+  400: '#8A8E96',
+  300: '#B0B3B9',
+  200: '#D2D3D6',
+  100: '#E5E5E7',
+  50: '#F4F4F5',
 } as const;
 
-/** Warm off-white grounds. Never pure white for a page background. */
+/**
+ * Grounds. The page ground is pure white — deliberately not the old warm
+ * `#FBFAF8`, which read as "slightly dirty white" beside true-white product
+ * imagery. `sunken` is a component fill (wells, table headers), never a
+ * section band.
+ */
 export const paper = {
-  base: '#FBFAF8',
+  base: '#FFFFFF',
   raised: '#FFFFFF',
-  sunken: '#F2F1ED',
+  sunken: '#F4F4F5',
 } as const;
 
-/** Vermilion brand signal. 500 is the primary fill. */
-export const ember = {
-  50: '#FFF3EE',
-  100: '#FFE1D5',
-  200: '#FFC0A8',
-  300: '#FF9871',
-  400: '#FF6F3D',
-  500: '#F94E1B',
-  600: '#DC3A0C',
-  700: '#B32D09',
-  800: '#8A230A',
-  900: '#5E1907',
-} as const;
-
-/** Money, in-stock, success, savings. Never used for chrome. */
+/**
+ * THE SIGNAL. The one chromatic family the marketing site may use, reserved
+ * for money, savings, in-stock and success. 5.31:1 on white, and white on it is
+ * also 5.31:1. `onDark` is the same role on the one inverted section, where
+ * `500` would measure 1.9:1.
+ */
 export const mint = {
-  50: '#E8F8F1',
-  100: '#C9EDDD',
-  200: '#96DCC0',
-  300: '#5FCAA1',
-  400: '#33B986',
-  500: '#0FA871',
-  600: '#0C8A5D',
-  700: '#0A6C49',
-  800: '#085037',
-  900: '#053526',
+  50: '#E8F5EE',
+  100: '#C7E6D6',
+  200: '#9FD4B8',
+  300: '#6FC095',
+  400: '#3FBF83',
+  500: '#0F7B4A',
+  600: '#0C6A3F',
+  700: '#0A5533',
+  800: '#084228',
+  900: '#052B1B',
 } as const;
+
+/** The signal green as it appears on an ink ground. 8.02:1 on #111214. */
+export const signalOnDark = '#3FBF83';
 
 /** Warning, low stock. */
 export const amber = {
-  50: '#FEF6E6',
-  100: '#FBE9C2',
-  200: '#F6D28A',
-  300: '#F0BA52',
-  400: '#E8A226',
-  500: '#D98A00',
-  600: '#B57200',
-  700: '#8F5A00',
-  800: '#6B4300',
-  900: '#472D00',
+  50: '#FDF3E7',
+  100: '#F7E0BF',
+  200: '#EDC489',
+  300: '#DFA455',
+  400: '#CC7C22',
+  500: '#B45309',
+  600: '#96450A',
+  700: '#7C3A08',
+  800: '#5E2C06',
+  900: '#3F1D04',
 } as const;
 
 /** Destructive, out of stock, error. */
 export const rose = {
-  50: '#FEECEB',
-  100: '#FCD6D3',
-  200: '#F8AEA8',
-  300: '#F2867D',
-  400: '#E85B50',
-  500: '#D92D20',
-  600: '#B91C13',
-  700: '#93150E',
-  800: '#6E100A',
-  900: '#4A0A07',
+  50: '#FEF0EE',
+  100: '#FCD9D4',
+  200: '#F5ADA4',
+  300: '#EC8074',
+  400: '#DC4E3F',
+  500: '#B42318',
+  600: '#97180F',
+  700: '#7A140C',
+  800: '#5C0F09',
+  900: '#3D0A06',
 } as const;
 
-/** Informational only. Never a call to action. */
+/**
+ * Informational only, and desaturated to stay inside a near-monochrome scheme.
+ * Product surfaces only — this never appears on the marketing site.
+ */
 export const azure = {
-  50: '#EEF4FF',
-  500: '#2563EB',
-  600: '#1D4ED8',
-  700: '#1E40AF',
+  50: '#EEF2F8',
+  500: '#2F5D8C',
+  600: '#274D74',
+  700: '#1F3D5C',
+} as const;
+
+/**
+ * DECOMMISSIONED. The vermilion brand hue is gone; every step here resolves to
+ * the neutral ramp so that unmigrated callers render monochrome rather than
+ * orange. Mirrors the shim block at the bottom of `globals.css`.
+ *
+ * @deprecated Use `ink` for chrome and `mint` for the signal. Delete once no
+ * caller outside the shim references it.
+ */
+export const ember = {
+  50: ink[50],
+  100: ink[100],
+  200: ink[200],
+  300: ink[400],
+  400: ink[500],
+  500: ink[900],
+  600: ink[900],
+  700: ink[700],
+  800: ink[800],
+  900: ink[950],
 } as const;
 
 /** Every palette ramp, keyed by family name. */
@@ -114,20 +141,19 @@ export const radius = {
 } as const;
 
 /**
- * Layered elevation from §4. Warm-tinted means R > G > B: `rgba(38,26,20)`.
- * The earlier `rgba(16,18,22)` had B > G > R, i.e. a blue-grey cast — cooler
- * than neutral grey, on a warm paper ground. Every step is layered, including
- * `xs`; a single flat blur is exactly what §4 forbids.
+ * Layered elevation from §4, tinted with the page's own ink (`rgba(17,18,20)`)
+ * rather than a warm brown — a neutral palette should not cast a coloured
+ * shadow. Every step is layered, including `xs`; a single flat blur is exactly
+ * what §4 forbids.
  *
  * Mirrors `--shadow-*` in `globals.css`. Change both together.
  */
 export const shadow = {
-  xs: '0 1px 2px rgba(38,26,20,.06), 0 1px 3px rgba(38,26,20,.03)',
-  sm: '0 1px 2px rgba(38,26,20,.07), 0 2px 6px rgba(38,26,20,.05)',
-  md: '0 2px 4px rgba(38,26,20,.05), 0 8px 20px -4px rgba(38,26,20,.11)',
-  lg: '0 4px 8px rgba(38,26,20,.05), 0 20px 44px -8px rgba(38,26,20,.15)',
-  xl: '0 8px 16px rgba(38,26,20,.06), 0 36px 80px -16px rgba(38,26,20,.20)',
-  ember: '0 2px 6px rgba(220,58,12,.24), 0 10px 28px -6px rgba(220,58,12,.32)',
+  xs: '0 1px 2px rgba(17,18,20,.05), 0 1px 3px rgba(17,18,20,.03)',
+  sm: '0 1px 2px rgba(17,18,20,.06), 0 2px 6px rgba(17,18,20,.04)',
+  md: '0 2px 4px rgba(17,18,20,.04), 0 8px 20px -4px rgba(17,18,20,.09)',
+  lg: '0 4px 8px rgba(17,18,20,.04), 0 20px 44px -8px rgba(17,18,20,.12)',
+  xl: '0 8px 16px rgba(17,18,20,.05), 0 36px 80px -16px rgba(17,18,20,.16)',
 } as const;
 
 /** Easing curves and durations from §4. */
@@ -166,26 +192,28 @@ export const layout = {
 } as const;
 
 /**
- * Ordered categorical series for charts. Ember leads because it is the brand
- * signal; the rest are chosen for hue separation, not for prettiness.
+ * Ordered categorical series for charts. Ink leads, because on a near-monochrome
+ * site the first series should read as "the main line", not as a brand colour.
+ * The rest are chosen for hue separation, not for prettiness.
  */
 export const chartSeries = [
-  ember[500],
-  azure[500],
+  ink[900],
   mint[500],
+  azure[500],
   amber[500],
   ink[500],
-  ember[700],
-  mint[700],
   rose[500],
+  mint[700],
+  ink[300],
 ] as const;
 
 /**
  * The hue arc the generated product marks are allowed to occupy, in degrees.
- * 8°–54° runs from just below ember (14°) to just above amber (38°). Nothing
- * outside this arc is permitted: §1's anti-goal is explicit that the product
- * must not look like a generic purple/blue SaaS template, and §2 reserves
- * azure for informational use only.
+ * 8°–54° is a warm amber arc. NOTE: this governs generated fallback tiles for
+ * merchant PRODUCT images, not the marketing palette — a monochrome product
+ * grid would read as broken imagery rather than as restraint. It is deliberately
+ * left warm; §1's anti-goal is that the product must not look like a generic
+ * purple/blue SaaS template, and §2 reserves azure for informational use only.
  */
 export const MARK_HUE_ARC = { min: 8, max: 54 } as const;
 

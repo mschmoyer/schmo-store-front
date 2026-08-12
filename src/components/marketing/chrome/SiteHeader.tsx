@@ -121,7 +121,11 @@ export function SiteHeader(): React.JSX.Element {
             <Button as={Link} href={ROUTES.signIn} variant="ghost" size="sm">
               Sign in
             </Button>
-            <Button as={Link} href={ROUTES.signUp} size="sm">
+            {/* Secondary, not solid. The design system forbids two primaries in
+                one view, and the header's "Start for $1" sat 410px from the
+                hero's identical button in the very first viewport. The hero
+                owns the primary; the header keeps the persistent path. */}
+            <Button as={Link} href={ROUTES.signUp} variant="secondary" size="sm">
               Start for $1
             </Button>
           </div>

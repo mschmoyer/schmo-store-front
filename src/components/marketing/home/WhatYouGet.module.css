@@ -1,29 +1,36 @@
 /* No `.root`/`.inner` — the shared Section owns the ground, width and padding. */
 
-.grid {
+/*
+ * Two rows, not two columns.
+ *
+ * This was a 2-column grid with the three capability entries stacked in the
+ * left column and the sync log alone in the right. The log is ~330px and the
+ * stack was ~800px, so the section shipped ~380px of empty column — the same
+ * "a line of text and then nothing" shape the rebuild is meant to remove.
+ * The intro now sits beside the log, where their heights actually match, and
+ * the capabilities run as a three-column rail underneath.
+ */
+.top {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-10);
+  gap: var(--space-8);
   align-items: start;
-  margin-top: var(--stack-md);
+  min-width: 0;
 }
 
 /* ------------------------------------------------------------ capabilities */
 
 .list {
   list-style: none;
-  margin: 0;
+  margin: var(--stack-md) 0 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border-top: 1px solid var(--border);
 }
 
 .entry {
   padding-block: var(--space-5);
-  border-top: 1px solid var(--border);
-}
-
-.entry:last-child {
   border-bottom: 1px solid var(--border);
 }
 
@@ -60,8 +67,15 @@
 
 /* ------------------------------------------------------------- the log */
 
+/*
+ * `min-width: 0` is load-bearing. As a grid child the figure's automatic
+ * minimum size is its content's — the 472px sync table — so without this the
+ * whole document scrolled sideways at 390 instead of the table scrolling
+ * inside its own scroller.
+ */
 .log {
   margin: 0;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -170,8 +184,27 @@
   color: var(--danger);
 }
 
+@media (min-width: 860px) {
+  .list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-bottom: 1px solid var(--border);
+  }
+
+  .entry {
+    border-bottom: 0;
+    border-inline-start: 1px solid var(--border);
+    padding-inline: var(--space-6);
+  }
+
+  .entry:first-child {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+}
+
 @media (min-width: 960px) {
-  .grid {
+  .top {
     grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: var(--space-10);
   }
 }

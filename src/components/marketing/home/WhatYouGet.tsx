@@ -45,25 +45,23 @@ interface Capability {
  */
 const CAPABILITIES: readonly Capability[] = [
   {
-    title: 'ShipStation sync that logs what it did',
+    title: 'Sync that logs what it did',
     body:
-      'An API integration, not a nightly CSV. Products, SKUs, prices, images, stock levels, '
-      + 'warehouses and inventory locations pull on a schedule, and every run is logged with a '
-      + 'record count and a duration. When something fails you see which operation failed and '
-      + 'why — you don’t find out from an oversold customer. Orders are handed to ShipStation '
-      + 'for fulfillment.',
+      'An API integration, not a nightly CSV. Products, SKUs, prices, images, stock and '
+      + 'warehouses pull on a schedule, and every run is logged with a record count and a '
+      + 'duration. When something fails you see which operation failed and why — you don’t find '
+      + 'out from an oversold customer. Orders are handed to ShipStation for fulfillment.',
   },
   {
-    title: 'Inventory intelligence and purchase orders',
+    title: 'Inventory maths and purchase orders',
     body:
-      'Sales velocity across 7, 14, 30, 60, 90, 180 and 365 days, a forecast, and a reorder '
-      + 'point and quantity per SKU. Three reports come standard — valuation, turnover and dead '
-      + 'stock, with days since last sale, carrying cost and a suggested markdown on the money '
-      + 'that is sitting still. Raise a purchase order against a supplier, export it as a PDF, '
-      + 'and receive it back into stock.',
+      'Sales velocity over seven windows, a demand forecast, and a reorder point and quantity '
+      + 'per SKU. Valuation, turnover and dead-stock reports come standard — with carrying cost '
+      + 'and a suggested markdown on the money that is sitting still. Raise a purchase order '
+      + 'against a supplier, export the PDF, receive it back into stock.',
   },
   {
-    title: 'Analytics, including what people searched for and didn’t find',
+    title: 'What people searched for and didn’t find',
     body:
       'Visitors, page views and per-page traffic, plus every search query typed into your store '
       + 'and how many results it returned. Searches that return nothing are a shopping list: '
@@ -89,33 +87,12 @@ const CAPABILITIES: readonly Capability[] = [
 export function WhatYouGet(): React.JSX.Element {
   return (
     <Section ruled>
-      <SectionIntro
-        eyebrow="In the box"
-        heading="It stays current, and it tells you what it did."
-        subhead="The parts that are hard to see from a screenshot: the sync, the inventory maths, and the analytics that tell you what you are missing."
-      />
-
-      <div className={styles.grid}>
-        <div>
-          <ul className={styles.list}>
-            {CAPABILITIES.map((item) => (
-              <li key={item.title} className={styles.entry}>
-                <h3 className={styles.entryTitle}>{item.title}</h3>
-                <p className={styles.entryBody}>{item.body}</p>
-              </li>
-            ))}
-          </ul>
-
-          <div className={styles.actions}>
-            <Button as={Link} href={ROUTES.features} variant="secondary" size="md">
-              See what&rsquo;s included
-            </Button>
-            <p className={styles.microcopy}>
-              Sync history, the dead-stock report and every inventory view are in the admin, and
-              export to CSV.
-            </p>
-          </div>
-        </div>
+      <div className={styles.top}>
+        <SectionIntro
+          eyebrow="In the box"
+          heading="It stays current, and it tells you what it did."
+          subhead="The parts you can’t see from a screenshot."
+        />
 
         <figure className={styles.log}>
           <figcaption className={styles.logHead}>
@@ -162,6 +139,25 @@ export function WhatYouGet(): React.JSX.Element {
             </table>
           </div>
         </figure>
+      </div>
+
+      <ul className={styles.list}>
+        {CAPABILITIES.map((item) => (
+          <li key={item.title} className={styles.entry}>
+            <h3 className={styles.entryTitle}>{item.title}</h3>
+            <p className={styles.entryBody}>{item.body}</p>
+          </li>
+        ))}
+      </ul>
+
+      <div className={styles.actions}>
+        <Button as={Link} href={ROUTES.features} variant="secondary" size="md">
+          See what&rsquo;s included
+        </Button>
+        <p className={styles.microcopy}>
+          Sync history, the dead-stock report and every inventory view are in the admin, and export
+          to CSV.
+        </p>
       </div>
     </Section>
   );

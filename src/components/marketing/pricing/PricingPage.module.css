@@ -1,28 +1,20 @@
-.head {
-  background: var(--paper-sunken);
-  border-bottom: 1px solid var(--ink-200);
-  padding-block: clamp(3rem, 7vw, 5rem);
-}
+/*
+ * Page-local layout only. The ground, the container and the block padding come
+ * from `parts/Section`; the `.head` band and its bespoke `max-width` are gone.
+ */
 
 .headInner {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(32px, 5vw, 56px);
-  width: 100%;
-  max-width: var(--container-content);
-  margin-inline: auto;
-  padding-inline: var(--gutter);
+  gap: var(--space-8);
   align-items: center;
 }
 
 .headCopy {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-}
-
-.eyebrow {
-  color: var(--ember-700);
+  align-items: flex-start;
+  gap: var(--space-4);
 }
 
 .title {
@@ -30,6 +22,7 @@
   font-size: var(--text-h1);
   line-height: 1.06;
   letter-spacing: -0.025em;
+  color: var(--text);
   max-width: 12ch;
 }
 
@@ -37,7 +30,7 @@
   margin: 0;
   font-size: var(--text-lg);
   line-height: 1.6;
-  color: var(--ink-500);
+  color: var(--text-muted);
   max-width: 44ch;
 }
 
@@ -45,13 +38,13 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .microcopy {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--ink-500);
+  color: var(--text-muted);
 }
 
 .cardWrap {
@@ -60,6 +53,7 @@
 
 @media (min-width: 940px) {
   .headInner {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 480px);
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: var(--space-10);
   }
 }

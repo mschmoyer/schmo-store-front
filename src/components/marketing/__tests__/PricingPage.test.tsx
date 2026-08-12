@@ -1,4 +1,3 @@
-import '../test-utils/observerPolyfill';
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { PricingPage, pricingMetadata } from '../pricing/PricingPage';

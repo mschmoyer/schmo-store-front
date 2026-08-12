@@ -7,6 +7,7 @@
 
 .panel {
   margin: 0;
+  min-width: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -19,7 +20,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 10px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
@@ -54,7 +55,7 @@
 }
 
 .table thead th {
-  padding: 9px 16px;
+  padding: 8px 12px;
   text-align: left;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -66,7 +67,7 @@
 }
 
 .table tbody td {
-  padding: 11px 16px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
   vertical-align: middle;
@@ -83,7 +84,7 @@
 
 .sku {
   font-family: var(--font-mono);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -118,6 +119,7 @@
 /* ----------------------------------------------------------- connector */
 
 .connector {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -142,6 +144,22 @@
   border-radius: var(--radius-full);
   padding: 3px 10px;
   white-space: nowrap;
+}
+
+/* The caption that replaces the in-gutter label once the panels sit in a row. */
+.caption {
+  display: none;
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+@container (min-width: 560px) {
+  .caption {
+    display: block;
+    grid-column: 1 / -1;
+  }
 }
 
 /* ------------------------------------------------------ storefront card */
@@ -193,10 +211,10 @@
 
 /* ------------------------------------------------------------ wide-up */
 
-@media (min-width: 900px) {
+@container (min-width: 560px) {
   .root {
     display: grid;
-    grid-template-columns: minmax(0, 1.3fr) auto minmax(0, 0.72fr);
+    grid-template-columns: minmax(0, 1.2fr) 72px minmax(0, 0.95fr);
     align-items: stretch;
     gap: 0;
   }
@@ -214,20 +232,50 @@
     height: 100%;
   }
 
+  /*
+   * 72px, not 250px. The old gutter was a 250x408 column holding two 34x1
+   * hairlines and one pill — a 3.6% ink fill that made the two panels read as
+   * unrelated objects rather than as a before and an after.
+   */
   .connector {
     flex-direction: row;
     padding-block: 0;
-    padding-inline: 16px;
+    padding-inline: 0;
+    gap: 0;
   }
 
   .connectorLine {
-    width: 34px;
+    flex: 1;
+    width: auto;
     height: 1px;
-    background: linear-gradient(to right, var(--border), var(--border-strong));
+    background: var(--border-strong);
   }
 
+  /* The arrowhead. The connector has a direction; it should look like it. */
   .connectorLine:last-child {
-    background: linear-gradient(to right, var(--border-strong), var(--border));
+    position: relative;
+    background: var(--border-strong);
+  }
+
+  .connectorLine:last-child::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-top: 1px solid var(--border-strong);
+    border-right: 1px solid var(--border-strong);
+    transform: translateY(-50%) rotate(45deg);
+  }
+
+  /*
+   * The label leaves the gutter entirely in the row layout. At 72px wide it
+   * overflowed its own track and printed on top of both panels; as a caption
+   * under the figure it says the same thing and collides with nothing.
+   */
+  .connectorLabel {
+    display: none;
   }
 
   .card {

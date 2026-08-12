@@ -22,7 +22,7 @@ export function FinalCta(): React.JSX.Element {
         <Button as={Link} href={ROUTES.signUp} size="lg">
           Start for $1
         </Button>
-        <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
+        <Button as={Link} href={ROUTES.demoStores} variant="link" size="lg">
           Open a demo store
         </Button>
       </div>

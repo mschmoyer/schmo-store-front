@@ -22,10 +22,10 @@
   font-size: calc(var(--wordmark-size) * 0.62);
   letter-spacing: -0.025em;
   line-height: 1;
-  color: var(--ink-900);
+  color: var(--text);
   white-space: nowrap;
 }
 
 .onDark .text {
-  color: var(--paper);
+  color: var(--bg);
 }
