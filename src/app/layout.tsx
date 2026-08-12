@@ -1,41 +1,72 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import { MantineProvider } from "@mantine/core";
-import { Notifications } from "@mantine/notifications";
-import "@mantine/core/styles.css";
-import "@mantine/notifications/styles.css";
-import { ThemeProvider } from "@/contexts/ThemeContext";
-import { generateLandingPageMeta } from "@/components/seo/LandingPageMeta";
+import type { Metadata } from 'next';
+import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
+import './globals.css';
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
+import '@/styles/mantine-overrides.css';
+import { ColorSchemeScript, mantineHtmlProps } from '@mantine/core';
+import { AppProviders } from '@/components/ui/AppProviders';
+import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+/**
+ * Typography per design-system §3. Every family is loaded with `display: swap`
+ * so first paint never waits on a webfont, and exposed as the CSS variable the
+ * token layer reads.
+ */
+
+/** Display face — headings, numerals, prices, the wordmark. */
+const spaceGrotesk = Space_Grotesk({
+  variable: '--font-space-grotesk',
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['500', '600', '700'],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+/** UI and body face. Variable weight. */
+const inter = Inter({
+  variable: '--font-inter',
+  subsets: ['latin'],
+  display: 'swap',
+  axes: ['opsz'],
 });
 
-export const metadata: Metadata = generateLandingPageMeta();
+/** Mono face — SKUs, order IDs, API keys. */
+const jetbrainsMono = JetBrains_Mono({
+  variable: '--font-jetbrains-mono',
+  subsets: ['latin'],
+  display: 'swap',
+  weight: ['400', '500', '600'],
+});
 
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://rebelshops.com';
+
+export const metadata: Metadata = {
+  // Resolves relative OG/twitter image paths and silences the build warning.
+  metadataBase: new URL(SITE_URL),
+  ...generateLandingPageMeta(),
+};
+
+/**
+ * Root layout. Mounts the font variables, the design-system stylesheet and the
+ * client provider stack (theme context, Mantine, notifications).
+ *
+ * @param props.children - The routed page tree.
+ * @returns The application document shell.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" {...mantineHtmlProps}>
+      <head>
+        <ColorSchemeScript />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <ThemeProvider>
-          <MantineProvider>
-            <Notifications />
-            {children}
-          </MantineProvider>
-        </ThemeProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

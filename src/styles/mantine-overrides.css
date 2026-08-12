@@ -1,0 +1,57 @@
+/*
+ * Mantine escape hatches.
+ *
+ * Almost everything Mantine-shaped is configured in
+ * `src/lib/theme/rebel-theme.ts`. This file is only for the handful of
+ * portalled surfaces Mantine renders outside the component tree, where the
+ * theme's `styles` hooks do not reach. Keep it short — if a rule can live in
+ * the theme, it belongs in the theme.
+ */
+
+/* Notifications are portalled to <body>, so they miss our surface tokens. */
+.mantine-Notifications-root {
+  z-index: 400;
+}
+
+.mantine-Notification-root {
+  background-color: var(--surface-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.mantine-Notification-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.mantine-Notification-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* Popovers, dropdowns and date pickers portal out too. */
+.mantine-Popover-dropdown,
+.mantine-Select-dropdown,
+.mantine-MultiSelect-dropdown,
+.mantine-Autocomplete-dropdown,
+.mantine-DatePicker-calendarHeader {
+  background-color: var(--surface-overlay);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.mantine-Select-option[data-combobox-selected],
+.mantine-MultiSelect-option[data-combobox-selected] {
+  background-color: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+/* Mantine paints its own focus ring; ours is the two-stop ring from §2. */
+.mantine-focus-auto:focus-visible,
+.mantine-focus-always:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

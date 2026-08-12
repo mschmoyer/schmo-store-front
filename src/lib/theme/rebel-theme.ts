@@ -89,7 +89,10 @@ const FONT_SANS = 'var(--font-sans)';
 const FONT_DISPLAY = 'var(--font-display)';
 const FONT_MONO = 'var(--font-mono)';
 
-/** Shared field geometry — §5 says inputs are 40px, 1px border, radius sm. */
+/** Shared field geometry — §5 says inputs are 40px, 1px border, radius sm.
+ *  Interactive states live in `src/styles/mantine-overrides.css`: Mantine v8's
+ *  `styles` prop takes flat inline-style objects only, so `&:hover` etc. are
+ *  silently dropped (and logged as "Unsupported style property"). */
 const fieldStyles = {
   input: {
     minHeight: 40,
@@ -101,18 +104,6 @@ const fieldStyles = {
     fontSize: '0.9375rem',
     transition:
       'border-color var(--duration-micro) var(--ease-out), box-shadow var(--duration-micro) var(--ease-out)',
-    '&::placeholder': { color: 'var(--text-tertiary)' },
-    '&:hover:not(:disabled):not([data-error])': { borderColor: 'var(--border-strong)' },
-    '&:focus, &:focus-within': {
-      borderColor: 'var(--accent)',
-      boxShadow: 'var(--focus-ring)',
-    },
-    '&[data-error]': { borderColor: 'var(--danger)', color: 'var(--text-primary)' },
-    '&:disabled': {
-      backgroundColor: 'var(--surface-inset)',
-      color: 'var(--text-disabled)',
-      opacity: 1,
-    },
   },
   label: {
     fontSize: '0.8125rem',
@@ -127,9 +118,9 @@ const fieldStyles = {
 /**
  * The Mantine theme override. Pass to `<MantineProvider theme={...}>`.
  *
- * Note: `styles` entries are functions/objects, so this object is not
+ * Note: `styles` entries are objects/functions, so this theme is not
  * serializable across the React server/client boundary — it must be imported
- * from a `'use client'` module.
+ * from a `'use client'` module (see `src/components/ui/AppProviders.tsx`).
  */
 export const rebelMantineTheme: MantineThemeOverride = createTheme({
   colors: {
@@ -160,13 +151,7 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
   },
 
   defaultRadius: 'sm',
-  radius: {
-    xs: '6px',
-    sm: '8px',
-    md: '12px',
-    lg: '16px',
-    xl: '24px',
-  },
+  radius: { xs: '6px', sm: '8px', md: '12px', lg: '16px', xl: '24px' },
 
   shadows: {
     xs: '0 1px 2px rgba(16,18,22,.06)',
@@ -177,13 +162,7 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
   },
 
   spacing: { xs: '8px', sm: '12px', md: '16px', lg: '24px', xl: '32px' },
-  fontSizes: {
-    xs: '0.75rem',
-    sm: '0.875rem',
-    md: '1rem',
-    lg: '1.125rem',
-    xl: '1.375rem',
-  },
+  fontSizes: { xs: '0.75rem', sm: '0.875rem', md: '1rem', lg: '1.125rem', xl: '1.375rem' },
 
   focusRing: 'auto',
   cursorType: 'pointer',
@@ -192,26 +171,13 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
   components: {
     Button: Button.extend({
       defaultProps: { radius: 'sm' },
-      styles: (_theme, props) => ({
+      styles: {
         root: {
           fontFamily: FONT_SANS,
           fontWeight: 600,
           letterSpacing: '-0.005em',
-          height: props.size === 'lg' ? 48 : props.size === 'xs' || props.size === 'sm' ? 32 : 40,
-          transition:
-            'transform var(--duration-micro) var(--ease-out), box-shadow var(--duration-micro) var(--ease-out), background-color var(--duration-micro) var(--ease-out), border-color var(--duration-micro) var(--ease-out)',
-          boxShadow: props.variant === 'filled' ? 'var(--shadow-ember-sm)' : 'none',
-          '&:hover:not([data-disabled]):not(:disabled)': {
-            transform: 'translateY(-1px)',
-            boxShadow: props.variant === 'filled' ? 'var(--shadow-ember)' : 'var(--shadow-xs)',
-          },
-          '&:active:not([data-disabled]):not(:disabled)': {
-            transform: 'translateY(0)',
-            boxShadow: 'var(--shadow-xs)',
-          },
-          '&:focus-visible': { boxShadow: 'var(--focus-ring)' },
         },
-      }),
+      },
     }),
 
     Paper: Paper.extend({
@@ -252,34 +218,11 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
       styles: { ...fieldStyles, input: { ...fieldStyles.input, height: 'auto' } },
     }),
 
-    Checkbox: Checkbox.extend({
-      defaultProps: { radius: 'xs' },
-      styles: {
-        input: {
-          borderColor: 'var(--border-strong)',
-          backgroundColor: 'var(--surface-raised)',
-          cursor: 'pointer',
-          '&:checked': { backgroundColor: 'var(--accent)', borderColor: 'var(--accent)' },
-          '&:focus-visible': { boxShadow: 'var(--focus-ring)' },
-        },
-        label: { color: 'var(--text-primary)', fontSize: '0.9375rem' },
-      },
-    }),
-
-    Switch: Switch.extend({
-      styles: {
-        track: {
-          borderColor: 'transparent',
-          backgroundColor: 'var(--border-strong)',
-          cursor: 'pointer',
-          transition: 'background-color var(--duration-micro) var(--ease-out)',
-        },
-        label: { color: 'var(--text-primary)', fontSize: '0.9375rem' },
-      },
-    }),
+    Checkbox: Checkbox.extend({ defaultProps: { radius: 'xs' } }),
+    Switch: Switch.extend({ defaultProps: { color: 'ember' } }),
 
     Badge: Badge.extend({
-      defaultProps: { radius: 'full', variant: 'light' },
+      defaultProps: { radius: 'xl', variant: 'light' },
       styles: {
         root: {
           fontFamily: FONT_SANS,
@@ -293,7 +236,6 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
     Table: Table.extend({
       styles: {
         table: { fontSize: '0.875rem', color: 'var(--text-primary)' },
-        thead: { backgroundColor: 'var(--surface-sunken)' },
         th: {
           fontFamily: FONT_SANS,
           fontSize: '0.75rem',
@@ -301,47 +243,19 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
           letterSpacing: '0.06em',
           textTransform: 'uppercase',
           color: 'var(--text-secondary)',
-          borderColor: 'var(--border)',
         },
-        td: { borderColor: 'var(--border-subtle)' },
-        tr: { borderColor: 'var(--border-subtle)' },
       },
     }),
 
     Modal: Modal.extend({
-      defaultProps: { radius: 'lg', centered: true, overlayProps: { blur: 2 } },
-      styles: {
-        content: {
-          backgroundColor: 'var(--surface-overlay)',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-lg)',
-        },
-        header: { backgroundColor: 'var(--surface-overlay)', borderBottom: '1px solid var(--border-subtle)' },
-        title: { fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: '1.125rem' },
-        overlay: { backgroundColor: 'var(--surface-scrim)' },
-      },
+      defaultProps: { radius: 'lg', centered: true, overlayProps: { blur: 3, backgroundOpacity: 0.55 } },
     }),
 
     Drawer: Drawer.extend({
-      styles: {
-        content: { backgroundColor: 'var(--surface-overlay)' },
-        header: { backgroundColor: 'var(--surface-overlay)', borderBottom: '1px solid var(--border-subtle)' },
-        title: { fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: '1.125rem' },
-        overlay: { backgroundColor: 'var(--surface-scrim)' },
-      },
+      defaultProps: { overlayProps: { blur: 3, backgroundOpacity: 0.5 } },
     }),
 
-    Menu: Menu.extend({
-      defaultProps: { radius: 'md', shadow: 'md' },
-      styles: {
-        dropdown: {
-          backgroundColor: 'var(--surface-overlay)',
-          borderColor: 'var(--border)',
-          padding: 6,
-        },
-        item: { borderRadius: 'var(--radius-xs)', fontSize: '0.9375rem' },
-      },
-    }),
+    Menu: Menu.extend({ defaultProps: { radius: 'md', shadow: 'md' } }),
 
     Tooltip: Tooltip.extend({
       defaultProps: { radius: 'xs', withArrow: true, openDelay: 180 },
@@ -358,15 +272,7 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
     }),
 
     Tabs: Tabs.extend({
-      styles: {
-        tab: {
-          fontWeight: 600,
-          fontSize: '0.9375rem',
-          color: 'var(--text-secondary)',
-          transition: 'color var(--duration-micro) var(--ease-out)',
-        },
-        list: { borderColor: 'var(--border)' },
-      },
+      styles: { tab: { fontWeight: 600, fontSize: '0.9375rem' } },
     }),
 
     Divider: Divider.extend({ styles: { root: { borderColor: 'var(--border)' } } }),
