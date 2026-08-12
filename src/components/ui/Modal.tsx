@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Modal as MantineModal, type ModalProps as MantineModalProps } from '@mantine/core';
 import { cn } from '@/lib/design/cn';
 import styles from './Overlay.module.css';
+import { EASE_OUT } from './motion';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
@@ -66,7 +67,10 @@ export function Modal({
       centered={centered}
       radius={radius}
       overlayProps={{ backgroundOpacity: 0.55, blur: 3, ...overlayProps }}
-      transitionProps={{ transition: 'pop', duration: 180 }}
+      // Modal and Drawer perform the same gesture — a surface entering over a
+      // scrim — so they share --duration-standard and --ease-out. Mantine wants
+      // numbers/strings here, hence the literals mirroring the tokens.
+      transitionProps={{ transition: 'pop', duration: 220, timingFunction: EASE_OUT }}
       classNames={{
         content: cn(styles.content, contentClassName),
         header: styles.header,

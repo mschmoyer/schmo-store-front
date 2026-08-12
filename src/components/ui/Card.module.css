@@ -16,6 +16,9 @@
     border-color var(--duration-standard) var(--ease-out),
     box-shadow var(--duration-standard) var(--ease-out),
     transform var(--duration-standard) var(--ease-out);
+
+  /* Buttons inside a card focus against the card, not the page ground. */
+  --focus-ring-gap: var(--surface-raised);
 }
 
 /* Sunken variant for wells and inset panels. */
@@ -46,12 +49,21 @@
 .interactive:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 .interactive:active {
-  transform: translateY(0);
   box-shadow: var(--shadow-xs);
+}
+
+/* Motion only when it is welcome — an instant 2px snap on every hover is
+   worse for a vestibular-sensitive user than the transition it replaces. */
+@media (prefers-reduced-motion: no-preference) {
+  .interactive:hover {
+    transform: translateY(-2px);
+  }
+  .interactive:active {
+    transform: translateY(0);
+  }
 }
 
 .interactive:focus-visible {
@@ -78,33 +90,33 @@
 }
 
 .padSm > .header {
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 .padSm > .body {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .padSm > .footer {
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 
 .padMd > .header {
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
 }
 .padMd > .body {
-  padding: 20px;
+  padding: var(--space-5);
 }
 .padMd > .footer {
-  padding: 14px 20px;
+  padding: var(--space-3-5) var(--space-5);
 }
 
 .padLg > .header {
-  padding: 22px 28px;
+  padding: var(--space-5) var(--space-7);
 }
 .padLg > .body {
-  padding: 28px;
+  padding: var(--space-7);
 }
 .padLg > .footer {
-  padding: 18px 28px;
+  padding: var(--space-4) var(--space-7);
 }
 
 /* -------------------------------------------------------------- slots --- */
@@ -113,14 +125,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
 .headerText {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -153,9 +165,11 @@
 .footer {
   display: flex;
   align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
   background-color: var(--surface-sunken);
+  /* Footer actions focus against the sunken tray they actually sit on. */
+  --focus-ring-gap: var(--surface-sunken);
   border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
 }
 

@@ -37,8 +37,14 @@ export default async function StoreHomePage({ params, searchParams }: StorePageP
   const { store, theme, sections, categories, isPreview } = result.data;
   const productCount = await countActiveProducts(store.id);
 
+  // The default sections and `footer.showNewsletter` are both on out of the
+  // box, which would stack two identical email forms at the bottom of the page.
+  const hasNewsletterSection = sections.some(
+    (section) => section.type === 'newsletter' && section.enabled,
+  );
+
   return (
-    <StorefrontShell {...result.data}>
+    <StorefrontShell {...result.data} suppressFooterNewsletter={hasNewsletterSection}>
       {productCount === 0 ? (
         <StoreBand>
           <StoreContainer width="narrow">

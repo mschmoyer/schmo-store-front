@@ -7,6 +7,8 @@ export interface Product {
   name: string;
   description?: string;
   price?: number;
+  /** Effective sale price resolved by the store product API (override > sale > base). */
+  display_price?: number;
   available_stock?: number;
   thumbnail_url?: string;
   category?: string;

@@ -11,7 +11,8 @@
  * loader defined `--st-font-lorra`, and the storefront quietly renders in a
  * fallback face. That is exactly the class of bug a test should catch.
  */
-import { FONTS, FONT_IDS } from '../fonts';
+import { FONTS } from '../fonts';
+import { FONT_IDS, type FontId } from '../types';
 import { DECLARED_FONT_CSS_VARS } from '../fonts.next';
 
 describe('next/font declarations match the curated registry', () => {
@@ -19,8 +20,9 @@ describe('next/font declarations match the curated registry', () => {
     expect(Object.keys(DECLARED_FONT_CSS_VARS).sort()).toEqual([...FONT_IDS].sort());
   });
 
-  it.each(FONT_IDS)('%s resolves to the registry cssVar', (id) => {
-    expect(DECLARED_FONT_CSS_VARS[id]).toBe(FONTS[id].cssVar);
+  it.each([...FONT_IDS])('%s resolves to the registry cssVar', (id) => {
+    const fontId = id as FontId;
+    expect(DECLARED_FONT_CSS_VARS[fontId]).toBe(FONTS[fontId].cssVar);
   });
 
   it('uses a distinct variable per font', () => {

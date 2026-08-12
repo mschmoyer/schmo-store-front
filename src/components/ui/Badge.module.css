@@ -7,7 +7,7 @@
 .root {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   flex: none;
 
   border: 1px solid transparent;
@@ -25,20 +25,20 @@
 
 .sm {
   height: 20px;
-  padding-inline: 8px;
+  padding-inline: var(--space-2);
   font-size: 0.6875rem;
-  gap: 5px;
+  gap: var(--space-1-5);
 }
 
 .md {
   height: 24px;
-  padding-inline: 10px;
+  padding-inline: var(--space-2-5);
   font-size: 0.75rem;
 }
 
 .lg {
   height: 28px;
-  padding-inline: 12px;
+  padding-inline: var(--space-3);
   font-size: 0.8125rem;
 }
 
@@ -46,11 +46,18 @@
   border-radius: var(--radius-xs);
 }
 
+/*
+ * Solid tones use the `-solid` shades, which are the ones that clear 4.5:1
+ * with a white label: ember-600 4.51, mint-700 6.45, amber-700 5.78,
+ * rose-500 4.83. The 500-weight brand shades fail (ember 3.42, mint 3.06,
+ * amber 2.77) and are reserved for fills without text on them.
+ */
+
 /* ---------------------------------------------------------------- tones -- */
 
 .neutral {
   background-color: var(--surface-inset);
-  border-color: var(--border);
+  border-color: var(--border-strong);
   color: var(--text-secondary);
 }
 .neutral .dot {
@@ -100,22 +107,22 @@
   color: #ffffff;
 }
 .solid.ember {
-  background-color: var(--ember-500);
+  background-color: var(--accent-solid);
   border-color: transparent;
   color: #ffffff;
 }
 .solid.mint {
-  background-color: var(--mint-600);
+  background-color: var(--success-solid);
   border-color: transparent;
   color: #ffffff;
 }
 .solid.amber {
-  background-color: var(--amber-600);
+  background-color: var(--warning-solid);
   border-color: transparent;
   color: #ffffff;
 }
 .solid.rose {
-  background-color: var(--rose-500);
+  background-color: var(--danger-solid);
   border-color: transparent;
   color: #ffffff;
 }

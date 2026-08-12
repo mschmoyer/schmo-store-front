@@ -10,7 +10,7 @@
 
 @media (max-width: 767px) {
   .container {
-    padding-inline: 16px;
+    padding-inline: var(--space-4);
   }
 }
 
@@ -47,7 +47,7 @@
 
 @media (max-width: 767px) {
   .sectionApp {
-    padding-block: 16px;
+    padding-block: var(--space-4);
   }
 }
 
@@ -84,7 +84,7 @@
 .eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 
   font-family: var(--font-sans);
   font-size: var(--text-eyebrow);
@@ -180,7 +180,7 @@
 .dividerLabelled {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
   background: none;
 }

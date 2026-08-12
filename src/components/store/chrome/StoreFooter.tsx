@@ -11,6 +11,12 @@ export interface StoreFooterProps {
   store: StoreRecord;
   theme: ResolvedTheme;
   categories: CategoryRecord[];
+  /**
+   * Suppress the footer's newsletter because the page body already has one.
+   * Two identical email forms a hundred pixels apart reads as a bug, and the
+   * merchant enabled both without ever seeing them stacked.
+   */
+  suppressNewsletter?: boolean;
 }
 
 /**
@@ -27,10 +33,16 @@ export interface StoreFooterProps {
  * @param props - {@link StoreFooterProps}
  * @returns The storefront footer
  */
-export function StoreFooter({ store, theme, categories }: StoreFooterProps) {
+export function StoreFooter({
+  store,
+  theme,
+  categories,
+  suppressNewsletter = false,
+}: StoreFooterProps) {
   const base = `/store/${store.storeSlug}`;
   const year = new Date().getFullYear();
   const minimal = theme.footer.layout === 'minimal';
+  const showNewsletter = theme.footer.showNewsletter && !suppressNewsletter;
 
   const credit = (
     <span>
@@ -55,7 +67,7 @@ export function StoreFooter({ store, theme, categories }: StoreFooterProps) {
             {store.storeDescription ? (
               <p className={cx(styles.footerLink)}>{store.storeDescription}</p>
             ) : null}
-            {theme.footer.showNewsletter ? (
+            {showNewsletter ? (
               <NewsletterForm
                 buttonLabel="Subscribe"
                 placeholder="you@example.com"
@@ -124,7 +136,7 @@ export function StoreFooter({ store, theme, categories }: StoreFooterProps) {
             </Link>
           </div>
 
-          {theme.footer.showNewsletter ? (
+          {showNewsletter ? (
             <div className={styles.footerCol}>
               <h2 className={styles.footerHeading}>Stay in touch</h2>
               <NewsletterForm

@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { requireAuth } from '@/lib/auth/session';
-import { getDraftTheme, saveDraft } from '@/lib/storefront-theme/db';
+import { getDraftTheme, getPublishedTheme, saveDraft } from '@/lib/storefront-theme/db';
 import { mintPreviewToken } from '@/lib/storefront-theme/preview';
 import { PRESET_LIST } from '@/lib/storefront-theme/presets';
 import { auditContrast } from '@/lib/storefront-theme/resolve';
@@ -34,11 +34,17 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   let storeId: string;
+  let storeSlug = '';
+  let storeName = '';
   try {
     const user = await requireAuth(request);
     const resolved = resolveStoreId(user);
     if (!resolved) return badRequest('This account is not linked to a store.');
     storeId = resolved;
+    // The customizer needs the slug to build its preview iframe URL and the
+    // name for its top bar. Both come from the session, like the store id.
+    storeSlug = user.storeSlug ?? '';
+    storeName = user.storeName ?? '';
   } catch {
     return unauthorized();
   }
@@ -46,11 +52,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const draft = await getDraftTheme(storeId);
     const previewToken = await mintPreviewToken(storeId);
+    // The published row is what the customizer diffs the draft against in its
+    // publish confirmation, so the merchant sees what is about to change.
+    const published = await getPublishedTheme(storeId);
 
     return NextResponse.json({
       success: true,
       data: {
         storeId,
+        storeSlug,
+        storeName,
         theme: draft?.raw ?? {},
         resolvedTheme: draft?.theme ?? null,
         sections: draft?.sections ?? [],
@@ -58,6 +69,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         updatedAt: draft?.updatedAt ?? null,
         contrast: draft ? auditContrast(draft.theme) : [],
         previewToken,
+        published: published
+          ? {
+              theme: published.raw,
+              sections: published.sections,
+              version: published.version,
+              publishedAt: published.publishedAt,
+            }
+          : null,
         registries: {
           presets: PRESET_LIST,
           fonts: FONT_LIST,

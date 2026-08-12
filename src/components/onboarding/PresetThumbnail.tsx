@@ -44,10 +44,15 @@ export default function PresetThumbnail({
   const buttonStroke = thumbnail.buttonStyle === 'outline' ? thumbnail.brand : 'none';
 
   return (
+    // Sized entirely by the wrapper's `aspect-ratio`. An SVG with
+    // `height="auto"` is an invalid presentation attribute and Chrome stretches
+    // it to the button's content box, which pushed the preset's name out of the
+    // card — caught in the 1440px screenshot review.
     <svg
       viewBox="0 0 124 96"
       width="100%"
-      height="auto"
+      height="100%"
+      preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={`${name} preview`}
       style={{ display: 'block' }}

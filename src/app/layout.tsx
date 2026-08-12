@@ -70,7 +70,18 @@ export default function RootLayout({
       {...mantineHtmlProps}
     >
       <head>
-        <ColorSchemeScript />
+        <ColorSchemeScript defaultColorScheme="auto" />
+        {/*
+          Sets data-theme before first paint so the page never flashes the
+          wrong palette. AppProviders keeps it in sync afterwards; this only
+          has to win the very first frame, and it reads the same localStorage
+          key Mantine's own script uses.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem('mantine-color-scheme-value');if(!s||s==='auto'){s=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.dataset.theme=s;}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className="antialiased">
         <AppProviders>{children}</AppProviders>

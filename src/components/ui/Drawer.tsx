@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Drawer as MantineDrawer, type DrawerProps as MantineDrawerProps } from '@mantine/core';
 import { cn } from '@/lib/design/cn';
 import styles from './Overlay.module.css';
+import { EASE_OUT } from './motion';
 
 export type DrawerSize = 'sm' | 'md' | 'lg' | 'full';
 
@@ -58,7 +59,7 @@ export function Drawer({
       size={SIZE_MAP[size]}
       position={position}
       overlayProps={{ backgroundOpacity: 0.5, blur: 3, ...overlayProps }}
-      transitionProps={{ duration: 220, timingFunction: 'cubic-bezier(.16,1,.3,1)' }}
+      transitionProps={{ duration: 220, timingFunction: EASE_OUT }}
       classNames={{
         content: cn(styles.content, styles.drawerContent, contentClassName),
         header: styles.header,

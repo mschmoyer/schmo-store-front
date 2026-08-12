@@ -62,7 +62,7 @@ export function ProductCard({
   const discounted = product.compareAtPrice !== null;
 
   return (
-    <article className={cx(styles.card, boxed && styles.cardBoxed)}>
+    <article className={cx(styles.card, boxed && styles.cardBoxed, soldOut && styles.cardSoldOut)}>
       <div className={styles.media}>
         <div className={styles.flags}>
           {discounted ? <Pill brand>Sale</Pill> : null}

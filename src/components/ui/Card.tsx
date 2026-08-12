@@ -48,6 +48,10 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
   return (
     <Component
       ref={ref}
+      // A <button> with no type defaults to submit. An interactive card that
+      // silently submits its enclosing form is a real bug waiting for its
+      // first form, so default it explicitly.
+      type={Component === 'button' ? ((rest as { type?: string }).type ?? 'button') : undefined}
       className={cn(
         styles.root,
         tone === 'sunken' && styles.sunken,

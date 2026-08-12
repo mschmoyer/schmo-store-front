@@ -108,7 +108,9 @@ export default function ThemeStep({ api }: { api: OnboardingApi }): React.ReactE
             aria-pressed={selected === preset.id}
             onClick={() => void choose(preset.id)}
           >
-            <PresetThumbnail thumbnail={preset.thumbnail} name={preset.name} />
+            <span className={styles.presetThumb}>
+              <PresetThumbnail thumbnail={preset.thumbnail} name={preset.name} />
+            </span>
             <span className={styles.presetMeta}>
               <span className={styles.presetName}>
                 {preset.name}

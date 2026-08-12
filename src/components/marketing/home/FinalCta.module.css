@@ -43,5 +43,5 @@
 .microcopy {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--ink-500);
+  color: var(--ink-400);
 }

@@ -32,7 +32,7 @@ import {
   IconAlertTriangle
 } from '@tabler/icons-react';
 import TrendChart from './TrendChart';
-import ExecutiveSummary from './ExecutiveSummary';
+import ExecutiveSummary, { type ExecutiveSummaryData } from './ExecutiveSummary';
 import { format, parseISO } from 'date-fns';
 
 interface TrendData {
@@ -51,21 +51,6 @@ interface TrendStats {
     searchTrends: TrendData[];
     visitorTrends: TrendData[];
   };
-}
-
-interface ExecutiveSummaryData {
-  period: string;
-  totalSearches: number;
-  uniqueVisitors: number;
-  searchTrend: number;
-  visitorTrend: number;
-  topSearchTerm: string;
-  topSearchCount: number;
-  bounceRate: number;
-  avgSessionDuration: number;
-  keyInsights: string[];
-  alerts: string[];
-  recommendations: string[];
 }
 
 interface TrendDashboardProps {

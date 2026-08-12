@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Tooltip as MantineTooltip, type TooltipProps as MantineTooltipProps } from '@mantine/core';
+import { EASE_OUT } from './motion';
 
 export interface TooltipProps extends Omit<MantineTooltipProps, 'label'> {
   /** Tooltip copy. Keep it to a few words — this is not a help panel. */
@@ -46,7 +47,7 @@ export function Tooltip({
       withArrow={withArrow}
       radius={radius}
       position={position}
-      transitionProps={{ transition: 'pop', duration: 140 }}
+      transitionProps={{ transition: 'pop', duration: 120, timingFunction: EASE_OUT }}
       {...rest}
     >
       {children}

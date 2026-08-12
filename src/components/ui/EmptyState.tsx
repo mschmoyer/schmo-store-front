@@ -44,6 +44,13 @@ export interface EmptyStateProps extends Omit<React.HTMLAttributes<HTMLDivElemen
   compact?: boolean;
   /** Left-aligns instead of centring. Useful in narrow side panels. */
   align?: 'center' | 'left';
+  /**
+   * Element for the title. It is styled as a heading and reads as one, so it
+   * should be one — a screen-reader user navigating by headings otherwise
+   * skips every empty state in the product. Pass `'p'` only when the state
+   * sits under a heading that already names the region. @default 'h3'
+   */
+  titleAs?: React.ElementType;
 }
 
 /**
@@ -65,11 +72,14 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(func
     bordered = true,
     compact = false,
     align = 'center',
+    titleAs,
     className,
     ...rest
   },
   ref
 ) {
+  const TitleTag: React.ElementType = titleAs ?? 'h3';
+
   return (
     <div
       ref={ref}
@@ -84,7 +94,7 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(func
     >
       <div className={styles.figure}>{illustration ?? <DefaultMark />}</div>
 
-      <p className={styles.title}>{title}</p>
+      <TitleTag className={styles.title}>{title}</TitleTag>
       {description ? <p className={styles.description}>{description}</p> : null}
 
       {action || secondaryAction ? (

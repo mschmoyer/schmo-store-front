@@ -44,7 +44,7 @@ export default function HowItWorksPage() {
           <div className={styles.headInner}>
             <Reveal>
               <Eyebrow rule className={styles.eyebrow}>
-                Setup
+                How it works
               </Eyebrow>
             </Reveal>
             <Reveal delay={0.05}>

@@ -7,21 +7,25 @@
 .content {
   background-color: var(--surface-overlay);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  /* A modal sits above cards that share its surface colour in light mode, so
+     the separation has to come from elevation, not fill. */
+  box-shadow: var(--shadow-xl);
   color: var(--text-primary);
+
+  --focus-ring-gap: var(--surface-overlay);
 }
 
 .header {
   align-items: flex-start;
-  padding: 20px 24px 16px;
+  padding: var(--space-5) var(--space-6) var(--space-4);
   background-color: var(--surface-overlay);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .titleBlock {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -43,20 +47,22 @@
 }
 
 .body {
-  padding: 20px 24px 24px;
+  padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
 .footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--space-2-5);
 
-  margin: 20px -24px -24px;
-  padding: 14px 24px;
+  margin: var(--space-5) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  padding: var(--space-3-5) var(--space-6);
 
   background-color: var(--surface-sunken);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
+
+  --focus-ring-gap: var(--surface-sunken);
 }
 
 /* ---------------------------------------------------------------- drawer */
@@ -85,6 +91,6 @@
 .drawerFooter {
   position: sticky;
   bottom: 0;
-  margin: 20px -24px 0;
+  margin: var(--space-5) calc(-1 * var(--space-6)) 0;
   margin-top: auto;
 }

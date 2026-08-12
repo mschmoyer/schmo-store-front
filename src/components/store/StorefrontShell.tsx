@@ -13,6 +13,14 @@ import styles from './StorefrontShell.module.css';
 
 export interface StorefrontShellProps extends StorefrontData {
   children: React.ReactNode;
+  /**
+   * Set by the home page when it has already rendered a newsletter section.
+   *
+   * Only the home page renders sections, so this cannot be inferred from
+   * `sections` here — doing that would wrongly strip the footer's signup from
+   * the cart and product pages, which have no newsletter of their own.
+   */
+  suppressFooterNewsletter?: boolean;
 }
 
 /**
@@ -42,6 +50,7 @@ export function StorefrontShell({
   theme,
   categories,
   isPreview,
+  suppressFooterNewsletter = false,
   children,
 }: StorefrontShellProps) {
   return (
@@ -64,7 +73,12 @@ export function StorefrontShell({
             {children}
           </main>
 
-          <StoreFooter store={store} theme={theme} categories={categories} />
+          <StoreFooter
+            store={store}
+            theme={theme}
+            categories={categories}
+            suppressNewsletter={suppressFooterNewsletter}
+          />
         </CartProvider>
 
         {isPreview ? <PreviewBridge storeId={store.id} /> : null}

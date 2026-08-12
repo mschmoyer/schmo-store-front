@@ -399,7 +399,8 @@
 
 .presetCard {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   text-align: left;
   padding: 0;
@@ -428,7 +429,17 @@
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+/* Fixes the thumbnail's box so the SVG cannot dictate the card's height. */
+.presetThumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 124 / 96;
+  flex: none;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 .presetMeta {
+  display: block;
   padding: 10px 12px 12px;
 }
 

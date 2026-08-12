@@ -21,7 +21,7 @@ import {
   IconInfoCircle
 } from '@tabler/icons-react';
 
-interface ExecutiveSummaryData {
+export interface ExecutiveSummaryData {
   period: string;
   totalSearches: number;
   uniqueVisitors: number;

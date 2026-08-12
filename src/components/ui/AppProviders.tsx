@@ -1,13 +1,33 @@
 'use client';
 
 import * as React from 'react';
-import { MantineProvider } from '@mantine/core';
+import { MantineProvider, useComputedColorScheme } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { rebelCssVariablesResolver, rebelMantineTheme } from '@/lib/theme/rebel-theme';
 
 export interface AppProvidersProps {
   children: React.ReactNode;
+}
+
+/**
+ * Mirrors Mantine's computed colour scheme onto `data-theme`.
+ *
+ * Without this, `:root[data-theme="dark"]` in `globals.css` is unreachable —
+ * nothing in the app ever set the attribute — so a user flipping Mantine's
+ * colour scheme got Mantine's internals in dark and our surfaces and text
+ * still in light. One attribute, one source of truth, both systems agree.
+ *
+ * @returns Nothing; this component renders no markup.
+ */
+function ThemeAttributeSync(): null {
+  const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true });
+
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = scheme;
+  }, [scheme]);
+
+  return null;
 }
 
 /**
@@ -27,7 +47,16 @@ export interface AppProvidersProps {
 export function AppProviders({ children }: AppProvidersProps): React.ReactElement {
   return (
     <ThemeProvider>
-      <MantineProvider theme={rebelMantineTheme} cssVariablesResolver={rebelCssVariablesResolver}>
+      <MantineProvider
+        theme={rebelMantineTheme}
+        cssVariablesResolver={rebelCssVariablesResolver}
+        // "auto" so Mantine follows the OS preference, which is what
+        // globals.css's `prefers-color-scheme` block already does. Leaving
+        // Mantine pinned to "light" was the desync: the CSS went dark and
+        // Mantine did not.
+        defaultColorScheme="auto"
+      >
+        <ThemeAttributeSync />
         <Notifications position="top-right" limit={4} />
         {children}
       </MantineProvider>
