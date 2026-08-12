@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
-<defs><radialGradient id="glow54" cx="0.42" cy="0.34" r="0.8"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient><linearGradient id="box55" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#858D9A" stop-opacity="1"/><stop offset="1" stop-color="#0E1014" stop-opacity="1"/></linearGradient></defs>
+<defs><radialGradient id="glow0" cx="0.42" cy="0.34" r="0.8"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient><linearGradient id="box1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#858D9A" stop-opacity="1"/><stop offset="1" stop-color="#0E1014" stop-opacity="1"/></linearGradient></defs>
 <rect width="800" height="800" fill="#acb2bc"/>
-<rect width="800" height="800" fill="url(#glow54)"/>
-<ellipse cx="400" cy="650" rx="230" ry="24" fill="#0E1014" opacity="0.16" filter="url(#blur56)"/>
-<g transform="translate(-416.67,-452.08) scale(2.0417)"><g transform="skewY(-2)"><rect x="280" y="400" width="240" height="130" rx="22" fill="url(#box55)" stroke="#0E1014" stroke-width="3" stroke-opacity="0.14"/></g><line x1="300" y1="430" x2="500" y2="430" stroke="#aaafb8" stroke-width="2" stroke-opacity="0.25"/><line x1="300" y1="454" x2="500" y2="454" stroke="#aaafb8" stroke-width="2" stroke-opacity="0.25"/><line x1="300" y1="478" x2="500" y2="478" stroke="#aaafb8" stroke-width="2" stroke-opacity="0.25"/></g>
+<rect width="800" height="800" fill="url(#glow0)"/>
+<ellipse cx="400" cy="650" rx="230" ry="24" fill="#0E1014" opacity="0.16" filter="url(#blur2)"/>
+<g transform="translate(-416.67,-452.08) scale(2.0417)"><g transform="skewY(-2)"><rect x="280" y="400" width="240" height="130" rx="22" fill="url(#box1)" stroke="#0E1014" stroke-width="3" stroke-opacity="0.14"/></g><line x1="300" y1="430" x2="500" y2="430" stroke="#aaafb8" stroke-width="2" stroke-opacity="0.25"/><line x1="300" y1="454" x2="500" y2="454" stroke="#aaafb8" stroke-width="2" stroke-opacity="0.25"/><line x1="300" y1="478" x2="500" y2="478" stroke="#aaafb8" stroke-width="2" stroke-opacity="0.25"/></g>
 </svg>

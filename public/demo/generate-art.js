@@ -86,8 +86,21 @@ function mix(hexA, hexB, t) {
 // Tiny SVG builder -- every draw() call returns a body string; renderProduct()
 // / renderHero() / renderLogo() assemble the full document.
 // ---------------------------------------------------------------------------
+// Gradient and clip-path ids must be unique *within a document*, not across
+// the whole build. Keeping one module-global counter made every file's ids
+// depend on how many files had been rendered before it — so `build.js` and
+// `build.js --qa` emitted byte-different SVGs for identical artwork, because
+// the silhouette pass burns ids too. That turned a plain rebuild into 36
+// spurious modified files in git and quietly broke the determinism this
+// generator advertises. Each render now resets the counter, so a file's bytes
+// depend only on its own artwork.
 let uid = 0;
 const nid = (p) => `${p}${uid++}`;
+
+/** Resets the per-document id counter. Called at the top of every render. */
+function resetIds() {
+  uid = 0;
+}
 
 // Silhouette QA mode: when on, every fill/stroke the primitives below emit is
 // forced to solid black so a naming test can be run on shape alone. Toggled
@@ -237,6 +250,7 @@ function fitToStage(inner, bbox) {
 // Full-document assembly for a square product image
 // ---------------------------------------------------------------------------
 function renderProduct({ bgBase, bgGlow, draw, bbox }) {
+  resetIds();
   const defs = [];
   const glowId = nid('glow');
   defs.push(radialGrad(glowId, [
@@ -260,6 +274,7 @@ ${markup}
  *  shape forced to solid black on white -- so silhouette legibility can be
  *  judged directly. Not part of the shipped catalog. */
 function renderProductSilhouette({ draw, bbox }) {
+  resetIds();
   SILHOUETTE = true;
   const defs = [];
   const { markup } = fitToStage(draw(defs), bbox);
@@ -271,6 +286,7 @@ ${markup}
 }
 
 function renderHero({ bgBase, bgGlow, draw }) {
+  resetIds();
   const defs = [];
   const glowId = nid('hglow');
   defs.push(radialGrad(glowId, [
@@ -287,6 +303,7 @@ ${body}
 }
 
 function renderLogo({ mark }) {
+  resetIds();
   const defs = [];
   const body = mark(defs);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
