@@ -677,10 +677,17 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
             <Group justify="space-between">
               <Box>
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                  Total Products
+                  Products With Stock
                 </Text>
                 <Text fw={700} size="xl">
                   {data.summary.total_products}
+                </Text>
+                {/* Was labelled "Total Products" while filtering
+                    `stock_quantity > 0`, giving 11 against the catalog's 12 —
+                    a third product count in an app that already had two. The
+                    label now states the filter. */}
+                <Text size="xs" c="dimmed">
+                  Holding one unit or more
                 </Text>
               </Box>
               <ThemeIcon size="lg" variant="light">

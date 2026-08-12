@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { bool, num, pick, str } from '@/app/store/_lib/settings';
 
+import { ProductMark } from '../product/ProductMark';
 import { SectionHeading, StoreBand, StoreContainer, cx } from '../ui';
 import type { SectionProps } from './types';
 import styles from './Sections.module.css';
@@ -62,7 +63,14 @@ export function CollectionGrid({ section, ctx }: SectionProps) {
                       sizes="(max-width: 700px) 100vw, 33vw"
                       aria-hidden="true"
                     />
-                  ) : null}
+                  ) : (
+                    // A category with no art of its own and no product
+                    // photograph to borrow used to leave an empty grey box in
+                    // the middle of the grid. The same themed, deterministic
+                    // mark the product cards use is derived from the merchant's
+                    // own two colours, so the tile still belongs to the shop.
+                    <ProductMark name={category.name} sku={category.slug} />
+                  )}
                 </span>
                 <span className={styles.tileBody}>
                   <span className={styles.tileName}>{category.name}</span>

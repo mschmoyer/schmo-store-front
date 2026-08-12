@@ -69,6 +69,7 @@ interface DashboardData {
     siteVisitors: number;
     siteVisitorsAllTime: number;
     lowStockCount: number;
+    outOfStockCount: number;
     revenue: {
       totalRevenue: number;
       monthlyRevenue: number;
@@ -470,9 +471,11 @@ export default function AdminDashboard() {
           /* Tone tracks the number, not the card's position in the row. */
           tone={stats.lowStockCount > 0 ? 'warning' : 'neutral'}
           meta={
-            stats.lowStockCount > 0
-              ? 'At or below their reorder point'
-              : 'Everything is above its reorder point'
+            stats.outOfStockCount > 0
+              ? `Below their reorder point · ${stats.outOfStockCount} out of stock`
+              : stats.lowStockCount > 0
+                ? 'Below their reorder point'
+                : 'Everything is above its reorder point'
           }
           icon={<IconAlertTriangle {...ICON} />}
           href="/admin/inventory"
@@ -551,9 +554,13 @@ export default function AdminDashboard() {
 
             {data.lowStockProducts.length > 0 ? (
               <>
+                {/* Reads out the same split as the tile. Saying "3 products
+                    running low" beside a tile reading 2 is the kind of
+                    two-numbers-for-one-thing this pass is removing. */}
                 <Alert icon={<IconAlertTriangle size="1rem" />} color="orange" mb="md">
-                  {data.lowStockProducts.length} product
-                  {data.lowStockProducts.length === 1 ? '' : 's'} running low.
+                  {stats.outOfStockCount > 0
+                    ? `${stats.outOfStockCount} out of stock, ${stats.lowStockCount} below their reorder point.`
+                    : `${stats.lowStockCount} product${stats.lowStockCount === 1 ? '' : 's'} below the reorder point.`}
                 </Alert>
                 <Table.ScrollContainer minWidth={380}>
                   <Table>

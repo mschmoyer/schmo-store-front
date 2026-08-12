@@ -44,7 +44,8 @@ import {
   IconChevronDown,
   IconAdjustments,
   IconCurrencyDollar,
-  IconShoppingCart
+  IconShoppingCart,
+  IconTicket
 } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Product, ProductFilters } from '@/types/database';
@@ -592,6 +593,18 @@ export default function ProductsAdminPage() {
         }
         actions={
           <>
+          {/* Coupons lost its top-level nav slot — a merchant edits promotions
+              monthly, not daily, and a coupon is part of pricing the catalog.
+              This is its door. */}
+          <Button
+            variant="light"
+            component="a"
+            href="/admin/coupons"
+            leftSection={<IconTicket size={16} />}
+          >
+            Pricing & promotions
+          </Button>
+
           <Button 
             variant="light" 
             leftSection={<IconRefresh size={16} />}
@@ -771,6 +784,12 @@ export default function ProductsAdminPage() {
               </Table.Th>
               <Table.Th>Product</Table.Th>
               <Table.Th className={table.numeric}>Price</Table.Th>
+              {/* The list already had price and cost on the row; one column
+                  turns the catalog into a pricing tool. Margin was in exactly
+                  one place in the admin before this, on the valuation report,
+                  where it divided by cost and so read 97.3% against a true
+                  49.3%. This divides by the price the shopper pays. */}
+              <Table.Th className={table.numeric}>Margin</Table.Th>
               <Table.Th>Stock</Table.Th>
               <Table.Th className={table.numeric}>Sales</Table.Th>
               <Table.Th>Status</Table.Th>
@@ -824,7 +843,37 @@ export default function ProductsAdminPage() {
                     <Price value={Number(product.base_price)} size="sm" />
                   )}
                 </Table.Td>
-                
+
+                <Table.Td className={table.numeric}>
+                  {(() => {
+                    const price = Number(product.sale_price ?? product.base_price) || 0;
+                    const cost = Number(product.cost_price) || 0;
+                    if (!cost || !price) {
+                      return (
+                        <Tooltip label="No cost price on file for this product">
+                          <Text size="sm" c="dimmed">
+                            —
+                          </Text>
+                        </Tooltip>
+                      );
+                    }
+                    /* (price − cost) / price. Margin, not markup. */
+                    const margin = ((price - cost) / price) * 100;
+                    return (
+                      <span className={table.stacked}>
+                        <Text
+                          size="sm"
+                          fw={600}
+                          c={margin < 20 ? 'var(--warning-text)' : undefined}
+                        >
+                          {margin.toFixed(1)}%
+                        </Text>
+                        <span className={table.sub}>{formatCurrency(price - cost)}/unit</span>
+                      </span>
+                    );
+                  })()}
+                </Table.Td>
+
                 <Table.Td>
                   <Group gap="xs">
                     <Badge

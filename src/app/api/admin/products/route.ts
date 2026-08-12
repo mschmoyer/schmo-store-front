@@ -125,17 +125,30 @@ export async function GET(request: NextRequest) {
     // Get enhanced product data with stock levels and sales data
     const enhancedProducts = await Promise.all(
       products.map(async (product) => {
-        // Get sales data for each product
+        /*
+         * Sales per product.
+         *
+         * Two fixes. The status filter was `= 'completed'`, so this list
+         * showed Aviator Headphones as 1 sale / $199.00 while the dashboard
+         * showed 3 — two screens contradicting each other on the same SKU,
+         * because one discarded everything shipped and the other counted
+         * cancellations. Both now use `<> 'cancelled'`.
+         *
+         * And `last_sale_date` came from `oi.created_at`, the row's insert
+         * timestamp, which for a seeded or imported catalog is today for every
+         * product. It is the order's date.
+         */
         const salesData = await db.query(`
-          SELECT 
+          SELECT
             COALESCE(SUM(oi.quantity), 0) as total_sales,
             COALESCE(SUM(oi.total_price), 0) as total_revenue,
+            COALESCE(SUM(oi.quantity * (oi.unit_price - COALESCE(oi.unit_cost, $3))), 0) as gross_profit,
             COUNT(DISTINCT oi.order_id) as total_orders,
-            MAX(oi.created_at) as last_sale_date
+            MAX(o.created_at) as last_sale_date
           FROM order_items oi
           JOIN orders o ON oi.order_id = o.id
-          WHERE oi.product_id = $1 AND o.store_id = $2 AND o.status = 'completed'
-        `, [product.id, user.storeId]);
+          WHERE oi.product_id = $1 AND o.store_id = $2 AND o.status <> 'cancelled'
+        `, [product.id, user.storeId, product.cost_price ?? 0]);
 
         // Get recent inventory changes
         const inventoryData = await db.query(`
@@ -163,6 +176,7 @@ export async function GET(request: NextRequest) {
           sales_data: {
             total_sales: parseInt(String(sales?.total_sales || '0')),
             total_revenue: parseFloat(String(sales?.total_revenue || '0')),
+            gross_profit: parseFloat(String(sales?.gross_profit || '0')),
             total_orders: parseInt(String(sales?.total_orders || '0')),
             last_sale_date: sales?.last_sale_date
           },

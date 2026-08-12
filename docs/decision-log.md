@@ -1078,3 +1078,44 @@ Open, and owned elsewhere:
       "Paste your API key **and secret**" (V2 takes one key), and step 5 promises a hero-copy field
       that does not exist. §5.5's step 5 preview line should be dropped
 - [ ] **Version number not bumped** — `package.json` was outside this change's file ownership
+
+### Session pause — state of play
+
+Green at pause: **733 tests / 44 suites**, `tsc` **0 errors**, `lint` clean,
+all routes 200. Marketing, admin, storefront, customizer and onboarding are all
+on palette C and hold together.
+
+**The one thing that blocks a real e-commerce loop:** `pushOrderToShipStation()`
+has **zero callers**. A shopper pays, Stripe confirms, the order is written to
+our database — and stops there. The merchant never sees it and never ships it.
+`docs/payments.md` §8 states the same independently. The function also targets
+`/v2/shipments`, which creates a shipment rather than an order in the merchant's
+queue, and the bundled OpenAPI documents that path as GET-only.
+
+**Why it is not wired yet:** `api.shipstation.com` is blocked by this
+environment's network policy, so no ShipStation call has ever been executed
+against a live account this session. Every integration path is written to spec
+and unit-tested, never verified. Two questions need a live call before the money
+path can be trusted:
+
+- does `GET /v2/products` exist? Catalog sync depends on it and it has no
+  documented path. If it 404s, sync must be rebuilt on `/v2/inventory`.
+- is `POST /v2/shipments` (or an order-create equivalent) real and accepted?
+
+A read-only probe that answers both in one run is ready at
+`.scratch/shipstation-probe.js`. Unblock by allowlisting the host, or run it
+against a Vercel preview.
+
+**Production build:** compiles in 72s, then fails collecting page data with
+`Cannot find module for page: /admin/analytics`. Every import on that page
+resolves and a clean-tree typecheck is 0, so this is most likely an artifact of
+building while agents were still writing. Needs one clean confirming run.
+
+Open, in priority order:
+- [ ] Wire order push, after the API is verified
+- [ ] Confirm the production build from a quiet tree
+- [ ] Admin: Orders page, profit tiles, reconcile four differing inventory
+      values, repair the coupons endpoint (agent work in flight at pause)
+- [ ] Storefront: checkout theming, the `a { color: inherit }` contrast bypass
+- [ ] Tax is always zero; shipping is three hardcoded rates; no entitlement
+      enforcement; stock is not reserved during the Stripe redirect

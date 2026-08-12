@@ -301,7 +301,22 @@ export async function GET(request: NextRequest) {
        */
       siteVisitors: parseInt(String(visitorStats.rows[0]?.window_unique_visitors || '0')),
       siteVisitorsAllTime: parseInt(String(visitorStats.rows[0]?.total_unique_visitors || '0')),
-      lowStockCount: lowStockProducts.rows.length,
+      /*
+       * Counted exactly as /admin/inventory counts it — strictly below the
+       * threshold and still on the shelf — so the two tiles cannot disagree.
+       * Out-of-stock is a distinct, worse state and is reported separately
+       * rather than folded in and inflating the low-stock figure.
+       *
+       * Verified: 2 low, 1 out of stock, against a dashboard that used to say
+       * 3 (from its own `stock_quantity <= 5` constant) and an Inventory page
+       * that said 4 (from the join fan-out).
+       */
+      lowStockCount: lowStockProducts.rows.filter(
+        (row) => Number(row.stock_quantity) > 0
+      ).length,
+      outOfStockCount: lowStockProducts.rows.filter(
+        (row) => Number(row.stock_quantity) <= 0
+      ).length,
       revenue: {
         totalRevenue: parseFloat(String(revenueStats.rows[0]?.total_revenue || '0')),
         monthlyRevenue: parseFloat(String(revenueStats.rows[0]?.monthly_revenue || '0')),

@@ -306,7 +306,7 @@ export async function GET(request: NextRequest) {
        * through is how a small merchant runs out of cash, so a recommendation
        * now requires evidence that the product actually moves.
        */
-      if (needsRecommendation && dailyVelocity === 0 && reorderQuantity === 0) {
+      if (needsRecommendation && dailyVelocity === 0 && sales.total_sales === 0) {
         needsRecommendation = false;
       }
 

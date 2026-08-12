@@ -40,8 +40,10 @@
   box-shadow: inset 3px 0 0 0 var(--danger);
 }
 
+/* Its own line under the order number. Inline, it read as part of the order
+   number and pushed the column wide enough to squeeze the money column. */
 .ageLine {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
   margin-top: 2px;

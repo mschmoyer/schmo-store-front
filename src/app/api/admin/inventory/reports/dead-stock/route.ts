@@ -242,7 +242,15 @@ export async function GET(request: NextRequest) {
       const riskScore = Number(row.risk_score) || 0;
       const totalValue = Number(row.total_value) || 0;
 
-      // Calculate suggested markdown based on age and risk
+      /*
+       * Suggested markdown, deepening with age.
+       *
+       * The ladder's shallowest rung used to be a hardcoded 90 days, which no
+       * longer matches the threshold the merchant selected — a row that
+       * qualifies as dead at 60 days would be listed with a 0% suggested
+       * markdown, and its liquidation value would come out as the full retail
+       * value. The first rung is now whatever threshold produced the row.
+       */
       let suggestedMarkdown = 0;
       if (daysSinceLastSale >= 365) {
         suggestedMarkdown = 50 + (riskScore / 10); // 50-60% off
@@ -250,6 +258,8 @@ export async function GET(request: NextRequest) {
         suggestedMarkdown = 30 + (riskScore / 20); // 30-35% off
       } else if (daysSinceLastSale >= 90) {
         suggestedMarkdown = 15 + (riskScore / 40); // 15-17.5% off
+      } else if (daysSinceLastSale >= minThreshold) {
+        suggestedMarkdown = 10 + (riskScore / 50); // 10-12% off
       }
 
       // Calculate liquidation value (deeper discount)
