@@ -18,6 +18,13 @@ export const metadata: Metadata = generateLandingPageMeta({
   canonicalUrl: 'https://rebelshops.com/demo-stores',
 });
 
+// Revalidate hourly. Without this the page is prerendered once at build time,
+// so a deploy that builds against a database with no demo stores in it serves
+// the "temporarily unreachable" fallback until the next build — reseeding has
+// no visible effect. An hour is well inside the rate at which stock levels and
+// prices on the demo catalog move.
+export const revalidate = 3600;
+
 /**
  * `/demo-stores` — the three seeded storefronts, loaded from the database so
  * the product counts, stock states and prices on this page are the ones the

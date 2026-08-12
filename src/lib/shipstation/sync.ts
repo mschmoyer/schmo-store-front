@@ -476,6 +476,12 @@ interface ShipStationProduct {
   sku?: string;
   name?: string;
   description?: string;
+  /** Sell price. This is the field the catalogue actually populates. */
+  price?: { amount?: number };
+  /**
+   * Declared customs value. Optional and, on accounts that ship domestically, usually null — which
+   * is why reading `base_price` from it alone imported every product at 0.00.
+   */
   customs_value?: { amount?: number };
   thumbnail_url?: string;
   active?: boolean;
@@ -596,7 +602,7 @@ export async function syncProductsPage(
           product.name ?? sku,
           slug,
           product.description ?? null,
-          product.customs_value?.amount ?? 0,
+          product.price?.amount ?? product.customs_value?.amount ?? 0,
           product.thumbnail_url ?? null,
           product.active !== false,
           categoryId

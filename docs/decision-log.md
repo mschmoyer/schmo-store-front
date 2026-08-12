@@ -1245,3 +1245,58 @@ Open:
 - [ ] **`api_key_encrypted` is base64, not encryption.** `v2Api.ts` and `src/app/api/warehouses/route.ts`
       both recover the key with `Buffer.from(value, 'base64').toString('utf-8')`. The column name
       claims a protection the storage does not provide
+
+## Manual ShipStation sync (2026-08-12)
+
+The live probe passed all seven endpoints while the storefront showed no inventory. The probe was
+right: the account returns 86 inventory records and 84 products. Nothing was wrong upstream — three
+separate faults sat between the API and the database, and each one reported success.
+
+- [x] **The scheduled sync never runs.** `/api/cron/sync` is a *scheduler*: `runFullSync()` enqueues
+      `job_queue` rows and returns. `/api/jobs/process` is the drain, and its own header comment says
+      "It is called by Vercel Cron" — but `vercel.json` declares no cron for it, and no other caller
+      exists. Production had five `shipstation_sync_page` rows stuck `pending`. Worse, the dedupe key
+      (`syncOrchestrator.ts:189`) only ignores *completed* jobs, so every subsequent hourly run
+      enqueued zero: the queue wedges itself. Left open below — this change wires the button, not the
+      cron
+- [x] **`/api/admin/sync/all` could not report failure.** All five steps were wrapped in `try/catch`
+      blocks that logged and continued, then the route returned `success: true` and
+      `'All data synced successfully'` unconditionally. A run that wrote nothing lit a green toast
+- [x] **`/api/admin/inventory` reported failure when it had succeeded.** It delegated to
+      `inventoryService.syncInventoryWithExternalSystem`, whose contract is
+      `success: errors.length === 0`, and which counts every ShipStation SKU with no matching local
+      product as an error. 15 of the account's 86 SKUs are not in the catalogue, so the route
+      committed its writes — 70 products updated — and then answered 500
+- [x] Manual sync now runs the same page-at-a-time writers as the scheduled path
+      (`src/lib/shipstation/manualSync.ts` → `runSyncPage`), so the button gets the hardened
+      credential read, `shipStationFetch` retry/backoff, transactional upserts and store-scoped
+      `sync_logs`. It also fills the `inventory` table, which the legacy path never wrote at all
+- [x] Deleted the five legacy `src/app/api/admin/sync/*/sync.ts` modules. They were a second,
+      diverging implementation: no 429 handling, raw `Buffer.from(key, 'base64')` credential reads,
+      and per-record `catch` blocks that swallowed everything. Two of them also logged the API key's
+      first six and last four characters (audit P1-7)
+- [x] Bounded on purpose: `PAGE_CAP` pages per operation and a 240s budget inside the 300s
+      `maxDuration`, both surfaced as `truncated` in the response. A catalogue too big to finish
+      synchronously reports what it managed rather than being killed mid-write
+- [x] **`base_price` was always 0.00.** The product writer read `customs_value.amount`, which is null
+      on all 84 of the account's products; the populated field is `price.amount` (28 non-zero). Now
+      `price.amount ?? customs_value.amount ?? 0`
+- [x] `SHIPSTATION_ENCRYPTION_KEY` was absent from Vercel production. `decryptSecret` calls
+      `requireEncryptionKey()` before it inspects the format, so *every* credential read threw —
+      including the legacy-base64 branch that would otherwise have worked. Set 2026-08-12
+- [x] **Version bumped** to 2.3.0
+
+Open:
+- [ ] **Nothing drains `job_queue`.** The hourly `/api/cron/sync` still enqueues rows that no cron
+      processes, and the five stuck `pending` rows still block re-enqueue for their dedupe keys. Add
+      `{ "path": "/api/jobs/process", "schedule": "*/5 * * * *" }` to `vercel.json` (check plan cron
+      limits first), or drop the scheduler until it has a drain
+- [ ] **The scheduler itself throws.** The 00:00 UTC run logged
+      `inconsistent types deduced for parameter $1` (`42P08`, `text versus character varying`) after
+      queueing its five jobs, so `runFullSync` reported `0 job(s) enqueued` for a store it had just
+      enqueued five jobs for. Needs an explicit cast in the `job_queue` insert
+- [ ] `store_integrations.api_key_encrypted` still holds untagged base64 for this store
+      (`credentials_encryption_version = 0`). Migration 022 tags legacy rows `b64v0:`, but this row
+      was written after it ran by the onboarding path (`onboarding/shipstation/route.ts:109`), which
+      still base64-encodes. It self-heals through `upgradeRowEncryption` on the next credential read
+      now that the key is set — verify it flips to `ssenc:v1:`

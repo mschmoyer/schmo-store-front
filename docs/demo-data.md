@@ -114,6 +114,29 @@ touches a store or user created by anyone/anything else, even in a shared databa
 run back-to-back twice with identical results (same product/order/category counts) to confirm
 idempotency.
 
+### Seeding a hosted database (Neon / production)
+
+The Vercel build command is `node database/migrate.js && npm run build` — migrations only, **no
+`--seed`**. That is deliberate: `--seed` loads `development.sql`, which wipes and rewrites the three
+demo stores on *every* deploy, discarding any order placed on them since the last one. Seed a hosted
+database as a one-off instead, from a machine that has the credentials:
+
+```bash
+export $(grep -E '^DATABASE_URL_UNPOOLED=' .env.local | tr -d '"')
+DATABASE_URL="$DATABASE_URL_UNPOOLED" node scripts/seed-demo.js --no-dump
+```
+
+Two notes:
+
+- **Use the unpooled (direct) endpoint.** The whole seed is one transaction; the direct endpoint
+  avoids holding a PgBouncer slot for its duration.
+- **`--no-dump`.** Regenerating `database/seeds/development.sql` from a hosted database would commit
+  whatever that database happened to contain, including rows a trigger added. Regenerate the
+  snapshot from a local seed run only.
+
+The scoping above is what makes this safe against a database that already holds real merchant data:
+the three demo store UUIDs and their three owner users are the only rows touched.
+
 One subtlety: inserting `order_items` fires a DB trigger
 (`trigger_update_inventory_on_order` → `update_product_stock`) that decrements
 `products.stock_quantity` as a side effect, and also writes `inventory_logs` rows. The script

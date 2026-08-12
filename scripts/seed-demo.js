@@ -42,9 +42,24 @@ if (!process.env.DATABASE_URL) {
 }
 
 const { Pool } = require('pg');
+
+// Any host that is not loopback gets TLS, matching database/migrate.js and
+// src/lib/database/connection.ts. Keying this off NODE_ENV instead — as this
+// script used to — made it impossible to seed a hosted database from a
+// developer machine: `ssl: false` overrides the `sslmode=require` already in
+// the connection string, so Neon closed the connection before the first query.
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+const seedHost = (() => {
+  try {
+    return new URL(process.env.DATABASE_URL || '').hostname;
+  } catch {
+    return '';
+  }
+})();
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: seedHost && !LOCAL_HOSTS.has(seedHost) ? { rejectUnauthorized: false } : false,
 });
 
 // ---------------------------------------------------------------------------

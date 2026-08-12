@@ -7,7 +7,9 @@ import {
 } from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
 import { inventoryService } from '@/lib/services/inventoryService';
-import { 
+import { collectErrors, runManualSync, toCounts } from '@/lib/shipstation/manualSync';
+import { statusForResult } from '../sync/_lib/respond';
+import {
   convertInventoryToCSV, 
   generateCSVFilename, 
   createCSVDownloadResponse, 
@@ -389,96 +391,34 @@ export async function POST(request: NextRequest) {
     const { action, productId, quantity, notes } = body;
 
     if (action === 'sync_shipstation') {
-      // Get ShipStation integration using the existing pattern
-      const integrationResult = await db.query(`
-        SELECT api_key_encrypted, is_active
-        FROM store_integrations 
-        WHERE store_id = $1 AND integration_type = 'shipstation' AND is_active = true
-      `, [user.storeId]);
+      /*
+       * Runs the same page-at-a-time writers as the scheduled sync, so this button fills the
+       * `inventory` table as well as `products.stock_quantity`.
+       *
+       * It used to hand the ShipStation feed to `inventoryService.syncInventoryWithExternalSystem`,
+       * whose contract is `success: errors.length === 0`, counting every SKU with no matching local
+       * product as an error. A ShipStation account almost always carries SKUs the storefront does
+       * not, so the route committed its writes and then answered 500: the sync had worked and the
+       * UI reported it as a failure.
+       */
+      const result = await runManualSync(user.storeId, { operations: ['products', 'inventory'] });
+      const counts = toCounts(result.operations);
+      const errors = collectErrors(result);
 
-      if (integrationResult.rows.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'ShipStation integration not found or inactive'
-        }, { status: 400 });
-      }
-
-      const encryptedApiKey = String(integrationResult.rows[0].api_key_encrypted);
-      const apiKey = Buffer.from(encryptedApiKey, 'base64').toString('utf-8');
-
-      // Fetch inventory from ShipEngine v2 API with pagination (following existing pattern)
-      let allInventory: Array<{
-        sku: string;
-        available: number;
-        on_hand: number;
-        allocated: number;
-        warehouse_id?: string;
-        warehouse_name?: string;
-      }> = [];
-      let page = 1;
-      let hasMorePages = true;
-      
-      while (hasMorePages) {
-        const inventoryResponse = await fetch(`https://api.shipstation.com/v2/inventory?page=${page}&page_size=100`, {
-          headers: {
-            'API-Key': apiKey,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (!inventoryResponse.ok) {
-          const errorData = await inventoryResponse.json().catch(() => ({}));
-          return NextResponse.json({
-            success: false,
-            error: errorData.message || 'Failed to fetch inventory from ShipEngine'
-          }, { status: 500 });
-        }
-        
-        const inventoryData = await inventoryResponse.json();
-        allInventory = allInventory.concat(inventoryData.inventory || []);
-        
-        // Check if there are more pages
-        hasMorePages = (inventoryData.inventory?.length || 0) === 100;
-        page++;
-      }
-      
-      let addedCount = 0;
-      let updatedCount = 0;
-      
-      // Use inventory service to sync with external system
-      const inventoryData = allInventory.map(item => ({
-        sku: item.sku,
-        available_quantity: item.available || 0,
-        allocated_quantity: item.allocated || 0,
-        warehouse_id: item.warehouse_id || undefined,
-        last_updated: new Date()
-      }));
-      
-      const syncResult = await inventoryService.syncInventoryWithExternalSystem(
-        user.storeId,
-        inventoryData
+      return NextResponse.json(
+        {
+          success: result.success,
+          message: result.success
+            ? 'Inventory synced successfully with ShipStation'
+            : `Inventory sync finished with ${errors.length} error(s)`,
+          synced_items: counts.totalCount,
+          data: counts,
+          errors,
+          truncated: result.operations.some((entry) => entry.truncated)
+        },
+        { status: statusForResult(result) }
       );
-      
-      if (!syncResult.success) {
-        return NextResponse.json({
-          success: false,
-          error: 'Failed to sync inventory with database',
-          details: syncResult.errors
-        }, { status: 500 });
-      }
-      
-      addedCount = syncResult.synced;
-      updatedCount = syncResult.synced; // The service doesn't distinguish between added/updated
 
-      return NextResponse.json({
-        success: true,
-        message: 'Inventory synced successfully with ShipStation',
-        data: {
-          addedCount,
-          updatedCount,
-          totalCount: addedCount + updatedCount
-        }
-      });
 
     } else if (action === 'adjust_inventory' && productId && quantity !== undefined) {
       // Manual inventory adjustment

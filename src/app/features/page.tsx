@@ -19,6 +19,11 @@ export const metadata: Metadata = generateLandingPageMeta({
   canonicalUrl: 'https://rebelshops.com/features',
 });
 
+// Revalidate hourly — the dead-stock and zero-result-search tables read the
+// demo stores, so this page has the same build-time-snapshot problem as
+// /demo-stores if it is prerendered before the demo data exists.
+export const revalidate = 3600;
+
 /**
  * `/features` — the supporting claims from copy deck §2, landed in full.
  *

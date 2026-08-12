@@ -24,6 +24,11 @@ export const metadata: Metadata = generateLandingPageMeta({
   canonicalUrl: 'https://rebelshops.com',
 });
 
+// Revalidate hourly — the hero is built from live demo-store rows, and a build
+// that runs before the demo data is seeded would otherwise pin the copy-only
+// fallback into the static output until the next deploy. See /demo-stores.
+export const revalidate = 3600;
+
 /**
  * The RebelShops marketing homepage.
  *

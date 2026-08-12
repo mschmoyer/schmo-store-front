@@ -248,7 +248,8 @@ docs/
 - `/api/admin/inventory` - Inventory tracking and forecasting
 - `/api/admin/purchase-orders` - Purchase order management
 - `/api/admin/analytics` - Store performance data
-- `/api/admin/sync/*` - Background synchronization endpoints
+- `/api/admin/sync/*` - Operator-triggered ShipStation sync, run synchronously in the request
+  (`all`, `products`, `inventory`, `warehouses`, `inventory-warehouses`, `inventory-locations`)
 - `/api/admin/ai/*` - AI content generation
 
 ### Public APIs
