@@ -3,10 +3,12 @@
 /**
  * Order confirmation.
  *
- * Reached from Stripe with `?session_id=cs_...` and nothing else. That query
- * string is never treated as evidence that anything was paid: the page confirms
- * the session against `GET /api/checkout/confirm`, which resolves it to a real
- * order row, and polls briefly while the webhook is still in flight.
+ * Reached from Stripe with `?session_id=cs_...`, or from the checkout page with
+ * `?session_id=free_...` when the order cost nothing and no payment was needed.
+ * That query string is never treated as evidence that anything was paid: the
+ * page confirms the session against `GET /api/checkout/confirm`, which resolves
+ * it to a real order row, and polls briefly while the webhook is still in
+ * flight (a free order is already written, so it resolves on the first call).
  *
  * Presentationally this is a rewrite. The previous version rendered an orphaned
  * white Mantine card with no header, no footer, no store name and twenty dead
@@ -184,6 +186,9 @@ export function OrderConfirmation({ storeSlug, storeName, sessionId }: OrderConf
     typeof window !== 'undefined' &&
     window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+  // A zero-total order never went near Stripe, so "Total paid" and "Paid" would both be lies.
+  const wasFree = order !== null && Number.parseFloat(order.total) === 0;
+
   /** Every branch ends with a way back into the shop. */
   const backToShop = (
     <div className={styles.confirmActions}>
@@ -288,7 +293,7 @@ export function OrderConfirmation({ storeSlug, storeName, sessionId }: OrderConf
           <span className={styles.mono}>{order?.orderNumber}</span>
         </div>
         <div className={styles.row}>
-          <span>Total paid</span>
+          <span>{wasFree ? 'Total' : 'Total paid'}</span>
           <span className={styles.rowValue}>
             {order ? formatAmount(order.total, order.currency) : '—'}
           </span>
@@ -296,7 +301,11 @@ export function OrderConfirmation({ storeSlug, storeName, sessionId }: OrderConf
         <div className={styles.row}>
           <span>Payment</span>
           <span className={styles.rowValue}>
-            {order?.paymentStatus === 'paid' ? 'Paid' : (order?.paymentStatus ?? '—')}
+            {wasFree
+              ? 'Nothing due'
+              : order?.paymentStatus === 'paid'
+                ? 'Paid'
+                : (order?.paymentStatus ?? '—')}
           </span>
         </div>
       </div>

@@ -22,7 +22,13 @@
 
 import * as React from 'react';
 import Image from 'next/image';
-import { IconAlertTriangle, IconArrowLeft, IconInfoCircle, IconLock } from '@tabler/icons-react';
+import {
+  IconAlertTriangle,
+  IconArrowLeft,
+  IconGift,
+  IconInfoCircle,
+  IconLock,
+} from '@tabler/icons-react';
 
 import { formatMoney } from '@/app/store/_lib/present';
 
@@ -83,7 +89,7 @@ interface Quote {
   couponRejected: boolean;
   shippingMethod: string;
   shippingOptions: QuotedShippingOption[];
-  payments: { enabled: boolean; settlement: string; connected: boolean };
+  payments: { enabled: boolean; required: boolean; settlement: string; connected: boolean };
 }
 
 /** The contact and shipping form. */
@@ -505,7 +511,11 @@ export function CheckoutView({
       imageUrl: line.thumbnailUrl || null,
     }));
 
-  const paymentsDisabled = quote !== null && !quote.payments.enabled;
+  // A cart that totals nothing — a giveaway, or a coupon that covers it — takes no card, so a
+  // store without a connected payment account can still hand it over. The server draws the same
+  // line: `/api/checkout/session` writes the order directly when the re-priced total is zero.
+  const paymentRequired = quote?.payments.required ?? true;
+  const paymentsDisabled = quote !== null && paymentRequired && !quote.payments.enabled;
   const hasRejections = (quote?.rejected.length ?? 0) > 0;
   const canPay =
     !submitting && !quoting && !paymentsDisabled && !hasRejections && (quote?.items.length ?? 0) > 0;
@@ -517,10 +527,14 @@ export function CheckoutView({
   const hasDestination = /^\d{5}(-\d{4})?$/.test(form.postalCode.trim()) && form.state.trim() !== '';
 
   const payLabel = submitting
-    ? 'Redirecting to Stripe…'
+    ? paymentRequired
+      ? 'Redirecting to Stripe…'
+      : 'Placing your order…'
     : paymentsDisabled
       ? 'Payments unavailable'
-      : `Pay ${quote?.totals.total ?? ''}`.trim();
+      : paymentRequired
+        ? `Pay ${quote?.totals.total ?? ''}`.trim()
+        : 'Place free order';
 
   const payButton = (
     <StoreButton
@@ -529,7 +543,7 @@ export function CheckoutView({
       disabled={!canPay}
       onClick={() => void startPayment()}
     >
-      <IconLock size={18} aria-hidden="true" />
+      {paymentRequired ? <IconLock size={18} aria-hidden="true" /> : <IconGift size={18} aria-hidden="true" />}
       {payLabel}
     </StoreButton>
   );
@@ -849,8 +863,9 @@ export function CheckoutView({
           <div className={styles.summaryAction}>{payButton}</div>
 
           <p className={styles.cardNote}>
-            You will be taken to Stripe to enter your card details. RebelShops never sees your card
-            number.
+            {paymentRequired
+              ? 'You will be taken to Stripe to enter your card details. RebelShops never sees your card number.'
+              : 'This order costs nothing, so there is no card to enter. We will confirm it on the next page.'}
           </p>
 
           {!hasDestination ? (

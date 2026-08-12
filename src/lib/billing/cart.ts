@@ -220,8 +220,11 @@ export async function repriceCart(options: RepriceCartOptions): Promise<PricedCa
       }
     }
 
+    // Zero is a legitimate price. `products.base_price` is `NOT NULL`, so a value of 0 is a
+    // deliberate "this is free", not a missing price, and a giveaway must reach checkout like any
+    // other line. Only a negative price is nonsense, and that is what this rejects.
     const unitPriceCents = resolveUnitPriceCents(row);
-    if (unitPriceCents <= 0) {
+    if (unitPriceCents < 0) {
       rejected.push({
         requestedId: productId,
         reason: 'inactive',

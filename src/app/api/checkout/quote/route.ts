@@ -125,6 +125,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })),
         payments: {
           enabled: stripeConfigured,
+          // A zero total needs no card, so the storefront must not gate the order on a payment
+          // account the store has not connected. `POST /api/checkout/session` applies the same
+          // rule server-side; this only stops the button from being disabled for no reason.
+          required: priced.totals.totalCents > 0,
           settlement: paymentAccount?.chargesEnabled ? 'connected_account' : 'platform_direct',
           connected: Boolean(paymentAccount?.chargesEnabled),
         },

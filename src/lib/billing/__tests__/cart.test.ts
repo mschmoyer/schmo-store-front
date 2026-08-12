@@ -188,6 +188,38 @@ describe('server-side cart re-pricing', () => {
     ]);
   });
 
+  it('prices a free product at zero rather than rejecting it', async () => {
+    mockProducts([productRow({ base_price: '0.00', name: 'Free Sticker', stock_quantity: 5 })]);
+
+    const priced = await repriceCart({
+      storeId: STORE_ID,
+      items: [{ product_id: LAPTOP_ID, quantity: 2 }],
+      shippingMethod: 'standard',
+    });
+
+    expect(priced.rejected).toHaveLength(0);
+    expect(priced.items).toHaveLength(1);
+    expect(priced.items[0].unitPriceCents).toBe(0);
+    expect(priced.items[0].lineTotalCents).toBe(0);
+    // Standard shipping is free, so the whole order costs nothing and needs no payment.
+    expect(priced.totals.totalCents).toBe(0);
+  });
+
+  it('still rejects a product with a negative price', async () => {
+    mockProducts([productRow({ base_price: '-5.00' })]);
+
+    const priced = await repriceCart({
+      storeId: STORE_ID,
+      items: [{ product_id: LAPTOP_ID, quantity: 1 }],
+    });
+
+    expect(priced.items).toHaveLength(0);
+    expect(priced.rejected[0]).toMatchObject({
+      reason: 'inactive',
+      message: 'Ultra-Light Laptop is not priced for sale.',
+    });
+  });
+
   it('charges shipping on a small order and not on a large one', async () => {
     mockProducts([productRow({ base_price: '10.00', stock_quantity: 50 })]);
     const small = await repriceCart({

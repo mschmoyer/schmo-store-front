@@ -149,7 +149,7 @@ working fallback.
 
 | Variable | Unlocks | Without it |
 |---|---|---|
-| `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Checkout and subscription billing | Checkout shows "payments not configured" |
+| `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Paid checkout and subscription billing | Checkout shows "payments not configured" — except for $0 orders, which are placed without Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Order creation on payment | Webhooks rejected |
 | `OPENAI_API_KEY` | AI blog and HS-code generators | Those screens report unavailable |
 | `CRON_SECRET` | Vercel Cron endpoints | Cron routes return 401 |

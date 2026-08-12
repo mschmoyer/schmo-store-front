@@ -1300,3 +1300,46 @@ Open:
       was written after it ran by the onboarding path (`onboarding/shipstation/route.ts:109`), which
       still base64-encodes. It self-heals through `upgradeRowEncryption` on the next credential read
       now that the key is set — verify it flips to `ssenc:v1:`
+
+## Free ($0) orders can be placed without payment (2026-08-12)
+
+A $0 product in a $0 cart could not be bought. Two independent gates, both firing on the same
+storefront checkout:
+
+- [x] **`repriceCart` rejected any product priced at zero** (`src/lib/billing/cart.ts:224`,
+      `unitPriceCents <= 0` → `"<name> is not priced for sale."`). `products.base_price` is
+      `NOT NULL`, so `0.00` is a deliberate "this is free", not a missing price — the guard was
+      treating a giveaway as a data error. Now rejects only a *negative* price. The reported case
+      was `wall-art-large-pizza-wizard-1` ("Pepperonius the Pizza Wizard"), `base_price = 0.00`,
+      active, 10,312 in stock
+- [x] **Checkout was gated on Stripe even when there was nothing to charge.** `/api/checkout/quote`
+      returned `payments.enabled = isStripeConfigured()` and `CheckoutView` disabled the pay button
+      whenever it was false — "Schmo Store has not finished connecting a payment account". A zero
+      total needs no card, so the quote now also returns `payments.required` (`totalCents > 0`) and
+      the UI gates on `required && !enabled`
+- [x] **`POST /api/checkout/session` grew a free-order path.** When the *server-priced* total is
+      zero it skips Stripe entirely: mints a `free_<uuid>` session id, persists the
+      `checkout_sessions` snapshot, and calls `createPaidOrder` inline — same transaction, same
+      stock re-check under `FOR UPDATE`, same inventory movement and coupon usage the webhook does.
+      Returns a relative `order-success?session_id=free_...` URL, so the confirmation page and
+      `/api/checkout/confirm` need no special case (the order already exists, so it resolves
+      `paid` on the first poll rather than waiting for a webhook that will never arrive)
+- [x] The `STRIPE_NOT_CONFIGURED` 503 and the `AMOUNT_TOO_SMALL` floor (Stripe's 50¢ minimum) now
+      sit *after* re-pricing, on the paid branch only. A free order is not "too small"
+- [x] `createPaidOrder` takes optional `paymentMethod` / `paymentProvider` (default `card`/`stripe`);
+      a free order records `free`/`none` with `payment_status = 'paid'`. The receipt reads "Total"
+      and "Nothing due" instead of "Total paid" and "Paid"
+- [x] The zero total is only ever the *server's* number. A client-supplied price still never reaches
+      `computeCartTotals`, so this cannot be used to talk the store into a free order
+- [x] Tests: free product prices at zero and is not rejected; a negative price still is
+- [x] **Version bumped** to 2.4.0
+
+Open:
+- [ ] Free-order checkout is verified through `/api/checkout/quote` against the live Schmo Store row
+      (`payments.required: false`, no rejection, `totalCents: 0`). The order-writing half of the
+      path has **not** been exercised end-to-end — doing so writes a real `orders` row and
+      decrements inventory in the shared Neon database
+- [ ] Two rapid submits of a free cart would write two orders: each request mints a fresh
+      `free_<uuid>`, so `createPaidOrder`'s idempotency (keyed on the session id) has nothing to
+      match. The paid flow has the same shape but Stripe's payment step absorbs it. Consider keying
+      free orders on a client-supplied idempotency token

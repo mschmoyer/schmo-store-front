@@ -1,9 +1,11 @@
 /**
  * Transactional creation of a paid storefront order (flow B).
  *
- * Called from the Stripe webhook on `checkout.session.completed`. Everything - order header, order
- * items, inventory movement, coupon usage, and the checkout-session bookkeeping - happens inside a
- * single transaction so a partial write is impossible.
+ * Called from the Stripe webhook on `checkout.session.completed`, and directly from
+ * `POST /api/checkout/session` when the server-priced total is zero and there is no payment to
+ * wait for. Everything - order header, order items, inventory movement, coupon usage, and the
+ * checkout-session bookkeeping - happens inside a single transaction so a partial write is
+ * impossible.
  *
  * Inventory note: inserting into `order_items` fires the pre-existing
  * `update_inventory_on_order_item_insert` trigger, which decrements `products.stock_quantity` and
@@ -39,6 +41,10 @@ export interface CreatePaidOrderInput {
   /** Amount Stripe actually captured, in cents. Authoritative for reconciliation. */
   readonly amountCapturedCents: number;
   readonly applicationFeeCents: number | null;
+  /** How the order was settled. Defaults to a Stripe card charge. */
+  readonly paymentMethod?: string;
+  /** Payment provider recorded on the order. `'none'` for a zero-total order. */
+  readonly paymentProvider?: string;
 }
 
 /** The order that was created (or that already existed). */
@@ -128,7 +134,7 @@ export async function createPaidOrder(input: CreatePaidOrderInput): Promise<Crea
           $9, $10,
           $11, $12, $13, $14,
           $15, $16, $17, $18, $19,
-          'card', 'paid', 'stripe', $20,
+          $27, 'paid', $28, $20,
           $21, $20, $22,
           $23, $24, $25, CURRENT_TIMESTAMP,
           $26, 'processing', 'unfulfilled'
@@ -163,6 +169,8 @@ export async function createPaidOrder(input: CreatePaidOrderInput): Promise<Crea
           ? null
           : centsToDecimalString(input.applicationFeeCents),
         input.shippingMethod,
+        input.paymentMethod ?? 'card',
+        input.paymentProvider ?? 'stripe',
       ]
     );
 

@@ -13,8 +13,15 @@
  * created with `on_behalf_of` and `transfer_data.destination` so funds settle to the merchant. When
  * it does not - which is the normal state in local development - the charge falls back to
  * platform-direct and the response says so.
+ *
+ * Free orders: when the server-priced total comes out at zero - a $0 product, or a coupon that
+ * covers the cart with free shipping - there is nothing to charge, so Stripe is not involved at
+ * all. The order is written here, synchronously, and the shopper goes straight to the confirmation
+ * page. This path deliberately does not care whether the store has connected a payment account:
+ * refusing a giveaway because nobody wired up card processing is a bug, not a safeguard.
  */
 
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { db } from '@/lib/database/connection';
@@ -25,14 +32,17 @@ import {
   resolveShippingOption,
 } from '@/lib/billing/cart-pricing';
 import { centsToDecimalString } from '@/lib/billing/money';
+import { createPaidOrder } from '@/lib/billing/orders';
 import {
   computeApplicationFeeCents,
   getPaymentAccountForStore,
 } from '@/lib/billing/payment-accounts';
 import type {
+  CartTotals,
   CheckoutCustomerDetails,
   CheckoutShippingAddress,
   ClientCartItem,
+  PricedCart,
 } from '@/lib/billing/types';
 import { StripeNotConfiguredError, getAppBaseUrl, getStripe, isStripeConfigured } from '@/lib/stripe/client';
 import { createOneTimeDiscountCoupon } from '@/lib/stripe/discounts';
@@ -111,6 +121,84 @@ async function loadStore(
   return result.rows[0] ?? null;
 }
 
+/** Everything needed to persist the server-priced snapshot of a checkout. */
+interface PersistSessionInput {
+  readonly storeId: string;
+  readonly sessionId: string;
+  readonly paymentIntentId: string | null;
+  readonly connectedAccountId: string | null;
+  readonly priced: PricedCart;
+  readonly customer: CheckoutCustomerDetails;
+  readonly shippingAddress: CheckoutShippingAddress;
+  readonly shippingMethodId: string;
+  readonly expiresAtSeconds: number;
+}
+
+/**
+ * Persist the server-priced cart the order will be built from.
+ *
+ * Written for both the Stripe path (where the webhook later reads this row) and the free-order
+ * path (where the order is written immediately afterwards), so the two flows leave identical
+ * records behind and the confirmation endpoint needs no special case.
+ *
+ * @param input - The priced snapshot and the identifiers it belongs to.
+ * @returns Nothing.
+ */
+async function persistCheckoutSession(input: PersistSessionInput): Promise<void> {
+  const { priced } = input;
+
+  await db.query(
+    `INSERT INTO checkout_sessions (
+        store_id, stripe_checkout_session_id, stripe_payment_intent_id, connected_account_id,
+        status, currency, subtotal, discount_amount, shipping_amount, tax_amount, total_amount,
+        coupon_id, coupon_code, customer_email, customer, shipping_address, shipping_method,
+        line_items, expires_at
+     ) VALUES (
+        $1, $2, $3, $4,
+        'open', $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16,
+        $17, to_timestamp($18)
+     )
+     ON CONFLICT (stripe_checkout_session_id) DO NOTHING`,
+    [
+      input.storeId,
+      input.sessionId,
+      input.paymentIntentId,
+      input.connectedAccountId,
+      priced.currency,
+      centsToDecimalString(priced.totals.subtotalCents),
+      centsToDecimalString(priced.totals.discountCents),
+      centsToDecimalString(priced.totals.shippingCents),
+      centsToDecimalString(priced.totals.taxCents),
+      centsToDecimalString(priced.totals.totalCents),
+      priced.coupon?.couponId ?? null,
+      priced.coupon?.code ?? null,
+      input.customer.email,
+      JSON.stringify(input.customer),
+      JSON.stringify(input.shippingAddress),
+      input.shippingMethodId,
+      JSON.stringify(priced.items),
+      input.expiresAtSeconds,
+    ]
+  );
+}
+
+/**
+ * Shape the totals block returned to the browser.
+ *
+ * @param totals - Server-computed totals.
+ * @returns The same numbers, as a plain JSON object.
+ */
+function totalsPayload(totals: CartTotals): Record<string, number> {
+  return {
+    subtotalCents: totals.subtotalCents,
+    discountCents: totals.discountCents,
+    shippingCents: totals.shippingCents,
+    taxCents: totals.taxCents,
+    totalCents: totals.totalCents,
+  };
+}
+
 /**
  * Create a storefront Stripe Checkout Session.
  *
@@ -150,19 +238,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(
         { success: false, error: 'Store not found' },
         { status: 404 }
-      );
-    }
-
-    if (!isStripeConfigured()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'This store cannot accept payments yet',
-          code: 'STRIPE_NOT_CONFIGURED',
-          message:
-            'Payments are not configured for this storefront. The store owner needs to connect Stripe.',
-        },
-        { status: 503 }
       );
     }
 
@@ -216,6 +291,77 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           rejected: priced.rejected,
         },
         { status: 409 }
+      );
+    }
+
+    const shippingOption = resolveShippingOption(priced.shippingMethod);
+
+    // ---- Free order: nothing to charge, so nothing to ask Stripe. ----
+    if (priced.totals.totalCents === 0) {
+      const sessionId = `free_${randomUUID().replace(/-/g, '')}`;
+      const nowSeconds = Math.floor(Date.now() / 1000);
+
+      await persistCheckoutSession({
+        storeId: store.id,
+        sessionId,
+        paymentIntentId: null,
+        connectedAccountId: null,
+        priced,
+        customer,
+        shippingAddress,
+        shippingMethodId: shippingOption.id,
+        expiresAtSeconds: nowSeconds + 60 * 60,
+      });
+
+      // Writes the order, its items, the inventory movement and the coupon usage in one
+      // transaction, and flips the session row above to `completed`.
+      const order = await createPaidOrder({
+        storeId: store.id,
+        items: priced.items,
+        totals: priced.totals,
+        currency: priced.currency,
+        customer,
+        shippingAddress,
+        shippingMethod: shippingOption.id,
+        couponId: priced.coupon?.couponId ?? null,
+        stripeCheckoutSessionId: sessionId,
+        stripePaymentIntentId: null,
+        stripeAccountId: null,
+        amountCapturedCents: 0,
+        applicationFeeCents: null,
+        paymentMethod: 'free',
+        paymentProvider: 'none',
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          sessionId,
+          // Relative on purpose: the shopper is already on the storefront, and the Stripe
+          // redirect URLs have to be absolute only because Stripe is doing the redirecting.
+          url: `/store/${store.store_slug}/order-success?session_id=${sessionId}`,
+          settlement: 'free',
+          free: true,
+          orderNumber: order.orderNumber,
+          totals: totalsPayload(priced.totals),
+          coupon: priced.coupon
+            ? { code: priced.coupon.code, discountCents: priced.coupon.discountCents }
+            : null,
+        },
+      });
+    }
+
+    // ---- Everything below is a real charge, so Stripe has to be there. ----
+    if (!isStripeConfigured()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'This store cannot accept payments yet',
+          code: 'STRIPE_NOT_CONFIGURED',
+          message:
+            'Payments are not configured for this storefront. The store owner needs to connect Stripe.',
+        },
+        { status: 503 }
       );
     }
 
@@ -276,7 +422,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const baseUrl = getAppBaseUrl();
-    const shippingOption = resolveShippingOption(priced.shippingMethod);
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -298,40 +443,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     // Persist the server-priced snapshot the webhook will turn into an order.
-    await db.query(
-      `INSERT INTO checkout_sessions (
-          store_id, stripe_checkout_session_id, stripe_payment_intent_id, connected_account_id,
-          status, currency, subtotal, discount_amount, shipping_amount, tax_amount, total_amount,
-          coupon_id, coupon_code, customer_email, customer, shipping_address, shipping_method,
-          line_items, expires_at
-       ) VALUES (
-          $1, $2, $3, $4,
-          'open', $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, $16,
-          $17, to_timestamp($18)
-       )
-       ON CONFLICT (stripe_checkout_session_id) DO NOTHING`,
-      [
-        store.id,
-        session.id,
-        typeof session.payment_intent === 'string' ? session.payment_intent : null,
-        useConnect && paymentAccount ? paymentAccount.stripeAccountId : null,
-        priced.currency,
-        centsToDecimalString(priced.totals.subtotalCents),
-        centsToDecimalString(priced.totals.discountCents),
-        centsToDecimalString(priced.totals.shippingCents),
-        centsToDecimalString(priced.totals.taxCents),
-        centsToDecimalString(priced.totals.totalCents),
-        priced.coupon?.couponId ?? null,
-        priced.coupon?.code ?? null,
-        customer.email,
-        JSON.stringify(customer),
-        JSON.stringify(shippingAddress),
-        shippingOption.id,
-        JSON.stringify(priced.items),
-        session.expires_at ?? Math.floor(Date.now() / 1000) + 60 * 60,
-      ]
-    );
+    await persistCheckoutSession({
+      storeId: store.id,
+      sessionId: session.id,
+      paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+      connectedAccountId: useConnect && paymentAccount ? paymentAccount.stripeAccountId : null,
+      priced,
+      customer,
+      shippingAddress,
+      shippingMethodId: shippingOption.id,
+      expiresAtSeconds: session.expires_at ?? Math.floor(Date.now() / 1000) + 60 * 60,
+    });
 
     if (!session.url) {
       throw new Error('Stripe returned a Checkout Session without a redirect URL');
@@ -343,13 +465,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         sessionId: session.id,
         url: session.url,
         settlement: useConnect ? 'connected_account' : 'platform_direct',
-        totals: {
-          subtotalCents: priced.totals.subtotalCents,
-          discountCents: priced.totals.discountCents,
-          shippingCents: priced.totals.shippingCents,
-          taxCents: priced.totals.taxCents,
-          totalCents: priced.totals.totalCents,
-        },
+        free: false,
+        totals: totalsPayload(priced.totals),
         coupon: priced.coupon
           ? { code: priced.coupon.code, discountCents: priced.coupon.discountCents }
           : null,
