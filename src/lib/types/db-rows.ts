@@ -301,6 +301,32 @@ export type ShipmentNotificationRow = {
   created_at: Date | null;
 };
 
+/** Row of `public.coupons`. */
+export type CouponRow = {
+  id: string;
+  store_id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  discount_type: string;
+  discount_value: string;
+  usage_limit: number | null;
+  usage_limit_per_customer: number | null;
+  used_count: number | null;
+  minimum_order_amount: string | null;
+  maximum_discount_amount: string | null;
+  applicable_product_ids: string[] | null;
+  applicable_category_ids: string[] | null;
+  excluded_product_ids: string[] | null;
+  excluded_category_ids: string[] | null;
+  valid_from: Date | null;
+  valid_until: Date | null;
+  is_active: boolean | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  applies_to: string | null;
+};
+
 /** A `COUNT(*)`/`COUNT(x)` projection. `pg` returns bigint columns as strings. */
 export type CountRow = {
   count: string;

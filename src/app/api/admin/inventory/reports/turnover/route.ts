@@ -24,6 +24,32 @@ interface TurnoverMetrics {
   }>;
 }
 
+/** Row shape returned by the turnover sales query. */
+type TurnoverSalesRow = {
+  product_id: string;
+  sku: string;
+  name: string;
+  category: string;
+  current_inventory: number | null;
+  cost_price: string | null;
+  base_price: string;
+  total_sales_quantity: number;
+  total_sales_revenue: number;
+  cost_of_goods_sold: number;
+  last_sale_date: Date | null;
+  average_inventory: number | null;
+  turnover_ratio: number;
+  days_to_sell: number;
+};
+
+/** Row shape of the per-product daily sales trend series. */
+interface TurnoverTrendRow {
+  product_id: string;
+  date: Date;
+  sales: number;
+  inventory: number;
+}
+
 interface TurnoverStats {
   total_products: number;
   average_turnover_ratio: number;
@@ -83,13 +109,15 @@ export async function GET(request: NextRequest) {
       ORDER BY p.name
     `;
 
-    const salesResult = await db.query(salesQuery, [user.storeId]);
+    const salesResult = await db.query<TurnoverSalesRow>(salesQuery, [user.storeId]);
 
     // Skip daily sales trend data since we don't have order data
-    const trendResult = { rows: [] };
+    const trendResult: { rows: TurnoverTrendRow[] } = { rows: [] };
 
     // Group trend data by product
-    const trendDataByProduct = trendResult.rows.reduce((acc, row) => {
+    const trendDataByProduct = trendResult.rows.reduce<
+      Record<string, Array<{ date: string; sales: number; inventory: number }>>
+    >((acc, row) => {
       if (!acc[row.product_id]) {
         acc[row.product_id] = [];
       }
@@ -99,7 +127,7 @@ export async function GET(request: NextRequest) {
         inventory: Number(row.inventory) || 0
       });
       return acc;
-    }, {} as Record<string, Array<{ date: string; sales: number; inventory: number }>>);
+    }, {});
 
     // Process and categorize products
     const turnoverData: TurnoverMetrics[] = salesResult.rows.map(row => {

@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { Button } from '@/components/ui';
 import { Banner, StepNavigation, StepPanel } from '@/components/wizard';
 import { STEPS } from '../lib/steps';
 import ApiKeyInput from '../ApiKeyInput';

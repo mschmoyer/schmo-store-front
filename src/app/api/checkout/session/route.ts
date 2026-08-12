@@ -292,7 +292,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       success_url: `${baseUrl}/store/${store.store_slug}/order-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/store/${store.store_slug}/checkout?checkout=cancelled`,
-      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+      // Stripe requires at least 30 minutes; 60 leaves room for a slow shopper without letting a
+      // stale cart snapshot linger for a day.
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
     });
 
     // Persist the server-priced snapshot the webhook will turn into an order.
@@ -327,7 +329,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         JSON.stringify(shippingAddress),
         shippingOption.id,
         JSON.stringify(priced.items),
-        session.expires_at ?? Math.floor(Date.now() / 1000) + 30 * 60,
+        session.expires_at ?? Math.floor(Date.now() / 1000) + 60 * 60,
       ]
     );
 

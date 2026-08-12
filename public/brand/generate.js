@@ -345,8 +345,8 @@ function markSvg(id, title, colors) {
 }
 
 /* ---- the tile (favicon / app icon): mark reversed out of an ember square -- */
-function tileBody({ radius, ground, fg }) {
-  const k = 0.7;
+function tileBody({ radius, ground, fg, scale }) {
+  const k = scale;
   const w = R_W * k;
   const set = setText('R', { k, ox: (MARK_BOX - w) / 2, oy: (MARK_BOX - M.cap * k) / 2 });
   const bg =
@@ -356,12 +356,12 @@ function tileBody({ radius, ground, fg }) {
   return bg + paint(set, { fg, accent: fg });
 }
 
-function tileSvg(id, { radius = 27, ground = C.ember, fg = C.paper } = {}) {
+function tileSvg(id, { radius = 27, ground = C.ember, fg = C.paper, scale = 0.72 } = {}) {
   return svg({
     id,
     viewBox: `0 0 ${MARK_BOX} ${MARK_BOX}`,
     title: 'RebelShops',
-    body: tileBody({ radius, ground, fg }),
+    body: tileBody({ radius, ground, fg, scale }),
   });
 }
 
@@ -403,10 +403,10 @@ function horizontalSvg(id, { fg, accent }) {
 }
 
 function stackedSvg(id, { fg, accent }) {
-  const mk = 1.9;
+  const mk = 2.7;
   const markW = R_W * mk;
   const markH = M.cap * mk;
-  const gap = 54;
+  const gap = 48;
   const width = Math.max(markW, WORD_W);
   const markSet = setText('R', { k: mk, ox: (width - markW) / 2, oy: 0 });
   const wordSet = setText(WORD, { k: 1, ox: (width - WORD_W) / 2, oy: markH + gap });

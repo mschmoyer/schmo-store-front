@@ -22,6 +22,40 @@ interface DeadStockItem {
   potential_bundles: string[];
 }
 
+/** Row shape returned by the dead-stock products query. */
+type DeadStockRow = {
+  product_id: string;
+  sku: string;
+  name: string;
+  category: string;
+  current_stock: number | null;
+  unit_cost: string;
+  total_value: string;
+  last_sale_date: Date | null;
+  last_restock_date: Date | null;
+  days_since_last_sale: number;
+  days_in_stock: string;
+  carrying_cost: string;
+  risk_score: string;
+  suggested_markdown_percent: number;
+  liquidation_value: string;
+  potential_bundles: string;
+};
+
+/** Row shape of a bundle suggestion for a dead-stock product. */
+interface BundleSuggestionRow {
+  dead_stock_id: string;
+  bundle_product_name: string;
+  bundle_product_sku: string;
+}
+
+/** Row shape of the historical dead-stock snapshot series. */
+type DeadStockTrendRow = {
+  date: Date;
+  dead_stock_count: number | null;
+  dead_stock_value: string | null;
+};
+
 interface DeadStockStats {
   total_dead_stock_items: number;
   total_dead_stock_value: number;
@@ -113,19 +147,19 @@ export async function GET(request: NextRequest) {
       ORDER BY risk_score DESC, total_value DESC
     `;
 
-    const deadStockResult = await db.query(deadStockQuery, [user.storeId, minThreshold]);
+    const deadStockResult = await db.query<DeadStockRow>(deadStockQuery, [user.storeId, minThreshold]);
 
     // Simplified bundle suggestions - just return empty for now
-    const bundleResult = { rows: [] };
+    const bundleResult: { rows: BundleSuggestionRow[] } = { rows: [] };
 
     // Group bundle suggestions by dead stock item
-    const bundlesByProduct = bundleResult.rows.reduce((acc, row) => {
+    const bundlesByProduct = bundleResult.rows.reduce<Record<string, string[]>>((acc, row) => {
       if (!acc[row.dead_stock_id]) {
         acc[row.dead_stock_id] = [];
       }
       acc[row.dead_stock_id].push(`${row.bundle_product_name} (${row.bundle_product_sku})`);
       return acc;
-    }, {} as Record<string, string[]>);
+    }, {});
 
     // Process dead stock items with recommendations
     const deadStockItems: DeadStockItem[] = deadStockResult.rows.map(row => {
@@ -180,7 +214,7 @@ export async function GET(request: NextRequest) {
       ORDER BY snapshot_date ASC
     `;
 
-    const trendResult = await db.query(trendQuery, [user.storeId]);
+    const trendResult = await db.query<DeadStockTrendRow>(trendQuery, [user.storeId]);
 
     const trends: DeadStockTrend[] = trendResult.rows.map(row => ({
       date: format(new Date(row.date), 'yyyy-MM-dd'),
