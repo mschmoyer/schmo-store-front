@@ -18,14 +18,31 @@
    Raw scale tokens (--ink-700, --ember-500) exist for the semantic layer and for
    deliberate one-off accents — never reach for them in a component by default.
 
-   CONTRAST CONTRACT (all values measured, see docs/design-system.md §2):
-     - White labels sit on --accent-solid (ember-600, 4.51:1), never on
-       --ember-500 (3.42:1, fails AA). --ember-500 is identity only: rings,
-       borders, thin rules, display type >= 24px.
-     - Focus rings contrast with the ELEMENT, not only the page. Ember-on-ember
-       measures 1.00:1, so filled controls switch to --focus-ring-on-accent.
-     - Control boundaries use --border-control, which clears 3:1 in both themes
-       (WCAG 1.4.11). Decorative hairlines use --border / --border-subtle.
+   PALETTE: near-monochrome + one signal. There is no brand hue. The page is
+   white, the type is near-black, and the ONLY chromatic colour on a marketing
+   surface is --signal green, which is reserved for money, savings and stock.
+   Status hues (warning/danger) exist for product states, not for decoration.
+
+   CONTRAST CONTRACT (all values measured against the ground named):
+     - --text (#111214) on --bg is 18.74:1, and it is also the primary button
+       fill. White on that button is the same 18.74:1. The old white-on-ember
+       button measured 3.42:1 and failed AA; the defect is gone by construction,
+       not by tuning.
+     - Button hover LIGHTENS to #2A2C30 (white label still 13.99:1), so hover
+       never drops below AAA.
+     - --text-muted (#6B6F76) is 5.05:1 on white and 4.59:1 on --surface-2 —
+       both clear AA. It is the darkest token allowed to carry secondary prose.
+     - --text-subtle (#8A8E96) is 3.29:1. That clears AA only for large text and
+       for non-text UI, so it is restricted to meta and captions that repeat
+       information available elsewhere. It must never carry body copy.
+     - --signal (#0F7B4A) is 5.31:1 on white and 4.83:1 on --surface-2; white on
+       it is 5.31:1. On the one dark block the signal switches to
+       --signal-on-dark (#3FBF83, 8.02:1) because #0F7B4A is 1.9:1 there.
+     - Focus rings contrast with the ELEMENT, not only the page. An ink ring on
+       an ink button measures 1.00:1, so filled controls switch to
+       --focus-ring-on-accent (white).
+     - Control boundaries use --border-control, which clears 3:1 (WCAG 1.4.11).
+       Decorative hairlines use --border (1.26:1) paired with layout, not alone.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -107,19 +124,17 @@
 
   /*
    * -- Elevation (§4) ----------------------------------------------------
-   * Warm-tinted: rgba(38,26,20) has R > G > B. The previous rgba(16,18,22)
-   * had B > G > R, i.e. a blue-grey cast — cooler than neutral, on a warm
-   * paper ground. Every step is layered, including `xs`: the doc forbids a
+   * Neutral now, to match a neutral palette: rgba(17,18,20) is --text itself,
+   * so a shadow is literally the page's own ink at low alpha rather than a
+   * tinted cast. Every step is layered, including `xs`: the doc forbids a
    * single flat blur and `xs` is the most-used shadow in the product.
    */
-  --shadow-xs: 0 1px 2px rgba(38, 26, 20, 0.06), 0 1px 3px rgba(38, 26, 20, 0.03);
-  --shadow-sm: 0 1px 2px rgba(38, 26, 20, 0.07), 0 2px 6px rgba(38, 26, 20, 0.05);
-  --shadow-md: 0 2px 4px rgba(38, 26, 20, 0.05), 0 8px 20px -4px rgba(38, 26, 20, 0.11);
-  --shadow-lg: 0 4px 8px rgba(38, 26, 20, 0.05), 0 20px 44px -8px rgba(38, 26, 20, 0.15);
-  --shadow-xl: 0 8px 16px rgba(38, 26, 20, 0.06), 0 36px 80px -16px rgba(38, 26, 20, 0.2);
-  --shadow-ember: 0 2px 6px rgba(220, 58, 12, 0.24), 0 10px 28px -6px rgba(220, 58, 12, 0.32);
-  --shadow-ember-sm: 0 1px 2px rgba(220, 58, 12, 0.2), 0 3px 10px -2px rgba(220, 58, 12, 0.24);
-  --shadow-rose: 0 2px 6px rgba(217, 45, 32, 0.22), 0 10px 28px -6px rgba(217, 45, 32, 0.28);
+  --shadow-xs: 0 1px 2px rgba(17, 18, 20, 0.05), 0 1px 3px rgba(17, 18, 20, 0.03);
+  --shadow-sm: 0 1px 2px rgba(17, 18, 20, 0.06), 0 2px 6px rgba(17, 18, 20, 0.04);
+  --shadow-md: 0 2px 4px rgba(17, 18, 20, 0.04), 0 8px 20px -4px rgba(17, 18, 20, 0.09);
+  --shadow-lg: 0 4px 8px rgba(17, 18, 20, 0.04), 0 20px 44px -8px rgba(17, 18, 20, 0.12);
+  --shadow-xl: 0 8px 16px rgba(17, 18, 20, 0.05), 0 36px 80px -16px rgba(17, 18, 20, 0.16);
+  --shadow-rose: 0 2px 6px rgba(180, 35, 24, 0.2), 0 10px 28px -6px rgba(180, 35, 24, 0.26);
   --shadow-none: 0 0 #0000;
 
   /* -- Type scale (§3) --------------------------------------------------- */
@@ -199,67 +214,77 @@
 :root {
   color-scheme: light;
 
-  /* -- Ink (§2) — warm-cooled charcoal, slight blue undertone ------------ */
-  --ink-950: #08090b;
-  --ink-900: #0e1014;
-  --ink-800: #171a20;
-  --ink-700: #22262f;
-  --ink-600: #333944;
-  --ink-500: #5a626f;
-  --ink-400: #858d9a;
-  --ink-300: #b4bac4;
-  --ink-200: #dce0e6;
-  --ink-100: #eceef2;
-  --ink-50: #f5f6f8;
+  /* ==========================================================================
+     THE PALETTE. Ten neutrals, one signal, two status hues. That is all.
+     ======================================================================= */
 
-  /* -- Paper (§2) — warm off-white, the light-mode ground ---------------- */
-  --paper: #fbfaf8;
+  /*
+   * -- Named palette (the canonical spelling) ----------------------------
+   * These eight are the palette as a designer reads it. Everything below is
+   * either a ramp step that resolves to one of them, or a role alias.
+   */
+  --bg: #ffffff; /* page ground — pure white, not an off-white */
+  --surface-2: #f4f4f5; /* wells, table headers, inset areas */
+  --border: #e5e5e7; /* hairlines and card borders */
+  --border-strong: #d2d3d6;
+  --text: #111214; /* primary text AND the primary button fill */
+  --text-muted: #6b6f76; /* secondary text — 5.05:1 on white */
+  --text-subtle: #8a8e96; /* meta/captions only, never body copy */
+
+  --signal: #0f7b4a; /* money, in-stock, savings, success. NOTHING ELSE. */
+  --signal-soft: #e8f5ee;
+  --signal-on-dark: #3fbf83; /* the same role, legible on --text grounds */
+
+  /* -- Neutral ramp. Anchored on --text and --surface-2. ------------------ */
+  --ink-950: #0a0b0c;
+  --ink-900: #111214; /* = --text */
+  --ink-800: #1b1d20;
+  --ink-700: #2a2c30; /* = primary button hover */
+  --ink-600: #3f434a;
+  --ink-500: #6b6f76; /* = --text-muted */
+  --ink-400: #8a8e96; /* = --text-subtle */
+  --ink-300: #b0b3b9;
+  --ink-200: #d2d3d6; /* = --border-strong */
+  --ink-100: #e5e5e7; /* = --border */
+  --ink-50: #f4f4f5; /* = --surface-2 */
+
+  /* -- Grounds. One page ground; `sunken` is a fill, never a section band. */
+  --paper: #ffffff;
   --paper-raised: #ffffff;
-  --paper-sunken: #f2f1ed;
+  --paper-sunken: #f4f4f5;
 
-  /* -- Ember (§2) — brand signal ----------------------------------------- */
-  --ember-50: #fff3ee;
-  --ember-100: #ffe1d5;
-  --ember-200: #ffc0a8;
-  --ember-300: #ff9871;
-  --ember-400: #ff6f3d;
-  --ember-500: #f94e1b;
-  --ember-600: #dc3a0c;
-  --ember-700: #b32d09;
-  --ember-800: #8a230a;
-  --ember-900: #5e1907;
+  /* -- Signal ramp. The only chromatic family a marketing surface may use. */
+  --mint-50: #e8f5ee;
+  --mint-100: #c7e6d6;
+  --mint-500: #0f7b4a;
+  --mint-600: #0c6a3f;
+  --mint-700: #0a5533;
 
-  /* -- Support (§2) ------------------------------------------------------ */
-  --mint-50: #e8f8f1;
-  --mint-100: #c9eddd;
-  --mint-500: #0fa871;
-  --mint-600: #0c8a5d;
-  --mint-700: #0a6c49;
+  /* -- Warning: low stock. ------------------------------------------------ */
+  --amber-50: #fdf3e7;
+  --amber-100: #f7e0bf;
+  --amber-500: #b45309;
+  --amber-600: #96450a;
+  --amber-700: #7c3a08;
 
-  --amber-50: #fef6e6;
-  --amber-100: #fbe9c2;
-  --amber-500: #d98a00;
-  --amber-600: #b57200;
-  --amber-700: #8f5a00;
+  /* -- Danger: errors, out of stock. -------------------------------------- */
+  --rose-50: #fef0ee;
+  --rose-100: #fcd9d4;
+  --rose-500: #b42318;
+  --rose-600: #97180f;
+  --rose-700: #7a140c;
 
-  --rose-50: #feeceb;
-  --rose-100: #fcd6d3;
-  --rose-500: #d92d20;
-  --rose-600: #b91c13;
-  --rose-700: #93150e;
-
-  --azure-50: #eef4ff;
-  --azure-500: #2563eb;
-  --azure-600: #1d4ed8;
-  --azure-700: #1e40af;
+  /* -- Info. Product surfaces only — never appears on the marketing site. - */
+  --azure-50: #eef2f8;
+  --azure-500: #2f5d8c;
+  --azure-600: #274d74;
+  --azure-700: #1f3d5c;
 
   /* -- Channels, for alpha compositing ----------------------------------- */
-  --ember-500-rgb: 249 78 27;
-  --ember-600-rgb: 220 58 12;
-  --mint-500-rgb: 15 168 113;
-  --rose-500-rgb: 217 45 32;
-  --amber-500-rgb: 217 138 0;
-  --ink-900-rgb: 14 16 20;
+  --mint-500-rgb: 15 123 74;
+  --rose-500-rgb: 180 35 24;
+  --amber-500-rgb: 180 83 9;
+  --ink-900-rgb: 17 18 20;
 
   /* =========================================================================
      SEMANTIC ALIASES — this is what components are allowed to read.

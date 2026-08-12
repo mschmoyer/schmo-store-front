@@ -46,16 +46,20 @@ export async function GET(request: NextRequest) {
     const syncService = new BackgroundSyncService();
     
     // Get sync history
-    const history = await syncService.getSyncHistory(10);
+    const history = await syncService.getSyncHistory(user.storeId, 10);
     
     // Get sync statistics
-    const stats = await getSyncStatistics();
+    const stats = await getSyncStatistics(user.storeId);
     
-    // Get active integrations
-    const activeStores = await syncService.getActiveStores();
+    // Deliberately NOT calling getActiveStores(): it returns every store on
+    // the platform that has a ShipStation integration, so exposing it here
+    // handed one merchant a directory of every other merchant's id and name.
+    // This endpoint answers "is MY sync healthy", so it reports only whether
+    // this store's own integration is connected.
+    const integrationConnected = await syncService.hasActiveIntegration(user.storeId);
     
     // Get recent errors
-    const recentErrors = await getRecentErrors();
+    const recentErrors = await getRecentErrors(user.storeId);
     
     return NextResponse.json({
       success: true,
@@ -63,8 +67,7 @@ export async function GET(request: NextRequest) {
         lastSync: history[0] || null,
         recentSyncs: history,
         statistics: stats,
-        activeIntegrations: activeStores.length,
-        activeStores: activeStores,
+        integrationConnected,
         recentErrors: recentErrors,
         systemStatus: {
           healthy: stats.success_rate >= 0.8,
@@ -85,13 +88,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getSyncStatistics() {
+async function getSyncStatistics(storeId: string) {
   try {
     const query = `
       WITH recent_syncs AS (
         SELECT *
         FROM sync_logs
         WHERE timestamp >= NOW() - INTERVAL '7 days'
+          AND store_id = $1
       ),
       success_stats AS (
         SELECT 
@@ -119,7 +123,7 @@ async function getSyncStatistics() {
       FROM success_stats
     `;
     
-    const result = await db.query<SyncStatisticsRow>(query);
+    const result = await db.query<SyncStatisticsRow>(query, [storeId]);
 
     if (result.rows.length === 0) {
       return {
@@ -164,7 +168,7 @@ async function getSyncStatistics() {
   }
 }
 
-async function getRecentErrors() {
+async function getRecentErrors(storeId: string) {
   try {
     const query = `
       SELECT 
@@ -172,11 +176,12 @@ async function getRecentErrors() {
         results
       FROM sync_logs
       WHERE failed_operations > 0
+        AND store_id = $1
       ORDER BY timestamp DESC
       LIMIT 5
     `;
     
-    const result = await db.query<RecentErrorRow>(query);
+    const result = await db.query<RecentErrorRow>(query, [storeId]);
 
     return result.rows.map(row => {
       // `results` is a jsonb column, so pg already returns it parsed.

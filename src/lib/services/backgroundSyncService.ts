@@ -87,6 +87,26 @@ export class BackgroundSyncService {
   }
 
   /**
+   * Whether one specific store has an active, credentialled integration.
+   *
+   * Exists so merchant-facing endpoints can answer "is *my* sync connected"
+   * without calling {@link getActiveStores}, which returns every tenant on the
+   * platform. The admin sync-status endpoint previously returned that whole
+   * list to any authenticated merchant.
+   *
+   * @param storeId - The store to check. Required; an empty value returns false
+   *   rather than silently matching everything.
+   * @returns True when the store has a usable ShipStation integration.
+   */
+  async hasActiveIntegration(storeId: string): Promise<boolean> {
+    if (!storeId) {
+      return false;
+    }
+    const stores = await getActiveShipStationStores();
+    return stores.some((store) => store.id === storeId);
+  }
+
+  /**
    * Enqueue sync work for one store.
    *
    * @param store - Store to sync.

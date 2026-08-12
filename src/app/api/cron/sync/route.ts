@@ -35,8 +35,11 @@ async function handle(request: Request): Promise<NextResponse> {
   try {
     const summary = await runSyncJob();
 
+    // A store that failed to schedule is a real failure worth surfacing, but
+    // zero eligible stores is not — a fresh install with no connected
+    // integrations should report success, not alarm the operator every hour.
     return NextResponse.json({
-      success: summary.failedOperations === 0,
+      success: summary.storesFailed === 0,
       job: 'shipstation-sync',
       ...context,
       summary,
