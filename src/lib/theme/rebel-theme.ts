@@ -375,10 +375,18 @@ export const rebelMantineTheme: MantineThemeOverride = createTheme({
 
     Input: Input.extend({ styles: { input: fieldStyles.input } }),
     TextInput: TextInput.extend({ styles: fieldStyles }),
+    // `minHeight` must be a CSS string here, not a number.
+    //
+    // Mantine's Textarea renders react-textarea-autosize, which reads the
+    // style object directly and throws on a numeric minHeight instead of
+    // coercing it the way React's inline styles would. That crashed every
+    // screen containing a textarea — the product editor, the coupon editor,
+    // purchase-order receiving, the AI panel and advanced product settings —
+    // from one line in a theme file, with no type error to catch it.
     Textarea: Textarea.extend({
       styles: {
         ...fieldStyles,
-        input: { ...fieldStyles.input, height: 'auto', minHeight: 88, paddingBlock: 10 },
+        input: { ...fieldStyles.input, height: 'auto', minHeight: '88px', paddingBlock: 10 },
       },
     }),
     NumberInput: NumberInput.extend({ styles: fieldStyles }),

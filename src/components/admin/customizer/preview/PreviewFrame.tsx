@@ -67,6 +67,16 @@ export const VIEWPORTS: Record<
   mobile: { label: 'Mobile', width: 390, height: 844 },
 };
 
+/**
+ * Smallest the preview is allowed to be drawn.
+ *
+ * At a 1024 window the canvas left over after the admin sidebar and the rail is
+ * about 380 px, which would put a 1280 desktop preview at 29% — technically
+ * accurate and completely unreadable. Below this the canvas scrolls sideways
+ * instead.
+ */
+const MIN_SCALE = 0.45;
+
 export interface PreviewFrameProps {
   /** `/store/{slug}?preview={token}`. Read once; later changes are ignored. */
   src: string;
@@ -191,7 +201,13 @@ export function PreviewFrame({
   const size = VIEWPORTS[viewport];
   // Never scale *up*: a 390 px phone shown at 3× would be a lie in the other
   // direction, and the merchant would be judging type sizes that do not exist.
-  const scale = available && available.width > 0 ? Math.min(1, available.width / size.width) : 1;
+  // And never below MIN_SCALE — past that the preview is unreadable, and a
+  // horizontal scroll over a legible render beats a legible label over an
+  // illegible one.
+  const scale =
+    available && available.width > 0
+      ? Math.max(MIN_SCALE, Math.min(1, available.width / size.width))
+      : 1;
   const frameHeight =
     size.height ?? (available && available.height > 0 ? Math.round(available.height / scale) : 900);
   const percent = Math.round(scale * 100);
@@ -225,26 +241,32 @@ export function PreviewFrame({
               sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
             />
           </div>
+
+          {/* Overlay and notice live in the scaler, not the shell: they cover
+              exactly the frame's on-screen footprint, but they are outside the
+              transform, so their own type stays at full size however far the
+              storefront itself is zoomed out. */}
+          {!ready ? (
+            <div className={styles.frameOverlay}>
+              <Spinner size="md" />
+              <span>Loading your storefront…</span>
+            </div>
+          ) : null}
+
+          {handshakeTimedOut && !ready ? (
+            <div className={styles.frameNotice} role="status">
+              <IconAlertTriangle
+                size={15}
+                aria-hidden="true"
+                style={{ flex: 'none', marginTop: 1 }}
+              />
+              <span>
+                The storefront has not answered the preview handshake. Your changes are still being
+                saved to the draft — the preview will catch up once the renderer is available.
+              </span>
+            </div>
+          ) : null}
         </div>
-
-        {/* Overlay and notice sit outside the scaled box so their own type
-            stays at full size however far the storefront is zoomed out. */}
-        {!ready ? (
-          <div className={styles.frameOverlay}>
-            <Spinner size="md" />
-            <span>Loading your storefront…</span>
-          </div>
-        ) : null}
-
-        {handshakeTimedOut && !ready ? (
-          <div className={styles.frameNotice} role="status">
-            <IconAlertTriangle size={15} aria-hidden="true" style={{ flex: 'none', marginTop: 1 }} />
-            <span>
-              The storefront has not answered the preview handshake. Your changes are still being
-              saved to the draft — the preview will catch up once the renderer is available.
-            </span>
-          </div>
-        ) : null}
       </div>
 
       {/* Say what is actually being rendered. A preview that is 57% of life

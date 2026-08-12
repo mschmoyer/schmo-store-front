@@ -226,3 +226,32 @@ describe('ProductImage', () => {
     expect(container.firstElementChild).toHaveStyle({ aspectRatio: '4 / 3' });
   });
 });
+
+describe('unusable src values fall back to the generated mark', () => {
+  // next/image validates src during render and throws "Invalid src prop" for a
+  // host it cannot resolve, a malformed URL or an unsupported protocol. That is
+  // a render-time crash, so onError cannot catch it. A real merchant's
+  // /admin/inventory went down this way on a product image hosted on their own
+  // Shopify CDN. Product URLs come from merchant catalogues and some are junk;
+  // one bad row must degrade, not take down the page.
+  it.each([
+    ['empty string', ''],
+    ['whitespace', '   '],
+    ['not a URL', 'not-a-url'],
+    ['unsupported protocol', 'ftp://example.com/a.jpg'],
+    ['data URI', 'data:image/png;base64,iVBORw0KGgo='],
+    ['bare http host', 'http://example.com/a.jpg'],
+  ])('%s renders the mark rather than an <img>', (_label, value) => {
+    const { container } = render(<ProductImage src={value} name="Aviator Headphones" sku="BCA-1001" />);
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it.each([
+    ['https host', 'https://shopsunnytails.com/cdn/shop/files/collar.jpg'],
+    ['root-relative path', '/demo/products/hearth-ceramic-mug.svg'],
+    ['localhost over http', 'http://localhost:3000/a.png'],
+  ])('%s is passed through to next/image', (_label, value) => {
+    const { container } = render(<ProductImage src={value} name="Aviator Headphones" sku="BCA-1001" />);
+    expect(container.querySelector('img')).not.toBeNull();
+  });
+});

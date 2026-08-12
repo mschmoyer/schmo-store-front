@@ -402,8 +402,8 @@ function studioSections(): Section[] {
     }),
     createSection('collection-grid', '1', {
       heading: 'By room',
-      limit: 6,
-      columns: 3,
+      limit: 8,
+      columns: 4,
       shape: 'portrait',
       showCount: false,
     }),
@@ -649,10 +649,10 @@ function freshSections(): Section[] {
   return [
     createSection('hero', '1', {
       eyebrow: 'Subscribe and save 15%',
-      heading: 'Real food, on a schedule that suits you.',
+      heading: 'Order it once. It turns up on schedule.',
       subheading:
         'Skip, pause or cancel from the first email. No lock-in, and no phone call to get out of it.',
-      primaryLabel: 'Start a box',
+      primaryLabel: 'Start a subscription',
       primaryHref: '/products',
       secondaryLabel: 'How it works',
       secondaryHref: '/products',
@@ -664,9 +664,9 @@ function freshSections(): Section[] {
       style: 'cards',
       columns: 3,
       items: [
-        { icon: 'IconLeaf', title: 'Nothing artificial', body: 'Ingredients you would use yourself.' },
-        { icon: 'IconCalendarEvent', title: 'Skip any week', body: 'From the app or the email.' },
-        { icon: 'IconTruck', title: 'Chilled delivery', body: 'Packed cold, delivered next day.' },
+        { icon: 'IconCalendarEvent', title: 'Skip any delivery', body: 'From the app or the email.' },
+        { icon: 'IconTruck', title: 'Free over $75', body: 'On every repeat order.' },
+        { icon: 'IconRotateClockwise', title: 'Cancel in two taps', body: 'No phone call, no retention offer.' },
       ],
     }),
     createSection('featured-collection', '1', {
@@ -682,7 +682,7 @@ function freshSections(): Section[] {
       showRatings: true,
       items: [
         { quote: 'Cancelled twice, came back twice. That is my review.', author: 'Tom A.', rating: 5 },
-        { quote: 'Arrives cold, every time, even in August.', author: 'Bea C.', rating: 5 },
+        { quote: 'Turns up on the day it says it will, every time.', author: 'Bea C.', rating: 5 },
         { quote: 'Skipping a week takes one tap. That is rarer than it should be.', author: 'Iva L.', rating: 5 },
       ],
     }),
@@ -696,14 +696,14 @@ function freshSections(): Section[] {
     }),
     createSection('collection-grid', '1', {
       heading: 'Shop by aisle',
-      limit: 6,
-      columns: 3,
+      limit: 8,
+      columns: 4,
       shape: 'square',
       showCount: true,
     }),
     createSection('newsletter', '1', {
-      heading: 'Recipes and restocks',
-      body: 'One email a week: what is in season, and what came back.',
+      heading: 'News and restocks',
+      body: 'One email a week: what is new, and what came back in stock.',
       buttonLabel: 'Sign me up',
       background: 'brand',
     }),

@@ -227,11 +227,12 @@
 }
 
 /* Occupies the *scaled* footprint, so the canvas lays out around what the
-   merchant can actually see rather than around the unscaled device width. */
+   merchant can actually see rather than around the unscaled device width.
+   Deliberately no `max-width`: once the scale floor is hit the canvas scrolls
+   sideways rather than squashing the frame to a width it is not claiming. */
 .frameScaler {
   position: relative;
   flex: none;
-  max-width: 100%;
 }
 
 .frameShell {
@@ -280,6 +281,7 @@
 .frameOverlay {
   position: absolute;
   inset: 0;
+  border-radius: var(--radius-lg);
   display: grid;
   place-items: center;
   gap: 12px;

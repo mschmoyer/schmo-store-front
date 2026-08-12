@@ -5,6 +5,7 @@ import { SectionList } from '@/components/store/sections';
 import { EmptyCatalogue } from '@/components/store/states/EmptyStates';
 import { SectionHeading, StoreBand, StoreContainer } from '@/components/store/ui';
 import { verifySession } from '@/lib/auth/session';
+import { db } from '@/lib/database/connection';
 
 import { loadStorefront, type SearchParams } from '../_lib/load';
 import { countActiveProducts } from '../_lib/queries';
@@ -35,7 +36,18 @@ async function isStoreOwner(storeId: string): Promise<boolean> {
     const token = (await cookies()).get('session')?.value;
     if (!token) return false;
     const session = await verifySession(token);
-    return session?.storeId === storeId;
+    if (!session?.userId) return false;
+
+    // The fast path. The slow path exists because the session JWT is minted
+    // during onboarding *before* the store is created, so a merchant who has
+    // just finished the wizard is carrying a token with no `storeId` in it.
+    if (session.storeId === storeId) return true;
+
+    const owner = await db.query<{ owner_id: string }>(
+      'SELECT owner_id FROM stores WHERE id = $1 LIMIT 1',
+      [storeId],
+    );
+    return owner.rows[0]?.owner_id === session.userId;
   } catch {
     return false;
   }
@@ -77,8 +89,10 @@ export default async function StoreHomePage({ params, searchParams }: StorePageP
   const productCount = await countActiveProducts(store.id);
 
   // A preview token is already proof the viewer is authorised to see the draft,
-  // so it counts as the merchant looking at their own shop.
-  const isOwner = isPreview || (await isStoreOwner(store.id));
+  // so it counts as the merchant looking at their own shop. Only asked when the
+  // shop is empty, which is the only case that renders anything owner-specific.
+  const isOwner =
+    productCount === 0 ? isPreview || (await isStoreOwner(store.id)) : false;
 
   // The default sections and `footer.showNewsletter` are both on out of the
   // box, which would stack two identical email forms at the bottom of the page.

@@ -78,14 +78,28 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "http", hostname: "localhost" },
       { protocol: "http", hostname: "127.0.0.1" },
-      // ShipStation product imagery.
-      { protocol: "https", hostname: "**.shipstation.com" },
-      { protocol: "https", hostname: "**.shipengine.com" },
-      // Vercel Blob / project asset hosts.
-      { protocol: "https", hostname: "**.public.blob.vercel-storage.com" },
-      { protocol: "https", hostname: "**.vercel-storage.com" },
+      // Any HTTPS host.
+      //
+      // This is multi-tenant: product imagery belongs to the merchant, and the
+      // URLs arrive from their ShipStation catalog pointing at whatever host
+      // they already use — their own domain, a Shopify CDN, S3, Cloudinary.
+      // A merchant's inventory page crashed outright on
+      // `shopsunnytails.com`, because an allowlist cannot enumerate hosts we
+      // do not control and will never know in advance. Any fixed list is a
+      // crash waiting for the next merchant who signs up.
+      //
+      // The trade-off, stated plainly: the optimizer will fetch any HTTPS URL
+      // this app renders, so it must never render a URL from an untrusted
+      // source. Product image URLs come from the merchant's own authenticated
+      // ShipStation account or their own uploads, which is the trust boundary
+      // being relied on here. `dangerouslyAllowSVG` stays off, so a hostile
+      // URL cannot serve script-bearing SVG through the optimizer.
+      { protocol: "https", hostname: "**" },
     ],
+    // Deliberately absent: dangerouslyAllowSVG. With `**` above, enabling it
+    // would let any host serve script-bearing SVG from our origin.
     formats: ["image/webp", "image/avif"],
+    minimumCacheTTL: 60 * 60 * 24 * 7,
   },
 
   experimental: {

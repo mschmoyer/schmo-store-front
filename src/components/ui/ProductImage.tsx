@@ -64,6 +64,39 @@ export interface ProductImageProps extends Omit<React.HTMLAttributes<HTMLDivElem
  * @param ref - Forwarded to the frame element.
  * @returns An aspect-ratio-locked image frame.
  */
+/**
+ * Whether `next/image` can render this src without throwing.
+ *
+ * `next/image` validates `src` during *render* and throws "Invalid src prop"
+ * for a host that is not configured, a malformed URL, or a protocol it does
+ * not accept. That happens before any load is attempted, so `onError` never
+ * fires and the whole page crashes — which is exactly what a real merchant hit
+ * on /admin/inventory, where a product image pointed at their own Shopify CDN.
+ *
+ * Product image URLs arrive from merchant ShipStation catalogues, so they are
+ * arbitrary third-party strings and some will be junk. A bad URL on one row
+ * must degrade to that row's generated mark, never take down the page.
+ *
+ * @param src - Candidate image URL.
+ * @returns True when the value is safe to hand to `next/image`.
+ */
+function isRenderableSrc(src: string | null | undefined): src is string {
+  if (!src) return false;
+  const value = src.trim();
+  if (value === '') return false;
+  // Root-relative paths are always fine.
+  if (value.startsWith('/')) return true;
+  try {
+    const url = new URL(value);
+    // data: and blob: are rejected by next/image; http is only configured for
+    // localhost, so anything else non-https would throw.
+    return url.protocol === 'https:'
+      || (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1'));
+  } catch {
+    return false;
+  }
+}
+
 export const ProductImage = React.forwardRef<HTMLDivElement, ProductImageProps>(
   function ProductImage(
     {
@@ -92,7 +125,8 @@ export const ProductImage = React.forwardRef<HTMLDivElement, ProductImageProps>(
     }, [src]);
 
     const mark = React.useMemo(() => getProductMark({ sku, name }), [sku, name]);
-    const showMark = !src || failed;
+    const usable = isRenderableSrc(src);
+    const showMark = !usable || failed;
 
     return (
       <div
@@ -143,7 +177,7 @@ export const ProductImage = React.forwardRef<HTMLDivElement, ProductImageProps>(
           </div>
         ) : (
           <Image
-            src={src}
+            src={src as string}
             alt={alt ?? name}
             fill
             sizes={sizes}
