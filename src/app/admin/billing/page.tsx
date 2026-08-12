@@ -66,26 +66,37 @@ interface ConnectStatus {
   } | null;
 }
 
+/*
+ * Semantic tokens, referenced by name only.
+ *
+ * These entries used to carry `var(--token, #FALLBACK)` pairs whose fallbacks
+ * were the PREVIOUS palette: `#FBFAF8` warm paper, `#0FA871` mint, `#D92D20`
+ * rose, and a `--shadow-ember` default of `rgba(249,78,27,.24)` — vermilion,
+ * from a ramp §2 decommissioned. A stale fallback is worse than no fallback:
+ * it is invisible while the token exists and silently repaints the screen in
+ * last year's colours the moment one gets renamed. Every token below is
+ * defined in `globals.css`, so there is nothing to fall back to.
+ */
 const TOKENS = {
-  paper: 'var(--paper, #FBFAF8)',
-  raised: 'var(--paper-raised, #FFFFFF)',
-  sunken: 'var(--paper-sunken, #F2F1ED)',
-  ink900: 'var(--ink-900, #0E1014)',
-  ink700: 'var(--ink-700, #22262F)',
-  ink500: 'var(--ink-500, #5A626F)',
-  ink200: 'var(--ink-200, #DCE0E6)',
-  accent: 'var(--text, #111214)',
-  accentHover: 'var(--text-muted, #6B6F76)',
-  mint500: 'var(--mint-500, #0FA871)',
-  mint50: 'var(--mint-50, #E8F8F1)',
-  amber500: 'var(--amber-500, #D98A00)',
-  amber50: 'var(--amber-50, #FEF6E6)',
-  rose500: 'var(--rose-500, #D92D20)',
-  rose50: 'var(--rose-50, #FEECEB)',
-  radiusLg: 'var(--radius-lg, 16px)',
-  radiusSm: 'var(--radius-sm, 8px)',
-  shadowSm: 'var(--shadow-sm, 0 1px 2px rgba(16,18,22,.06), 0 2px 6px rgba(16,18,22,.05))',
-  display: 'var(--font-display, inherit)',
+  paper: 'var(--surface)',
+  raised: 'var(--surface-raised)',
+  sunken: 'var(--surface-2)',
+  ink900: 'var(--text-primary)',
+  ink700: 'var(--ink-700)',
+  ink500: 'var(--text-secondary)',
+  ink200: 'var(--border-strong)',
+  accent: 'var(--accent-solid)',
+  accentHover: 'var(--accent-solid-hover)',
+  mint500: 'var(--success-text)',
+  mint50: 'var(--success-subtle)',
+  amber500: 'var(--warning-text)',
+  amber50: 'var(--warning-subtle)',
+  rose500: 'var(--danger-text)',
+  rose50: 'var(--danger-subtle)',
+  radiusLg: 'var(--radius-lg)',
+  radiusSm: 'var(--radius-sm)',
+  shadowSm: 'var(--shadow-sm)',
+  display: 'var(--font-display)',
 };
 
 /**
@@ -220,12 +231,12 @@ function PrimaryButton({ onClick, disabled, children }: PrimaryButtonProps): Rea
         padding: '0 24px',
         border: 'none',
         borderRadius: TOKENS.radiusSm,
-        background: disabled ? 'var(--ink-300, #B4BAC4)' : TOKENS.accent,
-        color: '#FFFFFF',
+        background: disabled ? 'var(--ink-300)' : TOKENS.accent,
+        color: 'var(--accent-fg)',
         fontSize: '1rem',
         fontWeight: 600,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        boxShadow: disabled ? 'none' : 'var(--shadow-ember, 0 2px 6px rgba(249,78,27,.24))',
+        boxShadow: disabled ? 'none' : 'var(--shadow-sm)',
       }}
     >
       {children}

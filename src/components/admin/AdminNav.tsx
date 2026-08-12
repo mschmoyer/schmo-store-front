@@ -1,235 +1,187 @@
 'use client';
 
 import React from 'react';
-import { NavLink, Box, Stack, Text, rem } from '@mantine/core';
-import { 
-  IconDashboard, 
-  IconSettings, 
-  IconShoppingCart, 
-  IconPalette, 
-  IconArticle, 
-  IconChartLine, 
-  IconUser,
-  IconPlug,
+import { NavLink, ScrollArea, Stack, Text } from '@mantine/core';
+import {
+  IconArticle,
+  IconBrain,
   IconCategory,
+  IconChartLine,
+  IconCreditCard,
+  IconDashboard,
   IconExternalLink,
   IconLogout,
-  IconBrain,
   IconPackage,
-  IconTicket
+  IconPalette,
+  IconPlug,
+  IconSettings,
+  IconShoppingCart,
+  IconTicket,
+  IconTruckDelivery,
+  IconUser,
 } from '@tabler/icons-react';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import styles from './AdminChrome.module.css';
 
 interface AdminNavProps {
   onNavClick?: () => void;
 }
 
+interface NavItem {
+  label: string;
+  icon: typeof IconDashboard;
+  href: string;
+  enabled: boolean;
+}
+
+interface NavGroup {
+  heading: string;
+  items: NavItem[];
+}
+
+/**
+ * The sidebar's information architecture.
+ *
+ * Grouping replaces what colour used to do. The old nav gave every item its own
+ * hue — Dashboard blue, Products orange, Inventory teal, Coupons purple, AI
+ * violet, Blog indigo — which is decoration standing in for structure: eleven
+ * hues told you nothing about which screens belong together. Four headings do.
+ */
+const NAV_GROUPS: NavGroup[] = [
+  {
+    heading: 'Overview',
+    items: [
+      { label: 'Dashboard', icon: IconDashboard, href: '/admin', enabled: true },
+      { label: 'Analytics', icon: IconChartLine, href: '/admin/analytics', enabled: true },
+    ],
+  },
+  {
+    heading: 'Catalog',
+    items: [
+      { label: 'Products', icon: IconShoppingCart, href: '/admin/products', enabled: true },
+      { label: 'Inventory', icon: IconPackage, href: '/admin/inventory', enabled: true },
+      {
+        label: 'Purchase Orders',
+        icon: IconTruckDelivery,
+        href: '/admin/purchase-orders',
+        enabled: true,
+      },
+      { label: 'Categories', icon: IconCategory, href: '/admin/categories', enabled: false },
+    ],
+  },
+  {
+    heading: 'Selling',
+    items: [
+      { label: 'Coupons & Discounts', icon: IconTicket, href: '/admin/coupons', enabled: true },
+      { label: 'Page Design', icon: IconPalette, href: '/admin/design', enabled: true },
+      { label: 'Blog', icon: IconArticle, href: '/admin/blog', enabled: true },
+      { label: 'AI Assistant', icon: IconBrain, href: '/admin/ai', enabled: true },
+    ],
+  },
+  {
+    heading: 'Account',
+    items: [
+      { label: 'Integrations', icon: IconPlug, href: '/admin/integrations', enabled: true },
+      { label: 'Billing', icon: IconCreditCard, href: '/admin/billing', enabled: true },
+      { label: 'Profile', icon: IconUser, href: '/admin/account', enabled: false },
+      { label: 'Settings', icon: IconSettings, href: '/admin/settings', enabled: false },
+    ],
+  },
+];
+
+const ICON_PROPS = { size: 18, stroke: 1.6 } as const;
+
+/**
+ * The admin sidebar.
+ *
+ * §2's discipline, applied: **an active item is weight, a `--surface-2` fill
+ * and an ink left rule — never a colour.** The previous nav carried three
+ * off-palette accents in the same 600px column: purple for "View Store", blue
+ * for the active Dashboard state and red for "Logout". The red was the worst of
+ * the three, because destructive red is a promise that something will be
+ * destroyed and signing out destroys nothing — it is ordinary navigation, so it
+ * is now styled as ordinary navigation.
+ *
+ * @param props - {@link AdminNavProps}
+ * @returns The navigation column rendered inside `AppShell.Navbar`.
+ */
 export function AdminNav({ onNavClick }: AdminNavProps) {
   const pathname = usePathname();
   const { user, logout } = useAdmin();
-  
+
   const handleViewStore = () => {
     if (user?.store?.slug) {
-      window.open(`/store/${user.store.slug}`, '_blank');
+      window.open(`/store/${user.store.slug}`, '_blank', 'noopener,noreferrer');
     }
   };
 
   const handleLogout = async () => {
     await logout();
-    if (onNavClick) {
-      onNavClick();
-    }
+    onNavClick?.();
   };
-  
-  const navItems = [
-    {
-      label: 'Dashboard',
-      icon: IconDashboard,
-      href: '/admin',
-      color: 'blue',
-      enabled: true
-    },
-    {
-      label: 'Account',
-      icon: IconUser,
-      href: '/admin/account',
-      color: 'green',
-      enabled: false // Page not implemented yet
-    },
-    {
-      label: 'Products',
-      icon: IconShoppingCart,
-      href: '/admin/products',
-      color: 'orange',
-      enabled: true
-    },
-    {
-      label: 'Inventory',
-      icon: IconPackage,
-      href: '/admin/inventory',
-      color: 'teal',
-      enabled: true
-    },
-    {
-      label: 'Coupons & Discounts',
-      icon: IconTicket,
-      href: '/admin/coupons',
-      color: 'purple',
-      enabled: true
-    },
-    {
-      label: 'Categories',
-      icon: IconCategory,
-      href: '/admin/categories',
-      color: 'purple',
-      enabled: false // Page not implemented yet
-    },
-    {
-      label: 'AI Assistant',
-      icon: IconBrain,
-      href: '/admin/ai',
-      color: 'violet',
-      enabled: true
-    },
-    {
-      label: 'Integrations',
-      icon: IconPlug,
-      href: '/admin/integrations',
-      color: 'cyan',
-      enabled: true
-    },
-    {
-      label: 'Page Design',
-      icon: IconPalette,
-      href: '/admin/design',
-      color: 'pink',
-      enabled: true
-    },
-    {
-      label: 'Blog',
-      icon: IconArticle,
-      href: '/admin/blog',
-      color: 'indigo',
-      enabled: true
-    },
-    {
-      label: 'Analytics',
-      icon: IconChartLine,
-      href: '/admin/analytics',
-      color: 'cyan',
-      enabled: true
-    },
-    {
-      label: 'Settings',
-      icon: IconSettings,
-      href: '/admin/settings',
-      color: 'gray',
-      enabled: false // Page not implemented yet
-    }
-  ];
-  
-  const isActive = (href: string) => {
-    if (href === '/admin') {
-      return pathname === '/admin';
-    }
-    return pathname?.startsWith(href);
-  };
-  
+
+  const isActive = (href: string) =>
+    href === '/admin' ? pathname === '/admin' : Boolean(pathname?.startsWith(href));
+
   return (
-    <Box p="md">
-      <Stack gap="xs">
-        <Text size="xs" tt="uppercase" fw={700} c="dimmed" mb="sm">
-          Admin Dashboard
-        </Text>
-        
+    <div className={styles.nav}>
+      <ScrollArea className={styles.navScroll} scrollbarSize={6}>
+        <Stack gap={22} p="md">
+          {NAV_GROUPS.map((group) => {
+            const items = group.items.filter((item) => item.enabled);
+            if (items.length === 0) return null;
+
+            return (
+              <div key={group.heading}>
+                <Text component="h2" className={styles.navHeading}>
+                  {group.heading}
+                </Text>
+                <Stack gap={2} mt={8}>
+                  {items.map((item) => {
+                    const active = isActive(item.href);
+                    return (
+                      <NavLink
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        leftSection={<item.icon {...ICON_PROPS} />}
+                        active={active}
+                        onClick={onNavClick}
+                        className={styles.navItem}
+                        data-active-item={active ? 'true' : undefined}
+                      />
+                    );
+                  })}
+                </Stack>
+              </div>
+            );
+          })}
+        </Stack>
+      </ScrollArea>
+
+      <div className={styles.navFooter}>
         {user?.store?.slug && (
           <NavLink
-            label="View Store"
-            leftSection={
-              <IconExternalLink 
-                style={{ width: rem(20), height: rem(20) }} 
-                stroke={1.5} 
-              />
-            }
+            component="button"
+            type="button"
+            label="View store"
+            description="Opens in a new tab"
+            leftSection={<IconExternalLink {...ICON_PROPS} />}
             onClick={handleViewStore}
-            color="violet"
-            styles={{
-              root: {
-                borderRadius: rem(8),
-                cursor: 'pointer',
-                marginBottom: rem(8),
-                border: '1px solid var(--mantine-color-violet-2)',
-                backgroundColor: 'var(--mantine-color-violet-0)',
-                '&:hover': {
-                  backgroundColor: 'var(--mantine-color-violet-1)',
-                }
-              },
-              label: {
-                fontWeight: 600,
-                color: 'var(--mantine-color-violet-7)',
-              }
-            }}
+            className={styles.navItem}
           />
         )}
-        
-        {navItems.filter(item => item.enabled).map((item) => (
-          <NavLink
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            leftSection={
-              <item.icon 
-                style={{ width: rem(20), height: rem(20) }} 
-                stroke={1.5} 
-              />
-            }
-            active={isActive(item.href)}
-            color={item.color}
-            onClick={onNavClick}
-            styles={{
-              root: {
-                borderRadius: rem(8),
-                '&:hover': {
-                  backgroundColor: 'var(--mantine-color-gray-0)',
-                }
-              },
-              label: {
-                fontWeight: 500,
-              }
-            }}
-          />
-        ))}
-        
-        {/* Logout Button */}
+
         <NavLink
-          label="Logout"
-          leftSection={
-            <IconLogout 
-              style={{ width: rem(20), height: rem(20) }} 
-              stroke={1.5} 
-            />
-          }
+          component="button"
+          type="button"
+          label="Sign out"
+          leftSection={<IconLogout {...ICON_PROPS} />}
           onClick={handleLogout}
-          color="red"
-          styles={{
-            root: {
-              borderRadius: rem(8),
-              marginTop: rem(16),
-              border: '1px solid var(--mantine-color-red-2)',
-              backgroundColor: 'var(--mantine-color-red-0)',
-              cursor: 'pointer',
-              '&:hover': {
-                backgroundColor: 'var(--mantine-color-red-1)',
-              }
-            },
-            label: {
-              fontWeight: 600,
-              color: 'var(--mantine-color-red-7)',
-            }
-          }}
+          className={styles.navItem}
         />
-      </Stack>
-    </Box>
+      </div>
+    </div>
   );
 }

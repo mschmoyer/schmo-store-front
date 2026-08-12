@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Input } from '@/components/ui';
@@ -100,11 +101,15 @@ export default function LoginPage(): React.ReactElement {
   return (
     <div className={styles.page}>
       <header className={styles.masthead}>
-        <Link href="/" className={styles.brand}>
-          <span className={styles.brandMark} aria-hidden="true">
-            R
-          </span>
-          <span className={styles.brandName}>RebelShops</span>
+        <Link href="/" className={styles.brand} aria-label="RebelShops home">
+          <Image
+            src="/brand/logo-horizontal.svg"
+            alt="RebelShops"
+            width={134}
+            height={22}
+            priority
+            className={styles.brandMark}
+          />
         </Link>
       </header>
 

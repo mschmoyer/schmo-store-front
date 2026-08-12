@@ -6,13 +6,14 @@ import {
   Title, 
   Text, 
   Alert,
-  Loader,
   Group,
   rem
 } from '@mantine/core';
 import { IconPlug, IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
 import { IntegrationConfiguration } from '@/types/database';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
 
 /**
  * An integration row as returned by the API.
@@ -179,12 +180,11 @@ export default function IntegrationsPage() {
   
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <Loader size="lg" />
-        <Text mt="md" c="dimmed">
-          Loading integrations...
-        </Text>
-      </div>
+      <Stack gap="lg">
+        <AdminPageHeader title="Integrations" description="Connect the services that feed your store." />
+        <PanelSkeleton height={140} label="Loading integrations" />
+        <PanelSkeleton height={140} label="Loading integrations" />
+      </Stack>
     );
   }
   

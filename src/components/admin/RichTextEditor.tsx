@@ -124,7 +124,7 @@ export default function RichTextEditor({
         }
         
         .w-md-editor-toolbar {
-          background-color: var(--mantine-color-gray-0) !important;
+          background-color: var(--surface-2) !important;
           border-bottom: 1px solid var(--mantine-color-default-border) !important;
           border-radius: 8px 8px 0 0 !important;
         }
@@ -135,7 +135,7 @@ export default function RichTextEditor({
         }
         
         .w-md-editor-toolbar button:hover {
-          background-color: var(--mantine-color-gray-1) !important;
+          background-color: var(--surface-2) !important;
         }
         
         .w-md-editor-text-textarea,
@@ -167,22 +167,22 @@ export default function RichTextEditor({
         }
         
         .w-md-editor-preview blockquote {
-          border-left: 4px solid var(--mantine-color-blue-6) !important;
-          background-color: var(--mantine-color-gray-0) !important;
+          border-left: 4px solid var(--text-primary) !important;
+          background-color: var(--surface-2) !important;
           padding: 12px 16px !important;
           margin: 16px 0 !important;
           color: var(--mantine-color-text) !important;
         }
         
         .w-md-editor-preview code {
-          background-color: var(--mantine-color-gray-0) !important;
+          background-color: var(--surface-2) !important;
           padding: 2px 4px !important;
           border-radius: 3px !important;
           color: var(--mantine-color-text) !important;
         }
         
         .w-md-editor-preview pre {
-          background-color: var(--mantine-color-gray-0) !important;
+          background-color: var(--surface-2) !important;
           padding: 12px !important;
           border-radius: 6px !important;
           border: 1px solid var(--mantine-color-default-border) !important;
@@ -190,11 +190,11 @@ export default function RichTextEditor({
         }
         
         .w-md-editor-preview a {
-          color: var(--mantine-color-blue-6) !important;
+          color: var(--text-primary) !important;
         }
         
         .w-md-editor-preview a:hover {
-          color: var(--mantine-color-blue-8) !important;
+          color: var(--text-primary) !important;
         }
         
         .w-md-editor-preview table {
@@ -210,57 +210,57 @@ export default function RichTextEditor({
         }
         
         .w-md-editor-preview table th {
-          background-color: var(--mantine-color-gray-0) !important;
+          background-color: var(--surface-2) !important;
           font-weight: 600 !important;
         }
         
         /* Dark mode styles */
         [data-mantine-color-scheme="dark"] .w-md-editor {
-          background-color: var(--mantine-color-dark-7) !important;
-          border: 1px solid var(--mantine-color-dark-4) !important;
+          background-color: var(--surface-raised) !important;
+          border: 1px solid var(--border) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-toolbar {
-          background-color: var(--mantine-color-dark-6) !important;
-          border-bottom: 1px solid var(--mantine-color-dark-4) !important;
+          background-color: var(--surface-2) !important;
+          border-bottom: 1px solid var(--border) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-toolbar button:hover {
-          background-color: var(--mantine-color-dark-5) !important;
+          background-color: var(--border-strong) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-text-textarea,
         [data-mantine-color-scheme="dark"] .w-md-editor-text {
-          background-color: var(--mantine-color-dark-7) !important;
-          color: var(--mantine-color-dark-0) !important;
+          background-color: var(--surface-raised) !important;
+          color: var(--text-primary) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-preview {
-          background-color: var(--mantine-color-dark-7) !important;
-          color: var(--mantine-color-dark-0) !important;
+          background-color: var(--surface-raised) !important;
+          color: var(--text-primary) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-preview blockquote {
-          background-color: var(--mantine-color-dark-6) !important;
+          background-color: var(--surface-2) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-preview code {
-          background-color: var(--mantine-color-dark-6) !important;
+          background-color: var(--surface-2) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-preview pre {
-          background-color: var(--mantine-color-dark-6) !important;
-          border: 1px solid var(--mantine-color-dark-4) !important;
+          background-color: var(--surface-2) !important;
+          border: 1px solid var(--border) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-preview table th,
         [data-mantine-color-scheme="dark"] .w-md-editor-preview table td {
-          border: 1px solid var(--mantine-color-dark-4) !important;
-          color: var(--mantine-color-dark-0) !important;
+          border: 1px solid var(--border) !important;
+          color: var(--text-primary) !important;
         }
         
         [data-mantine-color-scheme="dark"] .w-md-editor-preview table th {
-          background-color: var(--mantine-color-dark-6) !important;
+          background-color: var(--surface-2) !important;
         }
       `}</style>
     </Box>

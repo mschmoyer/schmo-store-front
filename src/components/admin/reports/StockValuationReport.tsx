@@ -51,6 +51,7 @@ import {
   ArcElement
 } from 'chart.js';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { seriesColor, seriesFill } from '@/components/admin/chartPalette';
 
 // Register Chart.js components
 ChartJS.register(
@@ -351,21 +352,16 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
     );
 
     const values = sortedData.map(item => item.cost_value);
-    const colors = [
-      'rgba(255, 99, 132, 0.8)',
-      'rgba(54, 162, 235, 0.8)',
-      'rgba(255, 206, 86, 0.8)',
-      'rgba(75, 192, 192, 0.8)',
-      'rgba(153, 102, 255, 0.8)',
-      'rgba(255, 159, 64, 0.8)'
-    ];
-
+    /* One slice per category, walking the sanctioned ramp instead of Chart.js's
+       demo palette. The fill is the series colour at 85%; the border is the
+       same colour at full strength, so the wedges separate without a second
+       hue doing the work. */
     return {
       labels,
       datasets: [{
         data: values,
-        backgroundColor: colors,
-        borderColor: colors.map(c => c.replace('0.8', '1')),
+        backgroundColor: labels.map((_, index) => seriesFill(index, 0.85)),
+        borderColor: labels.map((_, index) => seriesColor(index)),
         borderWidth: 1
       }]
     };
@@ -381,15 +377,15 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
         {
           label: 'Cost Value',
           data: data.historical_trend.map(point => point.total_cost_value),
-          borderColor: 'rgb(255, 99, 132)',
-          backgroundColor: 'rgba(255, 99, 132, 0.1)',
+          borderColor: seriesColor(0),
+          backgroundColor: seriesFill(0),
           tension: 0.3
         },
         {
           label: 'Retail Value',
           data: data.historical_trend.map(point => point.total_retail_value),
-          borderColor: 'rgb(75, 192, 192)',
-          backgroundColor: 'rgba(75, 192, 192, 0.1)',
+          borderColor: seriesColor(1),
+          backgroundColor: seriesFill(1),
           tension: 0.3
         }
       ]
@@ -604,7 +600,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   />
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="teal">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconTrendingUp size={20} />
               </ThemeIcon>
             </Group>
@@ -620,7 +616,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   {data.summary.average_margin_percentage.toFixed(1)}%
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="violet">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconChartPie size={20} />
               </ThemeIcon>
             </Group>
@@ -648,7 +644,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   </Group>
                 )}
               </Box>
-              <ThemeIcon size="lg" variant="light" color="blue">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -982,7 +978,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
               </Paper>
             </SimpleGrid>
 
-            <Paper p="md" withBorder bg="gray.0">
+            <Paper p="md" withBorder bg="var(--surface-2)">
               <Stack gap="xs">
                 <Text size="sm" fw={600} c="dimmed">Changes</Text>
                 <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">

@@ -656,7 +656,7 @@ export default function ProductsAdminPage() {
               </Text>
               <Text fw={700} size="xl">{statistics.total}</Text>
             </Box>
-            <IconPackage size={32} color="var(--mantine-color-blue-6)" />
+            <IconPackage size={32} color="var(--text-primary)" />
           </Group>
         </Card>
         
@@ -668,7 +668,7 @@ export default function ProductsAdminPage() {
               </Text>
               <Text fw={700} size="xl" c="green">{statistics.active}</Text>
             </Box>
-            <IconCheck size={32} color="var(--mantine-color-green-6)" />
+            <IconCheck size={32} color="var(--success-text)" />
           </Group>
         </Card>
         
@@ -680,7 +680,7 @@ export default function ProductsAdminPage() {
               </Text>
               <Text fw={700} size="xl" c="green">{statistics.inStock}</Text>
             </Box>
-            <IconShoppingCart size={32} color="var(--mantine-color-green-6)" />
+            <IconShoppingCart size={32} color="var(--success-text)" />
           </Group>
         </Card>
         
@@ -692,7 +692,7 @@ export default function ProductsAdminPage() {
               </Text>
               <Text fw={700} size="xl" c="red">{statistics.outOfStock}</Text>
             </Box>
-            <IconAlertTriangle size={32} color="var(--mantine-color-yellow-6)" />
+            <IconAlertTriangle size={32} color="var(--warning-text)" />
           </Group>
         </Card>
         
@@ -702,9 +702,9 @@ export default function ProductsAdminPage() {
               <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                 Inventory Value
               </Text>
-              <Text fw={700} size="xl" c="blue">{formatCurrency(statistics.totalValue)}</Text>
+              <Text fw={700} size="xl" c="ink.9">{formatCurrency(statistics.totalValue)}</Text>
             </Box>
-            <IconCurrencyDollar size={32} color="var(--mantine-color-blue-6)" />
+            <IconCurrencyDollar size={32} color="var(--text-primary)" />
           </Group>
         </Card>
       </SimpleGrid>
@@ -954,7 +954,7 @@ export default function ProductsAdminPage() {
         {products.length === 0 && !loading && (
           <Center py="xl">
             <Stack align="center">
-              <IconPackage size={48} color="var(--mantine-color-gray-4)" />
+              <IconPackage size={48} color="var(--border-strong)" />
               <Text size="lg" c="dimmed">No products found</Text>
               <Text size="sm" c="dimmed">
                 {searchQuery || statusFilter || stockFilter ? 

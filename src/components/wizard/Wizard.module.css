@@ -18,19 +18,12 @@
   isolation: isolate;
 }
 
-/* A single warm ember bloom behind the header. Not a gradient soup — one light
-   source, barely there, so the page does not read as flat white. */
-.page::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 420px;
-  background:
-    radial-gradient(80% 120% at 12% 0%, rgb(var(--ember-500-rgb) / 0.08), transparent 62%),
-    radial-gradient(60% 100% at 88% 0%, rgb(var(--ember-500-rgb) / 0.045), transparent 60%);
-  pointer-events: none;
-  z-index: -1;
-}
+/*
+ * The "warm ember bloom" that used to sit behind the header is gone. It was
+ * two radial gradients on `--ember-500-rgb`; that variable now resolves to ink,
+ * so the warm light source became a grey smudge across the top of a white page
+ * — a second ground, which §2 forbids.
+ */
 
 /* -- Masthead ----------------------------------------------------------- */
 
@@ -60,19 +53,10 @@
 }
 
 .brandMark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-xs);
-  /* Solid ember carrying white text must be --ember-600 (4.51:1); --ember-500
-     is 3.42:1 and fails AA. See design-system.md §2, correction 2026-08-12. */
-  background: var(--ember-600);
-  color: #ffffff;
-  font-family: var(--font-display, inherit);
-  font-weight: 700;
-  font-size: 15px;
-  box-shadow: var(--shadow-ember-sm);
+  /* The real mark from public/brand, not an "R" in a tinted tile. */
+  display: block;
+  height: 22px;
+  width: auto;
 }
 
 .brandName {
@@ -247,9 +231,12 @@
 }
 
 .stepItem[data-state='done'] .stepMarker {
-  background: var(--ember-600);
-  border-color: var(--ember-600);
-  color: #ffffff;
+  /* A completed step is success — one of the three things §2 lets the signal
+     mean. The `--ember-600` this replaced now resolves to ink, which made a
+     done step indistinguishable from the current one. */
+  background: var(--success-solid);
+  border-color: var(--success-solid);
+  color: var(--text-on-accent);
 }
 
 .stepItem[data-state='current'] .stepMarker {

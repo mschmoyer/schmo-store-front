@@ -41,6 +41,8 @@ import {
 } from '@tabler/icons-react';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
 
 interface Discount {
   id: string;
@@ -517,12 +519,11 @@ export default function CouponsManagementPage() {
 
   if (loading) {
     return (
-      <Center style={{ height: '400px' }}>
-        <Stack align="center">
-          <Loader size="lg" />
-          <Text>Loading coupons and discounts...</Text>
-        </Stack>
-      </Center>
+      <Stack gap="lg">
+        <AdminPageHeader title="Coupons & discounts" description="Codes, automatic discounts and their performance." />
+        <StatGridSkeleton count={4} />
+        <TableSkeleton rows={6} columns={5} label="Loading coupons" />
+      </Stack>
     );
   }
 
@@ -544,7 +545,7 @@ export default function CouponsManagementPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Active Coupons</Text>
-            <IconTicket size={20} color="var(--mantine-color-blue-6)" />
+            <IconTicket size={20} color="var(--text-primary)" />
           </Group>
           <Text size="xl" fw={700}>
             {coupons.filter(c => c.is_active).length}
@@ -554,7 +555,7 @@ export default function CouponsManagementPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Total Discounts</Text>
-            <IconPercentage size={20} color="var(--mantine-color-green-6)" />
+            <IconPercentage size={20} color="var(--success-text)" />
           </Group>
           <Text size="xl" fw={700}>
             {discounts.length}
@@ -564,7 +565,7 @@ export default function CouponsManagementPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Total Uses</Text>
-            <IconCurrencyDollar size={20} color="var(--mantine-color-orange-6)" />
+            <IconCurrencyDollar size={20} color="var(--warning-text)" />
           </Group>
           <Text size="xl" fw={700}>
             {coupons.reduce((sum, c) => sum + c.current_uses, 0)}
@@ -574,7 +575,7 @@ export default function CouponsManagementPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Avg. Discount</Text>
-            <IconPercentage size={20} color="var(--mantine-color-violet-6)" />
+            <IconPercentage size={20} color="var(--text-primary)" />
           </Group>
           <Text size="xl" fw={700}>
             {discounts.length > 0 
@@ -607,7 +608,7 @@ export default function CouponsManagementPage() {
 
             {coupons.length === 0 ? (
               <Stack align="center" py="xl">
-                <IconTicket size={48} color="var(--mantine-color-gray-5)" />
+                <IconTicket size={48} color="var(--text-quaternary)" />
                 <Text size="lg" c="dimmed">No coupons created yet</Text>
                 <Button onClick={openCreateCouponModal}>Create your first coupon</Button>
               </Stack>
@@ -691,7 +692,7 @@ export default function CouponsManagementPage() {
 
             {discounts.length === 0 ? (
               <Stack align="center" py="xl">
-                <IconPercentage size={48} color="var(--mantine-color-gray-5)" />
+                <IconPercentage size={48} color="var(--text-quaternary)" />
                 <Text size="lg" c="dimmed">No discounts created yet</Text>
                 <Button onClick={openCreateDiscountModal}>Create your first discount</Button>
               </Stack>
@@ -924,7 +925,7 @@ export default function CouponsManagementPage() {
                             </Center>
                           ) : (
                             products.map((product) => (
-                              <Group key={product.id} justify="space-between" p="xs" style={{ border: '1px solid var(--mantine-color-gray-3)', borderRadius: '4px' }}>
+                              <Group key={product.id} justify="space-between" p="xs" style={{ border: '1px solid var(--border)', borderRadius: '4px' }}>
                                 <Group>
                                   <Avatar src={product.featured_image_url} size={32} radius="sm">
                                     <IconPackage size={16} />
@@ -968,7 +969,7 @@ export default function CouponsManagementPage() {
                           </Center>
                         ) : (
                           categories.map((category) => (
-                            <Group key={category.id} justify="space-between" p="xs" style={{ border: '1px solid var(--mantine-color-gray-3)', borderRadius: '4px' }}>
+                            <Group key={category.id} justify="space-between" p="xs" style={{ border: '1px solid var(--border)', borderRadius: '4px' }}>
                               <Group>
                                 <Avatar size={32} radius="sm">
                                   <IconCategory size={16} />

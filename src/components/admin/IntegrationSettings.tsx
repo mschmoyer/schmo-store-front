@@ -522,7 +522,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                       <Stack gap="xs" style={{ flex: 0, minWidth: '200px' }}>
                         <Button
                           variant="filled"
-                          color="blue"
+                          color="ink"
                           leftSection={<IconRefresh size={16} />}
                           onClick={() => handleSync('all')}
                           loading={syncing.products || syncing.inventory}
@@ -606,7 +606,7 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
               Maybe Later
             </Button>
             <Button 
-              color="blue"
+              color="ink"
               onClick={() => {
                 setShowSyncModal(false);
                 handleSyncBoth();

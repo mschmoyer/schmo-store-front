@@ -401,17 +401,21 @@
    *   --section-y       the default block padding for a section
    *   --section-y-tight sections that sit directly under a rule they belong to
    *   --stack-*         the vertical rhythm INSIDE a section
+   *   --gutter          the single left edge, and the rail's bleed
    *   --rail-*          the geometry of a peer-item rail (see parts/Rail)
    *
-   * EVERY step is fluid, and every lower bound is the phone. The desktop values
-   * are the ones the layout was approved at and none of them move; what changes
-   * is that a 390px screen no longer inherits a 1440px rhythm. Eight sections
-   * at 44px of block padding, with 32px stacks inside them, spent ~1,100px of a
-   * phone's scroll on air. Scaling the scale — rather than letting each section
-   * hand-roll a mobile value — is what keeps that from drifting back.
+   * EVERY step is FLUID between the phone and the desktop, and the two ends are
+   * chosen independently: 390px must be compact and 1440px must breathe. A flat
+   * value cannot be both. `--section-y` therefore runs 28px → 88px, which keeps
+   * the phone dense while landing inside the 80–128px marketing rhythm that
+   * docs/design-system.md §4 specifies for desktop — an earlier pass capped it
+   * at 64px everywhere, and at 1440 that read as unfinished rather than dense.
+   *
+   * No section may hand-roll a mobile value of its own; that is what produced
+   * a single line of text followed by 200px of nothing.
    */
-  --section-y: clamp(1.125rem, 4.5vw, 4rem);
-  --section-y-tight: clamp(1.5rem, 3vw, 2.75rem);
+  --section-y: clamp(1.75rem, 6.5vw, 5.5rem);
+  --section-y-tight: clamp(1.25rem, 4.5vw, 3.5rem);
 
   --stack-xs: clamp(0.5rem, 2vw, 0.75rem);
   --stack-sm: clamp(0.875rem, 2.5vw, 1.25rem);
@@ -421,12 +425,13 @@
   /*
    * -- PEER RAILS ---------------------------------------------------------
    * A group of three peer cards is a row on a desktop and, if it simply
-   * stacks, three full-height screens on a phone. Below `--rail-until` the
-   * shared `parts/Rail` reflows such a group into a horizontal snap-scroller
-   * one card wide; the item width is deliberately under a full viewport so the
-   * next card peeks and the rail reads as scrollable without an added hint.
+   * stacks, three full-height screens on a phone. Below the rail breakpoint
+   * the shared `parts/Rail` reflows such a group into a horizontal
+   * snap-scroller one card wide; the item width is deliberately under a full
+   * viewport so the next card peeks and the rail reads as scrollable without
+   * an added hint.
    */
-  --rail-item: min(88vw, 400px);
+  --rail-item: min(90vw, 400px);
   --rail-gap: var(--space-4);
 
   /*
@@ -449,7 +454,7 @@
    * The single left edge. Every section's content starts here — the container
    * is defined once, in parts/Section.module.css, and nothing overrides it.
    */
-  --gutter: var(--space-6);
+  --gutter: clamp(1rem, 3vw, 1.5rem);
   --app-pad: var(--space-6);
 }
 

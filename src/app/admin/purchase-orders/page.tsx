@@ -10,7 +10,6 @@ import {
   Button,
   Badge,
   Table,
-  Loader,
   Alert,
   Pagination,
   Select,
@@ -23,6 +22,8 @@ import { IconPlus, IconSearch, IconEye, IconDownload, IconFilter } from '@tabler
 import { notifications } from '@mantine/notifications';
 import { PurchaseOrder } from '@/lib/types/database';
 import Link from 'next/link';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { TableSkeleton } from '@/components/admin/AdminSkeletons';
 
 interface PurchaseOrderListItem extends PurchaseOrder {
   supplier_name: string;
@@ -238,11 +239,10 @@ export default function PurchaseOrdersPage() {
 
   if (loading) {
     return (
-      <Container size="xl" py="xl">
-        <Group justify="center">
-          <Loader size="lg" />
-        </Group>
-      </Container>
+      <Stack gap="lg">
+        <AdminPageHeader title="Purchase orders" description="Restock orders raised with your suppliers." />
+        <TableSkeleton rows={6} columns={6} label="Loading purchase orders" />
+      </Stack>
     );
   }
 
@@ -267,7 +267,7 @@ export default function PurchaseOrdersPage() {
               Manage your purchase orders and generate PDFs
             </Text>
           </div>
-          <Button leftSection={<IconPlus size={16} />} color="blue">
+          <Button leftSection={<IconPlus size={16} />} color="ink">
             New Purchase Order
           </Button>
         </Group>
@@ -315,7 +315,7 @@ export default function PurchaseOrdersPage() {
                 <Table.Tr key={po.id}>
                   <Table.Td>
                     <Link href={`/admin/purchase-orders/${po.id}`} style={{ textDecoration: 'none' }}>
-                      <Text fw={500} c="blue">
+                      <Text fw={500} c="ink.9">
                         {po.purchase_order_number}
                       </Text>
                     </Link>
@@ -350,7 +350,7 @@ export default function PurchaseOrdersPage() {
                     <Group gap="xs">
                       <Tooltip label="View Details">
                         <Link href={`/admin/purchase-orders/${po.id}`} passHref>
-                          <ActionIcon variant="light" color="blue" size="sm">
+                          <ActionIcon variant="light" color="ink" size="sm">
                             <IconEye size={14} />
                           </ActionIcon>
                         </Link>

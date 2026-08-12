@@ -117,7 +117,7 @@ export function LoginForm() {
               component="a"
               href="/create-store"
               size="sm"
-              c="blue"
+              c="ink.9"
               style={{ textDecoration: 'none' }}
             >
               Create one here

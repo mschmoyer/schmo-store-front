@@ -566,7 +566,7 @@ export default function CreatePurchaseOrderPage() {
         ) : (
           <Box ta="center" py="xl">
             <Stack align="center">
-              <IconPackage size={48} color="var(--mantine-color-gray-4)" />
+              <IconPackage size={48} color="var(--border-strong)" />
               <Text size="lg" c="dimmed">No items added yet</Text>
               <Text size="sm" c="dimmed">
                 Click &quot;Add Product&quot; to start building your purchase order

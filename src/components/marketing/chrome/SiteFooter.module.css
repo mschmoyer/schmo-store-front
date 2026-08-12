@@ -100,16 +100,18 @@
   }
 
   /*
-   * TWO columns all the way down to 320px, not one.
+   * THREE columns all the way down to 320px, not one.
    *
    * Collapsing to a single column below 480px turned eleven links into a
-   * 507px ladder — a fifth of the phone's whole footer — for a link set whose
-   * longest label ("Cost vs. Shopify Basic") still fits a 150px column in two
-   * lines. Two-up is the compact grid; the ladder was the stack.
+   * 507px ladder — a fifth of the phone's whole footer. Two-up halved it but
+   * left "Account" alone on a second row; three-up is one row of the three
+   * groups the footer actually has, and the longest label ("Cost vs. Shopify
+   * Basic") still sets in three lines at 320px. The grid is the compact form;
+   * the ladder was the stack.
    */
   .columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 24px 20px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px 16px;
   }
 
   .blurb {

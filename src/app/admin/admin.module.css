@@ -1,0 +1,20 @@
+/*
+ * Admin page frame.
+ *
+ * §4: "App shell padding is 24px, 16px under 768px." Every admin route used to
+ * declare its own padding (or none at all), so the left edge of the content
+ * moved as you navigated. It is declared once, here.
+ */
+
+.page {
+  padding: var(--space-6);
+  max-width: 1440px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+@media (max-width: 767px) {
+  .page {
+    padding: var(--space-4);
+  }
+}

@@ -11,7 +11,6 @@ import {
   Badge, 
   Table, 
   Alert,
-  Loader,
   ThemeIcon,
   rem,
   Tabs,
@@ -34,6 +33,8 @@ import {
   IconAlertCircle
 } from '@tabler/icons-react';
 import TrendDashboard from '@/components/admin/TrendDashboard';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { PanelSkeleton, StatGridSkeleton } from '@/components/admin/AdminSkeletons';
 
 interface SearchAnalytics {
   totalSearches: number;
@@ -195,12 +196,11 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <Loader size="lg" />
-        <Text mt="md" c="dimmed">
-          Loading analytics...
-        </Text>
-      </div>
+      <Stack gap="lg">
+        <AdminPageHeader title="Analytics" description="Traffic, revenue and conversion for your storefront." />
+        <StatGridSkeleton count={4} />
+        <PanelSkeleton height={280} label="Loading charts" />
+      </Stack>
     );
   }
 
@@ -301,7 +301,7 @@ export default function AnalyticsPage() {
                 value={data.searchAnalytics.totalSearches.toLocaleString()}
                 subtitle={`${dateRange} days`}
                 icon={<IconSearch style={{ width: rem(20), height: rem(20) }} />}
-                color="blue"
+                color="ink"
               />
               
               <StatCard
@@ -317,7 +317,7 @@ export default function AnalyticsPage() {
                 value={data.visitorAnalytics.totalPageViews.toLocaleString()}
                 subtitle="total views"
                 icon={<IconEye style={{ width: rem(20), height: rem(20) }} />}
-                color="cyan"
+                color="ink"
               />
               
               <StatCard
@@ -325,7 +325,7 @@ export default function AnalyticsPage() {
                 value={data.searchAnalytics.averageResultsPerSearch.toFixed(1)}
                 subtitle="products found"
                 icon={<IconListSearch style={{ width: rem(20), height: rem(20) }} />}
-                color="purple"
+                color="ink"
               />
             </SimpleGrid>
 
@@ -335,7 +335,7 @@ export default function AnalyticsPage() {
                 <Card shadow="sm" padding="lg" radius="md" withBorder>
                   <Group justify="space-between" mb="md">
                     <Title order={3}>Top Search Terms</Title>
-                    <ThemeIcon color="blue" variant="light" size="sm">
+                    <ThemeIcon color="ink" variant="light" size="sm">
                       <IconSearch style={{ width: rem(16), height: rem(16) }} />
                     </ThemeIcon>
                   </Group>
@@ -345,7 +345,7 @@ export default function AnalyticsPage() {
                       {data.searchAnalytics.mostPopularSearches.slice(0, 5).map((search, index) => (
                         <Group key={index} justify="space-between">
                           <Text size="sm">{search.search_query}</Text>
-                          <Badge variant="light" color="blue">
+                          <Badge variant="light" color="ink">
                             {search.search_count} searches
                           </Badge>
                         </Group>
@@ -401,7 +401,7 @@ export default function AnalyticsPage() {
                 value={data.searchAnalytics.totalSearches.toLocaleString()}
                 subtitle={`in ${dateRange} days`}
                 icon={<IconSearch style={{ width: rem(20), height: rem(20) }} />}
-                color="blue"
+                color="ink"
               />
               
               <StatCard
@@ -409,7 +409,7 @@ export default function AnalyticsPage() {
                 value={data.searchAnalytics.uniqueSearches.toLocaleString()}
                 subtitle="different queries"
                 icon={<IconListSearch style={{ width: rem(20), height: rem(20) }} />}
-                color="cyan"
+                color="ink"
               />
               
               <StatCard
@@ -445,7 +445,7 @@ export default function AnalyticsPage() {
                               </Text>
                             </Table.Td>
                             <Table.Td>
-                              <Badge variant="light" color="blue">
+                              <Badge variant="light" color="ink">
                                 {search.search_count}
                               </Badge>
                             </Table.Td>
@@ -530,7 +530,7 @@ export default function AnalyticsPage() {
                 value={data.visitorAnalytics.uniqueVisitors.toLocaleString()}
                 subtitle="distinct users"
                 icon={<IconEye style={{ width: rem(20), height: rem(20) }} />}
-                color="blue"
+                color="ink"
               />
               
               <StatCard
@@ -538,7 +538,7 @@ export default function AnalyticsPage() {
                 value={data.visitorAnalytics.totalPageViews.toLocaleString()}
                 subtitle="total views"
                 icon={<IconWorldWww style={{ width: rem(20), height: rem(20) }} />}
-                color="cyan"
+                color="ink"
               />
             </SimpleGrid>
 
@@ -565,7 +565,7 @@ export default function AnalyticsPage() {
                           </Text>
                         </Table.Td>
                         <Table.Td>
-                          <Badge variant="light" color="blue">
+                          <Badge variant="light" color="ink">
                             {page.view_count}
                           </Badge>
                         </Table.Td>

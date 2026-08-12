@@ -462,7 +462,7 @@ export default function ShipStationIntegrationPage() {
             </Group>
 
             {hasExistingConfig && !apiKeyModified && (
-              <Alert icon={<IconInfoCircle size="1rem" />} color="blue" variant="light" mb="sm">
+              <Alert icon={<IconInfoCircle size="1rem" />} color="ink" variant="light" mb="sm">
                 <Text size="sm">
                   Your existing API key is securely stored. To update it, click on the field and enter a new value.
                 </Text>
@@ -684,8 +684,8 @@ export default function ShipStationIntegrationPage() {
             Save your configuration and enable the integration
           </List.Item>
         </List>
-        <Paper p="md" withBorder mt="md" bg="blue.0">
-          <Text size="sm" fw={500} c="blue.7" mb="xs">
+        <Paper p="md" withBorder mt="md" bg="var(--surface-2)">
+          <Text size="sm" fw={500} c="ink.9" mb="xs">
             Important Notes:
           </Text>
           <List size="xs" spacing="xs">

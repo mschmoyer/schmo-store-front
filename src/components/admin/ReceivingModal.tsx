@@ -242,7 +242,7 @@ export default function ReceivingModal({
         <Card withBorder>
           <Group justify="space-between" mb="xs">
             <Text fw={500}>Purchase Order Details</Text>
-            <Badge color="blue">{purchaseOrder?.status}</Badge>
+            <Badge color="ink">{purchaseOrder?.status}</Badge>
           </Group>
           <Group>
             <Text size="sm">Supplier: <strong>{purchaseOrder?.supplier_name}</strong></Text>

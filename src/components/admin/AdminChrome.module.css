@@ -1,0 +1,174 @@
+/*
+ * Admin shell chrome — top bar and sidebar.
+ *
+ * Everything here reads the semantic tokens from `src/app/globals.css`. There
+ * is not one hex literal in this file, and there should never be one: if a
+ * colour is needed that the token layer does not already name, the answer is a
+ * conversation about the palette, not a hex typed into a module.
+ */
+
+/* ============================================================== Header ==== */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: 100%;
+  padding-inline: var(--space-4);
+  /* White ground. The slab this replaced was a near-black gradient. */
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.headerLeft {
+  min-width: 0;
+  flex: 1;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-xs);
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.brandMark {
+  display: block;
+  height: 24px;
+  width: auto;
+}
+
+/* A hairline, not a colour change, separates brand from context. */
+.headerRule {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+  flex: none;
+}
+
+.headerMeta {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  overflow: hidden;
+}
+
+.storeName {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.crumbs {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.crumbSeparator {
+  color: var(--text-quaternary);
+}
+
+.crumbLink,
+.crumbCurrent {
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.crumbLink {
+  color: var(--text-secondary);
+}
+
+.crumbLink:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.crumbCurrent {
+  color: var(--text-quaternary);
+  pointer-events: none;
+}
+
+.headerUser {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================= Sidebar ==== */
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface);
+}
+
+.navScroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.navHeading {
+  margin: 0;
+  padding-inline: var(--space-3);
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  /* Group headings repeat structure the items already carry, so they are the
+     one place §2 allows --text-subtle. */
+  color: var(--text-quaternary);
+}
+
+/*
+ * The active state. §2: weight + a --surface-2 fill + an ink left rule. No hue.
+ * `:global` because Mantine owns the element's own class names.
+ */
+.navItem:global(.mantine-NavLink-root) {
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition:
+    background-color var(--duration-micro) var(--ease-out),
+    color var(--duration-micro) var(--ease-out);
+}
+
+.navItem:global(.mantine-NavLink-root):hover {
+  background-color: var(--surface-inset);
+  color: var(--text-primary);
+}
+
+.navItem:global(.mantine-NavLink-root)[data-active] {
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+  border-left-color: var(--text);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.navItem:global(.mantine-NavLink-root)[data-active] :global(.mantine-NavLink-label) {
+  font-weight: 600;
+}
+
+.navItem:global(.mantine-NavLink-root):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.navFooter {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border);
+}

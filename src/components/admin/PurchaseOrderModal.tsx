@@ -425,7 +425,7 @@ export default function PurchaseOrderModal({
                   
                   <Stack gap="xs">
                     {recommendations.slice(0, 3).map((rec, index) => (
-                      <Group key={index} justify="space-between" p="xs" style={{ border: '1px solid #e9ecef', borderRadius: '4px' }}>
+                      <Group key={index} justify="space-between" p="xs" style={{ border: '1px solid var(--border)', borderRadius: '4px' }}>
                         <div>
                           <Text size="sm" fw={500}>{rec.product_name}</Text>
                           <Text size="xs" c="dimmed">

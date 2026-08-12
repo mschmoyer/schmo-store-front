@@ -457,7 +457,7 @@ export default function ImageGalleryManager({
         ) : (
           <Center py="xl">
             <Stack align="center" gap="md">
-              <IconPhoto size={48} color="var(--mantine-color-gray-4)" />
+              <IconPhoto size={48} color="var(--border-strong)" />
               <Text c="dimmed">No images added yet</Text>
             </Stack>
           </Center>

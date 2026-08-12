@@ -34,6 +34,7 @@ import {
 import TrendChart from './TrendChart';
 import ExecutiveSummary, { type ExecutiveSummaryData } from './ExecutiveSummary';
 import { format, parseISO } from 'date-fns';
+import { CHART_SEMANTIC } from '@/components/admin/chartPalette';
 
 interface TrendData {
   date: string;
@@ -302,13 +303,13 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-control)' }}
                 />
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-control)' }}
                 />
               </Group>
             )}
@@ -343,7 +344,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               <Text size="sm" c="dimmed" fw={500}>
                 Total Searches
               </Text>
-              <ThemeIcon color="blue" variant="light" size="lg">
+              <ThemeIcon color="ink" variant="light" size="lg">
                 <IconSearch style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
@@ -413,7 +414,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               <Text size="sm" c="dimmed" fw={500}>
                 Avg Session Duration
               </Text>
-              <ThemeIcon color="cyan" variant="light" size="lg">
+              <ThemeIcon color="ink" variant="light" size="lg">
                 <IconEye style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
@@ -477,7 +478,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
             title="Search Volume Trends"
             data={data.trendsData.searchTrends}
             dataKey="search_count"
-            color="#3498db"
+            color={CHART_SEMANTIC.neutral}
             dateRange={dateRange}
             onRefresh={fetchTrendData}
             loading={loading}
@@ -488,7 +489,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
             title="Visitor Patterns"
             data={data.trendsData.visitorTrends}
             dataKey="visitor_count"
-            color="#2ecc71"
+            color={CHART_SEMANTIC.signal}
             dateRange={dateRange}
             onRefresh={fetchTrendData}
             loading={loading}
@@ -514,7 +515,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'csv' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'csv' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('csv')}
             >
@@ -523,7 +524,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   <Text fw={500}>CSV</Text>
                   <Text size="sm" c="dimmed">Export raw data as comma-separated values</Text>
                 </div>
-                {exportFormat === 'csv' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'csv' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
             
@@ -531,7 +532,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'json' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'json' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('json')}
             >
@@ -540,7 +541,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   <Text fw={500}>JSON</Text>
                   <Text size="sm" c="dimmed">Export data as JSON format</Text>
                 </div>
-                {exportFormat === 'json' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'json' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
             
@@ -548,7 +549,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'pdf' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'pdf' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('pdf')}
             >
@@ -557,7 +558,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   <Text fw={500}>PDF Report</Text>
                   <Text size="sm" c="dimmed">Generate a comprehensive PDF report</Text>
                 </div>
-                {exportFormat === 'pdf' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'pdf' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
           </Stack>

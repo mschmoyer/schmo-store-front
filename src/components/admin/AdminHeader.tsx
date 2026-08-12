@@ -3,7 +3,7 @@
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Anchor, Breadcrumbs, Burger, Group, Select, Text } from '@mantine/core';
+import { Anchor, Breadcrumbs, Burger, Group, Text } from '@mantine/core';
 import { AdminBreadcrumb } from '@/lib/types/admin';
 import styles from './AdminChrome.module.css';
 
@@ -71,22 +71,22 @@ export function AdminHeader({
 
         <span className={styles.headerRule} aria-hidden="true" />
 
+        {/*
+          A `<Select>` used to sit here listing exactly one option — the store
+          you are already in. A control that cannot change anything is a lie
+          about what is possible, and Mantine drew it as a 40px bordered field,
+          which made the busiest thing in the top bar a dropdown that does
+          nothing. Multi-store switching does not exist yet; when it does, this
+          becomes a real control.
+        */}
         <div className={styles.headerMeta}>
-          <Select
-            aria-label="Active store"
-            value={user.store.name}
-            data={[{ value: user.store.name, label: user.store.name }]}
-            allowDeselect={false}
-            size="xs"
-            variant="unstyled"
-            classNames={{ input: styles.storeSelect }}
-          />
+          <span className={styles.storeName}>{user.store.name}</span>
 
-          {breadcrumbs.length > 0 && (
+          {breadcrumbs.length > 1 && (
             <Breadcrumbs
               separator="/"
               separatorMargin={6}
-              classNames={{ separator: styles.crumbSeparator }}
+              classNames={{ root: styles.crumbs, separator: styles.crumbSeparator }}
             >
               {breadcrumbs.map((breadcrumb, index) => (
                 <Anchor

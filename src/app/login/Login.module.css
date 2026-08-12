@@ -1,6 +1,6 @@
 /*
- * Sign-in. Same ground, type and ember signal as the setup wizard so the two
- * screens read as one product.
+ * Sign-in. Same ground and type as the setup wizard so the two screens read as
+ * one product.
  */
 
 .page {
@@ -14,17 +14,14 @@
   isolation: isolate;
 }
 
-.page::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 420px;
-  background:
-    radial-gradient(80% 120% at 12% 0%, rgb(var(--ember-500-rgb) / 0.08), transparent 62%),
-    radial-gradient(60% 100% at 88% 0%, rgb(var(--ember-500-rgb) / 0.045), transparent 60%);
-  pointer-events: none;
-  z-index: -1;
-}
+/*
+ * The two radial "ember blooms" that used to sit here are gone. They were
+ * authored against the vermilion ramp; after the repalette `--ember-500-rgb`
+ * resolves to ink, so the warm glow became a grey haze washing the top 420px
+ * of a page whose ground is pure white. §2: "The marketing site is --bg from
+ * the header to the footer... never alternating background colour." One
+ * ground, no bloom.
+ */
 
 .masthead {
   padding: 20px var(--app-pad, 24px);
@@ -48,25 +45,10 @@
 }
 
 .brandMark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-xs);
-  /* See design-system.md §2 correction: white on --ember-500 is 3.42:1. */
-  background: var(--ember-600);
-  color: #ffffff;
-  font-family: var(--font-display, inherit);
-  font-weight: 700;
-  font-size: 15px;
-  box-shadow: var(--shadow-ember-sm);
-}
-
-.brandName {
-  font-family: var(--font-display, inherit);
-  font-weight: 700;
-  font-size: 1.0625rem;
-  letter-spacing: -0.02em;
+  /* The real mark from public/brand, not an "R" in a tinted tile. */
+  display: block;
+  height: 22px;
+  width: auto;
 }
 
 .main {

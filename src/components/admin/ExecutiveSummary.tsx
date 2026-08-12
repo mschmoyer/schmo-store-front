@@ -48,7 +48,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
     return (
       <Card shadow="sm" padding="lg" radius="md" withBorder>
         <Group mb="md">
-          <ThemeIcon size="lg" variant="light" color="blue">
+          <ThemeIcon size="lg" variant="light" color="ink">
             <IconBriefcase size="1.2rem" />
           </ThemeIcon>
           <Title order={3}>Executive Summary</Title>
@@ -127,7 +127,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
   return (
     <Card shadow="sm" padding="lg" radius="md" withBorder>
       <Group mb="md">
-        <ThemeIcon size="lg" variant="light" color="blue">
+        <ThemeIcon size="lg" variant="light" color="ink">
           <IconBriefcase size="1.2rem" />
         </ThemeIcon>
         <div>
@@ -208,7 +208,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
           <Text size="sm" fw={500} mb="xs">Focus Areas</Text>
           <Group gap="xs">
             {data.focusAreas.map((area, index) => (
-              <Badge key={index} variant="light" color="blue">
+              <Badge key={index} variant="light" color="ink">
                 {area}
               </Badge>
             ))}
@@ -228,7 +228,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
         )}
 
         {data.keyInsights.length > 0 && (
-          <Alert icon={<IconInfoCircle size="1rem" />} color="blue" variant="light">
+          <Alert icon={<IconInfoCircle size="1rem" />} color="ink" variant="light">
             <Text fw={500} size="sm" mb="xs">💡 AI Insights</Text>
             {data.keyInsights.map((insight, index) => (
               <Text key={index} size="sm" style={{ lineHeight: 1.5 }}>• {insight}</Text>

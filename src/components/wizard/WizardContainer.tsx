@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import StepIndicator from './StepIndicator';
 import type { OnboardingProgress, StepId } from '@/components/onboarding/lib/steps';
@@ -40,11 +41,15 @@ export default function WizardContainer({
   return (
     <div className={styles.page}>
       <header className={styles.masthead}>
-        <Link href="/" className={styles.brand}>
-          <span className={styles.brandMark} aria-hidden="true">
-            R
-          </span>
-          <span className={styles.brandName}>RebelShops</span>
+        <Link href="/" className={styles.brand} aria-label="RebelShops home">
+          <Image
+            src="/brand/logo-horizontal.svg"
+            alt="RebelShops"
+            width={134}
+            height={22}
+            priority
+            className={styles.brandMark}
+          />
         </Link>
         {exitHref ? (
           <div className={styles.mastheadRight}>

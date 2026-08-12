@@ -58,6 +58,7 @@ import {
   ChartOptions
 } from 'chart.js';
 import { format } from 'date-fns';
+import { seriesColor, seriesFill } from '@/components/admin/chartPalette';
 
 // Register Chart.js components
 ChartJS.register(
@@ -323,15 +324,15 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
         {
           label: 'Dead Stock Count',
           data: trends.map(t => t.dead_stock_count),
-          borderColor: 'rgb(255, 99, 132)',
-          backgroundColor: 'rgba(255, 99, 132, 0.1)',
+          borderColor: seriesColor(0),
+          backgroundColor: seriesFill(0),
           yAxisID: 'y-count',
         },
         {
           label: 'Dead Stock Value',
           data: trends.map(t => t.dead_stock_value),
-          borderColor: 'rgb(75, 192, 192)',
-          backgroundColor: 'rgba(75, 192, 192, 0.1)',
+          borderColor: seriesColor(1),
+          backgroundColor: seriesFill(1),
           yAxisID: 'y-value',
         }
       ]
@@ -504,7 +505,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   ${stats.total_dead_stock_value.toLocaleString()}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="violet">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconCurrencyDollar size={20} />
               </ThemeIcon>
             </Group>
@@ -536,7 +537,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   {Math.round(stats.average_days_dead)}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="blue">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconCalendarTime size={20} />
               </ThemeIcon>
             </Group>
@@ -620,7 +621,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                   )}
                   
                   {rec.action && (
-                    <Text size="sm" c="blue" mt="xs">{rec.action}</Text>
+                    <Text size="sm" c="ink.9" mt="xs">{rec.action}</Text>
                   )}
                 </Card>
               ))}
@@ -755,7 +756,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      <Badge color="blue" variant="light">
+                      <Badge color="ink" variant="light">
                         {item.suggested_markdown_percent}% off
                       </Badge>
                     </Table.Td>
@@ -830,7 +831,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
               </div>
               <div>
                 <Text size="xs" c="dimmed">Suggested Markdown</Text>
-                <Text fw={500} c="blue">{selectedItem.suggested_markdown_percent}% off</Text>
+                <Text fw={500} c="ink.9">{selectedItem.suggested_markdown_percent}% off</Text>
               </div>
               <div>
                 <Text size="xs" c="dimmed">Liquidation Value</Text>
@@ -857,7 +858,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
 
             <Divider />
 
-            <Alert color="blue" icon={<IconTag size={16} />}>
+            <Alert color="ink" icon={<IconTag size={16} />}>
               <Text size="sm" fw={500}>Recommended Action</Text>
               <Text size="sm">
                 Apply a {selectedItem.suggested_markdown_percent}% discount to move this inventory.

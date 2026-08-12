@@ -50,6 +50,7 @@ import {
   ChartOptions
 } from 'chart.js';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { seriesColor, seriesFill } from '@/components/admin/chartPalette';
 
 // Register Chart.js components
 ChartJS.register(
@@ -309,15 +310,15 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
         {
           label: 'Daily Sales',
           data: selectedProduct.trend_data.map(d => d.sales),
-          borderColor: 'rgb(75, 192, 192)',
-          backgroundColor: 'rgba(75, 192, 192, 0.1)',
+          borderColor: seriesColor(1),
+          backgroundColor: seriesFill(1),
           yAxisID: 'y-sales',
         },
         {
           label: 'Inventory Level',
           data: selectedProduct.trend_data.map(d => d.inventory),
-          borderColor: 'rgb(255, 99, 132)',
-          backgroundColor: 'rgba(255, 99, 132, 0.1)',
+          borderColor: seriesColor(0),
+          backgroundColor: seriesFill(0),
           yAxisID: 'y-inventory',
         }
       ]
@@ -478,7 +479,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.total_products}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="blue">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -494,7 +495,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.average_turnover_ratio.toFixed(2)}x
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="teal">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconTrendingUp size={20} />
               </ThemeIcon>
             </Group>
@@ -558,7 +559,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   ${stats.total_inventory_value.toLocaleString()}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="violet">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconClock size={20} />
               </ThemeIcon>
             </Group>

@@ -242,7 +242,7 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
               <Text size="sm" c="dimmed">Total Purchase Orders</Text>
               <Text size="xl" fw={700}>{analytics.totalPOs}</Text>
             </div>
-            <ThemeIcon color="blue" variant="light" size="lg">
+            <ThemeIcon color="ink" variant="light" size="lg">
               <IconPackage style={{ width: rem(20), height: rem(20) }} />
             </ThemeIcon>
           </Group>
@@ -266,7 +266,7 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
               <Text size="sm" c="dimmed">Average Order Value</Text>
               <Text size="xl" fw={700}>${analytics.averageOrderValue.toLocaleString()}</Text>
             </div>
-            <ThemeIcon color="cyan" variant="light" size="lg">
+            <ThemeIcon color="ink" variant="light" size="lg">
               <IconChartBar style={{ width: rem(20), height: rem(20) }} />
             </ThemeIcon>
           </Group>

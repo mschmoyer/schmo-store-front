@@ -56,6 +56,8 @@ import SupplierModal from '@/components/admin/SupplierModal';
 import SmartReorderWidget from '@/components/admin/SmartReorderWidget';
 import PurchaseOrderAnalytics from '@/components/admin/PurchaseOrderAnalytics';
 import SuppliersManagement from '@/components/admin/SuppliersManagement';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
 
 interface SalesVelocity {
   total_sales: number;
@@ -473,13 +475,14 @@ export default function InventoryPage() {
   };
 
   if (loading) {
+    /* §5: a skeleton at the real layout's geometry, not a spinner in the
+       middle of an otherwise empty page. */
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <Loader size="lg" />
-        <Text mt="md" c="dimmed">
-          Loading inventory data...
-        </Text>
-      </div>
+      <Stack gap="lg">
+        <AdminPageHeader title="Inventory" description="Stock levels across every warehouse." />
+        <StatGridSkeleton count={4} />
+        <TableSkeleton rows={8} columns={6} label="Loading inventory" />
+      </Stack>
     );
   }
 
@@ -504,7 +507,7 @@ export default function InventoryPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Total Products</Text>
-            <ThemeIcon color="blue" variant="light" size="sm">
+            <ThemeIcon color="ink" variant="light" size="sm">
               <IconPackage style={{ width: rem(16), height: rem(16) }} />
             </ThemeIcon>
           </Group>
@@ -544,7 +547,7 @@ export default function InventoryPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Pending Orders</Text>
-            <ThemeIcon color="cyan" variant="light" size="sm">
+            <ThemeIcon color="ink" variant="light" size="sm">
               <IconTruckDelivery style={{ width: rem(16), height: rem(16) }} />
             </ThemeIcon>
           </Group>
@@ -554,7 +557,7 @@ export default function InventoryPage() {
         <Card shadow="sm" padding="lg" radius="md" withBorder>
           <Group justify="space-between" mb="xs">
             <Text size="sm" c="dimmed" fw={500}>Restocked This Month</Text>
-            <ThemeIcon color="teal" variant="light" size="sm">
+            <ThemeIcon color="ink" variant="light" size="sm">
               <IconRefresh style={{ width: rem(16), height: rem(16) }} />
             </ThemeIcon>
           </Group>
@@ -743,7 +746,7 @@ export default function InventoryPage() {
                           <ActionIcon 
                             size="sm" 
                             variant="subtle"
-                            color="blue"
+                            color="ink"
                             onClick={() => handleQuickReorder(item)}
                             title="Add to Purchase Order"
                           >

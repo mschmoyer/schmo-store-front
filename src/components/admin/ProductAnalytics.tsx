@@ -117,11 +117,11 @@ export default function ProductAnalytics({
       case 'restock':
         return <IconPackage size={16} color="green" />;
       case 'sale':
-        return <IconShoppingCart size={16} color="blue" />;
+        return <IconShoppingCart size={16} color="ink" />;
       case 'adjustment':
         return <IconRefresh size={16} color="orange" />;
       case 'return':
-        return <IconTrendingUp size={16} color="teal" />;
+        return <IconTrendingUp size={16} color="ink" />;
       default:
         return <IconPackage size={16} color="gray" />;
     }
@@ -227,7 +227,7 @@ export default function ProductAnalytics({
                 {salesData.total_orders} orders
               </Text>
             </Box>
-            <IconShoppingCart size={32} color="var(--mantine-color-blue-6)" />
+            <IconShoppingCart size={32} color="var(--text-primary)" />
           </Group>
         </Card>
 
@@ -244,7 +244,7 @@ export default function ProductAnalytics({
                 Avg: {formatCurrency(salesData.avg_sale_price)}
               </Text>
             </Box>
-            <IconCurrencyDollar size={32} color="var(--mantine-color-green-6)" />
+            <IconCurrencyDollar size={32} color="var(--success-text)" />
           </Group>
         </Card>
 
@@ -261,7 +261,7 @@ export default function ProductAnalytics({
                 Avg time: {Math.round(analytics.avg_time_on_page / 60)}min
               </Text>
             </Box>
-            <IconEye size={32} color="var(--mantine-color-purple-6)" />
+            <IconEye size={32} color="var(--text-primary)" />
           </Group>
         </Card>
 
@@ -278,7 +278,7 @@ export default function ProductAnalytics({
                 {analytics.cart_adds} cart adds
               </Text>
             </Box>
-            <IconTrendingUp size={32} color="var(--mantine-color-teal-6)" />
+            <IconTrendingUp size={32} color="var(--text-primary)" />
           </Group>
         </Card>
       </SimpleGrid>
@@ -351,7 +351,7 @@ export default function ProductAnalytics({
             Last Sale: {formatDate(salesData.last_sale_date)}
           </Text>
         </Group>
-        <Box style={{ height: 100, backgroundColor: 'var(--mantine-color-gray-0)', borderRadius: 8 }}>
+        <Box style={{ height: 100, backgroundColor: 'var(--surface-2)', borderRadius: 8 }}>
           <Center h={100}>
             <Text size="sm" c="dimmed">
               Sales chart visualization would go here

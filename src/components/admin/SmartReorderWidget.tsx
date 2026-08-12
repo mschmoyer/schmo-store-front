@@ -217,7 +217,7 @@ export default function SmartReorderWidget({
       {/* Header */}
       <Group justify="space-between" mb="sm">
         <Group>
-          <IconBrain size="1.2rem" color="blue" />
+          <IconBrain size="1.2rem" color="ink" />
           <Text fw={500}>Smart Reorder Recommendations</Text>
           {urgentCount > 0 && (
             <Badge color="red" size="sm">
@@ -264,9 +264,9 @@ export default function SmartReorderWidget({
             justify="space-between"
             p="xs"
             style={{
-              border: '1px solid #e9ecef',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              backgroundColor: selectedItems.has(rec.product_id) ? '#f8f9fa' : 'transparent',
+              backgroundColor: selectedItems.has(rec.product_id) ? 'var(--surface-2)' : 'transparent',
               cursor: 'pointer'
             }}
             onClick={() => handleSelectItem(rec.product_id)}
@@ -318,7 +318,7 @@ export default function SmartReorderWidget({
               <ActionIcon
                 size="sm"
                 variant="light"
-                color="blue"
+                color="ink"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (onQuickReorder) {
@@ -362,7 +362,7 @@ export default function SmartReorderWidget({
 
       {/* Expanded Summary */}
       <Collapse in={expanded}>
-        <Card withBorder mt="sm" bg="gray.0">
+        <Card withBorder mt="sm" bg="var(--surface-2)">
           <Text fw={500} size="sm" mb="xs">Summary</Text>
           <Group justify="space-between" mb="xs">
             <Text size="xs">Total Recommendations:</Text>

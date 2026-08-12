@@ -586,7 +586,7 @@
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-control);
 }
 
 .findingAction {
@@ -604,7 +604,7 @@
 }
 
 .findingAction:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--surface-inset);
 }
 
 .findingAction:focus-visible {

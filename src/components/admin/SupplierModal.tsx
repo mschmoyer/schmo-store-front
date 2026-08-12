@@ -362,10 +362,10 @@ export default function SupplierModal({
               <Badge color="green" size="lg">
                 Delivery Rating: 95%
               </Badge>
-              <Badge color="blue" size="lg">
+              <Badge color="ink" size="lg">
                 Quality Score: 4.5/5
               </Badge>
-              <Badge color="cyan" size="lg">
+              <Badge color="ink" size="lg">
                 Active Orders: 3
               </Badge>
             </Group>
