@@ -28,8 +28,6 @@
 
 import { MAX_CUSTOM_CSS_LENGTH } from './types';
 
-export { MAX_CUSTOM_CSS_LENGTH };
-
 /** Maximum rules kept. Anything past this is dropped, to bound render cost. */
 export const MAX_CUSTOM_CSS_RULES = 400;
 
@@ -100,6 +98,8 @@ const PROPERTY_RE = /^(?:--[a-zA-Z0-9_-]+|-{0,2}[a-zA-Z][a-zA-Z0-9-]*)$/;
 /** Characters that must never survive into a selector. */
 const SELECTOR_FORBIDDEN_RE = /[{}<>\\@;]/;
 
+/** C0 control characters: meaningless in CSS, useful only for confusing parsers. */
+const CONTROL_CHARS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
 /** Local paths and inline raster images are the only `url()` targets allowed. */
 const SAFE_URL_RE =
   /^(?:\/(?!\/)[^\s'"()]*|\.{1,2}\/[^\s'"()]*|[A-Za-z0-9_][A-Za-z0-9._-]*(?:\/[^\s'"()]*)?|data:image\/(?:png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=]+)$/;
@@ -462,15 +462,28 @@ function scopeSelector(selector: string, scope: string): string | null {
   if (!trimmed) return null;
   if (SELECTOR_FORBIDDEN_RE.test(trimmed)) return null;
   if (findBannedToken(trimmed)) return null;
+
   // A merchant cannot address the document root, only their own subtree.
-  const rootReplaced = trimmed.replace(/^(?::root|html|body)\b/i, ' ');
-  if (rootReplaced.startsWith(' ')) {
-    const remainder = rootReplaced.slice(1).trim();
-    return remainder ? `${scope}${remainder.startsWith(':') || remainder.startsWith('.') || remainder.startsWith('[') ? '' : ' '}${remainder}` : scope;
+  let remainder = trimmed;
+  let hitRoot = false;
+  for (;;) {
+    const rootMatch = /^(?::root|html|body)(?![\w-])/i.exec(remainder);
+    if (!rootMatch) break;
+    hitRoot = true;
+    remainder = remainder.slice(rootMatch[0].length).trim();
   }
+
+  if (hitRoot) {
+    if (!remainder) return scope;
+    // `body.dark` attaches directly; `body .x` and `body > .x` keep their combinator.
+    return /^[.:#[]/.test(remainder) ? `${scope}${remainder}` : `${scope} ${remainder}`;
+  }
+
   if (trimmed.startsWith('&')) {
-    return `${scope}${trimmed.slice(1)}`;
+    const rest = trimmed.slice(1);
+    return rest ? `${scope}${rest}` : scope;
   }
+
   return `${scope} ${trimmed}`;
 }
 
@@ -491,6 +504,11 @@ function filterDeclaration(
 
   if (!PROPERTY_RE.test(property)) {
     warnings.push(`Removed declaration with unsupported property "${property}".`);
+    return null;
+  }
+
+  if (BANNED_PROPERTIES.has(property.toLowerCase())) {
+    warnings.push(`Removed disallowed property "${property}".`);
     return null;
   }
 

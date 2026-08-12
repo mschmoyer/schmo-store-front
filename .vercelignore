@@ -1,0 +1,56 @@
+# Files uploaded to Vercel's build step but never needed by the build or the
+# runtime. Trimming these speeds up uploads and keeps them out of the image.
+#
+# Note: database/ is NOT ignored — `vercel.json`'s buildCommand runs
+# `node database/migrate.js`, which reads database/migrations/*.sql.
+
+# Local env files. Vercel injects environment variables itself; an uploaded
+# .env would silently shadow them.
+.env
+.env.*
+!.env.example
+
+# Version control and editors
+.git
+.github
+.idea
+.vscode
+.scratch
+
+# Tests and test output
+tests
+e2e
+playwright.config.js
+playwright-report
+test-results
+jest.config.js
+jest.setup.js
+coverage
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+
+# Local build artifacts (Vercel builds from source)
+.next
+out
+build
+node_modules
+
+# Logs
+dev.log
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Documentation and platform leftovers
+docs
+README.md
+CLAUDE.md
+Procfile
+app.json
+
+# OS noise
+.DS_Store

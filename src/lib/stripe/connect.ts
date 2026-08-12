@@ -84,11 +84,15 @@ export async function createOnboardingLink(
 ): Promise<Stripe.AccountLink> {
   const baseUrl = getAppBaseUrl();
 
+  // Stripe preserves query strings on these URLs, so the account id round-trips back to us. It is
+  // an identifier, not a credential, and both handlers verify it against `payment_accounts`.
+  const account = encodeURIComponent(stripeAccountId);
+
   return await stripe.accountLinks.create({
     account: stripeAccountId,
     type,
-    refresh_url: `${baseUrl}/api/connect/refresh`,
-    return_url: `${baseUrl}/api/connect/return`,
+    refresh_url: `${baseUrl}/api/connect/refresh?account=${account}`,
+    return_url: `${baseUrl}/api/connect/return?account=${account}`,
   });
 }
 

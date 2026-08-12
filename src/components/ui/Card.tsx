@@ -60,7 +60,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
   );
 });
 
-export interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface CardHeaderProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   /** Card title. Rendered in the display font at `--text-h3`. */
   title?: React.ReactNode;
   /** One line of supporting context under the title. */

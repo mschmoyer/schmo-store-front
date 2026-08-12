@@ -217,25 +217,26 @@
 
 /* ------------------------------------------------------------- disabled -- */
 
-.root:disabled,
-.root[aria-disabled='true'] {
+.root:disabled:not(.loading),
+.root[aria-disabled='true']:not(.loading) {
   box-shadow: none;
 }
 
-.primary:disabled,
-.primary[aria-disabled='true'],
-.destructive:disabled,
-.destructive[aria-disabled='true'] {
-  background-color: var(--border);
+.primary:disabled:not(.loading),
+.primary[aria-disabled='true']:not(.loading),
+.destructive:disabled:not(.loading),
+.destructive[aria-disabled='true']:not(.loading) {
+  background-color: var(--surface-inset);
+  border-color: var(--border);
   color: var(--text-disabled);
 }
 
-.secondary:disabled,
-.secondary[aria-disabled='true'],
-.ghost:disabled,
-.ghost[aria-disabled='true'],
-.link:disabled,
-.link[aria-disabled='true'] {
+.secondary:disabled:not(.loading),
+.secondary[aria-disabled='true']:not(.loading),
+.ghost:disabled:not(.loading),
+.ghost[aria-disabled='true']:not(.loading),
+.link:disabled:not(.loading),
+.link[aria-disabled='true']:not(.loading) {
   color: var(--text-disabled);
   border-color: var(--border-subtle);
   background-color: transparent;
@@ -256,6 +257,16 @@
 
 .loading .label {
   opacity: 0;
+}
+
+/*
+ * A loading button is busy, not unavailable: it keeps its variant fill (so the
+ * spinner has contrast to sit on) and only loses the hover lift. The rules
+ * above are all scoped `:not(.loading)` so this holds even though the element
+ * carries the `disabled` attribute.
+ */
+.loading {
+  cursor: progress;
 }
 
 .spinnerSlot {

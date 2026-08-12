@@ -4,6 +4,90 @@
  */
 
 import { db } from '@/lib/database/connection';
+import { StoreIntegrationRow } from '@/lib/types/db-rows';
+
+/** Columns selected from `shipfroms` when resolving the origin address. */
+type ShipFromRow = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  company_name: string | null;
+  origin_address_line1: string | null;
+  origin_address_line2: string | null;
+  origin_address_line3: string | null;
+  origin_city_locality: string | null;
+  origin_state_province: string | null;
+  origin_postal_code: string | null;
+  origin_country_code: string | null;
+  origin_residential_indicator: string | null;
+  instructions: string | null;
+}
+
+/** Columns selected from `store_integrations` for V2 credentials. */
+type ShipStationV2IntegrationRow = Pick<
+  StoreIntegrationRow,
+  'api_key_encrypted' | 'configuration' | 'is_active'
+>;
+
+/** Columns selected from `products` when resolving a SKU. */
+type ProductSkuRow = {
+  sku: string | null;
+}
+
+/**
+ * Type guard for a ship-from address stored in the integration configuration.
+ *
+ * @param value - Untyped value read from the `configuration` JSONB column
+ * @returns True when the value has the required ship-from address fields
+ */
+function isShipFromAddress(value: unknown): value is ShipFromAddress {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<Record<keyof ShipFromAddress, unknown>>;
+  return (
+    typeof candidate.name === 'string' &&
+    typeof candidate.address_line1 === 'string' &&
+    typeof candidate.city_locality === 'string' &&
+    typeof candidate.state_province === 'string' &&
+    typeof candidate.postal_code === 'string' &&
+    typeof candidate.country_code === 'string'
+  );
+}
+
+/**
+ * Normalize the residential indicator column to the values the V2 API accepts.
+ *
+ * @param value - Raw column value from `shipfroms`
+ * @returns A valid residential indicator, defaulting to `unknown`
+ */
+function toResidentialIndicator(value: string | null): 'yes' | 'no' | 'unknown' {
+  return value === 'yes' || value === 'no' ? value : 'unknown';
+}
+
+/**
+ * Map a `shipfroms` row onto the V2 ship-from address shape.
+ *
+ * @param warehouse - Row selected from `shipfroms`
+ * @returns Ship-from address with defaults applied for absent columns
+ */
+function mapWarehouseToShipFrom(warehouse: ShipFromRow): ShipFromAddress {
+  return {
+    name: warehouse.name || 'Warehouse',
+    phone: warehouse.phone || '',
+    email: warehouse.email || '',
+    company_name: warehouse.company_name || '',
+    address_line1: warehouse.origin_address_line1 || '',
+    address_line2: warehouse.origin_address_line2 || '',
+    address_line3: warehouse.origin_address_line3 || '',
+    city_locality: warehouse.origin_city_locality || '',
+    state_province: warehouse.origin_state_province || '',
+    postal_code: warehouse.origin_postal_code || '',
+    country_code: warehouse.origin_country_code || 'US',
+    address_residential_indicator: toResidentialIndicator(warehouse.origin_residential_indicator),
+    instructions: warehouse.instructions || ''
+  };
+}
 
 /**
  * V2 API credentials interface
@@ -128,7 +212,7 @@ interface OrderDataInput {
 async function getDefaultWarehouse(storeId: string): Promise<ShipFromAddress | null> {
   try {
     // First try to get the warehouse marked as default
-    const result = await db.query(
+    const result = await db.query<ShipFromRow>(
       `SELECT 
         name, phone, email, company_name,
         origin_address_line1, origin_address_line2, origin_address_line3,
@@ -143,7 +227,7 @@ async function getDefaultWarehouse(storeId: string): Promise<ShipFromAddress | n
 
     if (result.rows.length === 0) {
       // If no default warehouse, get the first one
-      const fallbackResult = await db.query(
+      const fallbackResult = await db.query<ShipFromRow>(
         `SELECT 
           name, phone, email, company_name,
           origin_address_line1, origin_address_line2, origin_address_line3,
@@ -161,40 +245,10 @@ async function getDefaultWarehouse(storeId: string): Promise<ShipFromAddress | n
         return null;
       }
       
-      const warehouse = fallbackResult.rows[0];
-      return {
-        name: warehouse.name || 'Warehouse',
-        phone: warehouse.phone || '',
-        email: warehouse.email || '',
-        company_name: warehouse.company_name || '',
-        address_line1: warehouse.origin_address_line1 || '',
-        address_line2: warehouse.origin_address_line2 || '',
-        address_line3: warehouse.origin_address_line3 || '',
-        city_locality: warehouse.origin_city_locality || '',
-        state_province: warehouse.origin_state_province || '',
-        postal_code: warehouse.origin_postal_code || '',
-        country_code: warehouse.origin_country_code || 'US',
-        address_residential_indicator: warehouse.origin_residential_indicator as 'yes' | 'no' | 'unknown' || 'unknown',
-        instructions: warehouse.instructions || ''
-      };
+      return mapWarehouseToShipFrom(fallbackResult.rows[0]);
     }
 
-    const warehouse = result.rows[0];
-    return {
-      name: warehouse.name || 'Warehouse',
-      phone: warehouse.phone || '',
-      email: warehouse.email || '',
-      company_name: warehouse.company_name || '',
-      address_line1: warehouse.origin_address_line1 || '',
-      address_line2: warehouse.origin_address_line2 || '',
-      address_line3: warehouse.origin_address_line3 || '',
-      city_locality: warehouse.origin_city_locality || '',
-      state_province: warehouse.origin_state_province || '',
-      postal_code: warehouse.origin_postal_code || '',
-      country_code: warehouse.origin_country_code || 'US',
-      address_residential_indicator: warehouse.origin_residential_indicator as 'yes' | 'no' | 'unknown' || 'unknown',
-      instructions: warehouse.instructions || ''
-    };
+    return mapWarehouseToShipFrom(result.rows[0]);
   } catch (error) {
     console.error('Error getting default warehouse:', error);
     return null;
@@ -206,7 +260,7 @@ async function getDefaultWarehouse(storeId: string): Promise<ShipFromAddress | n
  */
 export async function getShipStationV2Credentials(storeId: string): Promise<ShipStationV2Credentials | null> {
   try {
-    const result = await db.query(
+    const result = await db.query<ShipStationV2IntegrationRow>(
       `SELECT 
         api_key_encrypted,
         configuration,
@@ -221,10 +275,15 @@ export async function getShipStationV2Credentials(storeId: string): Promise<Ship
     }
 
     const integration = result.rows[0];
-    
+
+    if (integration.api_key_encrypted === null) {
+      console.error('ShipStation V2 integration has no stored API key for store:', storeId);
+      return null;
+    }
+
     // Decrypt API key (using same method as current system)
     const apiKey = Buffer.from(integration.api_key_encrypted, 'base64').toString('utf-8');
-    
+
     // Debug logging for API key
     console.log('ShipStation V2 API Key Debug:', {
       encrypted_length: integration.api_key_encrypted.length,
@@ -234,13 +293,14 @@ export async function getShipStationV2Credentials(storeId: string): Promise<Ship
     });
     
     // Parse configuration for ship_from address and other settings
-    const config = integration.configuration as Record<string, unknown> || {};
-    
+    const config: Record<string, unknown> = integration.configuration ?? {};
+    const configuredShipFrom = config.shipFromAddress;
+
     return {
       apiKey,
       storeId,
-      isActive: integration.is_active,
-      shipFromAddress: config.shipFromAddress as ShipFromAddress
+      isActive: integration.is_active ?? false,
+      shipFromAddress: isShipFromAddress(configuredShipFrom) ? configuredShipFrom : undefined
     };
   } catch (error) {
     console.error('Error getting ShipStation V2 credentials:', error);
@@ -262,10 +322,11 @@ async function getProductSKU(productId: string | number, storeId?: string): Prom
     `;
     
     const params = storeId ? [productId, storeId] : [productId];
-    const result = await db.query(query, params);
-    
-    if (result.rows.length > 0) {
-      return result.rows[0].sku;
+    const result = await db.query<ProductSkuRow>(query, params);
+
+    const sku = result.rows[0]?.sku;
+    if (sku) {
+      return sku;
     }
     
     // Fallback to product_id if SKU not found
@@ -300,10 +361,10 @@ export async function transformToV2Shipment(
   );
 
   // Get stored warehouse data or use configured shipFromAddress
-  let shipFromAddress = credentials.shipFromAddress;
-  
+  let shipFromAddress: ShipFromAddress | undefined = credentials.shipFromAddress;
+
   if (!shipFromAddress && orderData.storeId) {
-    shipFromAddress = await getDefaultWarehouse(orderData.storeId);
+    shipFromAddress = (await getDefaultWarehouse(orderData.storeId)) ?? undefined;
   }
   
   // Default ship_from address if not configured and no warehouse found
@@ -440,7 +501,8 @@ export async function createShipment(
         shipment_id: responseData.shipments[0].shipment_id,
         external_shipment_id: responseData.shipments[0].external_shipment_id,
         shipment_status: responseData.shipments[0].shipment_status,
-        created_at: responseData.shipments[0].created_at
+        created_at: responseData.shipments[0].created_at,
+        modified_at: responseData.shipments[0].modified_at
       }
     };
 

@@ -83,7 +83,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
           styles.selectControl,
           size === 'sm' && styles.sizeSm,
           size === 'lg' && styles.sizeLg,
-          error && styles.invalid,
+          Boolean(error) && styles.invalid,
           disabled && styles.disabled
         )}
       >

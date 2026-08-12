@@ -11,6 +11,10 @@
  * from lifting `jest.mock(...)` calls above the module imports they need to
  * intercept.
  */
+// `jest.setup.js` loads `@testing-library/jest-dom`, whose DOM matchers are
+// registered on the `@jest/expect` interface by this entry point.
+import type {} from '@testing-library/jest-dom/jest-globals';
+
 import type {
   afterAll as afterAllFn,
   afterEach as afterEachFn,

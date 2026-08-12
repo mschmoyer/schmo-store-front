@@ -58,7 +58,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(fun
         className={cn(
           styles.control,
           styles.textareaControl,
-          error && styles.invalid,
+          Boolean(error) && styles.invalid,
           disabled && styles.disabled
         )}
       >

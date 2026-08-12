@@ -72,7 +72,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
           size === 'sm' && styles.sizeSm,
           size === 'lg' && styles.sizeLg,
           mono && styles.mono,
-          error && styles.invalid,
+          Boolean(error) && styles.invalid,
           disabled && styles.disabled
         )}
       >

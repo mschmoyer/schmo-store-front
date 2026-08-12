@@ -75,7 +75,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(functi
         <span className={styles.choiceText}>
           {label ? <span className={styles.choiceLabel}>{label}</span> : null}
           {message ? (
-            <span className={cn(styles.choiceHint, error && styles.error)} id={messageId}>
+            <span className={cn(styles.choiceHint, Boolean(error) && styles.error)} id={messageId}>
               {message}
             </span>
           ) : null}
