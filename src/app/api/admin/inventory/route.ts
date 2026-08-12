@@ -105,25 +105,39 @@ export async function GET(request: NextRequest) {
     const products = inventoryResult.rows;
 
     // Get sales data for forecasting with multiple time periods
+    /*
+     * Sales velocity per SKU.
+     *
+     * Same fix as `purchase-orders/recommendations`: every window keyed off
+     * `oi.created_at`, which is the line's insert timestamp and not the date
+     * of the sale, so 7-day, 30-day and 90-day sales were the same number for
+     * every product and the grid's seven "windows" were seven copies of one
+     * figure. They key off `o.created_at` now, and the status filter widens
+     * from `IN ('completed','processing')` to everything not cancelled, so a
+     * shipped order counts as the sale it is.
+     *
+     * `avg_monthly_sales` was `AVG(quantity)` over 30 days — mean line size,
+     * not a monthly rate. It is now the 90-day demand over three months.
+     */
     const salesQuery = `
-      SELECT 
+      SELECT
         oi.product_id,
         oi.product_sku,
         SUM(oi.quantity) as total_sales,
         COUNT(DISTINCT oi.order_id) as total_orders,
         AVG(oi.quantity) as avg_order_quantity,
-        MAX(oi.created_at) as last_sale_date,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '7 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_7_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '14 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_14_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_30_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '60 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_60_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_90_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '180 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_180_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '365 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_365_days,
-        AVG(CASE WHEN oi.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity END) as avg_monthly_sales
+        MAX(o.created_at) as last_sale_date,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '7 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_7_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '14 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_14_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_30_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '60 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_60_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_90_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '180 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_180_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '365 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_365_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) / 3.0 as avg_monthly_sales
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
-      WHERE o.store_id = $1 AND o.status IN ('completed', 'processing')
+      WHERE o.store_id = $1 AND o.status <> 'cancelled'
       GROUP BY oi.product_id, oi.product_sku
     `;
 

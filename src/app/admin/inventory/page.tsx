@@ -531,9 +531,19 @@ export default function InventoryPage() {
           icon={<IconAlertCircle size={18} stroke={1.6} />}
         />
         <StatCard
-          label="Pending orders"
+          /*
+           * Labelled "Pending orders / Awaiting delivery" in a row of
+           * inventory tiles, which reads as five restocks arriving. It counts
+           * customer orders in pending/processing — five people who paid and
+           * have been waiting, in this store's case for 61 to 73 days. The
+           * label now says whose orders these are, and the tile links to the
+           * screen that can do something about them.
+           */
+          label="Customer orders to ship"
           value={stats?.pending_orders ?? 0}
-          meta="Awaiting delivery"
+          meta="Paid, not yet dispatched"
+          tone={(stats?.pending_orders ?? 0) > 0 ? 'warning' : 'neutral'}
+          href="/admin/orders?status=unshipped"
           icon={<IconTruckDelivery size={18} stroke={1.6} />}
         />
         <StatCard
