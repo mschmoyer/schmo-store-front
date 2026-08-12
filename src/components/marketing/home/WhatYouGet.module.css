@@ -206,5 +206,8 @@
   .top {
     grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
     gap: var(--space-10);
+    /* Centred: the log runs ~175px taller than the intro, and top-aligning
+       pooled all of that as blank space under the heading. */
+    align-items: center;
   }
 }

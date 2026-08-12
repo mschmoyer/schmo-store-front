@@ -44,58 +44,45 @@ A modern e-commerce storefront built with Next.js 15, TypeScript, and Mantine UI
 
 ## Running the stack locally
 
-Verified end to end from an empty database.
+### One command
+
+```bash
+nvm use && npm install
+npm run dev-local
+```
+
+That is the whole thing. It finds your Postgres, creates the database if it is missing,
+writes `.env.local` with a generated `JWT_SECRET`, applies migrations, seeds demo data,
+prints your sign-in credentials, and starts the dev server.
+
+Every step is idempotent, so re-running it is safe and fast — it skips whatever is
+already done.
+
+```
+npm run dev-local              # set up what is missing, then run
+npm run dev-local -- --fresh   # also re-seed demo data
+npm run dev-local -- --setup   # set up but do not start the server
+```
+
+**Sign in:** `demo@schmostore.com` / `rebeldev` — every seeded user shares that password.
+
+### Why it probes for credentials
+
+Postgres defaults differ by platform and there is no connection string that is correct
+everywhere. Homebrew on macOS creates a superuser named after your OS account, with trust
+auth and usually no `postgres` role at all. Docker and most Linux packages do create
+`postgres`, often with a password. `dev-local` tries the plausible candidates and uses
+whichever actually connects, rather than documenting one and hoping.
+
+If you already have a `DATABASE_URL` in `.env.local` it is always used as-is, on the
+assumption that you meant it.
 
 ### Prerequisites
 
 - **Node 22** — `nvm use` reads `.nvmrc`
 - **PostgreSQL 16+** running locally
-- Nothing else. Stripe, ShipStation and OpenAI keys are all optional; every feature that
-  needs one degrades to a clearly-labelled "not configured" state rather than crashing.
-
-### 1. Install
-
-```bash
-nvm use
-npm install
-```
-
-### 2. Create the database
-
-```bash
-createdb rebelshops
-```
-
-### 3. Configure the environment
-
-The app reads **`.env.local`** (not `.env`). Only two variables are required to boot:
-
-```bash
-cat > .env.local <<'EOF'
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/rebelshops
-JWT_SECRET=any-long-random-string-for-local-dev
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-EOF
-```
-
-`.env.example` documents every variable the app reads, grouped by what it unlocks.
-`DATABASE_URL` is the only one without a working fallback.
-
-### 4. Migrate and seed
-
-```bash
-npm run db:migrate     # 23 migrations; safe to re-run, no-ops when current
-npm run db:seed-demo   # 3 stores, 36 products, 74 orders, blog posts, coupons
-```
-
-`db:seed-demo` is transactional and idempotent — run it as often as you like. It only
-touches the three known demo store IDs, so it will not disturb other data.
-
-### 5. Run
-
-```bash
-npm run dev            # or: npm run dev:log, which tees output to dev.log
-```
+- Nothing else. Stripe, ShipStation and OpenAI keys are optional; every feature that needs
+  one degrades to a labelled "not configured" state rather than crashing.
 
 ### What you get
 
@@ -103,18 +90,29 @@ npm run dev            # or: npm run dev:log, which tees output to dev.log
 |---|---|
 | `/` | Marketing site |
 | `/pricing` | Plan, comparison, FAQ |
-| `/store/demo-electronics` | **Basecamp Audio** — dark, high-contrast theme |
-| `/store/artisan-craft` | **Fernwood Goods** — warm editorial theme |
-| `/store/fitness-pro` | **Ironline Fitness** — bright, roomy theme |
+| `/store/demo-electronics` | **Basecamp Audio** — dark, high-contrast preset |
+| `/store/artisan-craft` | **Fernwood Goods** — warm editorial preset |
+| `/store/fitness-pro` | **Ironline Fitness** — bright, roomy preset |
 | `/admin` | Merchant dashboard |
 | `/admin/design` | Storefront theme customizer with live preview |
 | `/create-store` | Merchant onboarding |
 | `/dev/design-system` | Every UI primitive in every state |
 
-The three demo storefronts deliberately use three different presets, so you can see the
-theme engine actually doing something rather than recolouring one design.
+The three demo storefronts deliberately use three different presets, so the theme engine
+is visibly doing something rather than recolouring one design.
 
-**Demo sign-in:** `demo@schmostore.com` / `rebeldev` (any seeded user shares that password).
+### Doing it by hand
+
+```bash
+createdb rebelshops
+cp .env.example .env.local          # then set DATABASE_URL and JWT_SECRET
+npm run db:migrate
+npm run db:seed-demo
+npm run dev
+```
+
+The app reads **`.env.local`**, not `.env`. `DATABASE_URL` is the only variable without a
+working fallback.
 
 ### Optional integrations
 
@@ -139,13 +137,12 @@ npm run test:e2e       # Playwright; needs the dev server running
 
 ### Troubleshooting
 
-- **Sign-in fails** — reseed. `npm run db:seed-demo` resets the demo users' passwords.
+- **`password authentication failed`** — run `npm run dev-local`, which probes for working
+  credentials. `scripts/seed-demo.js` also prints platform-specific guidance on this error
+  rather than a stack trace.
+- **Sign-in fails** — `npm run dev-local -- --fresh` resets the demo users.
 - **A storefront 404s** — the store must be `is_public`. The seed sets this; if you toggled
   visibility in the admin, toggle it back.
-- **`DATABASE_URL` errors on boot** — the driver is chosen by hostname: a Neon host uses the
-  serverless driver, anything else uses node-postgres. A malformed URL surfaces as a clear
-  message rather than a stack trace.
-
 
 ## Features
 

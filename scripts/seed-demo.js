@@ -1037,8 +1037,84 @@ async function main() {
   await pool.end();
 }
 
+/**
+ * Turn a connection failure into an instruction rather than a stack trace.
+ *
+ * The defaults differ by platform and the raw pg error says nothing about that:
+ * Homebrew Postgres on macOS creates a superuser named after your OS account
+ * with trust auth and usually no `postgres` role at all, while Docker and most
+ * Linux packages do create `postgres`, commonly with a password. A connection
+ * string copied from the wrong one of those fails with a bare 28P01.
+ *
+ * @param err - The error thrown while connecting or seeding.
+ * @returns Guidance to print, or null when the error is not a connection problem.
+ */
+function connectionHelp(err) {
+  const url = process.env.DATABASE_URL;
+  const whoami = process.env.USER || process.env.LOGNAME || 'your-username';
+
+  if (!url) {
+    return [
+      'DATABASE_URL is not set.',
+      '',
+      'Create .env.local in the project root:',
+      `  DATABASE_URL=postgresql://${whoami}@127.0.0.1:5432/rebelshops`,
+      '  JWT_SECRET=any-long-random-string-for-local-dev',
+    ].join('\n');
+  }
+
+  const user = (url.match(/\/\/([^:@/]+)/) || [])[1];
+
+  if (err && err.code === '28P01') {
+    return [
+      `Postgres rejected the credentials for user "${user}".`,
+      '',
+      process.platform === 'darwin'
+        ? [
+            'On macOS with Homebrew, Postgres does not usually have a "postgres"',
+            'role. The superuser is named after your OS account and needs no password:',
+            '',
+            `  DATABASE_URL=postgresql://${whoami}@127.0.0.1:5432/rebelshops`,
+          ].join('\n')
+        : [
+            'Check the username and password in DATABASE_URL. For a local install the',
+            'superuser is often your OS account rather than "postgres":',
+            '',
+            `  DATABASE_URL=postgresql://${whoami}@127.0.0.1:5432/rebelshops`,
+          ].join('\n'),
+      '',
+      'Confirm what works before editing .env.local:',
+      `  psql -h 127.0.0.1 -U ${whoami} -d postgres -c "select current_user"`,
+    ].join('\n');
+  }
+
+  if (err && (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND')) {
+    return [
+      'Could not reach Postgres.',
+      '',
+      process.platform === 'darwin'
+        ? '  brew services start postgresql@16'
+        : '  sudo service postgresql start',
+    ].join('\n');
+  }
+
+  if (err && err.code === '3D000') {
+    const db = (url.match(/\/([^/?]+)(\?|$)/) || [])[1] || 'rebelshops';
+    return [`Database "${db}" does not exist. Create it:`, '', `  createdb ${db}`].join('\n');
+  }
+
+  return null;
+}
+
 main().catch((err) => {
-  console.error('Seed failed:', err);
+  const help = connectionHelp(err);
+  if (help) {
+    console.error(`\nSeed failed: ${err.message}\n`);
+    console.error(help);
+    console.error('');
+  } else {
+    console.error('Seed failed:', err);
+  }
   pool.end();
   process.exit(1);
 });

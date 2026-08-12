@@ -8,6 +8,7 @@
     "db:seed-demo": "node scripts/seed-demo.js",
     "db:status": "node database/migrate.js --status",
     "dev": "next dev --turbopack",
+    "dev-local": "node scripts/dev-local.js",
     "dev:log": "next dev --turbopack 2>&1 | tee dev.log",
     "lint": "next lint",
     "snapshot:inventory": "node scripts/inventory-snapshot.js",

@@ -25,7 +25,7 @@ const COLUMNS: readonly FooterColumn[] = [
     ],
   },
   {
-    heading: 'Live stores',
+    heading: 'Demo stores',
     links: [
       { href: ROUTES.demoStores, label: 'All demo stores' },
       { href: storeUrl('demo-electronics'), label: 'Basecamp Audio' },

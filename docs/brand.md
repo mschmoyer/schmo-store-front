@@ -21,8 +21,14 @@ The mark is an **R die-cut and folded from board.**
   opening in an otherwise closed form. That asymmetry is the whole positioning: the catalog is
   already sealed and finished, and the product is the opening.
 - The **leg** is not a leg. It is a **flap folded out** from under the bowl: a quadrilateral with a
-  horizontal top edge and a foot that lands flat on the baseline. It is the only part in **ember**,
-  because it is the only part that is us. Everything ink is what the seller already had.
+  horizontal top edge and a foot that lands flat on the baseline. It is the one part of the letter
+  that is solid rather than stroked, and the one part that leaves the letter's box — the piece that
+  is us, folded out of something the seller already had.
+
+The mark is **monochrome**. An earlier build painted the flap in a vermilion accent; that scheme was
+rejected (design-system §2) and the flap is now simply the foreground colour. Nothing is lost — the
+flap was never allowed to be the sole carrier of meaning, so the mark was always drawn to read as a
+complete R in one colour.
 
 Four directions were drawn and reviewed at 16px before this one was chosen: a parcel with a
 projecting awning, a shipping label whose payload block becomes a lit window, a hanging swallowtail
@@ -39,7 +45,7 @@ fist, a flame, or anything with a gradient in it.
 
 One metric system produces the mark and the wordmark, which is why they can never drift apart in
 weight: **the mark is literally the R that opens the word.** In the lockups it is the same path data
-at a larger scale, with the flap switched to ember.
+at a larger scale, in the same single colour.
 
 | Metric | Value (cap-height units) |
 |---|---|
@@ -110,6 +116,39 @@ where the horizontal lockup would have to shrink below its minimum.
 `viewBox="-3 -7 744.4 136"`, aspect **5.47 : 1**. The name without the badge. Use when the mark
 already appears elsewhere in the same view — two Rs in one header is a mistake.
 
+### The poster — `og-image.png`, 1200 × 630
+
+The most-seen artefact in the identity: it is what a shared link becomes. Composition, top to
+bottom:
+
+| Element | Spec |
+|---|---|
+| Ground | `#FFFFFF`, margins **88** |
+| Lockup | `logo-horizontal`, mark **46px** tall, top-left at y 74. `rebelshops.com` right-aligned on the same line, 20px `--text-subtle` |
+| Eyebrow | `FOR SHIPSTATION SELLERS`, mono **16px**, tracking `+3.2`, `--text-muted` |
+| Hero | **84px**, tracking `-2.9`, leading 92, `--text`, two lines |
+| Offer band | full-bleed `--text` `#111214` from y 470 to the bottom edge — **160px** |
+| Price | `$1 for 3 months`, **46px**, `--signal-on-dark` `#3FBF83` |
+| Terms | `then $19.99/mo.` / `No transaction fees.`, 22px `--text-subtle`, right-aligned |
+
+Three decisions worth keeping:
+
+1. **Hierarchy is scale, not weight** — a 5.25× jump from eyebrow to hero. See §8 for why weight is
+   not available in the route render.
+2. **The ink band is the card's edge.** A white 1200×630 with no frame dissolves into a light chat
+   background when it unfurls. The band doubles as the design system's one permitted inversion, at
+   the pricing decision point.
+3. **The price is the only colour on the card**, because a price is money — the single role
+   `--signal` has. On the ink band it must be `--signal-on-dark` (8.02:1); `--signal` itself
+   measures 1.9:1 there.
+
+A giant `--surface-2` "ghost" R bleeding off the right edge was drawn and cut. At the size needed to
+fill the right void, only the stem and the two bowl bars stayed in frame and it read as three grey
+rectangles rather than as the monogram. The right side is air instead.
+
+**Verify at 300px.** That is the width of a chat unfurl and it is the only test that matters: if the
+hero line is not comfortably readable there, the composition is wrong.
+
 ---
 
 ## 4. Clear space
@@ -134,37 +173,71 @@ the pixel grid — not by eyeballing a scaled preview.
 | Asset | Minimum | What fails below it |
 |---|---|---|
 | `mark.svg` / `mark-inverse.svg` | **16px** tall | the aperture closes and the R fills in |
-| The tile (`favicon.ico`, `icon-*.png`) | **16px** | — this is the size it was tuned for |
+| The tile (`favicon.ico`, `icon.svg`, `icon-*.png`) | **16px** | — this is the size it was tuned for |
 | `wordmark.svg` | **96px** wide | the `e` and `s` counters close |
 | `logo-horizontal.svg` | **128px** wide | as above; the mark also drops under 20px |
 | `logo-stacked.svg` | **112px** wide | the word goes below its own floor |
 
 Below 16px, do not scale anything down — use the tile, or drop the mark entirely.
 
+**The tile was re-tuned when it inverted.** It used to be a light R on a saturated fill; it is now a
+`#FFFFFF` R on `#111214`, and a light stroke on a dark field loses more to antialiasing than a dark
+stroke on a light one. The monogram inside the tile therefore grew from **0.72 → 0.78** of the tile
+and the corner radius came in from **27 → 26** of 120. Checked by rasterising `icon.svg` at 16 / 32 /
+48 and reading the magnified pixel grid: at 16px the aperture is still open and the flap's diagonal
+still reads as a diagonal. Do not shrink the monogram back to make the tile "breathe" — the padding
+that looks generous at 512px is what kills the R at 16px.
+
+Note also that at 16px the *tile itself* disappears into dark browser chrome, leaving a white R
+floating in the tab strip. That is intended and it still reads; the R is the identity, not the
+square.
+
 ---
 
-## 6. Color pairings
+## 6. Color
 
-Grounds and the file that belongs on them. All tokens are from design-system §2.
+**The identity has exactly two colors, and they are the same color inverted.**
+
+| Role | Token | Hex |
+|---|---|---|
+| The mark, wordmark and lockups on a light ground | `--text` | `#111214` |
+| The same, on a dark ground | `--bg` | `#FFFFFF` |
+
+That is the whole list. There is no brand accent. `--signal` `#0F7B4A` is **money, in-stock,
+savings and success — nothing else**; a logo is not money, so the green never touches the mark, the
+wordmark, a lockup, the tile or the favicon. The one place `--signal` appears in `public/brand/` is
+the `$1 for 3 months` price on the poster, where it is a price. `--warning` and `--danger` never
+appear in brand artwork at all.
+
+The old warm off-white (`--paper`) is gone with the rest of the previous scheme. The ground is pure
+`#FFFFFF`, so **knockouts and counters are pure `#FFFFFF` too** — an off-white knockout on a pure
+white page reads as a grey smudge, which is exactly the defect that regenerating these files fixed.
+
+### Grounds and the file that belongs on them
+
+All tokens are from design-system §2.
 
 | Ground | Use | Why |
 |---|---|---|
-| `--paper` `--paper-raised` `--paper-sunken` `--ink-50` `--ink-100` | `mark.svg`, `wordmark.svg`, `logo-horizontal.svg`, `logo-stacked.svg` | ink-900 on paper is 17.4:1 |
-| `--ink-950` `--ink-900` `--ink-800` `--ink-700` | the `-inverse` files | paper on ink-950 is 18.9:1 |
-| `--ember-500` `--ember-600` and any saturated fill | the `-mono` files, with `color: var(--paper)` | see the warning below |
-| `--mint-500` `--rose-500` `--amber-500` | the `-mono` files, paper | |
+| `--bg` `#FFFFFF`, `--surface-2` `#F4F4F5`, `--signal-soft` `#E8F5EE` | `mark.svg`, `wordmark.svg`, `logo-horizontal.svg`, `logo-stacked.svg` | `--text` on `--bg` is **18.74:1**; on `--surface-2`, 17.0:1 |
+| `--text` `#111214` — the pricing block and the footer | the `-inverse` files | white on `#111214` is **18.74:1** |
+| `--signal` `#0F7B4A`, `--danger`, `--warning`, any saturated fill | the `-inverse` files, or a `-mono` file set to `#FFFFFF` | white on `--signal` is 5.31:1 |
 | Photography, video, unknown grounds | the `-mono` files, on a solid plate | never float artwork over an image |
 
-> **The ember trap.** On an ember ground the ember flap disappears and the mark reads as a **P**.
-> This is the single most likely way to get the identity wrong. On anything ember, use
-> `mark-mono.svg` / `logo-horizontal-mono.svg` / `logo-stacked-mono.svg`, which paint every part in
-> `currentColor`.
+There is no longer an "accent trap": because the mark is one flat color, it cannot half-disappear
+into a ground the way the ember flap did on an ember fill. **The only rule is contrast** — pick the
+variant that is furthest from the ground and keep it above 4.5:1.
 
-The `-mono` files take their color from CSS `currentColor`, so one file covers ink-on-paper,
-paper-on-ink and paper-on-ember. Prefer them anywhere the surface color is dynamic.
+### The `-mono` files
 
-The ember flap is never the sole carrier of meaning: the mark is a complete, legible R when the
-flap is the same color as the stem.
+`mark-mono.svg`, `wordmark-mono.svg`, `logo-horizontal-mono.svg` and `logo-stacked-mono.svg` paint
+every part in `currentColor`, so one file covers every ground. Prefer them anywhere the surface
+color is dynamic — a themed surface, a section that inverts, a component that can be dropped
+anywhere.
+
+> `currentColor` only resolves when the SVG is **inlined**. An SVG referenced from `<img src>` is a
+> separate document and does not inherit `color` from the page, so a `-mono` file loaded that way
+> renders black. Inline them (§9), or use the color-specific file.
 
 ---
 
@@ -173,16 +246,18 @@ flap is the same color as the stem.
 **Do**
 
 - Use the shipped files. They are generated, not traced.
-- Pick the variant that matches the ground (§6), then let it be one flat color plus, at most, ember.
+- Pick the variant that matches the ground (§6), then let it be **one flat color**.
 - Scale proportionally from the SVG. It has no rasters and no font references in it.
 - Give it clear space (§4) and respect the floor (§5).
 
 **Do not**
 
-1. **Do not put `mark.svg` or `mark-inverse.svg` on an ember ground.** The flap vanishes; you get a P.
+1. **Do not put `--signal` — or any other color — on the mark.** The green is money, stock and
+   savings, per design-system §2. A logo is not money. The mark is `#111214` or `#FFFFFF`, full stop.
 2. **Do not re-set the wordmark in Space Grotesk** — or any font. The drawn letterforms have
    flat-sided rounds and a cut R that no released typeface has. Typing the name is not the wordmark.
-3. **Do not recolor the flap** to anything but `--ember-500` or the foreground color.
+3. **Do not recolor the flap** away from the foreground. It is not an accent slot; it never was
+   allowed to be the sole carrier of meaning and it is now simply part of the letter.
 4. **Do not add** a gradient, bevel, inner shadow, glow, outline or drop shadow. If the mark needs a
    shadow to separate from the ground, the ground is wrong.
 5. **Do not change the mark-to-word ratio, the gap, or the vertical alignment** in a lockup. Build a
@@ -203,14 +278,16 @@ flap is the same color as the stem.
 
 | File | What it is |
 |---|---|
-| `mark.svg` | monogram, ink-900 + ember, for light grounds |
-| `mark-inverse.svg` | monogram, paper + ember, for dark grounds |
-| `mark-mono.svg` | monogram, all `currentColor` — ember grounds, photography, single-color print |
+| `mark.svg` | monogram, `#111214`, for light grounds |
+| `mark-inverse.svg` | monogram, `#FFFFFF`, for dark grounds |
+| `mark-mono.svg` | monogram, all `currentColor` — dynamic surfaces, photography, single-color print. Must be inlined |
 | `wordmark.svg` · `wordmark-inverse.svg` · `wordmark-mono.svg` | the drawn name, no badge |
 | `logo-horizontal.svg` · `-inverse` · `-mono` | default lockup, 6.08 : 1 |
 | `logo-stacked.svg` · `-inverse` · `-mono` | square/portrait lockup, 1.76 : 1 |
-| `icon-512.png` · `icon-192.png` | the tile — paper R on an ember rounded square, PWA/manifest sizes |
-| `apple-touch-icon.png` | 180×180, full-bleed ember square (iOS applies its own mask) |
+| `icon.svg` | the tile as vector — white R on a `#111214` rounded square, radius 26/120 |
+| `icon-512.png` · `icon-192.png` | the same tile, PWA/manifest sizes |
+| `apple-touch-icon.png` | 180×180, full-bleed square `#111214` (iOS applies its own mask, so we ship no radius) |
+| `logo-horizontal.png` | horizontal lockup, ink, transparent, 1200 × 197 — for contexts that cannot take SVG |
 | `og-image.png` | 1200×630 social card |
 | `generate.js` | **the source of truth.** Everything above is its output |
 
@@ -218,23 +295,35 @@ flap is the same color as the stem.
 
 | File | What it is |
 |---|---|
-| `favicon.ico` | multi-size ICO — 16 / 32 / 48, PNG payloads, the ember tile |
-| `icon.svg` | the ember tile as vector |
-| `apple-icon.png` | 180×180, same artwork as `brand/apple-touch-icon.png` |
-| `logo.png` | horizontal lockup, ink, transparent, 1200 × 197 — for contexts that cannot take SVG |
+| `favicon.ico` | multi-size ICO — 16 / 32 / 48, real PNG payloads at each size, the ink tile |
+
+> **Stale duplicates.** `public/icon.svg`, `public/apple-icon.png` and `public/logo.png` are
+> leftovers from before these assets moved under `public/brand/`. Nothing in `src/` references
+> them, and `src/app/icon.tsx` / `src/app/apple-icon.tsx` supersede them at the framework level, so
+> the generator no longer writes them and **they are still in the old vermilion scheme.** Delete
+> them. Until then, `BRAND_ROOT=1 node public/brand/generate.js` will refresh them in place.
 
 ### `src/app/`
 
 | File | What it is |
 |---|---|
 | `icon.tsx` | Next 15 file convention. `ImageResponse` renders the tile at 32×32 from an inlined SVG data URI. No typeface, no disk reads, so it cannot fail a build |
+| `apple-icon.tsx` | Next 15 file convention. The same tile at 180×180, square-cornered |
 | `opengraph-image.tsx` | Next 15 file convention. `ImageResponse` renders the 1200×630 card, composed to match `public/brand/og-image.png` |
 
 **Which OG image wins.** If `src/app/opengraph-image.tsx` is present, Next uses it for `og:image`
-automatically. It renders the lockup as vector and the copy in a system grotesque stack, falling
-back to the face bundled with `next/og`. `public/brand/og-image.png` is the same composition set in
-Geist at semibold and is the higher-fidelity artifact; to use it instead, set `openGraph.images`
-explicitly in metadata, which overrides the file convention.
+automatically; `src/components/seo/LandingPageMeta.tsx` overrides that with
+`public/brand/og-image.png` on the pages it wraps, so **both artefacts are live** and must stay in
+composition. `generate.js` and `opengraph-image.tsx` therefore share one set of layout constants
+(`OGL` in the generator, mirrored at the top of the route) — change them together.
+
+**The one deliberate difference between them.** `next/og` bundles a single face at a single weight
+(Noto Sans 400) and satori does not synthesise bold, so `fontWeight` is inert in the route: its hero
+line renders at regular. The committed PNG is rendered through Chromium against the Geist face
+vendored inside `next`, so its hero is semibold and it is the higher-fidelity artifact. This is why
+the poster's hierarchy is built out of **scale** (16px eyebrow → 84px hero, a 5.25× jump) rather
+than weight: the composition has to survive being set entirely in one weight. Never trade hero size
+for hero weight here.
 
 ---
 
@@ -254,6 +343,15 @@ node public/brand/generate.js
 Rewrites every asset listed in §8. Rasterisation uses `sharp` (already a dependency). The OG poster
 is rendered by Chromium via `@playwright/test` so its copy can use the Geist face vendored inside
 the `next` package; point `CHROMIUM_PATH` at a browser binary if Playwright's own download is not
-present. With no browser available the script falls back to `sharp`, which resolves the same text
-against a system grotesque — the layout is identical either way, and the output is always a flat PNG
-with no external references.
+resolvable, e.g.
+
+```bash
+CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome node public/brand/generate.js
+```
+
+With no browser available the script falls back to `sharp`, which resolves the same text against a
+system grotesque — the layout is identical either way, and the output is always a flat PNG with no
+external references. **Check which path ran:** the fallback is called out in the file list it
+prints, and a poster built by the fallback is the one that will drift from the route.
+
+`BRAND_ROOT=1` additionally refreshes the stale duplicates at the root of `public/` (§8).

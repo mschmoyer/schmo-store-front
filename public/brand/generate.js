@@ -11,12 +11,16 @@
  *
  * Outputs
  *   public/brand/mark.svg | mark-mono.svg | mark-inverse.svg
- *   public/brand/wordmark.svg | wordmark-inverse.svg
- *   public/brand/logo-horizontal.svg | logo-horizontal-inverse.svg
- *   public/brand/logo-stacked.svg | logo-stacked-inverse.svg
- *   public/brand/icon-512.png | icon-192.png | apple-touch-icon.png
- *   public/brand/og-image.png
- *   public/favicon.ico | public/icon.svg | public/apple-icon.png | public/logo.png
+ *   public/brand/wordmark.svg | wordmark-inverse.svg | wordmark-mono.svg
+ *   public/brand/logo-horizontal.svg | -inverse.svg | -mono.svg
+ *   public/brand/logo-stacked.svg | -inverse.svg | -mono.svg
+ *   public/brand/icon.svg | icon-512.png | icon-192.png | apple-touch-icon.png
+ *   public/brand/logo-horizontal.png | og-image.png
+ *   public/favicon.ico
+ *
+ * `BRAND_ROOT=1 node public/brand/generate.js` additionally refreshes the
+ * legacy duplicates at the root of public/ (icon.svg, apple-icon.png,
+ * logo.png). Nothing references them; they should be deleted.
  *
  * The OG poster is composed once as SVG and rendered by Chromium (Playwright,
  * a devDependency) so the supporting copy can use the Geist face already
@@ -44,16 +48,16 @@ const PUBLIC = path.join(ROOT, 'public');
  * money / stock / savings and appears in exactly one place in this file — the
  * price on the poster — because a price is money. It is never used on the mark.
  *
- * The old ink/paper/ember scheme is gone. Note in particular that the ground is
- * now pure #FFFFFF, not the warm #FBFAF8 paper: any counter or knockout left at
- * the old value reads as a grey smudge on a white page.
+ * The previous ink / warm-paper / vermilion scheme is gone. Note in particular
+ * that the ground is now pure #FFFFFF rather than a warm off-white: a counter
+ * or knockout left at the old paper value reads as a grey smudge on this page.
  */
 
 const C = {
   ink: '#111214',        // --text: type, primary fill, and the mark on light
   inkSoft: '#2A2C30',    // hover / raised ink
   white: '#FFFFFF',      // --bg, and the mark on dark
-  surface2: '#F4F4F5',   // --surface-2: subtle fill (the poster's ghost R)
+  surface2: '#F4F4F5',   // --surface-2: subtle fill
   border: '#E5E5E7',     // --border
   borderStrong: '#D2D3D6',
   muted: '#6B6F76',      // --text-muted
