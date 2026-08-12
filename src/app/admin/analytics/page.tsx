@@ -232,17 +232,11 @@ export default function AnalyticsPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} mb="xs">
-            Store Analytics
-          </Title>
-          <Text c="dimmed">
-            Track search behavior, visitor patterns, and store performance
-          </Text>
-        </div>
-        
-        <Group>
+      <AdminPageHeader
+        title="Store analytics"
+        description="Search behaviour, visitor patterns and store performance."
+        actions={
+          <Group>
           <Select
             value={dateRange}
             onChange={(value) => setDateRange(value || '30')}
@@ -254,11 +248,12 @@ export default function AnalyticsPage() {
             leftSection={<IconCalendar size="1rem" />}
             style={{ minWidth: 150 }}
           />
-          <ActionIcon variant="outline" onClick={fetchAnalyticsData}>
+          <ActionIcon variant="default" size={36} onClick={fetchAnalyticsData} aria-label="Refresh analytics">
             <IconRefresh size="1rem" />
           </ActionIcon>
         </Group>
-      </Group>
+        }
+      />
 
       {/* Data Availability Alerts */}
       {meta && (

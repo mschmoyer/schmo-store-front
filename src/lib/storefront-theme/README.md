@@ -96,7 +96,8 @@ interface SettingField { id; label; type: SettingFieldType; default: unknown;
                          help?; options?; min?; max?; step? }
 interface SectionDefinition { type; label; icon; description; defaultSettings;
                               maxPerPage; settingsSchema }
-interface PresetDefinition  { id; name; description; register; thumbnail; theme }
+interface PresetDefinition  { id; name; description; register; thumbnail; theme;
+                              sections: Section[] }
 interface PresetThumbnail   { background; surface; brand; onBrand; text; textMuted;
                               border; radiusPx; headingFont; bodyFont; headingCase;
                               buttonStyle; imageRatio; headerLayout }
@@ -217,6 +218,8 @@ const PRESETS: Record<string, PresetDefinition>
 const PRESET_IDS: readonly string[]        // display order
 const PRESET_LIST: PresetDefinition[]
 getPreset(id: string | undefined): PresetDefinition | undefined
+presetSections(id: string | undefined): Section[]   // deep copy; falls back to
+                                                    // defaultSections()
 
 const LEGACY_THEME_MAP: Record<string, { preset: string; brandColor?: string;
                                          scheme?: 'light' | 'dark' }>
@@ -235,6 +238,17 @@ themeFromLegacyName(name: string | null | undefined):
 
 Voltage is the only dark-ground preset. `presets.test.ts` asserts that every one
 of those axes actually varies across the set.
+
+Each preset also carries its own **home page composition** in `sections`, because
+a preset is a design and half of a design is what the page is made of. The six
+differ in which section types they use, in what order, and in the copy those
+sections carry — Depot opens on a category grid, Marquee on a full-bleed hero and
+four oversized tiles, Studio on the maker's story. `presets.test.ts` fails if any
+two presets ever share a composition, a type sequence, or a hero headline.
+
+Use `presetSections(id)` rather than reading `.sections` directly: it hands back a
+deep copy, so a store that persists a preset's page and then edits one section
+cannot mutate the shipped preset for every other store in the process.
 
 ---
 
@@ -378,7 +392,9 @@ means adding an entry here plus a component in the renderer's map; it must never
 mean writing new customizer UI.
 
 `defaultSections()` is deterministic and pre-filled with real copy, so a store
-that has never been customized still looks designed.
+that has never been customized still looks designed. It is the *generic* starter
+page; a store that has chosen a preset should get `presetSections(preset)`
+instead, which is what the renderer and `saveDraft` do.
 
 `normalizeSections` fails soft — unknown types and over-limit duplicates are
 dropped and reported, never thrown. One bad section must not blank a storefront.

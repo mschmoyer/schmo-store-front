@@ -99,6 +99,7 @@ interface StoreRow extends Record<string, unknown> {
   is_public: boolean;
   meta_title: string | null;
   meta_description: string | null;
+  hero_image_url?: string | null;
 }
 
 /**
@@ -121,12 +122,35 @@ function toStore(row: StoreRow): StoreRecord {
     isPublic: row.is_public,
     metaTitle: row.meta_title,
     metaDescription: row.meta_description,
+    heroImageUrl: safeImagePath(row.hero_image_url),
   };
 }
 
-const STORE_COLUMNS = `id, store_name, store_slug, store_description, hero_title,
-  hero_description, theme_name, logo_url, currency, is_active, is_public,
-  meta_title, meta_description`;
+/**
+ * Accept a store-configured image path only if it is same-origin.
+ *
+ * `store_config` is merchant input and this value lands in an `<img src>`, so an
+ * absolute `http://` URL here would be both a mixed-content warning and a
+ * third-party beacon on a shopper's page. Same rule as `settings.imageSrc`,
+ * applied at the other end of the pipe.
+ *
+ * @param value - Raw config value
+ * @returns A safe path, or null
+ */
+function safeImagePath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw.startsWith('/') || raw.startsWith('//')) return null;
+  return raw;
+}
+
+const STORE_COLUMNS = `s.id, s.store_name, s.store_slug, s.store_description, s.hero_title,
+  s.hero_description, s.theme_name, s.logo_url, s.currency, s.is_active, s.is_public,
+  s.meta_title, s.meta_description,
+  (SELECT c.config_value
+     FROM store_config c
+    WHERE c.store_id = s.id AND c.config_key = 'hero_image_url' AND c.is_public = true
+    LIMIT 1) AS hero_image_url`;
 
 /**
  * Look up a store by slug, distinguishing "no such shop" from "not published".
@@ -151,7 +175,7 @@ export async function getStoreBySlug(
   }
 
   const result = await runQuery<StoreRow>(
-    `SELECT ${STORE_COLUMNS} FROM stores WHERE store_slug = $1 LIMIT 1`,
+    `SELECT ${STORE_COLUMNS} FROM stores s WHERE s.store_slug = $1 LIMIT 1`,
     [slug],
   );
 
@@ -173,9 +197,9 @@ export async function getStoreBySlug(
 export async function listPublicStores(): Promise<StoreRecord[]> {
   const result = await runQuery<StoreRow>(
     `SELECT ${STORE_COLUMNS}
-       FROM stores
-      WHERE is_active = true AND is_public = true
-      ORDER BY created_at DESC
+       FROM stores s
+      WHERE s.is_active = true AND s.is_public = true
+      ORDER BY s.created_at DESC
       LIMIT 60`,
   );
   return result.rows.map(toStore);

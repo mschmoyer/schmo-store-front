@@ -5,11 +5,9 @@ import {
   Stack, 
   Title, 
   Text, 
-  Alert,
-  Group,
-  rem
+  Alert
 } from '@mantine/core';
-import { IconPlug, IconAlertCircle } from '@tabler/icons-react';
+import { IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
 import { IntegrationConfiguration } from '@/types/database';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
@@ -190,17 +188,10 @@ export default function IntegrationsPage() {
   
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={1} mb="xs">
-          <Group gap="sm">
-            <IconPlug style={{ width: rem(28), height: rem(28) }} />
-            Integrations
-          </Group>
-        </Title>
-        <Text c="dimmed">
-          Connect your store to external services for shipping, payments, and more.
-        </Text>
-      </div>
+      <AdminPageHeader
+        title="Integrations"
+        description="Connect your store to the services that handle shipping, payments and inventory."
+      />
       
       {error && (
         <Alert

@@ -180,8 +180,9 @@ export interface DerivedColors {
  *    the OKLCh lightness axis until it clears 4.5:1 against the brand color *and*
  *    both of its interaction states. A pale yellow brand gets dark ink; a
  *    near-black brand gets white ink; nothing is hardcoded.
- *  - `text` and `textMuted` are lifted to 4.5:1 against the surface, so a
- *    merchant cannot accidentally set grey-on-grey.
+ *  - `text` and `textMuted` are lifted to 4.5:1 against the page, the card
+ *    *and* the sunken fill, so a merchant cannot accidentally set grey-on-grey
+ *    and a disabled control on a sunken ground still reads.
  *  - `borderStrong` is lifted to 3:1 against the surface, the WCAG floor for
  *    non-text UI.
  *  - `success` / `warning` / `danger` are lifted to 3:1 so status colors never
@@ -233,12 +234,15 @@ export function deriveTokens(theme: StorefrontTheme): DerivedColors {
     ? adjustLightness(surface, -0.025)
     : mix(surface, darkInk, 0.045);
 
-  const text = ensureContrast(theme.brand.text, [surface, surfaceRaised], CONTRAST_TEXT);
-  const textMuted = ensureContrast(
-    theme.brand.textMuted,
-    [surface, surfaceRaised],
-    CONTRAST_TEXT,
-  );
+  // The sunken fill is in this list because real UI puts text on it: inset
+  // panels, wells, and the disabled button treatment. On a light theme it is
+  // *darker* than the page, so muted ink that clears 4.5:1 against the surface
+  // can fall under it there — which is exactly how a disabled control ends up
+  // illegible.
+  const inkGrounds = [surface, surfaceRaised, surfaceSunken];
+
+  const text = ensureContrast(theme.brand.text, inkGrounds, CONTRAST_TEXT);
+  const textMuted = ensureContrast(theme.brand.textMuted, inkGrounds, CONTRAST_TEXT);
   const borderStrong = deriveStrongBorder(theme.brand.border, surface, text);
 
   const success = ensureContrast(theme.brand.success, [surface], CONTRAST_UI);
@@ -549,6 +553,7 @@ export function auditContrast(theme: ResolvedTheme | StorefrontThemeInput): Cont
     ['text on surface', c.text, c.surface, CONTRAST_TEXT],
     ['text on raised surface', c.text, c.surfaceRaised, CONTRAST_TEXT],
     ['muted text on surface', c.textMuted, c.surface, CONTRAST_TEXT],
+    ['muted text on sunken surface', c.textMuted, c.surfaceSunken, CONTRAST_TEXT],
     ['on-brand on brand', c.onBrand, c.brand, CONTRAST_TEXT],
     ['on-brand on brand hover', c.onBrand, c.brandHover, CONTRAST_TEXT],
     ['on-brand on brand active', c.onBrand, c.brandActive, CONTRAST_TEXT],

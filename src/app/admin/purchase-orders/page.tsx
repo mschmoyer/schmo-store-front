@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Container,
-  Title,
   Card,
   Group,
   Text,
@@ -260,17 +259,13 @@ export default function PurchaseOrdersPage() {
     <Container size="xl" py="xl">
       <Stack gap="lg">
         {/* Header */}
-        <Group justify="space-between" align="center">
-          <div>
-            <Title order={2}>Purchase Orders</Title>
-            <Text color="dimmed" size="sm">
-              Manage your purchase orders and generate PDFs
-            </Text>
-          </div>
-          <Button leftSection={<IconPlus size={16} />} color="ink">
-            New Purchase Order
-          </Button>
-        </Group>
+        <AdminPageHeader
+          title="Purchase orders"
+          description="Restock orders raised with your suppliers."
+          actions={
+            <Button leftSection={<IconPlus size={16} />}>New purchase order</Button>
+          }
+        />
 
         {/* Filters */}
         <Card>

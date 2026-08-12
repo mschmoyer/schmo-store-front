@@ -24,8 +24,10 @@ import styles from './Sections.module.css';
  * rather than reserving an empty grey rectangle.
  *
  * The headline is the page's `h1`. Hero copy falls back to the store's own
- * `hero_title` / `hero_description` so a merchant who has never opened the
- * customizer still gets their real words rather than placeholder copy.
+ * `hero_title` / `hero_description`, and the art falls back to the store's
+ * `hero_image_url`, so a merchant who has never opened the customizer still
+ * gets their real words and their real photograph rather than a text-only
+ * band with half the first screen empty.
  *
  * @param props - {@link SectionProps}
  * @returns The hero band
@@ -46,7 +48,10 @@ export function Hero({ section, ctx }: SectionProps) {
     ? resolveStoreHref(store.storeSlug, str(settings, 'secondaryHref'))
     : '';
 
-  const image = imageSrc(settings, 'image');
+  // The section's own image wins, but a merchant who set a hero photograph in
+  // store settings should not have to re-enter it here — the same fallback the
+  // headline and the lead already do, two lines up.
+  const image = imageSrc(settings, 'image') || store.heroImageUrl || '';
   const requested = pick(settings, 'layout', ['split', 'overlay', 'text-only'] as const, 'split');
   const layout = image ? requested : 'text-only';
   const height = pick(settings, 'height', ['small', 'medium', 'large'] as const, 'medium');

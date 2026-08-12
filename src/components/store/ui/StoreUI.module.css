@@ -128,12 +128,6 @@
   --_bd: var(--stx-btn-border-hover);
 }
 
-.btn:disabled,
-.btn[aria-disabled='true'] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* Secondary: always reads as the quieter of the two, whatever the theme's
    primary treatment is, so a pair of buttons never looks like two primaries. */
 .btnSecondary {
@@ -182,6 +176,34 @@
   --_bg: var(--st-on-brand);
   --_fg: var(--st-brand);
   --_bd: var(--st-on-brand);
+}
+
+/*
+ * Disabled is information, not decoration, so it gets a real treatment rather
+ * than a blanket `opacity`.
+ *
+ * Fading a brand-filled button fades the label and the fill together and the
+ * ratio between them collapses — measured 1.71:1 on a solid preset and 1.75:1
+ * on an outline one, which made "Out of stock" the least readable thing in the
+ * buy box while remaining the largest. Instead the control drops to the sunken
+ * ground with muted ink at full opacity: the engine lifts `--st-text-muted` to
+ * 4.5:1 against the sunken fill, so this stays legible on every preset, and the
+ * loss of the brand colour is itself the "you cannot press this" signal.
+ */
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  --_bg: var(--st-surface-sunken);
+  --_fg: var(--st-text-muted);
+  --_bd: var(--st-border);
+  cursor: not-allowed;
+}
+
+/* Hover must not resurrect a dead control. */
+.btn:disabled:hover,
+.btn[aria-disabled='true']:hover {
+  --_bg: var(--st-surface-sunken);
+  --_fg: var(--st-text-muted);
+  --_bd: var(--st-border);
 }
 
 /* -- Price ---------------------------------------------------------------- */
@@ -369,8 +391,10 @@
   background-color: var(--st-surface-sunken);
 }
 
+/* Muted ink rather than a fade, for the same reason `.btn:disabled` is: an
+   icon at 0.4 opacity on a light ground is a smudge, not a control. */
 .qtyBtn:disabled {
-  opacity: 0.4;
+  color: var(--st-text-muted);
   cursor: not-allowed;
 }
 

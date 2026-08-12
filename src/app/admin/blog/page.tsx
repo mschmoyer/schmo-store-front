@@ -15,7 +15,6 @@ import {
   Select,
   Pagination,
   Center,
-  Loader,
   Alert,
   Modal,
   Container
@@ -40,6 +39,9 @@ import {
   truncateText
 } from '@/lib/blogHelpers';
 import { BlogEmptyState } from '@/components/blog/BlogEmptyState';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { EmptyState } from '@/components/ui';
 
 export default function AdminBlogPage() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
@@ -213,32 +215,15 @@ export default function AdminBlogPage() {
     <Container size="xl" py="xl">
       <Stack gap="xl">
         {/* Header */}
-        <Group justify="space-between" align="center">
-          <Stack gap="xs">
-            <Text
-              size="xl"
-              fw={700}
-              style={{ color: 'var(--text-primary)' }}
-            >
-              Blog Administration
-            </Text>
-            <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
-              Manage your blog posts, monitor performance, and create new content.
-            </Text>
-          </Stack>
-          
-          <Link href="/admin/blog/create" style={{ textDecoration: 'none' }}>
-            <Button
-              leftSection={<IconPlus size={16} />}
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--text-on-accent)'
-              }}
-            >
-              New Post
-            </Button>
-          </Link>
-        </Group>
+        <AdminPageHeader
+          title="Blog"
+          description="Write, publish and measure the posts that bring shoppers to your store."
+          actions={
+            <Link href="/admin/blog/create" style={{ textDecoration: 'none' }}>
+              <Button leftSection={<IconPlus size={16} />}>New post</Button>
+            </Link>
+          }
+        />
 
         {/* Statistics */}
         {stats && (
@@ -380,27 +365,25 @@ export default function AdminBlogPage() {
           }}
         >
           {loading ? (
-            <Center py="xl">
-              <Stack align="center" gap="md">
-                <Loader size="md" color="var(--accent)" />
-                <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
-                  Loading blog posts...
-                </Text>
-              </Stack>
-            </Center>
+            /* §5: a table skeleton at the real grid's geometry, not a spinner
+               inside an empty card. */
+            <TableSkeleton rows={5} columns={4} label="Loading blog posts" />
           ) : posts.length === 0 ? (
             // Show enhanced empty state only when no filters are applied
             filters.search || filters.status ? (
-              <Center py="xl">
-                <Stack align="center" gap="md">
-                  <Text size="lg" fw={600} style={{ color: 'var(--text-primary)' }}>
-                    No blog posts found
-                  </Text>
-                  <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
-                    Try adjusting your filters.
-                  </Text>
-                </Stack>
-              </Center>
+              <EmptyState
+                titleAs="p"
+                title="No posts match these filters"
+                description="Clear the search or the status filter to see the rest of your posts."
+                action={
+                  <Button
+                    variant="default"
+                    onClick={() => setFilters({ ...filters, search: '', status: '' })}
+                  >
+                    Clear filters
+                  </Button>
+                }
+              />
             ) : (
               <BlogEmptyState />
             )

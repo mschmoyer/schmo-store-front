@@ -17,7 +17,7 @@ import {
 } from '../presets';
 import { resolveTheme } from '../resolve';
 import { SECTION_REGISTRY, normalizeSections } from '../sections';
-import { sectionsSchema, storefrontThemeInputSchema } from '../types';
+import { sectionsSchema, storefrontThemeInputSchema, type SectionType } from '../types';
 
 describe('preset registry', () => {
   it('ships the six presets the contract names', () => {
@@ -186,12 +186,12 @@ describe('preset section compositions', () => {
 
   it('respects each section type\'s per-page cap', () => {
     for (const preset of PRESET_LIST) {
-      const counts = new Map<string, number>();
+      const counts = new Map<SectionType, number>();
       for (const section of preset.sections) {
         counts.set(section.type, (counts.get(section.type) ?? 0) + 1);
       }
       for (const [type, count] of counts) {
-        expect(count).toBeLessThanOrEqual(SECTION_REGISTRY[type as never].maxPerPage);
+        expect(count).toBeLessThanOrEqual(SECTION_REGISTRY[type].maxPerPage);
       }
     }
   });

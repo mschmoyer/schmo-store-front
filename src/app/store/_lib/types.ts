@@ -15,6 +15,15 @@ export interface StoreRecord {
   storeDescription: string | null;
   heroTitle: string | null;
   heroDescription: string | null;
+  /**
+   * The shop's own hero art, from `store_config.hero_image_url`.
+   *
+   * Sections carry their own `image` setting, but a merchant sets their hero
+   * photograph once in store settings and expects it to appear — and every
+   * preset ships with a blank hero image so that it can. Same-origin paths
+   * only; see `safeImagePath` in `queries.ts`.
+   */
+  heroImageUrl: string | null;
   /** Legacy `stores.theme_name`, mapped onto a preset when no theme row exists. */
   themeName: string | null;
   logoUrl: string | null;

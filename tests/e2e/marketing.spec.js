@@ -82,6 +82,14 @@ async function open(page, path) {
   return response;
 }
 
+/**
+ * Timeout for a request or navigation that may be the FIRST hit on a route in
+ * a dev server, where Next compiles it on demand. The config's 15s action
+ * timeout is right for interacting with a rendered page and far too short for
+ * a cold compile of `/create-store` or a seeded storefront.
+ */
+const COLD_COMPILE = 60000;
+
 /* ========================================================================= */
 
 test.describe('Marketing — routes render', () => {
@@ -172,7 +180,7 @@ test.describe('Marketing — the primary call to action', () => {
       await expect(cta).toHaveAttribute('href', '/create-store');
 
       await cta.click();
-      await expect(page).toHaveURL(/\/create-store$/);
+      await expect(page).toHaveURL(/\/create-store$/, { timeout: COLD_COMPILE });
     });
   }
 });
@@ -181,6 +189,7 @@ test.describe('Marketing — the primary call to action', () => {
 
 test.describe('Marketing — navigation resolves', () => {
   test('desktop: every header and footer link is a real page', async ({ page }) => {
+    test.slow();
     await page.setViewportSize(DESKTOP);
     await open(page, '/');
 
@@ -195,7 +204,7 @@ test.describe('Marketing — navigation resolves', () => {
 
     const broken = [];
     for (const href of Array.from(new Set(hrefs))) {
-      const res = await page.request.get(href);
+      const res = await page.request.get(href, { timeout: COLD_COMPILE });
       if (res.status() !== 200) broken.push(`${href} → ${res.status()}`);
     }
     expect(broken).toEqual([]);
@@ -210,7 +219,7 @@ test.describe('Marketing — navigation resolves', () => {
     const pricing = page.locator('header nav a', { hasText: 'Pricing' });
     await expect(pricing).toHaveAttribute('href', '/pricing');
     await pricing.click();
-    await expect(page).toHaveURL(/\/pricing$/);
+    await expect(page).toHaveURL(/\/pricing$/, { timeout: COLD_COMPILE });
     await expect(page.locator('h1')).toBeVisible();
   });
 
@@ -256,14 +265,14 @@ test.describe('Marketing — navigation resolves', () => {
     );
     const broken = [];
     for (const href of Array.from(new Set(hrefs))) {
-      const res = await page.request.get(href);
+      const res = await page.request.get(href, { timeout: COLD_COMPILE });
       if (res.status() !== 200) broken.push(`${href} → ${res.status()}`);
     }
     expect(broken).toEqual([]);
 
     // And one of them actually navigates.
     await panel.getByRole('link', { name: 'Features' }).click();
-    await expect(page).toHaveURL(/\/features$/);
+    await expect(page).toHaveURL(/\/features$/, { timeout: COLD_COMPILE });
     await expect(page.locator('h1')).toBeVisible();
   });
 });

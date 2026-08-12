@@ -31,6 +31,18 @@ interface StorefrontStyleProps {
  *     from the theme, so `headingCase: 'uppercase'` actually changes headings
  *     rather than being a variable nothing reads.
  *
+ * **Why the link reset is wrapped in `:where()`.** Links must inherit their
+ * colour instead of going UA blue, but that reset has no business outranking a
+ * component. Written as `${scope} a` it scored (0,2,1) and beat every class
+ * that legitimately colours a link: `.btn` resolves its foreground from
+ * `--stx-btn-fg` at (0,1,0), so an `<a class="btn">` silently threw away the
+ * `--st-on-brand` ink the engine had computed for it and inherited `--st-text`
+ * instead. Same class, same variable, different tag, different colour — which
+ * shipped a primary hero CTA at 2.07:1 and defeated the engine's auto-contrast
+ * guarantee for every link-shaped button in the shop. `:where()` contributes
+ * nothing to specificity, so the rule lands at (0,0,1): still ahead of the UA
+ * stylesheet, now behind every class that means what it says.
+ *
  * Reduced motion is deliberately *not* handled here: `globals.css` already
  * carries a universal `prefers-reduced-motion` rule that covers the storefront
  * subtree, and a merchant cannot opt out of it.
@@ -101,7 +113,8 @@ ${scope} h6 { font-size: var(--st-h6); }
 
 ${scope} p { margin: 0; }
 
-${scope} a { color: inherit; }
+/* Zero-specificity on purpose -- see the note on baseRules. */
+:where(${scope}) a { color: inherit; }
 
 ${scope} :focus-visible {
   outline: 2px solid var(--st-brand);

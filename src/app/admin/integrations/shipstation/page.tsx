@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Stack, 
-  Title, 
   Text, 
   Card,
   Group,
@@ -15,14 +14,12 @@ import {
   Loader,
   ActionIcon,
   Code,
-  rem,
   Divider,
   Paper,
   List,
   ThemeIcon
 } from '@mantine/core';
 import { 
-  IconShip, 
   IconAlertCircle, 
   IconCheck, 
   IconCopy,
@@ -43,6 +40,7 @@ import {
   generateEndpointUrl,
   copyToClipboard as copyTextToClipboard
 } from '@/lib/shipstation/utils';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 
 interface ShipStationConfig {
   id?: string;
@@ -347,17 +345,10 @@ export default function ShipStationIntegrationPage() {
 
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={1} mb="xs">
-          <Group gap="sm">
-            <IconShip style={{ width: rem(28), height: rem(28) }} />
-            ShipStation Integration
-          </Group>
-        </Title>
-        <Text c="dimmed">
-          Configure your ShipStation Custom Store integration for automated order fulfillment.
-        </Text>
-      </div>
+      <AdminPageHeader
+        title="ShipStation"
+        description="Credentials and sync settings for the Custom Store connection that feeds your catalog."
+      />
 
       {error && (
         <Alert
@@ -685,7 +676,7 @@ export default function ShipStationIntegrationPage() {
           </List.Item>
         </List>
         <Paper p="md" withBorder mt="md" bg="var(--surface-2)">
-          <Text size="sm" fw={500} c="ink.9" mb="xs">
+          <Text size="sm" fw={600} mb="xs">
             Important Notes:
           </Text>
           <List size="xs" spacing="xs">
