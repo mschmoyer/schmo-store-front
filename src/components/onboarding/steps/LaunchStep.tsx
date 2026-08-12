@@ -3,11 +3,22 @@
 import * as React from 'react';
 import Link from 'next/link';
 import confetti from 'canvas-confetti';
-import { Button } from '@/components/ui';
+import { Button, type ButtonProps } from '@/components/ui';
 import { STEPS, TOTAL_STEPS } from '../lib/steps';
 import type { OnboardingApi } from '../useOnboarding';
 import wizardStyles from '@/components/wizard/Wizard.module.css';
 import styles from '../Onboarding.module.css';
+
+/**
+ * `target`/`rel` are valid on the anchor `Button` renders via `as="a"`, but they
+ * are not in `ButtonProps` (which is modelled on `<button>`). Widening the
+ * primitive's public type is out of scope here, so the two attributes are
+ * passed through this typed passthrough instead of casting at the call site.
+ */
+const NEW_TAB = {
+  target: '_blank',
+  rel: 'noopener noreferrer',
+} as unknown as Partial<ButtonProps>;
 
 /** Ember, ink and mint — the brand palette, not a party-supply rainbow. */
 const CONFETTI_COLORS = ['#F94E1B', '#FF9871', '#0FA871', '#22262F', '#FFC0A8'];
@@ -158,7 +169,7 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
       </ul>
 
       <div className={styles.launchActions}>
-        <Button as="a" href={url} target="_blank" rel="noopener noreferrer" variant="primary" size="lg">
+        <Button as="a" href={url} {...NEW_TAB} variant="primary" size="lg">
           View my store
         </Button>
         <Button as={Link} href={`/admin?store=${store?.slug ?? ''}`} variant="secondary" size="lg">

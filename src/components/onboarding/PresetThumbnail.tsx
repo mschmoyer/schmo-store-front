@@ -145,7 +145,7 @@ export default function PresetThumbnail({
               height={cardImageHeight}
               rx={Math.max(r - 2, 0)}
               fill={thumbnail.brand}
-              opacity={thumbnail.imageFit === 'contain' ? 0.16 : 0.34}
+              opacity={thumbnail.imageRatio === 'landscape' ? 0.18 : 0.34}
             />
             <rect
               x={x + 3}
