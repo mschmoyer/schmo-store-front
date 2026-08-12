@@ -875,19 +875,20 @@ export default function InventoryPage() {
 
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Title order={3} mb="md">Dead Stock Analysis</Title>
-                <Text c="dimmed" mb="md">Identify slow-moving inventory</Text>
+                <Text c="dimmed" mb="md">Capital sitting still — days since last sale, carrying cost and a suggested markdown</Text>
                 <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/dead-stock')}>
                   Generate Report
                 </Button>
               </Card>
 
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Title order={3} mb="md">Supplier Performance</Title>
-                <Text c="dimmed" mb="md">Analyze supplier delivery times and quality</Text>
-                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/supplier-performance')}>
-                  Generate Report
-                </Button>
-              </Card>
+              {/*
+                * The Supplier Performance card was here. Its button pushed to
+                * `/admin/inventory/reports/supplier-performance`, which has no
+                * component and no API — the route map's fallback bounced you
+                * silently back to this page. A button that does nothing and
+                * says nothing is worse than no button, so it is gone until
+                * there is a report behind it.
+                */}
             </SimpleGrid>
           </Stack>
         </Tabs.Panel>

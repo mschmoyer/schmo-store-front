@@ -193,6 +193,15 @@
   border: 0;
   margin: 0;
   padding: 0;
+  /* Three shipping options plus the legend, reserved before the quote returns
+     them, so the form below does not jump when it does. */
+  min-block-size: 320px;
+}
+
+@media (max-width: 560px) {
+  .options {
+    min-block-size: 400px;
+  }
 }
 
 .optionsLegend {
@@ -359,6 +368,11 @@
   font-size: var(--st-small);
   line-height: 1.5;
   margin-bottom: var(--st-space-5);
+}
+
+/* Inside the summary the alert is already in a stack with its own gap. */
+.summary .alert {
+  margin-bottom: 0;
 }
 
 .alertIcon {

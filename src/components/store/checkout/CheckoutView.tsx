@@ -24,6 +24,8 @@ import * as React from 'react';
 import Image from 'next/image';
 import { IconAlertTriangle, IconArrowLeft, IconInfoCircle, IconLock } from '@tabler/icons-react';
 
+import { formatMoney } from '@/app/store/_lib/present';
+
 import { EmptyCart } from '../states/EmptyStates';
 import { useCart } from '../cart/CartProvider';
 import {
@@ -271,6 +273,8 @@ export interface CheckoutViewProps {
   storeId: string;
   storeSlug: string;
   storeName: string;
+  /** ISO-4217 code, for the pre-quote line totals. */
+  currency: string;
   /** True when the shopper arrived back from a cancelled Stripe session. */
   wasCancelled: boolean;
 }
@@ -285,6 +289,7 @@ export function CheckoutView({
   storeId,
   storeSlug,
   storeName,
+  currency,
   wasCancelled,
 }: CheckoutViewProps) {
   const { lines, loading: cartLoading } = useCart();
@@ -474,6 +479,32 @@ export function CheckoutView({
     return <EmptyCart shopHref={`${base}/products`} />;
   }
 
+  // Lines are drawn from the cart the moment it hydrates and re-drawn from the
+  // quote when it lands. Both are server data — `useCart` re-prices against
+  // `/cart/validate` and the quote re-prices again — so nothing here is taken
+  // from `localStorage`. Rendering the cart's copy first is what stops the card
+  // growing under the shopper when the quote arrives, which on its own was
+  // 0.024 of layout shift.
+  const reviewLines =
+    quote?.items.map((item) => ({
+      productId: item.productId,
+      sku: item.sku,
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+      imageUrl: item.imageUrl,
+    })) ??
+    lines.map((line) => ({
+      productId: line.productId,
+      sku: line.sku,
+      name: line.name,
+      quantity: line.quantity,
+      unitPrice: formatMoney(line.price, currency),
+      lineTotal: formatMoney(line.price * line.quantity, currency),
+      imageUrl: line.thumbnailUrl || null,
+    }));
+
   const paymentsDisabled = quote !== null && !quote.payments.enabled;
   const hasRejections = (quote?.rejected.length ?? 0) > 0;
   const canPay =
@@ -511,30 +542,6 @@ export function CheckoutView({
         </Alert>
       ) : null}
 
-      {paymentsDisabled ? (
-        <Alert tone="warning" title="Payments are not set up for this store yet">
-          {storeName} has not finished connecting a payment account, so orders cannot be placed
-          right now. Your cart is saved — try again later, or contact the store directly.
-        </Alert>
-      ) : null}
-
-      {hasRejections ? (
-        <Alert tone="danger" title="Some items are no longer available">
-          {quote?.rejected.map((rejection) => (
-            <span key={`${rejection.requestedId}-${rejection.reason}`}>
-              {rejection.message}
-              <br />
-            </span>
-          ))}
-        </Alert>
-      ) : null}
-
-      {submitError ? (
-        <Alert tone="danger" title="We could not continue">
-          {submitError}
-        </Alert>
-      ) : null}
-
       <div className={styles.layout}>
         <div className={styles.column}>
           <section className={styles.card} aria-labelledby="review-heading">
@@ -542,7 +549,7 @@ export function CheckoutView({
               Review your order
             </h2>
             <ul className={styles.reviewList}>
-              {(quote?.items ?? []).map((item) => (
+              {reviewLines.map((item) => (
                 <li key={item.productId} className={styles.reviewLine}>
                   <span className={styles.reviewMedia}>
                     {item.imageUrl ? (
@@ -552,18 +559,14 @@ export function CheckoutView({
                   <span className={styles.reviewBody}>
                     <span className={styles.reviewName}>{item.name}</span>
                     <span className={styles.reviewMeta}>
-                      {item.sku} · {item.unitPrice} × {item.quantity}
+                      {item.sku ? `${item.sku} · ` : ''}
+                      {item.unitPrice} × {item.quantity}
                     </span>
                   </span>
                   <span className={styles.reviewTotal}>{item.lineTotal}</span>
                 </li>
               ))}
             </ul>
-            {quoting && !quote ? (
-              <p className={styles.cardNote} role="status">
-                Confirming prices against live stock…
-              </p>
-            ) : null}
           </section>
 
           <section className={styles.card} aria-labelledby="contact-heading">
@@ -697,6 +700,8 @@ export function CheckoutView({
 
             <fieldset className={styles.options}>
               <legend className={styles.optionsLegend}>Shipping speed</legend>
+              {/* The options come back with the quote, so the block reserves
+                  their height up front rather than unfolding under the form. */}
               {(quote?.shippingOptions ?? []).map((option) => (
                 <label
                   key={option.id}
@@ -808,6 +813,38 @@ export function CheckoutView({
               {quoting ? '…' : (quote?.totals.total ?? '—')}
             </span>
           </div>
+
+          {/*
+            Quote-derived warnings live here, beside the button they are about,
+            and not in a banner at the top of the page. Two reasons: this is
+            where the shopper decides, and an alert inserted above a 2,600px
+            form once the quote lands pushed the whole page down for 0.124 of
+            layout shift on a phone.
+          */}
+          {paymentsDisabled ? (
+            <Alert tone="warning" title="Payments are not set up for this store yet">
+              {storeName} has not finished connecting a payment account, so orders cannot be
+              placed right now. Your cart is saved — try again later, or contact the store
+              directly.
+            </Alert>
+          ) : null}
+
+          {hasRejections ? (
+            <Alert tone="danger" title="Some items are no longer available">
+              {quote?.rejected.map((rejection) => (
+                <span key={`${rejection.requestedId}-${rejection.reason}`}>
+                  {rejection.message}
+                  <br />
+                </span>
+              ))}
+            </Alert>
+          ) : null}
+
+          {submitError ? (
+            <Alert tone="danger" title="We could not continue">
+              {submitError}
+            </Alert>
+          ) : null}
 
           <div className={styles.summaryAction}>{payButton}</div>
 

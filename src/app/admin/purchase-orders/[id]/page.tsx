@@ -106,10 +106,14 @@ const STATUS_LABELS = {
  * - Item receiving functionality
  * - Notes and tracking
  * 
- * @param params - Route parameters containing purchase order ID
+ * @param props - Route props; `params` is a promise in the App Router, which
+ *   this page previously typed as a plain object. Next's generated route
+ *   validator rejects that, so the page failed type-checking on any build that
+ *   had produced `.next/types`.
  * @returns JSX.Element
  */
-export default function PurchaseOrderDetailPage({ params }: { params: { id: string } }) {
+export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: purchaseOrderId } = React.use(params);
   const router = useRouter();
   const { session, isAuthenticated } = useAdmin();
   
@@ -149,7 +153,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch(`/api/admin/purchase-orders/${params.id}`, {
+      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrderId}`, {
         headers: {
           'Authorization': `Bearer ${session.sessionToken}`
         }
@@ -192,7 +196,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
     } finally {
       setLoading(false);
     }
-  }, [params.id, session?.sessionToken]);
+  }, [purchaseOrderId, session?.sessionToken]);
   
   /**
    * Update purchase order

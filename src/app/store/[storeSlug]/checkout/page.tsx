@@ -52,6 +52,7 @@ export default async function CheckoutPage({ params, searchParams }: CheckoutPag
             storeId={store.id}
             storeSlug={store.storeSlug}
             storeName={store.storeName}
+            currency={store.currency}
             wasCancelled={wasCancelled}
           />
         </StoreContainer>

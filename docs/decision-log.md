@@ -1001,3 +1001,80 @@ Open:
 - [ ] `--text-subtle #8A8E96` is 3.29:1, below AA; restricted to meta that
       repeats information available elsewhere
 - [ ] No e2e coverage for marketing; `tests/e2e/` is admin-only
+
+### Customizer & onboarding — acting on the hostile review
+
+`docs/audits/customizer-onboarding-critique.md` graded the two surfaces **D** and **C+**, both
+driven with Playwright rather than read. The engine behind them measured well — 120ms colour
+repaint, schema-generated panels, correct auto-contrast, a sanitiser that names what it removed —
+so nothing below is a rewrite. Every item is something the product *said* that was not true, or a
+control that was advertised and did not work.
+
+- [x] **BD-1** Preview iframe blocked by our own `X-Frame-Options: DENY` on `/(.*)`. Fixed
+      separately in `next.config.ts`; verified here — the frame loads, handshakes and repaints in
+      **146ms with zero reloads** - 2026-08-12
+- [x] **BD-6** The catalog import read **page 1 only** of ShipStation inventory, so in a 5,000-SKU
+      catalogue 4,900 products were written `stock = 0` and the import reported success. Stock is
+      now looked up per products page, filtered to that page's SKUs, paged to exhaustion and summed
+      across warehouses; 429s are retried honouring `Retry-After`; `total` is read from the list
+      envelope. Unit-tested against a mocked multi-page ShipStation: all 5,000 arrive, none at
+      zero - 2026-08-12
+- [x] **BD-7** Progress bar divided by `found` (pages already fetched), so it read 100% from page
+      one. Now divides by the catalog size, and shows an indeterminate bar when ShipStation does
+      not send one - 2026-08-12
+- [x] **BD-4** A newly published store served "NO PRODUCTS YET · Open your dashboard…" and a
+      *Manage products* button to the public web. The merchant's real sections now render, the
+      troubleshooting block is gated on an authenticated owner or a preview token, and a shopper
+      gets "Nothing for sale just yet" - 2026-08-12
+- [x] **BD-5** Skipped steps were marked "Done" and the launch screen claimed "Anyone with this
+      address can shop it right now" 60px above a note that it cannot take payments. The indicator
+      has a `skipped` state, the summary counts skips, and the launch headline is gated on what is
+      actually true - 2026-08-12
+- [x] **BD-2** Alt+Arrow reorder was dead code — `onKeyDown` was declared before `{...listeners}`
+      and dnd-kit's own handler won. Handlers merged, and a test that presses the keys and asserts
+      the order changed (it fails against the old ordering) - 2026-08-12
+- [x] **BD-3** Added the missing `brand on surface` pair at WCAG 1.4.11's 3:1: a pale yellow brand
+      now raises a warning in the rail and in the publish dialog instead of shipping an invisible
+      button silently. The fix preview computes the replacement from a theme with the pin removed,
+      so it no longer renders `#FFFFFF → #FFFFFF`, and the three near-identical `colorOnBrand`
+      findings collapse to one - 2026-08-12
+- [x] **BD-8** Presets shipped the announcement bar **on**, carrying delivery promises the merchant
+      never wrote ("Next-day dispatch on every order placed before 3pm"). It now ships off and
+      empty; the wording moved to help text in the Header panel - 2026-08-12
+- [x] **BD-13** "Desktop" was 738px at a 1440 window — a hamburger nav for a breakpoint that shows
+      a full one — and "Tablet" clamped to the same 738px. The frame now gets the real device width
+      (1280 / 834 / 390) and is scaled to fit, with a badge saying how far. Measured: iframe
+      `innerWidth` 1278, full navigation visible - 2026-08-12
+- [x] **BD-11** Custom CSS never appeared in the preview and nothing said why. The panel now
+      detects the stale state and offers a reload - 2026-08-12
+- [x] **BD-12** The countdown deadline was a hand-typed ISO string, and shipped empty with "hide
+      when expired" on, so the section was invisible from the moment it was added. Real
+      `datetime-local` control, UTC echoed back, and a deadline seeded a week out - 2026-08-12
+- [x] **BD-10** Browser Back left the wizard. Each step now has its own address
+      (`/create-store?step=…`) with a `popstate` handler; Forward works too - 2026-08-12
+- [x] **BD-9** No payment step exists and none was added — `docs/payments.md` puts the $1 intro
+      plan and Stripe Connect *after* launch, which is a defensible choice that the funnel simply
+      never mentioned. The launch screen now states that no card was taken, what the price is, and
+      that nothing can be bought until Stripe is connected - 2026-08-12
+- [x] Copy audit: "This is your real store" removed from step 5 (no preview on that screen);
+      "you can close this tab" corrected on the import step (closing it stops the import, it only
+      *resumes* on return); design page button is "Publish changes" per deck §5.1 - 2026-08-12
+
+Open, and owned elsewhere:
+- [ ] **`SettingFieldType` needs a real `'datetime'` member** (`src/lib/storefront-theme/types.ts`).
+      The date control is currently selected by a one-entry field-id shim in
+      `customizer/controls/registry.ts`, documented as deletable the moment the type exists
+- [ ] **Preset *section* copy still asserts policy on the merchant's behalf** — value props reading
+      "Same-day dispatch · 30-day returns · Two-year warranty" and an FAQ answering "Within 30
+      days, unused, in its original packaging" publish on a store the merchant has not configured.
+      Same argument as BD-8; the preset section compositions are owned by another agent
+- [ ] **Seeded stores keep the old announcement text**, because `storefront_themes` rows store a
+      fully resolved theme rather than a patch. `database/seeds/development.sql` needs the same
+      edit presets.ts got
+- [ ] **The customizer should take over the window on `/admin/design`** (BD-13's other half). With
+      232px of admin sidebar plus a 360px rail, a 1280 desktop preview is scaled to 57% at a 1440
+      window and hits the 45% floor at 1024. `src/components/admin/AdminChrome` is out of scope here
+- [ ] **`docs/marketing-copy.md` §5.5 needs two corrections the build is right about**: step 3 says
+      "Paste your API key **and secret**" (V2 takes one key), and step 5 promises a hero-copy field
+      that does not exist. §5.5's step 5 preview line should be dropped
+- [ ] **Version number not bumped** — `package.json` was outside this change's file ownership

@@ -151,7 +151,11 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<keyof DeadStockItem>('risk_score');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [threshold90Days, setThreshold90Days] = useState(true);
+  /* 60 days is the default: a store trading for three months cannot have a
+     90-day-dead SKU, and this report opening empty is how it stayed unnoticed
+     that it was disabled at all. */
+  const [threshold60Days, setThreshold60Days] = useState(true);
+  const [threshold90Days, setThreshold90Days] = useState(false);
   const [threshold180Days, setThreshold180Days] = useState(false);
   const [threshold365Days, setThreshold365Days] = useState(false);
   const [customThreshold, setCustomThreshold] = useState<number | undefined>(undefined);
@@ -167,6 +171,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
 
     try {
       const params = new URLSearchParams();
+      if (threshold60Days) params.append('threshold60', 'true');
       if (threshold90Days) params.append('threshold90', 'true');
       if (threshold180Days) params.append('threshold180', 'true');
       if (threshold365Days) params.append('threshold365', 'true');
@@ -202,14 +207,14 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [threshold90Days, threshold180Days, threshold365Days, customThreshold, session?.sessionToken]);
+  }, [threshold60Days, threshold90Days, threshold180Days, threshold365Days, customThreshold, session?.sessionToken]);
 
   // Initial load and threshold changes
   useEffect(() => {
     if (session?.sessionToken) {
       fetchDeadStockData();
     }
-  }, [threshold90Days, threshold180Days, threshold365Days, customThreshold, fetchDeadStockData, session?.sessionToken]);
+  }, [threshold60Days, threshold90Days, threshold180Days, threshold365Days, customThreshold, fetchDeadStockData, session?.sessionToken]);
 
   // Filter and sort data
   const filteredAndSortedData = useMemo(() => {
@@ -435,6 +440,11 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
           {/* Threshold Controls */}
           <Group align="flex-end">
             <Text size="sm" fw={500}>Age Thresholds:</Text>
+            <Checkbox
+              label="60 days"
+              checked={threshold60Days}
+              onChange={(e) => setThreshold60Days(e.currentTarget.checked)}
+            />
             <Checkbox
               label="90 days"
               checked={threshold90Days}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   Container,
   Card,
@@ -21,6 +21,7 @@ import { IconPlus, IconSearch, IconEye, IconDownload, IconFilter } from '@tabler
 import { notifications } from '@mantine/notifications';
 import { PurchaseOrder } from '@/lib/types/database';
 import Link from 'next/link';
+import { useAdmin } from '@/contexts/AdminContext';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { TableSkeleton } from '@/components/admin/AdminSkeletons';
 import table from '@/components/admin/adminTable.module.css';
@@ -42,6 +43,7 @@ interface PurchaseOrderListItem extends PurchaseOrder {
  * - Link to create new purchase orders
  */
 export default function PurchaseOrdersPage() {
+  const { session } = useAdmin();
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,98 +53,77 @@ export default function PurchaseOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchPurchaseOrders();
-  }, [page, statusFilter, searchTerm]);
+  /**
+   * Load purchase orders from the API.
+   *
+   * This function used to `setPurchaseOrders(mockPurchaseOrders)` — three
+   * hardcoded orders from ABC Supply Co., XYZ Components and Global Parts
+   * Ltd., dated January 2024 — behind the comment *"the database tables don't
+   * exist yet"*. They do: `purchase_orders`, `purchase_order_items`,
+   * `purchase_order_receiving`, `purchase_order_status_history` and
+   * `suppliers` are all present, and `GET /api/admin/purchase-orders` returns
+   * a valid paginated response.
+   *
+   * The create and receive flows behind this list were always real, which made
+   * this worse than a missing feature: a merchant could raise a genuine
+   * purchase order, and it would then be invisible forever, replaced on the
+   * list by ABC Supply Co. It also violated this repo's own rule in CLAUDE.md
+   * — "avoid using mocks unless explicitly requested".
+   */
+  const fetchPurchaseOrders = useCallback(async () => {
+    if (!session?.sessionToken || !session?.storeId) return;
 
-  const fetchPurchaseOrders = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // For now, we'll create mock data since the database tables don't exist yet
-      // In a real implementation, this would fetch from the API
-      const mockPurchaseOrders: PurchaseOrderListItem[] = [
-        {
-          id: 'po-1',
-          store_id: '12345',
-          supplier_id: '67890',
-          purchase_order_number: 'PO-001',
-          status: 'approved',
-          order_date: new Date('2024-01-15'),
-          expected_delivery_date: new Date('2024-01-30'),
-          received_date: null,
-          subtotal: 2500.00,
-          tax_amount: 200.00,
-          shipping_amount: 50.00,
-          total_amount: 2750.00,
-          currency: 'USD',
-          payment_status: 'pending',
-          payment_terms: 'Net 30',
-          notes: 'Rush order - please expedite shipping',
-          created_at: new Date('2024-01-15'),
-          updated_at: new Date('2024-01-15'),
-          supplier_name: 'ABC Supply Co.',
-          supplier_contact: 'John Smith',
-          items_count: 2,
-        },
-        {
-          id: 'po-2',
-          store_id: '12345',
-          supplier_id: '67891',
-          purchase_order_number: 'PO-002',
-          status: 'sent',
-          order_date: new Date('2024-01-20'),
-          expected_delivery_date: new Date('2024-02-05'),
-          received_date: null,
-          subtotal: 1800.00,
-          tax_amount: 144.00,
-          shipping_amount: 35.00,
-          total_amount: 1979.00,
-          currency: 'USD',
-          payment_status: 'pending',
-          payment_terms: 'Net 30',
-          notes: 'Standard delivery acceptable',
-          created_at: new Date('2024-01-20'),
-          updated_at: new Date('2024-01-20'),
-          supplier_name: 'XYZ Components',
-          supplier_contact: 'Sarah Johnson',
-          items_count: 5,
-        },
-        {
-          id: 'po-3',
-          store_id: '12345',
-          supplier_id: '67892',
-          purchase_order_number: 'PO-003',
-          status: 'received',
-          order_date: new Date('2024-01-10'),
-          expected_delivery_date: new Date('2024-01-25'),
-          received_date: new Date('2024-01-24'),
-          subtotal: 3200.00,
-          tax_amount: 256.00,
-          shipping_amount: 75.00,
-          total_amount: 3531.00,
-          currency: 'USD',
-          payment_status: 'paid',
-          payment_terms: 'Net 15',
-          notes: 'Order completed successfully',
-          created_at: new Date('2024-01-10'),
-          updated_at: new Date('2024-01-24'),
-          supplier_name: 'Global Parts Ltd.',
-          supplier_contact: 'Michael Chen',
-          items_count: 8,
-        },
-      ];
+      const query = new URLSearchParams({
+        page: String(page),
+        limit: '10',
+        store_id: session.storeId,
+      });
+      if (statusFilter) query.set('status', statusFilter);
 
-      setPurchaseOrders(mockPurchaseOrders);
-      setTotalPages(1);
-    } catch (error) {
-      console.error('Error fetching purchase orders:', error);
-      setError('Failed to fetch purchase orders');
+      const response = await fetch(`/api/admin/purchase-orders?${query.toString()}`, {
+        headers: { Authorization: `Bearer ${session.sessionToken}` },
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(result?.error || `Request failed with status ${response.status}`);
+      }
+
+      const rows: PurchaseOrderListItem[] = result?.data ?? [];
+
+      /*
+       * Search is applied client-side: the API has no search parameter, and
+       * silently ignoring what the merchant typed would be its own small lie.
+       */
+      const term = searchTerm.trim().toLowerCase();
+      const filtered = term
+        ? rows.filter(
+            (po) =>
+              po.purchase_order_number?.toLowerCase().includes(term) ||
+              po.supplier_name?.toLowerCase().includes(term)
+          )
+        : rows;
+
+      setPurchaseOrders(filtered);
+      setTotalPages(Math.max(1, result?.pagination?.totalPages ?? 1));
+    } catch (err) {
+      console.error('Error fetching purchase orders:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch purchase orders');
+      setPurchaseOrders([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [session?.sessionToken, session?.storeId, page, statusFilter, searchTerm]);
+
+  useEffect(() => {
+    void fetchPurchaseOrders();
+  }, [fetchPurchaseOrders]);
+
 
   const handleDownloadPDF = async (purchaseOrderId: string, orderNumber: string) => {
     try {
@@ -264,7 +245,13 @@ export default function PurchaseOrdersPage() {
           title="Purchase orders"
           description="Restock orders raised with your suppliers."
           actions={
-            <Button leftSection={<IconPlus size={16} />}>New purchase order</Button>
+            <Button
+              component={Link}
+              href="/admin/purchase-orders/create"
+              leftSection={<IconPlus size={16} />}
+            >
+              New purchase order
+            </Button>
           }
         />
 

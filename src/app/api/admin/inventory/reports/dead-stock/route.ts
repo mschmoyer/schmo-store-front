@@ -89,61 +89,135 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
+    /*
+     * Threshold handling.
+     *
+     * Each flag used to read `!== 'false'`, so an unchecked box — which the UI
+     * signals by omitting the parameter entirely — still counted as checked.
+     * Every request therefore asked for 90 days no matter what the merchant
+     * selected. The parameters are now read positively.
+     *
+     * A 60-day option is added and is the default. Ninety days is the right
+     * threshold for a mature catalog, but a store that has been trading for
+     * three months can never have a 90-day-dead SKU, so the hero report of the
+     * product opened empty for exactly the merchants most likely to be looking
+     * at it. Sixty days of no movement is already dead capital for a
+     * 200-SKU store.
+     */
     const { searchParams } = new URL(request.url);
-    const threshold90Days = searchParams.get('threshold90') !== 'false';
-    const threshold180Days = searchParams.get('threshold180') !== 'false';
-    const threshold365Days = searchParams.get('threshold365') !== 'false';
     const customThreshold = searchParams.get('customThreshold');
-    
-    // Build threshold conditions
+
     const thresholds: number[] = [];
-    if (threshold90Days) thresholds.push(90);
-    if (threshold180Days) thresholds.push(180);
-    if (threshold365Days) thresholds.push(365);
-    if (customThreshold) thresholds.push(parseInt(customThreshold));
+    if (searchParams.get('threshold60') === 'true') thresholds.push(60);
+    if (searchParams.get('threshold90') === 'true') thresholds.push(90);
+    if (searchParams.get('threshold180') === 'true') thresholds.push(180);
+    if (searchParams.get('threshold365') === 'true') thresholds.push(365);
+    if (customThreshold && Number.isFinite(parseInt(customThreshold, 10))) {
+      thresholds.push(parseInt(customThreshold, 10));
+    }
 
-    // Default to 90 days if no threshold specified
-    const maxThreshold = thresholds.length > 0 ? Math.max(...thresholds) : 90;
-    const minThreshold = thresholds.length > 0 ? Math.min(...thresholds) : 90;
+    const maxThreshold = thresholds.length > 0 ? Math.max(...thresholds) : 60;
+    const minThreshold = thresholds.length > 0 ? Math.min(...thresholds) : 60;
 
-    // Get dead stock items - simplified version without order/inventory log data
+    /*
+     * DEAD STOCK — MEASURED FROM THE LAST SALE, NOT FROM THE PRODUCT ROW.
+     *
+     * Every "no order data available" placeholder in this query was false:
+     * there are 119 `order_items` rows. The consequences compounded —
+     * `days_since_last_sale` was the literal `999999`, and the age filter
+     * measured `CURRENT_TIMESTAMP - p.created_at`, i.e. how long ago the
+     * *product record* was created. Every product in a seeded or freshly
+     * imported store was created today, so `days_in_stock` was 0, the
+     * `>= 90` filter matched nothing, and the report returned an empty set
+     * forever. This is the report the marketing deck calls its hero
+     * screenshot.
+     *
+     * Age is now days since the product last sold, falling back to how long it
+     * has existed for a product that has never sold at all — which is the
+     * definition a merchant means by "dead": nothing is pulling it through.
+     *
+     * Verified:
+     *   SELECT p.sku, MAX(o.created_at)::date AS last_sale,
+     *          CURRENT_DATE - MAX(o.created_at)::date AS days
+     *     FROM products p
+     *     LEFT JOIN order_items oi ON oi.product_id = p.id
+     *     LEFT JOIN orders o ON o.id = oi.order_id AND o.status <> 'cancelled'
+     *    WHERE p.store_id = '650e8400-…0001' GROUP BY p.sku;
+     */
     const deadStockQuery = `
-      SELECT 
-        p.id as product_id,
-        p.sku,
-        p.name,
-        COALESCE(c.name, 'Uncategorized') as category,
-        p.stock_quantity as current_stock,
-        COALESCE(p.cost_price, p.base_price * 0.6) as unit_cost,
-        p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6) as total_value,
-        NULL as last_sale_date,     -- No order data available
-        p.created_at as last_restock_date, -- Use creation date as fallback
-        999999 as days_since_last_sale,    -- No sales data available
-        EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / 86400 as days_in_stock,
-        -- Calculate carrying cost (prorated daily rate)
-        (p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)) * (${ANNUAL_CARRYING_COST_RATE} / 365) * 
-        EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / 86400 as carrying_cost,
-        -- Simplified risk score based on inventory age and value
-        LEAST(100, 
-          (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / 86400) * 0.1 + -- Age factor
-          (p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6) / 100) * 0.3 + -- Value factor
-          (p.stock_quantity / 10) * 0.2 -- Quantity factor
-        ) as risk_score,
-        -- Suggested markdown percent (20% for old stock)
-        CASE 
-          WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / 86400 > $2 THEN 20
+      WITH last_sale AS (
+        SELECT oi.product_id, MAX(o.created_at) AS last_sale_date
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+         WHERE o.store_id = $1 AND o.status <> 'cancelled'
+         GROUP BY oi.product_id
+      ),
+      last_restock AS (
+        SELECT il.product_id, MAX(il.created_at) AS last_restock_date
+          FROM inventory_logs il
+         WHERE il.store_id = $1 AND il.change_type IN ('restock', 'initial_stock')
+         GROUP BY il.product_id
+      ),
+      /*
+       * When the store started trading. A product that has never sold is aged
+       * from here rather than from products.created_at, because a catalog
+       * imported wholesale from ShipStation carries today's date on every row
+       * — which made a SKU that has sat unsold since the store opened look
+       * brand new, and read 0 days dead.
+       */
+      trading_since AS (
+        SELECT MIN(o.created_at) AS first_order_at
+          FROM orders o
+         WHERE o.store_id = $1
+      ),
+      aged AS (
+        SELECT
+          p.id                                   as product_id,
+          p.sku,
+          p.name,
+          COALESCE(c.name, 'Uncategorized')      as category,
+          p.stock_quantity                       as current_stock,
+          COALESCE(p.cost_price, p.base_price * 0.6) as unit_cost,
+          p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6) as total_value,
+          ls.last_sale_date,
+          COALESCE(lr.last_restock_date, p.created_at) as last_restock_date,
+          -- Days since it last sold. A product that has never sold is aged
+          -- from when the store started trading, then from its catalog date.
+          FLOOR(EXTRACT(EPOCH FROM (
+            CURRENT_TIMESTAMP - COALESCE(ls.last_sale_date, ts.first_order_at, p.created_at)
+          )) / 86400)                            as days_since_last_sale,
+          FLOOR(EXTRACT(EPOCH FROM (
+            CURRENT_TIMESTAMP - COALESCE(lr.last_restock_date, p.created_at)
+          )) / 86400)                            as days_in_stock
+        FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN last_sale ls ON ls.product_id = p.id
+        LEFT JOIN last_restock lr ON lr.product_id = p.id
+        CROSS JOIN trading_since ts
+        WHERE p.store_id = $1
+          AND p.is_active = true
+          AND p.stock_quantity > 0
+      )
+      SELECT
+        a.*,
+        -- Carrying cost accrued over the dead period at the annual rate.
+        a.total_value * (${ANNUAL_CARRYING_COST_RATE} / 365) * a.days_since_last_sale
+                                                 as carrying_cost,
+        LEAST(100,
+          a.days_since_last_sale * 0.1 +         -- how long it has been still
+          (a.total_value / 100) * 0.3 +          -- how much capital is trapped
+          (a.current_stock / 10.0) * 0.2         -- how many units are trapped
+        )                                        as risk_score,
+        CASE
+          WHEN a.days_since_last_sale >= 365 THEN 50
+          WHEN a.days_since_last_sale >= 180 THEN 35
+          WHEN a.days_since_last_sale >= $2 THEN 20
           ELSE 0
-        END as suggested_markdown_percent,
-        -- Liquidation value (80% of cost)
-        (p.stock_quantity * COALESCE(p.cost_price, p.base_price * 0.6)) * 0.8 as liquidation_value,
-        -- Potential bundles (empty array as string)
-        '[]' as potential_bundles
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.store_id = $1
-        AND p.is_active = true
-        AND p.stock_quantity > 0
-        AND EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / 86400 >= $2
+        END                                      as suggested_markdown_percent,
+        a.total_value * 0.8                      as liquidation_value,
+        '[]'                                     as potential_bundles
+      FROM aged a
+      WHERE a.days_since_last_sale >= $2
       ORDER BY risk_score DESC, total_value DESC
     `;
 
