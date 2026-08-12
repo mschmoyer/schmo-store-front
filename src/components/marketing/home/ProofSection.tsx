@@ -2,6 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui';
 import { ROUTES } from '../data/routes';
+import { Rail } from '../parts/Rail';
 import { Section } from '../parts/Section';
 import { SectionIntro } from '../parts/SectionIntro';
 import styles from './ProofSection.module.css';
@@ -65,20 +66,23 @@ export function ProofSection(): React.JSX.Element {
         subhead="You can’t check our references yet, so check the product."
       />
 
-      <ul className={styles.cards}>
+      {/*
+        A rail, not a stack. Three peer cards each ~230px tall were 700px of
+        phone scroll for an argument that is read once; side by side in a snap
+        rail they are 250px and the reader can see there are three of them.
+      */}
+      <Rail label="Evidence instead of testimonials" className={styles.cards}>
         {CARDS.map((card) => (
-          <li key={card.title} className={styles.cardItem}>
-            <div className={styles.card}>
-              <h3 className={styles.cardTitle}>{card.title}</h3>
-              <p className={styles.cardBody}>{card.body}</p>
-              <Button as={Link} href={card.href} variant="link" size="md">
-                {card.cta}
-                <span aria-hidden="true"> →</span>
-              </Button>
-            </div>
-          </li>
+          <div key={card.title} className={styles.card}>
+            <h3 className={styles.cardTitle}>{card.title}</h3>
+            <p className={styles.cardBody}>{card.body}</p>
+            <Button as={Link} href={card.href} variant="link" size="md">
+              {card.cta}
+              <span aria-hidden="true"> →</span>
+            </Button>
+          </div>
         ))}
-      </ul>
+      </Rail>
     </Section>
   );
 }

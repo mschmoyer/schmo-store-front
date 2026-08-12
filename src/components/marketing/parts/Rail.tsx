@@ -12,6 +12,8 @@ export interface RailProps {
   label: string;
   /** Columns once the rail becomes a grid. @default 3 */
   columns?: number;
+  /** Renders an `<ol>`, for peers whose order is part of their meaning. */
+  ordered?: boolean;
   /** Narrower tracks, for peers whose content is a line or two. */
   tight?: boolean;
   /**
@@ -42,12 +44,15 @@ export function Rail({
   children,
   label,
   columns = 3,
+  ordered = false,
   tight = false,
   divided = false,
   className,
 }: RailProps): React.JSX.Element {
+  const List = ordered ? 'ol' : 'ul';
+
   return (
-    <ul
+    <List
       className={[
         styles.rail,
         tight ? styles.tight : '',
@@ -58,16 +63,19 @@ export function Rail({
         .join(' ')}
       style={{ '--rail-columns': columns } as React.CSSProperties}
       tabIndex={0}
-      role="group"
       aria-label={label}
     >
-      {React.Children.map(children, (child, index) => (
-        // eslint-disable-next-line react/no-array-index-key
-        <li key={index} className={styles.item}>
+      {/*
+        `toArray` assigns a stable key to every child, so the wrapper <li>s can
+        be keyed without inventing an index key — and the list keeps its list
+        semantics, which a `role="region"` wrapper would have taken away.
+      */}
+      {React.Children.toArray(children).map((child) => (
+        <li key={(child as React.ReactElement).key} className={styles.item}>
           {child}
         </li>
       ))}
-    </ul>
+    </List>
   );
 }
 

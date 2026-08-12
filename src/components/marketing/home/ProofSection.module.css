@@ -1,94 +1,15 @@
 /*
  * No ground of its own. This was a full-bleed `--ink-950` block wedged between
  * two light sections, which is most of what made the page read as "some dark on
- * top of light". The evidence is the products; it does not need a stage.
+ * top of light". The evidence is the product; it does not need a stage.
+ *
+ * Layout is `parts/Rail`: three cards side by side above 760px, one snap rail
+ * below it. The twelve-tile product wall that used to sit above these cards is
+ * gone, and so is the CSS that laid it out.
  */
 
-/* ------------------------------------------------- wide product bleed -- */
-
-.grid {
-  list-style: none;
-  margin: var(--stack-md) 0 var(--stack-md);
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-  gap: var(--space-3-5);
-}
-
-.item {
-  min-width: 0;
-}
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: var(--space-2-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  text-decoration: none;
-  color: inherit;
-  transition:
-    border-color var(--duration-standard) var(--ease-out),
-    background-color var(--duration-standard) var(--ease-out);
-}
-
-.tile:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-}
-
-.tileImage {
-  width: 100%;
-  background: var(--surface-2);
-}
-
-.tileBody {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-1) var(--space-1);
-}
-
-.tileName {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.tileMeta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.tileStore {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-}
-
-/* ------------------------------------------------------ the three cards */
-
 .cards {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--space-5);
-}
-
-.cardItem {
-  min-width: 0;
-  display: flex;
+  margin-top: var(--stack-md);
 }
 
 .card {
@@ -96,8 +17,8 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-6);
+  height: 100%;
+  padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
@@ -117,9 +38,8 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 640px) {
-  .grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--space-2-5);
+@media (min-width: 760px) {
+  .card {
+    padding: var(--space-6);
   }
 }
