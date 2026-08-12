@@ -73,11 +73,18 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* The footer supplies the bottom edge, so the body must not pad past it. */
+  padding-bottom: 0;
   overflow-y: auto;
 }
 
+/*
+ * Sticky rather than fixed: the tray sits at the foot of the panel when the
+ * content is short and pins to the viewport edge once it scrolls.
+ */
 .drawerFooter {
   position: sticky;
   bottom: 0;
+  margin: 20px -24px 0;
   margin-top: auto;
 }

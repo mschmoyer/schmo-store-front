@@ -12,6 +12,7 @@ import {
   PLATFORM_INTRO_MONTHS,
   PLATFORM_LIST_AMOUNT_CENTS,
   computeIntroEndDate,
+  resolveIntroCouponId,
 } from './intro-offer';
 
 /** A subscription row as the application consumes it. */
@@ -241,15 +242,40 @@ function readIntroDiscount(subscription: Stripe.Subscription): {
     (entry): entry is Stripe.Discount => typeof entry !== 'string'
   );
 
-  if (!discount?.coupon) {
+  if (!discount) {
     return { couponId: null, discountId: null, months: 0, amountOff: null };
   }
 
+  // The coupon moved from `discount.coupon` to `discount.source.coupon` in recent API versions,
+  // and is only an object when the caller expanded it. Handle every shape.
+  const legacyCoupon = (discount as Stripe.Discount & { coupon?: string | Stripe.Coupon | null })
+    .coupon;
+  const rawCoupon = discount.source?.coupon ?? legacyCoupon ?? null;
+
+  if (!rawCoupon) {
+    return { couponId: null, discountId: discount.id, months: 0, amountOff: null };
+  }
+
+  if (typeof rawCoupon === 'string') {
+    // Unexpanded. If it is our own intro coupon we already know its economics from the catalogue
+    // (`ensureIntroCoupon` refuses to run against a coupon that disagrees with it); otherwise the
+    // amounts stay unknown and the upsert preserves whatever is already stored.
+    const isKnownIntroCoupon = rawCoupon === resolveIntroCouponId();
+    return {
+      couponId: rawCoupon,
+      discountId: discount.id,
+      months: isKnownIntroCoupon ? PLATFORM_INTRO_MONTHS : 0,
+      amountOff: isKnownIntroCoupon
+        ? PLATFORM_LIST_AMOUNT_CENTS - PLATFORM_INTRO_AMOUNT_CENTS
+        : null,
+    };
+  }
+
   return {
-    couponId: discount.coupon.id,
+    couponId: rawCoupon.id,
     discountId: discount.id,
-    months: discount.coupon.duration_in_months ?? 0,
-    amountOff: discount.coupon.amount_off ?? null,
+    months: rawCoupon.duration_in_months ?? 0,
+    amountOff: rawCoupon.amount_off ?? null,
   };
 }
 
@@ -282,13 +308,9 @@ export async function upsertSubscriptionFromStripe(
   const startedAt = toDate(subscription.start_date) ?? new Date();
 
   const unitAmount = price?.unit_amount ?? PLATFORM_LIST_AMOUNT_CENTS;
-  const introMonths = intro.months || (intro.couponId ? PLATFORM_INTRO_MONTHS : 0);
+  const introMonths = intro.months;
   const introAmount =
-    intro.amountOff !== null
-      ? Math.max(0, unitAmount - intro.amountOff)
-      : intro.couponId
-        ? PLATFORM_INTRO_AMOUNT_CENTS
-        : null;
+    intro.amountOff !== null ? Math.max(0, unitAmount - intro.amountOff) : null;
 
   const customerId =
     typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
@@ -314,11 +336,13 @@ export async function upsertSubscriptionFromStripe(
         status               = EXCLUDED.status,
         currency             = EXCLUDED.currency,
         unit_amount          = EXCLUDED.unit_amount,
-        intro_amount         = EXCLUDED.intro_amount,
-        intro_coupon_id      = EXCLUDED.intro_coupon_id,
-        intro_discount_id    = EXCLUDED.intro_discount_id,
-        intro_months         = EXCLUDED.intro_months,
-        intro_ends_at        = EXCLUDED.intro_ends_at,
+        -- Intro fields are only known when the discount was expanded, so never overwrite a known
+        -- value with a null coming from an unexpanded webhook payload.
+        intro_amount         = COALESCE(EXCLUDED.intro_amount, subscriptions.intro_amount),
+        intro_coupon_id      = COALESCE(EXCLUDED.intro_coupon_id, subscriptions.intro_coupon_id),
+        intro_discount_id    = COALESCE(EXCLUDED.intro_discount_id, subscriptions.intro_discount_id),
+        intro_months         = COALESCE(NULLIF(EXCLUDED.intro_months, 0), subscriptions.intro_months),
+        intro_ends_at        = COALESCE(EXCLUDED.intro_ends_at, subscriptions.intro_ends_at),
         trial_start          = EXCLUDED.trial_start,
         trial_end            = EXCLUDED.trial_end,
         current_period_start = EXCLUDED.current_period_start,

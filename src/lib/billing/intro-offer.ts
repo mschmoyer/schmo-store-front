@@ -28,6 +28,18 @@ export const PLATFORM_INTRO_AMOUNT_CENTS = 100;
 /** Number of monthly invoices the intro discount applies to. */
 export const PLATFORM_INTRO_MONTHS = 3;
 
+/** Default id of the Stripe Coupon implementing the intro offer. Override with `STRIPE_INTRO_COUPON_ID`. */
+export const DEFAULT_INTRO_COUPON_ID = 'rebelshops-intro-3mo';
+
+/**
+ * The intro coupon id this deployment uses.
+ *
+ * @returns The configured coupon id, or the default.
+ */
+export function resolveIntroCouponId(): string {
+  return process.env.STRIPE_INTRO_COUPON_ID?.trim() || DEFAULT_INTRO_COUPON_ID;
+}
+
 /** A single invoice in the modelled billing timeline. */
 export interface IntroInvoice {
   /** 1-based invoice number: 1 is the charge taken at checkout. */

@@ -54,12 +54,12 @@ describe('getProductMark', () => {
   });
 
   it('always picks a gradient from the palette', () => {
-    const known = new Set(fallbackGradients.map((entry) => entry.from));
+    const known = new Set<string>(fallbackGradients.map((entry) => entry.from));
 
     for (let i = 0; i < 200; i += 1) {
       const mark = getProductMark({ sku: `SKU-${i}`, name: `Product ${i}` });
       const from = mark.gradient.match(/#[0-9A-Fa-f]{6}/)?.[0];
-      expect(known.has(from as string)).toBe(true);
+      expect(known.has(from ?? '')).toBe(true);
     }
   });
 

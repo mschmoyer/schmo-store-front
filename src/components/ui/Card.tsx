@@ -26,6 +26,8 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   accent?: boolean;
   /** Element to render. @default 'div' */
   as?: React.ElementType;
+  /** Convenience passthrough when `as` renders an anchor. */
+  href?: string;
 }
 
 /**

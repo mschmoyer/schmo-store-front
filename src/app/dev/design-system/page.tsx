@@ -280,7 +280,14 @@ export default function DesignSystemPage(): React.ReactElement {
         >
           <div className={styles.productGrid}>
             {SAMPLE_PRODUCTS.map((product) => (
-              <Card key={product.sku} padding="none" className={styles.productCard} interactive>
+              <Card
+                key={product.sku}
+                as="a"
+                href="#product"
+                padding="none"
+                className={styles.productCard}
+                interactive
+              >
                 <ProductImage
                   sku={product.sku}
                   name={product.name}

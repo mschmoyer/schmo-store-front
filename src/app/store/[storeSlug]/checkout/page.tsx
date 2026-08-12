@@ -1,15 +1,50 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Container, Title, Grid, Card, Group, Text, Image, Button, Stack, Alert, Divider, TextInput, Select, Radio, Badge, Center, Loader, GridCol, Box, ActionIcon } from '@mantine/core';
-import { IconArrowLeft, IconCheck, IconTruck, IconClock, IconShoppingCart, IconTrash } from '@tabler/icons-react';
-import { notifications } from '@mantine/notifications';
+/**
+ * Storefront checkout.
+ *
+ * Flow: cart review -> contact and shipping details -> redirect to Stripe Checkout.
+ *
+ * The page never computes money. Every amount displayed comes from `POST /api/checkout/quote`,
+ * which re-prices the cart from the database, and the amount charged comes from
+ * `POST /api/checkout/session`, which re-prices it again. The browser only ever sends product ids,
+ * quantities, a coupon code and a shipping method.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import {
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Center,
+  Container,
+  Divider,
+  Grid,
+  GridCol,
+  Group,
+  Image,
+  Loader,
+  Radio,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
+import {
+  IconAlertTriangle,
+  IconArrowLeft,
+  IconLock,
+  IconShoppingCart,
+} from '@tabler/icons-react';
 import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
 
-interface CartItem {
+/** A cart line as persisted in localStorage by the rest of the storefront. */
+interface StoredCartItem {
   product_id: string | number;
   name: string;
   price: number;
@@ -17,26 +52,7 @@ interface CartItem {
   thumbnail_url: string;
 }
 
-interface ShippingOption {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  estimatedDays: string;
-  icon: React.ReactNode;
-}
-
-interface CustomerInfo {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  zipCode: string;
-}
-
+/** Store metadata from the public stores endpoint. */
 interface Store {
   id: string;
   store_name: string;
@@ -45,668 +61,703 @@ interface Store {
   currency: string;
 }
 
-const shippingOptions: ShippingOption[] = [
-  {
-    id: 'standard',
-    name: 'Standard Shipping',
-    description: 'Free shipping on orders over $50',
-    price: 0,
-    estimatedDays: '5-7 business days',
-    icon: <IconTruck size={20} />
-  },
-  {
-    id: 'expedited',
-    name: 'Expedited Shipping',
-    description: 'Faster delivery',
-    price: 9.99,
-    estimatedDays: '2-3 business days',
-    icon: <IconClock size={20} />
-  },
-  {
-    id: 'overnight',
-    name: 'Overnight Shipping',
-    description: 'Next business day delivery',
-    price: 24.99,
-    estimatedDays: '1 business day',
-    icon: <IconCheck size={20} />
-  }
+/** A server-priced line item returned by the quote endpoint. */
+interface QuotedItem {
+  productId: string;
+  sku: string;
+  name: string;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+  imageUrl: string | null;
+}
+
+/** A cart line the server refused. */
+interface QuotedRejection {
+  requestedId: string;
+  reason: string;
+  message: string;
+  available?: number;
+}
+
+/** A shipping option offered by the server. */
+interface QuotedShippingOption {
+  id: string;
+  name: string;
+  description: string;
+  estimatedDays: string;
+  price: string;
+}
+
+/** Full quote payload. */
+interface Quote {
+  currency: string;
+  items: QuotedItem[];
+  rejected: QuotedRejection[];
+  totals: {
+    subtotal: string;
+    discount: string;
+    shipping: string;
+    tax: string;
+    total: string;
+    totalCents: number;
+    discountCents: number;
+  };
+  coupon: { code: string; description: string; discount: string } | null;
+  couponRejected: boolean;
+  shippingMethod: string;
+  shippingOptions: QuotedShippingOption[];
+  payments: { enabled: boolean; settlement: string; connected: boolean };
+}
+
+/** The contact and shipping form. */
+interface CheckoutForm {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+}
+
+const EMPTY_FORM: CheckoutForm = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  postalCode: '',
+};
+
+const US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
 ];
 
-export default function CheckoutPage() {
-  const router = useRouter();
-  const params = useParams();
-  const storeSlug = params.storeSlug as string;
-  
-  const [store, setStore] = useState<Store | null>(null);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedShipping, setSelectedShipping] = useState('standard');
-  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    zipCode: ''
-  });
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  
-  // Coupon state
-  const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{
-    code: string;
-    discountAmount: number;
-    description: string;
-    couponId: string;
-  } | null>(null);
-  const [couponLoading, setCouponLoading] = useState(false);
+/**
+ * Read and sanitise the cart from localStorage.
+ *
+ * @returns The stored cart lines, or an empty array.
+ */
+function readCart(): StoredCartItem[] {
+  if (typeof window === 'undefined') return [];
 
-  // Fetch store information
+  try {
+    const raw = window.localStorage.getItem('cart');
+    if (!raw) return [];
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((item): item is StoredCartItem => {
+      if (typeof item !== 'object' || item === null) return false;
+      const candidate = item as Partial<StoredCartItem>;
+      return (
+        (typeof candidate.product_id === 'string' || typeof candidate.product_id === 'number') &&
+        typeof candidate.quantity === 'number'
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Validate the checkout form on the client. The server validates again; this is only for a fast,
+ * field-level experience.
+ *
+ * @param form - The current form values.
+ * @returns Errors keyed by field name.
+ */
+function validateForm(form: CheckoutForm): Partial<Record<keyof CheckoutForm, string>> {
+  const errors: Partial<Record<keyof CheckoutForm, string>> = {};
+
+  if (!form.firstName.trim()) errors.firstName = 'First name is required';
+  if (!form.lastName.trim()) errors.lastName = 'Last name is required';
+  if (!form.email.trim()) {
+    errors.email = 'Email is required';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    errors.email = 'Enter a valid email address';
+  }
+  if (!form.addressLine1.trim()) errors.addressLine1 = 'Street address is required';
+  if (!form.city.trim()) errors.city = 'City is required';
+  if (!form.state.trim()) errors.state = 'State is required';
+  if (!form.postalCode.trim()) {
+    errors.postalCode = 'ZIP code is required';
+  } else if (!/^\d{5}(-\d{4})?$/.test(form.postalCode.trim())) {
+    errors.postalCode = 'Enter a 5-digit ZIP code';
+  }
+
+  return errors;
+}
+
+/**
+ * The storefront checkout page.
+ *
+ * @returns The checkout screen.
+ */
+export default function CheckoutPage(): React.ReactElement {
+  const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const storeSlug = params.storeSlug as string;
+
+  const [store, setStore] = useState<Store | null>(null);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [cart, setCart] = useState<StoredCartItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [form, setForm] = useState<CheckoutForm>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof CheckoutForm, string>>>({});
+
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCode, setAppliedCode] = useState<string | null>(null);
+  const [shippingMethod, setShippingMethod] = useState('standard');
+
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const wasCancelled = searchParams.get('checkout') === 'cancelled';
+
+  // Load the store.
   useEffect(() => {
-    const fetchStore = async () => {
+    if (!storeSlug) return;
+
+    let cancelled = false;
+
+    const run = async () => {
       try {
-        const response = await fetch(`/api/stores/public?slug=${storeSlug}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.data) {
-            setStore(data.data);
-          }
+        const response = await fetch(`/api/stores/public?slug=${encodeURIComponent(storeSlug)}`);
+        const json = await response.json();
+        if (cancelled) return;
+
+        if (json.success && json.data) {
+          setStore(json.data as Store);
+        } else {
+          setStoreError('This store could not be found.');
         }
-      } catch (err) {
-        console.error('Error fetching store:', err);
+      } catch {
+        if (!cancelled) setStoreError('We could not reach the store right now.');
       }
     };
 
-    if (storeSlug) {
-      fetchStore();
-    }
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [storeSlug]);
 
-  // Load cart data and coupon from localStorage
+  // Load the cart and any coupon the shopper applied earlier.
   useEffect(() => {
-    const loadCartData = () => {
-      if (typeof window !== 'undefined') {
-        try {
-          const savedCart = localStorage.getItem('cart');
-          if (savedCart) {
-            const parsedCart = JSON.parse(savedCart);
-            if (Array.isArray(parsedCart)) {
-              const validatedCart = parsedCart.filter(item => 
-                item && 
-                (typeof item.product_id === 'string' || typeof item.product_id === 'number') &&
-                typeof item.name === 'string' &&
-                (typeof item.price === 'number' || typeof item.price === 'string') &&
-                typeof item.quantity === 'number' &&
-                typeof item.thumbnail_url === 'string'
-              ).map(item => ({
-                ...item,
-                price: typeof item.price === 'string' ? parseFloat(item.price) : item.price
-              }));
-              setCartItems(validatedCart);
-            }
-          }
-
-          // Load applied coupon from localStorage
-          const savedCoupon = localStorage.getItem('appliedCoupon');
-          if (savedCoupon) {
-            try {
-              const parsedCoupon = JSON.parse(savedCoupon);
-              setAppliedCoupon(parsedCoupon);
-              setCouponCode(parsedCoupon.code);
-            } catch (couponError) {
-              console.error('Error parsing saved coupon:', couponError);
-              localStorage.removeItem('appliedCoupon');
-            }
-          }
-        } catch (error) {
-          console.error('Error loading cart from localStorage:', error);
-        }
-      }
-      setLoading(false);
-    };
-
-    loadCartData();
-  }, []);
-
-  const calculateSubtotal = () => {
-    return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
-
-  const getShippingCost = () => {
-    const subtotal = calculateSubtotal();
-    const selectedOption = shippingOptions.find(option => option.id === selectedShipping);
-    
-    // Free standard shipping on orders over $50
-    if (selectedShipping === 'standard' && subtotal >= 50) {
-      return 0;
-    }
-    
-    return selectedOption?.price || 0;
-  };
-
-  const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const shipping = getShippingCost();
-    const discount = appliedCoupon?.discountAmount || 0;
-    return Math.max(0, subtotal + shipping - discount);
-  };
-
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-
-    if (!customerInfo.firstName.trim()) errors.firstName = 'First name is required';
-    if (!customerInfo.lastName.trim()) errors.lastName = 'Last name is required';
-    if (!customerInfo.email.trim()) errors.email = 'Email is required';
-    if (!customerInfo.email.includes('@') && customerInfo.email.trim()) errors.email = 'Please enter a valid email';
-    if (!customerInfo.phone.trim()) errors.phone = 'Phone number is required';
-    if (!customerInfo.address.trim()) errors.address = 'Address is required';
-    if (!customerInfo.city.trim()) errors.city = 'City is required';
-    if (!customerInfo.state.trim()) errors.state = 'State is required';
-    if (!customerInfo.zipCode.trim()) errors.zipCode = 'ZIP code is required';
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleInputChange = (field: keyof CustomerInfo, value: string) => {
-    setCustomerInfo(prev => ({ ...prev, [field]: value }));
-    
-    // Clear error for this field when user starts typing
-    if (formErrors[field]) {
-      setFormErrors(prev => ({ ...prev, [field]: '' }));
-    }
-  };
-
-  const validateCoupon = async () => {
-    if (!couponCode.trim() || !store?.id) return;
-
-    setCouponLoading(true);
+    setCart(readCart());
 
     try {
-      const response = await fetch(`/api/store/${store.id}/coupons/validate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          couponCode: couponCode.trim(),
-          cartItems,
-          orderTotal: calculateSubtotal()
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.data.valid) {
-        const newAppliedCoupon = {
-          code: couponCode.trim(),
-          discountAmount: data.data.discountAmount,
-          description: data.data.discount?.description || 'Discount applied',
-          couponId: data.data.couponId || 'unknown'
-        };
-        
-        setAppliedCoupon(newAppliedCoupon);
-        localStorage.setItem('appliedCoupon', JSON.stringify(newAppliedCoupon));
-        
-        notifications.show({
-          title: 'Coupon Applied!',
-          message: `${data.data.discount?.description || 'Discount'} - $${data.data.discountAmount.toFixed(2)} off`,
-          color: 'green'
-        });
-      } else {
-        notifications.show({
-          title: 'Invalid Coupon',
-          message: data.data.error || 'This coupon code is not valid.',
-          color: 'red'
-        });
+      const saved = window.localStorage.getItem('appliedCoupon');
+      if (saved) {
+        const parsed = JSON.parse(saved) as { code?: string };
+        if (parsed.code) {
+          setCouponInput(parsed.code);
+          setAppliedCode(parsed.code);
+        }
       }
-    } catch (error) {
-      console.error('Error validating coupon:', error);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to validate coupon. Please try again.',
-        color: 'red'
-      });
-    } finally {
-      setCouponLoading(false);
+    } catch {
+      window.localStorage.removeItem('appliedCoupon');
     }
-  };
 
-  const removeCoupon = () => {
-    setAppliedCoupon(null);
-    setCouponCode('');
-    localStorage.removeItem('appliedCoupon');
-    notifications.show({
-      title: 'Coupon Removed',
-      message: 'Coupon discount has been removed.',
-      color: 'blue'
-    });
-  };
+    setLoading(false);
+  }, []);
 
-  const handlePlaceOrder = async () => {
-    if (!validateForm()) {
-      notifications.show({
-        title: 'Form Validation Error',
-        message: 'Please fill out all required fields correctly.',
-        color: 'red',
-      });
+  const cartKey = useMemo(
+    () => cart.map((item) => `${item.product_id}:${item.quantity}`).join('|'),
+    [cart]
+  );
+
+  // Re-quote whenever anything that affects price changes.
+  const refreshQuote = useCallback(async () => {
+    if (!store || cart.length === 0) {
+      setQuote(null);
       return;
     }
 
-    setIsPlacingOrder(true);
+    setQuoting(true);
 
     try {
-      // Prepare order data for API
-      const orderData = {
-        items: cartItems,
-        shippingAddress: customerInfo,
-        shippingMethod: selectedShipping,
-        subtotal: calculateSubtotal(),
-        shippingCost: getShippingCost(),
-        discountAmount: appliedCoupon?.discountAmount || 0,
-        total: calculateTotal(),
-        storeId: store?.id,
-        appliedCoupon: appliedCoupon ? {
-          code: appliedCoupon.code,
-          couponId: appliedCoupon.couponId,
-          discountAmount: appliedCoupon.discountAmount,
-          description: appliedCoupon.description
-        } : null
-      };
-
-      console.log('Submitting order:', orderData);
-
-      // Call order creation API
-      const response = await fetch('/api/orders', {
+      const response = await fetch('/api/checkout/quote', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(orderData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: store.id,
+          items: cart.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+          })),
+          couponCode: appliedCode,
+          shippingMethod,
+          destination: {
+            state: form.state,
+            postalCode: form.postalCode,
+            country: 'US',
+          },
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const orderResult = await response.json();
-      console.log('Order result:', orderResult);
-
-      if (orderResult.success) {
-        // Clear cart from localStorage
-        localStorage.removeItem('cart');
-        
-        // Trigger cart update event
-        window.dispatchEvent(new CustomEvent('cartUpdated', { detail: [] }));
-        
-        // Check if this order should redirect to success page
-        if (orderResult.redirectToSuccess || orderResult.isLocalOrder) {
-          // Redirect to success page with order details
-          const successUrl = `/store/${storeSlug}/order-success?orderId=${orderResult.orderId}&orderTotal=${orderResult.orderTotal}&isLocalOrder=${!!orderResult.isLocalOrder}`;
-          router.push(successUrl);
-          return;
-        }
-        
-        // Show success notification with order details (for ShipEngine orders)
-        const successMessage = orderResult.isMockOrder 
-          ? `Thank you ${customerInfo.firstName}! Your order ${orderResult.orderId} has been placed. This is a demo order (ShipEngine not configured).`
-          : `Thank you ${customerInfo.firstName}! Your order ${orderResult.orderId} has been created in ShipEngine. ${orderResult.trackingNumber ? `Tracking: ${orderResult.trackingNumber}` : ''}`;
-
-        notifications.show({
-          title: 'Order Placed Successfully!',
-          message: successMessage,
-          color: 'green',
-          icon: <IconCheck size="1rem" />,
-          autoClose: 7000,
-        });
-
-        // Redirect to store after a short delay
-        setTimeout(() => {
-          router.push(`/store/${storeSlug}`);
-        }, 3000);
+      const json = await response.json();
+      if (json.success) {
+        setQuote(json.data as Quote);
       } else {
-        throw new Error(orderResult.message || 'Failed to create order');
+        setSubmitError(json.error ?? 'We could not price your cart.');
       }
-    } catch (error) {
-      console.error('Error placing order:', error);
-      
-      notifications.show({
-        title: 'Order Failed',
-        message: error instanceof Error ? error.message : 'Failed to place order. Please try again.',
-        color: 'red',
-        autoClose: 5000,
-      });
+    } catch {
+      setSubmitError('We could not reach the store to price your cart.');
     } finally {
-      setIsPlacingOrder(false);
+      setQuoting(false);
+    }
+  }, [store, cart, appliedCode, shippingMethod, form.state, form.postalCode]);
+
+  useEffect(() => {
+    void refreshQuote();
+    // cartKey stands in for the cart contents so the effect does not fire on identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, cartKey, appliedCode, shippingMethod]);
+
+  /**
+   * Update one form field and clear its error.
+   *
+   * @param field - The field to update.
+   * @param value - The new value.
+   */
+  const updateField = (field: keyof CheckoutForm, value: string): void => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setFormErrors((previous) => ({ ...previous, [field]: undefined }));
+  };
+
+  /**
+   * Apply the coupon code currently in the input.
+   */
+  const applyCoupon = (): void => {
+    const code = couponInput.trim();
+    if (!code) return;
+    setAppliedCode(code);
+    window.localStorage.setItem('appliedCoupon', JSON.stringify({ code }));
+  };
+
+  /**
+   * Remove the applied coupon.
+   */
+  const removeCoupon = (): void => {
+    setAppliedCode(null);
+    setCouponInput('');
+    window.localStorage.removeItem('appliedCoupon');
+  };
+
+  /**
+   * Validate, create a Stripe Checkout Session, and redirect to Stripe.
+   */
+  const startPayment = async (): Promise<void> => {
+    const errors = validateForm(form);
+    setFormErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      setSubmitError('Check the highlighted fields and try again.');
+      return;
+    }
+
+    if (!store) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const response = await fetch('/api/checkout/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: store.id,
+          items: cart.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+          })),
+          couponCode: appliedCode,
+          shippingMethod,
+          customer: {
+            firstName: form.firstName.trim(),
+            lastName: form.lastName.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim(),
+          },
+          shippingAddress: {
+            addressLine1: form.addressLine1.trim(),
+            addressLine2: form.addressLine2.trim(),
+            city: form.city.trim(),
+            state: form.state.trim(),
+            postalCode: form.postalCode.trim(),
+            country: 'US',
+          },
+        }),
+      });
+
+      const json = await response.json();
+
+      if (json.success && json.data?.url) {
+        // The cart is cleared only after the webhook creates the order; leaving it intact means a
+        // cancelled payment returns the shopper to a full cart.
+        window.location.href = json.data.url as string;
+        return;
+      }
+
+      if (json.fieldErrors) {
+        setFormErrors(json.fieldErrors as Partial<Record<keyof CheckoutForm, string>>);
+      }
+
+      if (json.code === 'CART_CHANGED') {
+        await refreshQuote();
+      }
+
+      setSubmitError(json.message ?? json.error ?? 'We could not start checkout.');
+    } catch {
+      setSubmitError('We could not reach the payment service. Try again in a moment.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(price);
-  };
-
-  if (loading || !store) {
+  if (loading || (!store && !storeError)) {
     return (
       <Container size="xl" py="xl">
         <Center>
           <Stack align="center">
             <Loader size="lg" />
-            <Text style={{ color: 'var(--theme-text)' }}>Loading checkout...</Text>
+            <Text>Loading checkout…</Text>
           </Stack>
         </Center>
       </Container>
     );
   }
 
-  if (cartItems.length === 0) {
+  if (storeError || !store) {
+    return (
+      <Container size="sm" py="xl">
+        <Alert color="red" title="Store unavailable">
+          {storeError ?? 'This store could not be found.'}
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (cart.length === 0) {
     return (
       <StoreThemeProvider themeId={store.theme_name || 'default'}>
         <div style={{ minHeight: '100vh', background: 'var(--theme-background)' }}>
-          <Container size="xl" py="xl">
-        <Stack align="center" gap="lg">
-          <Alert color="blue" title="Your cart is empty">
-            <Text size="sm" mb="md" style={{ color: 'var(--theme-text)' }}>You need items in your cart to proceed with checkout.</Text>
-          </Alert>
-          <Button
-            component={Link}
-            href={`/store/${storeSlug}`}
-            leftSection={<IconArrowLeft size={16} />}
-            style={{
-              background: 'var(--theme-primary-gradient)',
-              border: 'none',
-              fontWeight: 600,
-            }}
-          >
-            Continue Shopping
-          </Button>
-          </Stack>
+          <Container size="sm" py="xl">
+            <Stack align="center" gap="lg">
+              <IconShoppingCart size={48} style={{ color: 'var(--theme-primary)' }} />
+              <Title order={2} style={{ color: 'var(--theme-text)' }}>
+                Your cart is empty
+              </Title>
+              <Text style={{ color: 'var(--theme-text-muted)' }} ta="center">
+                Add something to your cart and it will show up here, ready to check out.
+              </Text>
+              <Button
+                component={Link}
+                href={`/store/${storeSlug}`}
+                leftSection={<IconArrowLeft size={16} />}
+                style={{ background: 'var(--theme-primary-gradient)', border: 'none' }}
+              >
+                Continue shopping
+              </Button>
+            </Stack>
           </Container>
         </div>
       </StoreThemeProvider>
     );
   }
 
+  const paymentsDisabled = quote !== null && !quote.payments.enabled;
+  const hasRejections = (quote?.rejected.length ?? 0) > 0;
+  const canPay =
+    !submitting && !quoting && !paymentsDisabled && !hasRejections && (quote?.items.length ?? 0) > 0;
+
   return (
     <StoreThemeProvider themeId={store.theme_name || 'default'}>
-      <div style={{ minHeight: '100vh', background: 'var(--theme-background)', paddingBottom: '120px' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--theme-background)', paddingBottom: 96 }}>
         <Container size="xl" py="xl">
-          <Title order={1} mb="xl" style={{ color: 'var(--theme-text)' }}>
-            Secure Checkout
+          <Title order={1} mb="lg" style={{ color: 'var(--theme-text)' }}>
+            Checkout
           </Title>
 
+          {wasCancelled ? (
+            <Alert color="yellow" mb="lg" title="Payment cancelled">
+              Nothing was charged. Your cart is exactly as you left it.
+            </Alert>
+          ) : null}
+
+          {paymentsDisabled ? (
+            <Alert
+              color="yellow"
+              mb="lg"
+              icon={<IconAlertTriangle size={18} />}
+              title="Payments are not set up for this store yet"
+            >
+              {store.store_name} has not finished connecting a payment account, so orders cannot be
+              placed right now. Your cart is saved — try again later, or contact the store directly.
+            </Alert>
+          ) : null}
+
+          {hasRejections ? (
+            <Alert color="red" mb="lg" title="Some items are no longer available">
+              <Stack gap={4}>
+                {quote?.rejected.map((rejection) => (
+                  <Text key={`${rejection.requestedId}-${rejection.reason}`} size="sm">
+                    {rejection.message}
+                  </Text>
+                ))}
+              </Stack>
+            </Alert>
+          ) : null}
+
+          {submitError ? (
+            <Alert color="red" mb="lg" title="We could not continue">
+              {submitError}
+            </Alert>
+          ) : null}
+
           <Grid gutter="xl">
-            {/* Left Column - Customer Information */}
-            <GridCol span={{ base: 12, lg: 8 }}>
+            <GridCol span={{ base: 12, lg: 7 }}>
               <Stack gap="lg">
-                {/* Customer Information */}
-                <Card shadow="sm" padding="lg" radius="md" withBorder style={{ 
-                  backgroundColor: 'var(--theme-card)', 
-                  borderColor: 'var(--theme-border)' 
-                }}>
-                  <Title order={3} mb="md" style={{ color: 'var(--theme-text)' }}>
-                    Customer Information
+                <Card
+                  component="section"
+                  aria-labelledby="cart-review-heading"
+                  shadow="sm"
+                  padding="lg"
+                  radius="md"
+                  withBorder
+                  style={{
+                    backgroundColor: 'var(--theme-card)',
+                    borderColor: 'var(--theme-border)',
+                  }}
+                >
+                  <Title
+                    id="cart-review-heading"
+                    order={2}
+                    size="h4"
+                    mb="md"
+                    style={{ color: 'var(--theme-text)' }}
+                  >
+                    Review your order
                   </Title>
-                  
+
                   <Stack gap="md">
-                    {/* Personal Information */}
-                    <div>
-                      <Text fw={500} mb="sm" style={{ color: 'var(--theme-text)' }}>
-                        Personal Information
-                      </Text>
-                      <Grid>
-                        <GridCol span={6}>
-                          <TextInput
-                            label="First Name"
-                            placeholder="Enter your first name"
-                            value={customerInfo.firstName}
-                            onChange={(e) => handleInputChange('firstName', e.target.value)}
-                            error={formErrors.firstName}
-                            required
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
+                    {(quote?.items ?? []).map((item) => (
+                      <Group key={item.productId} wrap="nowrap" align="flex-start">
+                        {item.imageUrl ? (
+                          <Image
+                            src={item.imageUrl}
+                            alt=""
+                            w={56}
+                            h={56}
+                            fit="cover"
+                            radius="md"
+                            style={{ flexShrink: 0 }}
                           />
-                        </GridCol>
-                        <GridCol span={6}>
-                          <TextInput
-                            label="Last Name"
-                            placeholder="Enter your last name"
-                            value={customerInfo.lastName}
-                            onChange={(e) => handleInputChange('lastName', e.target.value)}
-                            error={formErrors.lastName}
-                            required
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
-                          />
-                        </GridCol>
-                      </Grid>
-                      
-                      <Grid mt="sm">
-                        <GridCol span={6}>
-                          <TextInput
-                            label="Email"
-                            placeholder="Enter your email"
-                            type="email"
-                            value={customerInfo.email}
-                            onChange={(e) => handleInputChange('email', e.target.value)}
-                            error={formErrors.email}
-                            required
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
-                          />
-                        </GridCol>
-                        <GridCol span={6}>
-                          <TextInput
-                            label="Phone"
-                            placeholder="Enter your phone number"
-                            value={customerInfo.phone}
-                            onChange={(e) => handleInputChange('phone', e.target.value)}
-                            error={formErrors.phone}
-                            required
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
-                          />
-                        </GridCol>
-                      </Grid>
-                    </div>
+                        ) : null}
+                        <div style={{ flex: 1 }}>
+                          <Text fw={500} size="sm" style={{ color: 'var(--theme-text)' }}>
+                            {item.name}
+                          </Text>
+                          <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
+                            {item.sku} · {item.unitPrice} × {item.quantity}
+                          </Text>
+                        </div>
+                        <Text fw={600} size="sm" style={{ color: 'var(--theme-text)' }}>
+                          {item.lineTotal}
+                        </Text>
+                      </Group>
+                    ))}
 
-                    <Divider />
-
-                    {/* Shipping Address */}
-                    <div>
-                      <Text fw={500} mb="sm" style={{ color: 'var(--theme-text)' }}>
-                        Shipping Address
-                      </Text>
-                      <TextInput
-                        label="Address"
-                        placeholder="Enter your street address"
-                        value={customerInfo.address}
-                        onChange={(e) => handleInputChange('address', e.target.value)}
-                        error={formErrors.address}
-                        required
-                        mb="sm"
-                        styles={{
-                          input: {
-                            backgroundColor: 'var(--theme-background-secondary)',
-                            borderColor: 'var(--theme-border)',
-                            color: 'var(--theme-text)',
-                            '&::placeholder': { color: 'var(--theme-text-muted)' }
-                          },
-                          label: { color: 'var(--theme-text)' }
-                        }}
-                      />
-                      
-                      <Grid>
-                        <GridCol span={4}>
-                          <TextInput
-                            label="City"
-                            placeholder="City"
-                            value={customerInfo.city}
-                            onChange={(e) => handleInputChange('city', e.target.value)}
-                            error={formErrors.city}
-                            required
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
-                          />
-                        </GridCol>
-                        <GridCol span={4}>
-                          <Select
-                            label="State"
-                            placeholder="State"
-                            value={customerInfo.state}
-                            onChange={(value) => handleInputChange('state', value || '')}
-                            error={formErrors.state}
-                            required
-                            data={[
-                              'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-                              'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-                              'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-                              'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-                              'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
-                            ]}
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)'
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
-                          />
-                        </GridCol>
-                        <GridCol span={4}>
-                          <TextInput
-                            label="ZIP Code"
-                            placeholder="ZIP"
-                            value={customerInfo.zipCode}
-                            onChange={(e) => handleInputChange('zipCode', e.target.value)}
-                            error={formErrors.zipCode}
-                            required
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              },
-                              label: { color: 'var(--theme-text)' }
-                            }}
-                          />
-                        </GridCol>
-                      </Grid>
-                    </div>
+                    {quoting && !quote ? <Loader size="sm" /> : null}
                   </Stack>
                 </Card>
 
-                {/* Shipping Options */}
-                <Card shadow="sm" padding="lg" radius="md" withBorder style={{ 
-                  backgroundColor: 'var(--theme-card)', 
-                  borderColor: 'var(--theme-border)' 
-                }}>
-                  <Title order={4} mb="md" style={{ color: 'var(--theme-text)' }}>
-                    Shipping Options
-                  </Title>
-                  <Radio.Group
-                    value={selectedShipping}
-                    onChange={setSelectedShipping}
+                <Card
+                  component="section"
+                  aria-labelledby="contact-heading"
+                  shadow="sm"
+                  padding="lg"
+                  radius="md"
+                  withBorder
+                  style={{
+                    backgroundColor: 'var(--theme-card)',
+                    borderColor: 'var(--theme-border)',
+                  }}
+                >
+                  <Title
+                    id="contact-heading"
+                    order={2}
+                    size="h4"
+                    mb="md"
+                    style={{ color: 'var(--theme-text)' }}
                   >
-                    <Stack gap="sm">
-                      {shippingOptions.map((option) => (
-                        <Card 
-                          key={option.id} 
-                          padding="sm" 
-                          withBorder 
-                          style={{ 
-                            cursor: 'pointer',
-                            borderColor: selectedShipping === option.id ? 'var(--theme-primary)' : 'var(--theme-border)',
-                            backgroundColor: selectedShipping === option.id ? 'var(--theme-card-hover)' : 'var(--theme-card)',
-                            transition: 'all 0.2s ease'
-                          }}
-                          onClick={() => setSelectedShipping(option.id)}
-                        >
-                          <Radio
-                            value={option.id}
-                            label={
-                              <Group justify="space-between" style={{ width: '100%' }}>
-                                <Group gap="sm">
-                                  <Box style={{ color: 'var(--theme-primary)' }}>
-                                    {option.icon}
-                                  </Box>
-                                  <div>
-                                    <Text fw={500} size="sm" style={{ color: 'var(--theme-text)' }}>
-                                      {option.name}
-                                    </Text>
-                                    <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
-                                      {option.description}
-                                    </Text>
-                                    <Badge 
-                                      variant="light" 
-                                      size="xs" 
-                                      style={{ 
-                                        backgroundColor: 'var(--theme-primary-light)',
-                                        color: 'var(--theme-primary)'
-                                      }}
-                                    >
-                                      {option.estimatedDays}
-                                    </Badge>
-                                  </div>
-                                </Group>
-                                <Text fw={600} style={{ color: 'var(--theme-text)' }}>
-                                  {option.price === 0 && calculateSubtotal() >= 50 ? 'FREE' : formatPrice(option.price)}
+                    Contact details
+                  </Title>
+
+                  <Grid>
+                    <GridCol span={{ base: 12, sm: 6 }}>
+                      <TextInput
+                        label="First name"
+                        value={form.firstName}
+                        onChange={(event) => updateField('firstName', event.currentTarget.value)}
+                        error={formErrors.firstName}
+                        autoComplete="given-name"
+                        required
+                      />
+                    </GridCol>
+                    <GridCol span={{ base: 12, sm: 6 }}>
+                      <TextInput
+                        label="Last name"
+                        value={form.lastName}
+                        onChange={(event) => updateField('lastName', event.currentTarget.value)}
+                        error={formErrors.lastName}
+                        autoComplete="family-name"
+                        required
+                      />
+                    </GridCol>
+                    <GridCol span={{ base: 12, sm: 6 }}>
+                      <TextInput
+                        label="Email"
+                        type="email"
+                        value={form.email}
+                        onChange={(event) => updateField('email', event.currentTarget.value)}
+                        error={formErrors.email}
+                        description="Your receipt and shipping updates go here."
+                        autoComplete="email"
+                        required
+                      />
+                    </GridCol>
+                    <GridCol span={{ base: 12, sm: 6 }}>
+                      <TextInput
+                        label="Phone"
+                        value={form.phone}
+                        onChange={(event) => updateField('phone', event.currentTarget.value)}
+                        error={formErrors.phone}
+                        autoComplete="tel"
+                      />
+                    </GridCol>
+                  </Grid>
+                </Card>
+
+                <Card
+                  component="section"
+                  aria-labelledby="shipping-heading"
+                  shadow="sm"
+                  padding="lg"
+                  radius="md"
+                  withBorder
+                  style={{
+                    backgroundColor: 'var(--theme-card)',
+                    borderColor: 'var(--theme-border)',
+                  }}
+                >
+                  <Title
+                    id="shipping-heading"
+                    order={2}
+                    size="h4"
+                    mb="md"
+                    style={{ color: 'var(--theme-text)' }}
+                  >
+                    Shipping address
+                  </Title>
+
+                  <Stack gap="sm">
+                    <TextInput
+                      label="Street address"
+                      value={form.addressLine1}
+                      onChange={(event) => updateField('addressLine1', event.currentTarget.value)}
+                      error={formErrors.addressLine1}
+                      autoComplete="address-line1"
+                      required
+                    />
+                    <TextInput
+                      label="Apartment, suite (optional)"
+                      value={form.addressLine2}
+                      onChange={(event) => updateField('addressLine2', event.currentTarget.value)}
+                      autoComplete="address-line2"
+                    />
+                    <Grid>
+                      <GridCol span={{ base: 12, sm: 5 }}>
+                        <TextInput
+                          label="City"
+                          value={form.city}
+                          onChange={(event) => updateField('city', event.currentTarget.value)}
+                          error={formErrors.city}
+                          autoComplete="address-level2"
+                          required
+                        />
+                      </GridCol>
+                      <GridCol span={{ base: 6, sm: 3 }}>
+                        <Select
+                          label="State"
+                          data={US_STATES}
+                          value={form.state || null}
+                          onChange={(value) => updateField('state', value ?? '')}
+                          error={formErrors.state}
+                          searchable
+                          required
+                        />
+                      </GridCol>
+                      <GridCol span={{ base: 6, sm: 4 }}>
+                        <TextInput
+                          label="ZIP code"
+                          value={form.postalCode}
+                          onChange={(event) => updateField('postalCode', event.currentTarget.value)}
+                          onBlur={() => void refreshQuote()}
+                          error={formErrors.postalCode}
+                          autoComplete="postal-code"
+                          inputMode="numeric"
+                          required
+                        />
+                      </GridCol>
+                    </Grid>
+                  </Stack>
+
+                  <Divider my="lg" />
+
+                  <Title order={3} size="h5" mb="sm" style={{ color: 'var(--theme-text)' }}>
+                    Shipping speed
+                  </Title>
+
+                  <Radio.Group value={shippingMethod} onChange={setShippingMethod}>
+                    <Stack gap="xs">
+                      {(quote?.shippingOptions ?? []).map((option) => (
+                        <Radio
+                          key={option.id}
+                          value={option.id}
+                          label={
+                            <Group justify="space-between" style={{ width: '100%' }}>
+                              <div>
+                                <Text size="sm" fw={500} style={{ color: 'var(--theme-text)' }}>
+                                  {option.name}
                                 </Text>
-                              </Group>
-                            }
-                            styles={{
-                              label: { color: 'var(--theme-text)' },
-                              radio: { 
-                                '&:checked': { 
-                                  backgroundColor: 'var(--theme-primary)',
-                                  borderColor: 'var(--theme-primary)'
-                                }
-                              }
-                            }}
-                          />
-                        </Card>
+                                <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
+                                  {option.description}
+                                </Text>
+                                <Badge size="xs" variant="light">
+                                  {option.estimatedDays}
+                                </Badge>
+                              </div>
+                            </Group>
+                          }
+                        />
                       ))}
                     </Stack>
                   </Radio.Group>
@@ -714,186 +765,147 @@ export default function CheckoutPage() {
               </Stack>
             </GridCol>
 
-            {/* Right Column - Order Summary (Sticky) */}
-            <GridCol span={{ base: 12, lg: 4 }}>
-              <Box style={{ position: 'sticky', top: '20px' }}>
-                <Card shadow="sm" padding="lg" radius="md" withBorder style={{ 
-                  backgroundColor: 'var(--theme-card)', 
-                  borderColor: 'var(--theme-border)' 
-                }}>
-                  <Group gap="sm" mb="md">
-                    <IconShoppingCart size={20} style={{ color: 'var(--theme-primary)' }} />
-                    <Title order={3} style={{ color: 'var(--theme-text)' }}>Order Summary</Title>
-                  </Group>
-                  
-                  <Stack gap="md">
-                    {cartItems.map((item) => (
-                      <Group key={item.product_id} wrap="nowrap" align="flex-start">
-                        <Image
-                          src={item.thumbnail_url}
-                          alt={item.name}
-                          w={50}
-                          h={50}
-                          fit="cover"
-                          radius="md"
-                          style={{ flexShrink: 0 }}
-                        />
-                        <div style={{ flex: 1 }}>
-                          <Text fw={500} size="sm" lineClamp={2} style={{ color: 'var(--theme-text)' }}>
-                            {item.name}
-                          </Text>
-                          <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
-                            Qty: {item.quantity}
-                          </Text>
-                          <Text size="sm" fw={600} style={{ color: 'var(--theme-text)' }}>
-                            {formatPrice(item.price * item.quantity)}
-                          </Text>
-                        </div>
-                      </Group>
-                    ))}
+            <GridCol span={{ base: 12, lg: 5 }}>
+              <Box style={{ position: 'sticky', top: 20 }}>
+                <Card
+                  component="aside"
+                  aria-labelledby="summary-heading"
+                  shadow="sm"
+                  padding="lg"
+                  radius="md"
+                  withBorder
+                  style={{
+                    backgroundColor: 'var(--theme-card)',
+                    borderColor: 'var(--theme-border)',
+                  }}
+                >
+                  <Title
+                    id="summary-heading"
+                    order={2}
+                    size="h4"
+                    mb="md"
+                    style={{ color: 'var(--theme-text)' }}
+                  >
+                    Order summary
+                  </Title>
 
-                    <Divider />
-
-                    {/* Coupon Code Section */}
-                    <Stack gap="xs">
-                      <Text fw={500} style={{ color: 'var(--theme-text)' }}>Coupon Code</Text>
-                      {!appliedCoupon ? (
-                        <Group gap="xs">
+                  <Stack gap="sm">
+                    <div>
+                      <Text size="sm" fw={500} mb={6} style={{ color: 'var(--theme-text)' }}>
+                        Coupon code
+                      </Text>
+                      {quote?.coupon ? (
+                        <Group justify="space-between">
+                          <div>
+                            <Text size="sm" fw={600} style={{ color: 'var(--theme-success)' }}>
+                              {quote.coupon.code}
+                            </Text>
+                            <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
+                              {quote.coupon.description}
+                            </Text>
+                          </div>
+                          <Button variant="subtle" size="compact-sm" onClick={removeCoupon}>
+                            Remove
+                          </Button>
+                        </Group>
+                      ) : (
+                        <Group gap="xs" align="flex-start">
                           <TextInput
-                            placeholder="Enter coupon code"
-                            value={couponCode}
-                            onChange={(e) => setCouponCode(e.target.value)}
+                            aria-label="Coupon code"
+                            placeholder="Enter code"
+                            value={couponInput}
+                            onChange={(event) => setCouponInput(event.currentTarget.value)}
                             style={{ flex: 1 }}
-                            styles={{
-                              input: {
-                                backgroundColor: 'var(--theme-background-secondary)',
-                                borderColor: 'var(--theme-border)',
-                                color: 'var(--theme-text)',
-                                '&::placeholder': { color: 'var(--theme-text-muted)' }
-                              }
-                            }}
+                            error={
+                              quote?.couponRejected
+                                ? 'That code is not valid for this cart'
+                                : undefined
+                            }
                           />
                           <Button
                             variant="outline"
-                            onClick={validateCoupon}
-                            loading={couponLoading}
-                            disabled={!couponCode.trim()}
-                            style={{
-                              borderColor: 'var(--theme-primary)',
-                              color: 'var(--theme-primary)',
-                              backgroundColor: 'transparent'
-                            }}
+                            onClick={applyCoupon}
+                            disabled={!couponInput.trim() || quoting}
                           >
                             Apply
                           </Button>
                         </Group>
-                      ) : (
-                        <Group justify="space-between" p="sm" style={{
-                          backgroundColor: 'var(--theme-success-light)',
-                          borderRadius: '8px',
-                          border: '1px solid var(--theme-success)'
-                        }}>
-                          <div>
-                            <Text size="sm" fw={500} style={{ color: 'var(--theme-success)' }}>
-                              {appliedCoupon.code}
-                            </Text>
-                            <Text size="xs" style={{ color: 'var(--theme-text-muted)' }}>
-                              {appliedCoupon.description}
-                            </Text>
-                          </div>
-                          <Group gap="xs">
-                            <Text size="sm" fw={600} style={{ color: 'var(--theme-success)' }}>
-                              -{formatPrice(appliedCoupon.discountAmount)}
-                            </Text>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              onClick={removeCoupon}
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Group>
-                        </Group>
                       )}
-                    </Stack>
+                    </div>
 
                     <Divider />
 
-                    {/* Pricing Summary */}
-                    <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Text style={{ color: 'var(--theme-text)' }}>Subtotal</Text>
+                      <Text fw={600} style={{ color: 'var(--theme-text)' }}>
+                        {quote?.totals.subtotal ?? '—'}
+                      </Text>
+                    </Group>
+
+                    {quote && quote.totals.discountCents > 0 ? (
                       <Group justify="space-between">
-                        <Text style={{ color: 'var(--theme-text)' }}>Subtotal:</Text>
-                        <Text fw={600} style={{ color: 'var(--theme-text)' }}>
-                          {formatPrice(calculateSubtotal())}
+                        <Text style={{ color: 'var(--theme-text)' }}>Discount</Text>
+                        <Text fw={600} style={{ color: 'var(--theme-success)' }}>
+                          −{quote.totals.discount}
                         </Text>
                       </Group>
+                    ) : null}
 
-                      <Group justify="space-between">
-                        <Text style={{ color: 'var(--theme-text)' }}>Shipping:</Text>
-                        <Text fw={600} style={{ color: 'var(--theme-text)' }}>
-                          {getShippingCost() === 0 ? 'FREE' : formatPrice(getShippingCost())}
-                        </Text>
-                      </Group>
+                    <Group justify="space-between">
+                      <Text style={{ color: 'var(--theme-text)' }}>Shipping</Text>
+                      <Text fw={600} style={{ color: 'var(--theme-text)' }}>
+                        {quote?.totals.shipping ?? '—'}
+                      </Text>
+                    </Group>
 
-                      {appliedCoupon && (
-                        <Group justify="space-between">
-                          <Text style={{ color: 'var(--theme-text)' }}>Discount:</Text>
-                          <Text fw={600} style={{ color: 'var(--theme-success)' }}>
-                            -{formatPrice(appliedCoupon.discountAmount)}
-                          </Text>
-                        </Group>
-                      )}
-
-                      <Divider />
-
-                      <Group justify="space-between">
-                        <Text size="lg" fw={700} style={{ color: 'var(--theme-text)' }}>Total:</Text>
-                        <Text size="lg" fw={700} style={{
-                          background: 'var(--theme-primary-gradient)',
-                          WebkitBackgroundClip: 'text',
-                          WebkitTextFillColor: 'transparent',
-                        }}>
-                          {formatPrice(calculateTotal())}
-                        </Text>
-                      </Group>
-                    </Stack>
+                    <Group justify="space-between">
+                      <Text style={{ color: 'var(--theme-text)' }}>Tax</Text>
+                      <Text fw={600} style={{ color: 'var(--theme-text)' }}>
+                        {quote?.totals.tax ?? '—'}
+                      </Text>
+                    </Group>
 
                     <Divider />
 
-                    {/* Action Buttons */}
-                    <Stack gap="sm">
-                      <Button
-                        size="lg"
-                        loading={isPlacingOrder}
-                        onClick={handlePlaceOrder}
-                        fullWidth
-                        style={{
-                          background: 'var(--theme-primary-gradient)',
-                          border: 'none',
-                          fontWeight: 600,
-                          fontSize: '16px',
-                          height: '50px'
-                        }}
-                      >
-                        {isPlacingOrder ? 'Processing...' : `Place Order - ${formatPrice(calculateTotal())}`}
-                      </Button>
+                    <Group justify="space-between">
+                      <Text size="lg" fw={700} style={{ color: 'var(--theme-text)' }}>
+                        Total
+                      </Text>
+                      <Text size="lg" fw={700} style={{ color: 'var(--theme-text)' }}>
+                        {quoting ? '…' : (quote?.totals.total ?? '—')}
+                      </Text>
+                    </Group>
 
-                      <Button
-                        variant="outline"
-                        leftSection={<IconArrowLeft size={16} />}
-                        component={Link}
-                        href={`/store/${storeSlug}/cart`}
-                        fullWidth
-                        style={{
-                          borderColor: 'var(--theme-border)',
-                          color: 'var(--theme-text)',
-                          backgroundColor: 'transparent'
-                        }}
-                      >
-                        Back to Cart
-                      </Button>
-                    </Stack>
+                    <Button
+                      size="lg"
+                      fullWidth
+                      mt="sm"
+                      leftSection={<IconLock size={18} />}
+                      loading={submitting}
+                      disabled={!canPay}
+                      onClick={() => void startPayment()}
+                      style={{ background: 'var(--theme-primary-gradient)', border: 'none' }}
+                    >
+                      {submitting
+                        ? 'Redirecting to Stripe…'
+                        : paymentsDisabled
+                          ? 'Payments unavailable'
+                          : `Pay ${quote?.totals.total ?? ''}`.trim()}
+                    </Button>
+
+                    <Text size="xs" ta="center" style={{ color: 'var(--theme-text-muted)' }}>
+                      You will be redirected to Stripe to enter your card details. RebelShops never
+                      sees your card number.
+                    </Text>
+
+                    <Button
+                      variant="subtle"
+                      leftSection={<IconArrowLeft size={16} />}
+                      onClick={() => router.push(`/store/${storeSlug}/cart`)}
+                      fullWidth
+                    >
+                      Back to cart
+                    </Button>
                   </Stack>
                 </Card>
               </Box>

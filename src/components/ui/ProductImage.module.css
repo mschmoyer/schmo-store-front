@@ -12,6 +12,8 @@
   background-color: var(--surface-sunken);
   border-radius: var(--radius-md);
   isolation: isolate;
+  /* Container queries let the generated mark scale with the tile, not the viewport. */
+  container-type: inline-size;
 }
 
 .roundedNone {
@@ -131,9 +133,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Container queries let the mark scale with the tile, not the viewport. */
-.frame {
-  container-type: inline-size;
 }

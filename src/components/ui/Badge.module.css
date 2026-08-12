@@ -138,9 +138,10 @@
   height: 5px;
 }
 
-/* A live badge pulses its dot — used for "syncing" / "live" states. */
+/* A live badge pulses its dot — used for "syncing" / "live" states.
+   The token collapses to `none` under prefers-reduced-motion. */
 .pulse .dot {
-  animation: pulse-ring 2s var(--ease-out) infinite;
+  animation: var(--animate-pulse-ring);
 }
 
 .icon {

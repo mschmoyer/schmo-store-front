@@ -10,6 +10,7 @@
 import type Stripe from 'stripe';
 import { getStripe } from './client';
 import {
+  DEFAULT_INTRO_COUPON_ID,
   PLATFORM_CURRENCY,
   PLATFORM_INTRO_AMOUNT_CENTS,
   PLATFORM_INTRO_MONTHS,
@@ -23,7 +24,7 @@ export const PLATFORM_PLAN_KEY = 'rebelshops_standard';
 export const PLATFORM_PRICE_LOOKUP_KEY = 'rebelshops_standard_monthly';
 
 /** Stable coupon id requested when creating the intro coupon. Stripe allows caller-chosen ids. */
-export const PLATFORM_INTRO_COUPON_ID = 'rebelshops-intro-3mo';
+export const PLATFORM_INTRO_COUPON_ID = DEFAULT_INTRO_COUPON_ID;
 
 /** Declarative description of the single platform plan. */
 export interface PlatformPlanDefinition {
