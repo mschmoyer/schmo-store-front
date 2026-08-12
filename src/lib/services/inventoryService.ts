@@ -2,11 +2,19 @@ import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import {
   UUID,
-  Product,
-  Order,
-  OrderItem,
   InventoryAdjustment
 } from '@/lib/types/database';
+import { OrderItemRow, OrderRow, ProductRow } from '@/lib/types/db-rows';
+
+/** Aggregate inventory figures for a store. */
+type InventorySummaryRow = {
+  total_products: string;
+  in_stock_products: string;
+  low_stock_products: string;
+  out_of_stock_products: string;
+  total_inventory_value: string;
+  last_updated: Date | null;
+};
 
 /**
  * Inventory Management Service
@@ -144,7 +152,9 @@ export class InventoryService {
     } = adjustment;
 
     // Get current product inventory
-    const productResult = await db.query(`
+    const productResult = await db.query<
+      Pick<ProductRow, 'id' | 'store_id' | 'sku' | 'stock_quantity' | 'track_inventory' | 'low_stock_threshold'>
+    >(`
       SELECT id, store_id, sku, stock_quantity, track_inventory, low_stock_threshold
       FROM products 
       WHERE id = $1
@@ -162,7 +172,7 @@ export class InventoryService {
       return;
     }
 
-    const currentQuantity = product.stock_quantity;
+    const currentQuantity = product.stock_quantity ?? 0;
     const newQuantity = currentQuantity + quantity_change;
 
     // Prevent negative inventory (optional - can be configured per store)
@@ -233,7 +243,9 @@ export class InventoryService {
         for (const item of inventoryData) {
           try {
             // Find product by SKU
-            const productResult = await db.query(`
+            const productResult = await db.query<
+              Pick<ProductRow, 'id' | 'stock_quantity' | 'track_inventory'>
+            >(`
               SELECT id, stock_quantity, track_inventory 
               FROM products 
               WHERE store_id = $1 AND sku = $2
@@ -251,7 +263,7 @@ export class InventoryService {
               continue;
             }
 
-            const currentQuantity = product.stock_quantity;
+            const currentQuantity = product.stock_quantity ?? 0;
             const newQuantity = item.available_quantity;
             const quantityChange = newQuantity - currentQuantity;
 
@@ -367,7 +379,7 @@ export class InventoryService {
 
             if (adj.adjustment_type === 'set') {
               // Get current quantity to calculate change
-              const productResult = await db.query(`
+              const productResult = await db.query<Pick<ProductRow, 'stock_quantity'>>(`
                 SELECT stock_quantity FROM products WHERE id = $1
               `, [adj.product_id]);
 
@@ -375,7 +387,7 @@ export class InventoryService {
                 throw new Error(`Product not found: ${adj.product_id}`);
               }
 
-              const currentQuantity = productResult.rows[0].stock_quantity;
+              const currentQuantity = productResult.rows[0].stock_quantity ?? 0;
               quantityChange = adj.quantity - currentQuantity;
             } else {
               quantityChange = adj.adjustment_type === 'increase' ? adj.quantity : -adj.quantity;
@@ -436,7 +448,9 @@ export class InventoryService {
    */
   private async checkLowStockAlert(productId: UUID, storeId: UUID): Promise<void> {
     try {
-      const productResult = await db.query(`
+      const productResult = await db.query<
+        Pick<ProductRow, 'sku' | 'name' | 'stock_quantity' | 'low_stock_threshold'>
+      >(`
         SELECT sku, name, stock_quantity, low_stock_threshold 
         FROM products 
         WHERE id = $1 AND store_id = $2
@@ -448,12 +462,13 @@ export class InventoryService {
 
       const product = productResult.rows[0];
       const threshold = product.low_stock_threshold || this.LOW_STOCK_THRESHOLD;
+      const stockQuantity = product.stock_quantity ?? 0;
 
-      if (product.stock_quantity <= threshold) {
-        const alertLevel = product.stock_quantity <= this.CRITICAL_STOCK_THRESHOLD ? 'critical' : 'warning';
+      if (stockQuantity <= threshold) {
+        const alertLevel = stockQuantity <= this.CRITICAL_STOCK_THRESHOLD ? 'critical' : 'warning';
         
         // Log low stock alert
-        console.warn(`${alertLevel.toUpperCase()} STOCK ALERT: ${product.sku} (${product.name}) - Quantity: ${product.stock_quantity}, Threshold: ${threshold}`);
+        console.warn(`${alertLevel.toUpperCase()} STOCK ALERT: ${product.sku} (${product.name}) - Quantity: ${stockQuantity}, Threshold: ${threshold}`);
 
         // TODO: Implement alert notification system
         // await this.sendLowStockAlert(storeId, product, alertLevel);
@@ -537,15 +552,15 @@ export class InventoryService {
   /**
    * Get order details
    * @param orderId - Order UUID
-   * @returns Promise<Order | null>
+   * @returns Promise<OrderRow | null>
    */
-  private async getOrderDetails(orderId: UUID): Promise<Order | null> {
+  private async getOrderDetails(orderId: UUID): Promise<OrderRow | null> {
     try {
-      const result = await db.query(`
+      const result = await db.query<OrderRow>(`
         SELECT * FROM orders WHERE id = $1
       `, [orderId]);
 
-      return result.rows.length > 0 ? result.rows[0] as Order : null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error getting order details:', error);
       return null;
@@ -555,15 +570,15 @@ export class InventoryService {
   /**
    * Get order items
    * @param orderId - Order UUID
-   * @returns Promise<OrderItem[]>
+   * @returns Promise<OrderItemRow[]>
    */
-  private async getOrderItems(orderId: UUID): Promise<OrderItem[]> {
+  private async getOrderItems(orderId: UUID): Promise<OrderItemRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<OrderItemRow>(`
         SELECT * FROM order_items WHERE order_id = $1
       `, [orderId]);
 
-      return result.rows as OrderItem[];
+      return result.rows;
     } catch (error) {
       console.error('Error getting order items:', error);
       return [];
@@ -586,7 +601,7 @@ export class InventoryService {
     operation: 'inventory_sync' | 'stock_adjustment' | 'low_stock_alert',
     status: 'success' | 'failure' | 'warning',
     requestData?: Record<string, unknown>,
-    responseData?: Record<string, unknown>,
+    responseData?: Record<string, unknown> | null,
     executionTimeMs?: number,
     errorMessage?: string
   ): Promise<void> {
@@ -627,7 +642,7 @@ export class InventoryService {
     last_updated: Date;
   }> {
     try {
-      const result = await db.query(`
+      const result = await db.query<InventorySummaryRow>(`
         SELECT 
           COUNT(*) as total_products,
           COUNT(CASE WHEN stock_quantity > 0 THEN 1 END) as in_stock_products,
@@ -639,7 +654,15 @@ export class InventoryService {
         WHERE store_id = $1 AND track_inventory = true
       `, [storeId, this.LOW_STOCK_THRESHOLD]);
 
-      return result.rows[0];
+      const summary = result.rows[0];
+      return {
+        total_products: parseInt(summary.total_products, 10),
+        in_stock_products: parseInt(summary.in_stock_products, 10),
+        low_stock_products: parseInt(summary.low_stock_products, 10),
+        out_of_stock_products: parseInt(summary.out_of_stock_products, 10),
+        total_inventory_value: parseFloat(summary.total_inventory_value) || 0,
+        last_updated: summary.last_updated ?? new Date(0)
+      };
     } catch (error) {
       console.error('Error getting inventory summary:', error);
       throw error;
@@ -650,11 +673,11 @@ export class InventoryService {
    * Get low stock products
    * @param storeId - Store UUID
    * @param limit - Maximum number of products to return
-   * @returns Promise<Product[]>
+   * @returns Promise<ProductRow[]>
    */
-  async getLowStockProducts(storeId: UUID, limit: number = 50): Promise<Product[]> {
+  async getLowStockProducts(storeId: UUID, limit: number = 50): Promise<ProductRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<ProductRow>(`
         SELECT * FROM products 
         WHERE store_id = $1 
           AND track_inventory = true 
@@ -663,7 +686,7 @@ export class InventoryService {
         LIMIT $3
       `, [storeId, this.LOW_STOCK_THRESHOLD, limit]);
 
-      return result.rows as Product[];
+      return result.rows;
     } catch (error) {
       console.error('Error getting low stock products:', error);
       return [];

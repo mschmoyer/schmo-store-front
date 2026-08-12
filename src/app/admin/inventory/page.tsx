@@ -18,12 +18,9 @@ import {
   Select,
   Alert,
   Loader,
-  ThemeIcon,
-  rem,
   Tabs,
   SimpleGrid,
   Switch,
-  Avatar,
   Tooltip
 } from '@mantine/core';
 import { 
@@ -50,12 +47,17 @@ import { useDisclosure } from '@mantine/hooks';
 import InventoryEditModal from '@/components/admin/InventoryEditModal';
 import type { ForecastPeriod, ForecastResult } from '@/lib/inventory-forecasting-types';
 import { FORECAST_PERIODS, calculateClientSideForecast } from '@/lib/inventory-forecasting-types';
-import PurchaseOrderModal from '@/components/admin/PurchaseOrderModal';
+import PurchaseOrderModal, { type PurchaseOrderItem } from '@/components/admin/PurchaseOrderModal';
 import ReceivingModal from '@/components/admin/ReceivingModal';
 import SupplierModal from '@/components/admin/SupplierModal';
 import SmartReorderWidget from '@/components/admin/SmartReorderWidget';
 import PurchaseOrderAnalytics from '@/components/admin/PurchaseOrderAnalytics';
 import SuppliersManagement from '@/components/admin/SuppliersManagement';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { StatCard, StatGrid } from '@/components/admin/StatCard';
+import { Price, ProductImage } from '@/components/ui';
+import table from '@/components/admin/adminTable.module.css';
 
 interface SalesVelocity {
   total_sales: number;
@@ -148,7 +150,7 @@ export default function InventoryPage() {
   const [forecastPeriod, setForecastPeriod] = useState<ForecastPeriod>(30 as ForecastPeriod);
   const [forecastData, setForecastData] = useState<Record<string, ForecastResult>>({});
   const [loadingForecast, setLoadingForecast] = useState(false);
-  const [prefilledPOItems, setPrefilledPOItems] = useState<Array<{product_id: string; product_name: string; product_sku: string; recommended_quantity: number; unit_cost: number; supplier: string}>>([]);
+  const [prefilledPOItems, setPrefilledPOItems] = useState<PurchaseOrderItem[]>([]);
 
   const fetchInventoryData = useCallback(async () => {
     try {
@@ -227,7 +229,7 @@ export default function InventoryPage() {
     }
   };
 
-  const handleCreatePurchaseOrder = (prefilledItems?: Array<{product_id: string; product_name: string; product_sku: string; recommended_quantity: number; unit_cost: number; supplier: string}>) => {
+  const handleCreatePurchaseOrder = (prefilledItems?: PurchaseOrderItem[]) => {
     if (prefilledItems) {
       setPrefilledPOItems(prefilledItems);
     } else {
@@ -364,7 +366,6 @@ export default function InventoryPage() {
         id: 'export-loading',
         title: 'Exporting Data',
         message: 'Generating CSV file...',
-        color: 'blue',
         loading: true,
         autoClose: false
       });
@@ -445,9 +446,9 @@ export default function InventoryPage() {
 
   const getStockStatusIcon = (status: string) => {
     switch (status) {
-      case 'out_of_stock': return <IconX size="1rem" color="red" />;
-      case 'low_stock': return <IconExclamationMark size="1rem" color="orange" />;
-      case 'discontinued': return <IconX size="1rem" color="gray" />;
+      case 'out_of_stock': return <IconX size="1rem" color="var(--danger-text)" />;
+      case 'low_stock': return <IconExclamationMark size="1rem" color="var(--warning-text)" />;
+      case 'discontinued': return <IconX size="1rem" color="var(--text-quaternary)" />;
       default: return null;
     }
   };
@@ -473,94 +474,85 @@ export default function InventoryPage() {
   };
 
   if (loading) {
+    /* §5: a skeleton at the real layout's geometry, not a spinner in the
+       middle of an otherwise empty page. */
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <Loader size="lg" />
-        <Text mt="md" c="dimmed">
-          Loading inventory data...
-        </Text>
-      </div>
+      <Stack gap="lg">
+        <AdminPageHeader title="Inventory" description="Stock levels across every warehouse." />
+        <StatGridSkeleton count={4} />
+        <TableSkeleton rows={8} columns={6} label="Loading inventory" />
+      </Stack>
     );
   }
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} mb="xs">
-            Inventory Management
-          </Title>
-          <Text c="dimmed">
-            Manage your stock levels, forecasting, and purchase orders
-          </Text>
-        </div>
-        <Button leftSection={<IconRefresh size="1rem" />} variant="outline" onClick={handleSyncShipStation}>
-          Sync ShipStation
-        </Button>
-      </Group>
+      <AdminPageHeader
+        title="Inventory"
+        description="Stock levels, forecasting and restock orders across every warehouse."
+        actions={
+          <Button leftSection={<IconRefresh size="1rem" />} variant="default" onClick={handleSyncShipStation}>
+            Sync ShipStation
+          </Button>
+        }
+      />
 
-      {/* Stats Cards */}
-      <SimpleGrid cols={{ base: 2, md: 6 }} spacing="md">
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Products</Text>
-            <ThemeIcon color="blue" variant="light" size="sm">
-              <IconPackage style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.total_products}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Value</Text>
-            <ThemeIcon color="green" variant="light" size="sm">
-              <IconChartBar style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>${stats?.total_value.toLocaleString()}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Low Stock</Text>
-            <ThemeIcon color="yellow" variant="light" size="sm">
-              <IconAlertTriangle style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.low_stock_items}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Out of Stock</Text>
-            <ThemeIcon color="red" variant="light" size="sm">
-              <IconAlertCircle style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.out_of_stock_items}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Pending Orders</Text>
-            <ThemeIcon color="cyan" variant="light" size="sm">
-              <IconTruckDelivery style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.pending_orders}</Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Restocked This Month</Text>
-            <ThemeIcon color="teal" variant="light" size="sm">
-              <IconRefresh style={{ width: rem(16), height: rem(16) }} />
-            </ThemeIcon>
-          </Group>
-          <Text size="xl" fw={700}>{stats?.this_month_restocked}</Text>
-        </Card>
-      </SimpleGrid>
+      {/*
+        Six hand-built cards became six StatCards. Their `ThemeIcon`s carried a
+        green chart, an amber triangle and a red circle — three hues chosen per
+        card rather than per value, which is what made this row read as a
+        traffic light that never changes. Tone now tracks the number: low stock
+        is amber only when something is low, out of stock is red only when
+        something is out.
+      */}
+      <StatGrid min={172}>
+        <StatCard
+          label="Total products"
+          value={stats?.total_products ?? 0}
+          icon={<IconPackage size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Total value"
+          value={stats?.total_value ?? 0}
+          format="currency"
+          meta="At unit cost"
+          icon={<IconChartBar size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Low stock"
+          value={stats?.low_stock_items ?? 0}
+          tone={(stats?.low_stock_items ?? 0) > 0 ? 'warning' : 'neutral'}
+          icon={<IconAlertTriangle size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Out of stock"
+          value={stats?.out_of_stock_items ?? 0}
+          tone={(stats?.out_of_stock_items ?? 0) > 0 ? 'danger' : 'neutral'}
+          icon={<IconAlertCircle size={18} stroke={1.6} />}
+        />
+        <StatCard
+          /*
+           * Labelled "Pending orders / Awaiting delivery" in a row of
+           * inventory tiles, which reads as five restocks arriving. It counts
+           * customer orders in pending/processing — five people who paid and
+           * have been waiting, in this store's case for 61 to 73 days. The
+           * label now says whose orders these are, and the tile links to the
+           * screen that can do something about them.
+           */
+          label="Customer orders to ship"
+          value={stats?.pending_orders ?? 0}
+          meta="Paid, not yet dispatched"
+          tone={(stats?.pending_orders ?? 0) > 0 ? 'warning' : 'neutral'}
+          href="/admin/orders?status=unshipped"
+          icon={<IconTruckDelivery size={18} stroke={1.6} />}
+        />
+        <StatCard
+          label="Restocked"
+          value={stats?.this_month_restocked ?? 0}
+          meta="This month"
+          icon={<IconRefresh size={18} stroke={1.6} />}
+        />
+      </StatGrid>
 
       {/* Smart AI Recommendations Widget */}
       <SmartReorderWidget 
@@ -641,27 +633,35 @@ export default function InventoryPage() {
 
             {/* Inventory Grid */}
             <Card shadow="sm" padding="lg" radius="md" withBorder>
+              {/* The forecast window used to be a <Select> living inside a
+                  <th>. A column header is a label for the column, not a place
+                  to put a 40px control — it stretched the header band to twice
+                  the height of every other cell and put a form field in the
+                  tab order between two column names. */}
+              <Group justify="flex-end" gap="xs" mb="sm">
+                <Text size="xs" c="dimmed" component="label" htmlFor="forecast-window">
+                  Forecast window
+                </Text>
+                <Select
+                  id="forecast-window"
+                  size="xs"
+                  aria-label="Forecast window"
+                  data={FORECAST_PERIODS.map(p => ({ value: p.value.toString(), label: p.label }))}
+                  value={forecastPeriod.toString()}
+                  onChange={(value) => handleForecastPeriodChange(parseInt(value || '30') as ForecastPeriod)}
+                  style={{ width: 110 }}
+                />
+                {loadingForecast && <Loader size="xs" />}
+              </Group>
               <Table>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Product</Table.Th>
-                    <Table.Th>Stock</Table.Th>
-                    <Table.Th>
-                      <Group gap="xs">
-                        <Text size="sm" component="span">Forecast</Text>
-                        <Select
-                          size="xs"
-                          data={FORECAST_PERIODS.map(p => ({ value: p.value.toString(), label: p.label }))}
-                          value={forecastPeriod.toString()}
-                          onChange={(value) => handleForecastPeriodChange(parseInt(value || '30') as ForecastPeriod)}
-                          style={{ minWidth: 80 }}
-                        />
-                        {loadingForecast && <Loader size="xs" />}
-                      </Group>
-                    </Table.Th>
-                    <Table.Th>Reorder Point</Table.Th>
-                    <Table.Th>Unit Cost</Table.Th>
-                    <Table.Th>Total Value</Table.Th>
+                    <Table.Th className={table.numeric}>Stock</Table.Th>
+                    <Table.Th className={table.numeric}>Forecast</Table.Th>
+                    <Table.Th className={table.numeric}>Reorder at</Table.Th>
+                    <Table.Th className={table.numeric}>Unit cost</Table.Th>
+                    <Table.Th className={table.numeric}>Total value</Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -670,32 +670,36 @@ export default function InventoryPage() {
                     <Table.Tr key={item.id}>
                       <Table.Td>
                         <Group gap="sm">
-                          <Avatar 
-                            src={item.featured_image_url} 
-                            size="sm" 
-                            radius="sm"
-                          >
-                            <IconShoppingCart size="1rem" />
-                          </Avatar>
-                          <div>
-                            <Text size="sm" fw={500}>{item.name}</Text>
-                            <Text size="xs" c="dimmed">{item.sku}</Text>
+                          {/* A fixed-width frame; Mantine's Avatar let a wide
+                              photograph push the name onto its own line, which
+                              is why two rows in this grid were twice as tall as
+                              the rest. */}
+                          <ProductImage
+                            src={item.featured_image_url}
+                            name={item.name}
+                            alt=""
+                            rounded="sm"
+                            style={{ width: 32, flex: 'none' }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <Text size="sm" fw={500} lineClamp={1}>{item.name}</Text>
+                            <Text component="span" className={table.code}>{item.sku}</Text>
                             <Text size="xs" c="dimmed">{item.category}</Text>
                           </div>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <Text size="sm" fw={500}>{item.stock_quantity}</Text>
+                      <Table.Td className={table.numeric}>
+                        <Group gap="xs" justify="flex-end" wrap="nowrap">
                           {getStockStatusIcon(item.status) && (
                             <Tooltip label={getStockStatusTooltip(item.status)}>
                               {getStockStatusIcon(item.status)}
                             </Tooltip>
                           )}
+                          <Text size="sm" fw={500}>{item.stock_quantity}</Text>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
+                      <Table.Td className={table.numeric}>
+                        <Group gap="xs" justify="flex-end" wrap="nowrap">
                           <Text size="sm">
                             {forecastData[item.id]?.forecastValue || 
                              (forecastPeriod <= 30 ? item.forecast_30_days : item.forecast_90_days)}
@@ -715,20 +719,18 @@ export default function InventoryPage() {
                           {(forecastData[item.id]?.forecastValue || 
                             (forecastPeriod <= 30 ? item.forecast_30_days : item.forecast_90_days)) 
                             > item.stock_quantity && (
-                            <IconAlertTriangle size="1rem" color="orange" />
+                            <IconAlertTriangle size="1rem" color="var(--warning-text)" />
                           )}
                         </Group>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td className={table.numeric}>
                         <Text size="sm">{item.reorder_point}</Text>
                       </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">${item.unit_cost.toFixed(2)}</Text>
+                      <Table.Td className={table.numeric}>
+                        <Price value={item.unit_cost} size="sm" />
                       </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>
-                          ${(item.stock_quantity * item.unit_cost).toFixed(2)}
-                        </Text>
+                      <Table.Td className={table.numeric}>
+                        <Price value={item.stock_quantity * item.unit_cost} size="sm" />
                       </Table.Td>
                       <Table.Td>
                         <Group gap="xs">
@@ -743,7 +745,7 @@ export default function InventoryPage() {
                           <ActionIcon 
                             size="sm" 
                             variant="subtle"
-                            color="blue"
+                            color="ink"
                             onClick={() => handleQuickReorder(item)}
                             title="Add to Purchase Order"
                           >
@@ -834,7 +836,6 @@ export default function InventoryPage() {
                             <ActionIcon 
                               size="sm" 
                               variant="subtle"
-                              color="green"
                               onClick={() => handleReceivePO(order)}
                             >
                               <IconTruckDelivery size="1rem" />
@@ -884,19 +885,20 @@ export default function InventoryPage() {
 
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Title order={3} mb="md">Dead Stock Analysis</Title>
-                <Text c="dimmed" mb="md">Identify slow-moving inventory</Text>
+                <Text c="dimmed" mb="md">Capital sitting still — days since last sale, carrying cost and a suggested markdown</Text>
                 <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/dead-stock')}>
                   Generate Report
                 </Button>
               </Card>
 
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Title order={3} mb="md">Supplier Performance</Title>
-                <Text c="dimmed" mb="md">Analyze supplier delivery times and quality</Text>
-                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/supplier-performance')}>
-                  Generate Report
-                </Button>
-              </Card>
+              {/*
+                * The Supplier Performance card was here. Its button pushed to
+                * `/admin/inventory/reports/supplier-performance`, which has no
+                * component and no API — the route map's fallback bounced you
+                * silently back to this page. A button that does nothing and
+                * says nothing is worse than no button, so it is gone until
+                * there is a report behind it.
+                */}
             </SimpleGrid>
           </Stack>
         </Tabs.Panel>

@@ -87,7 +87,8 @@ export default function ProductEditForm({
     // Images
     featured_image_url: product.featured_image_url || '',
     gallery_images: product.gallery_images || [],
-    thumbnail_url: product.thumbnail_url || '',
+    // `products` has no thumbnail column, so there is nothing to prefill here.
+    thumbnail_url: '',
     
     // SEO
     meta_title: product.meta_title || '',
@@ -294,9 +295,7 @@ export default function ProductEditForm({
               placeholder="Brief description for product listings"
               value={formData.short_description}
               onChange={(e) => handleFieldChange('short_description', e.target.value)}
-              autosize
-              minRows={2}
-              maxRows={4}
+              rows={3}
             />
 
             <RichTextEditor
@@ -372,7 +371,7 @@ export default function ProductEditForm({
             </Group>
 
             {/* Display Price Indicator */}
-            <Alert icon={<IconInfoCircle size={16} />} color="blue" variant="light">
+            <Alert icon={<IconInfoCircle size={16} />} color="ink" variant="light">
               <Text size="sm" fw={500}>Customer Display Price: ${Number(formData.override_price || formData.sale_price || formData.base_price || 0).toFixed(2)}</Text>
               <Text size="xs" c="dimmed">
                 Priority: Override Price → Sale Price → Base Price
@@ -438,9 +437,7 @@ export default function ProductEditForm({
               onChange={(e) => handleFieldChange('meta_description', e.target.value)}
               error={validationErrors.meta_description}
               description={`${formData.meta_description.length}/160 characters`}
-              autosize
-              minRows={2}
-              maxRows={4}
+              rows={3}
             />
           </Stack>
         </Card>
@@ -491,9 +488,9 @@ export default function ProductEditForm({
                   color="green"
                   thumbIcon={
                     formData.is_active ? (
-                      <IconEye size={12} color="var(--mantine-color-green-6)" />
+                      <IconEye size={12} color="var(--success-text)" />
                     ) : (
-                      <IconEyeOff size={12} color="var(--mantine-color-gray-6)" />
+                      <IconEyeOff size={12} color="var(--text-secondary)" />
                     )
                   }
                 />
@@ -523,7 +520,7 @@ export default function ProductEditForm({
                 <Switch
                   checked={formData.is_digital}
                   onChange={(e) => handleFieldChange('is_digital', e.currentTarget.checked)}
-                  color="blue"
+                  color="ink"
                 />
               </Group>
             </Stack>

@@ -1,13 +1,115 @@
 import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
-import { JobQueue, UUID } from '@/lib/types/database';
-import { notificationService } from './notificationService';
+import { UUID } from '@/lib/types/database';
+import { parseShipStationWebhookPayload } from '@/lib/shipstation/webhookPayload';
+import { JobQueueRow } from '@/lib/types/db-rows';
+import {
+  DeliveryData,
+  ExceptionData,
+  ShipmentTrackingData,
+  notificationService
+} from './notificationService';
 import { inventoryService } from './inventoryService';
 import { orderStatusService } from './orderStatusService';
 
+/** Aggregate job counts returned by the queue statistics query. */
+type JobStatsRow = {
+  total: string;
+  pending: string;
+  processing: string;
+  completed: string;
+  failed: string;
+  retrying: string;
+  by_type: Record<string, number> | null;
+  by_priority: Record<string, number> | null;
+};
+
+/**
+ * Read a string member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a string, otherwise undefined
+ */
+function payloadString(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Read a number member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a number, otherwise undefined
+ */
+function payloadNumber(payload: Record<string, unknown>, key: string): number | undefined {
+  const value = payload[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+/**
+ * Read a boolean member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a boolean, otherwise undefined
+ */
+function payloadBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
+  const value = payload[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+/**
+ * Read a nested object member from an untyped job payload.
+ *
+ * @param payload - JSONB payload stored on the job row
+ * @param key - Member to read
+ * @returns The value when it is a plain object, otherwise undefined
+ */
+function payloadObject(
+  payload: Record<string, unknown>,
+  key: string
+): Record<string, unknown> | undefined {
+  const value = payload[key];
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Every kind of work the queue knows how to run. */
+export type JobType =
+  | 'order_notification'
+  | 'inventory_update'
+  | 'shipment_processing'
+  | 'webhook_processing'
+  | 'shipstation_sync_page'
+  | 'shipstation_order_push';
+
+/** Optional metadata attached to a queued job. */
+export interface AddJobOptions {
+  /** Owning tenant. Lets the operator see, and the platform scope, work per store. */
+  storeId?: string;
+  /**
+   * Idempotency key. While a job with this key is pending/processing/retrying, enqueuing the same
+   * key is a no-op. Enforced by a partial unique index, so it holds across concurrent invocations.
+   */
+  dedupeKey?: string;
+}
+
+/** What one drain pass accomplished. */
+export interface DrainSummary {
+  claimed: number;
+  completed: number;
+  failed: number;
+  /** True when the pass stopped on its time budget with work still waiting. */
+  budgetExhausted: boolean;
+  durationMs: number;
+}
+
 /**
  * Background Job Queue Service
- * 
+ *
  * Handles background processing of:
  * - Order notifications
  * - Inventory updates
@@ -43,19 +145,22 @@ export class JobQueueService {
    * @returns Promise<UUID> - Job ID
    */
   async addJob(
-    jobType: 'order_notification' | 'inventory_update' | 'shipment_processing' | 'webhook_processing',
+    jobType: JobType,
     payload: Record<string, unknown>,
     priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium',
-    scheduledAt?: Date
-  ): Promise<UUID> {
+    scheduledAt?: Date,
+    options: AddJobOptions = {}
+  ): Promise<UUID | null> {
     const jobId = uuidv4();
-    
+
     try {
-      await db.query(`
+      const result = await db.query(`
         INSERT INTO job_queue (
           id, job_type, payload, status, priority, attempts, max_attempts,
-          scheduled_at, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          scheduled_at, store_id, dedupe_key, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT DO NOTHING
+        RETURNING id
       `, [
         jobId,
         jobType,
@@ -65,9 +170,19 @@ export class JobQueueService {
         0,
         this.MAX_RETRY_ATTEMPTS,
         scheduledAt || new Date(),
+        options.storeId ?? null,
+        options.dedupeKey ?? null,
         new Date(),
         new Date()
       ]);
+
+      // The partial unique index on `dedupe_key` (migration 022) covers only outstanding jobs, so
+      // a no-op insert means an identical unit of work is already queued or running. That is a
+      // success for the caller, not an error — hence null rather than a throw.
+      if (result.rows.length === 0) {
+        console.log(`Job de-duplicated: ${jobType} (${options.dedupeKey ?? 'no key'})`);
+        return null;
+      }
 
       console.log(`Job queued: ${jobType} (${priority}) - ${jobId}`);
       return jobId;
@@ -79,66 +194,142 @@ export class JobQueueService {
   }
 
   /**
-   * Process pending jobs from the queue
-   * @returns Promise<void>
+   * Claim and run a bounded batch of due jobs.
+   *
+   * Claiming happens inside a transaction with `FOR UPDATE SKIP LOCKED`, so two concurrent cron
+   * invocations (which Vercel makes easy to arrange) take disjoint work instead of both running the
+   * same job. Without it, a redelivered webhook notification could be emailed to a customer twice.
+   *
+   * @param options - `batchSize` caps rows claimed; `budgetMs` stops the pass before a serverless
+   *   invocation is killed mid-job, leaving the remainder for the next cron tick.
+   * @returns What the pass accomplished.
    */
-  async processJobs(): Promise<void> {
+  async processJobs(
+    options: { batchSize?: number; budgetMs?: number } = {}
+  ): Promise<DrainSummary> {
+    const started = Date.now();
+    const batchSize = options.batchSize ?? this.BATCH_SIZE;
+    const budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
+
+    const summary: DrainSummary = {
+      claimed: 0,
+      completed: 0,
+      failed: 0,
+      budgetExhausted: false,
+      durationMs: 0
+    };
+
     if (this.isProcessing) {
-      return;
+      summary.durationMs = Date.now() - started;
+      return summary;
     }
 
     this.isProcessing = true;
 
     try {
-      // Get pending jobs ordered by priority and scheduled time
-      const jobsResult = await db.query(`
-        SELECT * FROM job_queue 
-        WHERE status IN ('pending', 'retrying') 
-          AND (scheduled_at IS NULL OR scheduled_at <= NOW())
-        ORDER BY 
-          CASE priority 
-            WHEN 'urgent' THEN 1 
-            WHEN 'high' THEN 2 
-            WHEN 'medium' THEN 3 
-            WHEN 'low' THEN 4 
-          END,
-          created_at ASC
-        LIMIT $1
-      `, [this.BATCH_SIZE]);
-
-      const jobs = jobsResult.rows as JobQueue[];
+      const jobs = await this.claimJobs(batchSize);
+      summary.claimed = jobs.length;
 
       if (jobs.length === 0) {
-        return;
+        return summary;
       }
 
       console.log(`Processing ${jobs.length} jobs from queue`);
 
-      // Process each job
       for (const job of jobs) {
-        await this.processJob(job);
+        if (Date.now() - started > budgetMs) {
+          // Hand the unstarted remainder back so the next tick picks them up promptly.
+          await this.releaseJob(job.id);
+          summary.budgetExhausted = true;
+          summary.claimed--;
+          continue;
+        }
+
+        const ok = await this.processJob(job);
+        if (ok) {
+          summary.completed++;
+        } else {
+          summary.failed++;
+        }
       }
 
+      return summary;
     } catch (error) {
       console.error('Error processing job queue:', error);
+      return summary;
     } finally {
       this.isProcessing = false;
+      summary.durationMs = Date.now() - started;
     }
   }
 
   /**
-   * Process a single job
-   * @param job - Job to process
-   * @returns Promise<void>
+   * Atomically claim due jobs, marking them `processing`.
+   *
+   * @param batchSize - Maximum rows to claim.
+   * @returns The claimed jobs.
    */
-  private async processJob(job: JobQueue): Promise<void> {
+  private async claimJobs(batchSize: number): Promise<JobQueueRow[]> {
+    return db.transaction(async (client) => {
+      const due = await client.query<{ id: string }>(
+        `SELECT id FROM job_queue
+          WHERE status IN ('pending', 'retrying')
+            AND (scheduled_at IS NULL OR scheduled_at <= NOW())
+          ORDER BY
+            CASE priority
+              WHEN 'urgent' THEN 1
+              WHEN 'high' THEN 2
+              WHEN 'medium' THEN 3
+              WHEN 'low' THEN 4
+              ELSE 5
+            END,
+            created_at ASC
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED`,
+        [batchSize]
+      );
+
+      const ids = due.rows.map((row) => row.id);
+      if (ids.length === 0) {
+        return [];
+      }
+
+      const claimed = await client.query<JobQueueRow>(
+        `UPDATE job_queue
+            SET status = 'processing', started_at = NOW(), updated_at = NOW()
+          WHERE id = ANY($1::uuid[])
+          RETURNING *`,
+        [ids]
+      );
+
+      return claimed.rows;
+    });
+  }
+
+  /**
+   * Return a claimed-but-unstarted job to the pending pool.
+   *
+   * @param jobId - Job UUID.
+   * @returns Nothing.
+   */
+  private async releaseJob(jobId: UUID): Promise<void> {
+    await db.query(
+      `UPDATE job_queue SET status = 'pending', started_at = NULL, updated_at = NOW()
+        WHERE id = $1 AND status = 'processing'`,
+      [jobId]
+    );
+  }
+
+  /**
+   * Process a single already-claimed job.
+   *
+   * @param job - Job to process.
+   * @returns True when the job completed; false when it was failed or scheduled for retry.
+   */
+  private async processJob(job: JobQueueRow): Promise<boolean> {
     const startTime = Date.now();
 
     try {
-      // Mark job as processing
-      await this.updateJobStatus(job.id, 'processing', null, new Date());
-
-      // Process based on job type
       let result: boolean = false;
 
       switch (job.job_type) {
@@ -154,24 +345,80 @@ export class JobQueueService {
         case 'webhook_processing':
           result = await this.processWebhookProcessingJob(job.payload);
           break;
+        case 'shipstation_sync_page':
+          result = await this.processShipStationSyncPageJob(job.payload);
+          break;
+        case 'shipstation_order_push':
+          result = await this.processShipStationOrderPushJob(job.payload);
+          break;
         default:
           console.warn(`Unknown job type: ${job.job_type}`);
           result = false;
       }
 
       if (result) {
-        // Mark job as completed
         await this.updateJobStatus(job.id, 'completed', null, null, new Date());
         console.log(`Job completed: ${job.job_type} - ${job.id} (${Date.now() - startTime}ms)`);
-      } else {
-        // Handle failure
-        await this.handleJobFailure(job, 'Job processing returned false');
+        return true;
       }
 
+      await this.handleJobFailure(job, 'Job processing returned false');
+      return false;
     } catch (error) {
       console.error(`Error processing job ${job.id} (${job.job_type}):`, error);
       await this.handleJobFailure(job, error instanceof Error ? error.message : 'Unknown error');
+      return false;
     }
+  }
+
+  /**
+   * Run one page of a ShipStation sync.
+   *
+   * Imported dynamically because the orchestrator enqueues through this service; a static import
+   * would close a cycle.
+   *
+   * @param payload - Job payload.
+   * @returns Success status.
+   */
+  private async processShipStationSyncPageJob(
+    payload: Record<string, unknown>
+  ): Promise<boolean> {
+    const { processSyncPageJob } = await import('@/lib/shipstation/syncOrchestrator');
+    const storeId = payloadString(payload, 'store_id');
+    const operation = payloadString(payload, 'operation');
+    const runId = payloadString(payload, 'run_id');
+    const page = payloadNumber(payload, 'page');
+
+    if (!storeId || !operation || !runId || page === undefined) {
+      throw new Error('Missing required fields: store_id, operation, run_id, page');
+    }
+
+    return processSyncPageJob({
+      store_id: storeId,
+      operation: operation as Parameters<typeof processSyncPageJob>[0]['operation'],
+      run_id: runId,
+      page
+    });
+  }
+
+  /**
+   * Push one paid order to ShipStation.
+   *
+   * @param payload - Job payload.
+   * @returns Success status.
+   */
+  private async processShipStationOrderPushJob(
+    payload: Record<string, unknown>
+  ): Promise<boolean> {
+    const { processOrderPushJob } = await import('@/lib/shipstation/orderPush');
+    const orderId = payloadString(payload, 'order_id');
+    const storeId = payloadString(payload, 'store_id');
+
+    if (!orderId || !storeId) {
+      throw new Error('Missing required fields: order_id, store_id');
+    }
+
+    return processOrderPushJob({ order_id: orderId, store_id: storeId });
   }
 
   /**
@@ -181,21 +428,47 @@ export class JobQueueService {
    */
   private async processOrderNotificationJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { order_id, notification_type, ...data } = payload;
+      const orderId = payloadString(payload, 'order_id');
+      const notificationType = payloadString(payload, 'notification_type');
 
-      if (!order_id || !notification_type) {
+      if (!orderId || !notificationType) {
         throw new Error('Missing required fields: order_id, notification_type');
       }
 
-      switch (notification_type) {
-        case 'shipped':
-          return await notificationService.sendShipmentNotificationEmail(order_id, data);
-        case 'delivered':
-          return await notificationService.sendDeliveryNotificationEmail(order_id, data);
-        case 'exception':
-          return await notificationService.sendExceptionNotificationEmail(order_id, data);
+      switch (notificationType) {
+        case 'shipped': {
+          const trackingData: ShipmentTrackingData = {
+            tracking_number: payloadString(payload, 'tracking_number'),
+            carrier: payloadString(payload, 'carrier'),
+            tracking_url: payloadString(payload, 'tracking_url'),
+            estimated_delivery: payloadString(payload, 'estimated_delivery'),
+            shipment_cost: payloadNumber(payload, 'shipment_cost'),
+            service_code: payloadString(payload, 'service_code')
+          };
+          return await notificationService.sendShipmentNotificationEmail(orderId, trackingData);
+        }
+        case 'delivered': {
+          const deliveryData: DeliveryData = {
+            delivered_date: payloadString(payload, 'delivered_date'),
+            tracking_number: payloadString(payload, 'tracking_number'),
+            carrier: payloadString(payload, 'carrier'),
+            delivery_confirmation: payloadString(payload, 'delivery_confirmation'),
+            signature_required: payloadBoolean(payload, 'signature_required')
+          };
+          return await notificationService.sendDeliveryNotificationEmail(orderId, deliveryData);
+        }
+        case 'exception': {
+          const exceptionData: ExceptionData = {
+            exception_description: payloadString(payload, 'exception_description'),
+            tracking_number: payloadString(payload, 'tracking_number'),
+            carrier: payloadString(payload, 'carrier'),
+            exception_date: payloadString(payload, 'exception_date'),
+            next_steps: payloadString(payload, 'next_steps')
+          };
+          return await notificationService.sendExceptionNotificationEmail(orderId, exceptionData);
+        }
         default:
-          throw new Error(`Unknown notification type: ${notification_type}`);
+          throw new Error(`Unknown notification type: ${notificationType}`);
       }
 
     } catch (error) {
@@ -211,13 +484,18 @@ export class JobQueueService {
    */
   private async processInventoryUpdateJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { order_id, shipment_data } = payload;
+      const orderId = payloadString(payload, 'order_id');
 
-      if (!order_id) {
+      if (!orderId) {
         throw new Error('Missing required field: order_id');
       }
 
-      return await inventoryService.updateInventoryAfterShipment(order_id, shipment_data);
+      const shipmentData = payloadObject(payload, 'shipment_data');
+
+      return await inventoryService.updateInventoryAfterShipment(orderId, {
+        tracking_number: shipmentData ? payloadString(shipmentData, 'tracking_number') : undefined,
+        carrier: shipmentData ? payloadString(shipmentData, 'carrier') : undefined
+      });
 
     } catch (error) {
       console.error('Error processing inventory update job:', error);
@@ -232,13 +510,25 @@ export class JobQueueService {
    */
   private async processShipmentProcessingJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { webhook_payload } = payload;
+      const webhookPayload = payloadObject(payload, 'webhook_payload');
 
-      if (!webhook_payload) {
+      if (!webhookPayload) {
         throw new Error('Missing required field: webhook_payload');
       }
 
-      return await orderStatusService.processShipmentNotification(webhook_payload);
+      // The store is recorded at enqueue time from the authenticated webhook URL. A job that
+      // predates that, or one whose payload was tampered with, has no tenant and must not run.
+      const storeId = payloadString(payload, 'store_id') ?? payloadString(webhookPayload, 'store_id');
+      if (!storeId) {
+        throw new Error('Missing required field: store_id');
+      }
+
+      const parsedPayload = parseShipStationWebhookPayload(webhookPayload);
+      if (!parsedPayload) {
+        throw new Error('Invalid ShipStation webhook payload in job');
+      }
+
+      return await orderStatusService.processShipmentNotification(parsedPayload, storeId);
 
     } catch (error) {
       console.error('Error processing shipment processing job:', error);
@@ -253,18 +543,29 @@ export class JobQueueService {
    */
   private async processWebhookProcessingJob(payload: Record<string, unknown>): Promise<boolean> {
     try {
-      const { webhook_type, webhook_data } = payload;
+      const webhookType = payloadString(payload, 'webhook_type');
+      const webhookData = payloadObject(payload, 'webhook_data');
+      const storeId = payloadString(payload, 'store_id');
 
-      if (!webhook_type || !webhook_data) {
+      if (!webhookType || !webhookData) {
         throw new Error('Missing required fields: webhook_type, webhook_data');
       }
 
+      if (!storeId) {
+        throw new Error('Missing required field: store_id');
+      }
+
       // Process different webhook types
-      switch (webhook_type) {
-        case 'shipstation_webhook':
-          return await orderStatusService.processShipmentNotification(webhook_data);
+      switch (webhookType) {
+        case 'shipstation_webhook': {
+          const parsedWebhook = parseShipStationWebhookPayload(webhookData);
+          if (!parsedWebhook) {
+            throw new Error('Invalid ShipStation webhook payload in job');
+          }
+          return await orderStatusService.processShipmentNotification(parsedWebhook, storeId);
+        }
         default:
-          console.warn(`Unknown webhook type: ${webhook_type}`);
+          console.warn(`Unknown webhook type: ${webhookType}`);
           return false;
       }
 
@@ -280,10 +581,11 @@ export class JobQueueService {
    * @param errorMessage - Error message
    * @returns Promise<void>
    */
-  private async handleJobFailure(job: JobQueue, errorMessage: string): Promise<void> {
-    const newAttempts = job.attempts + 1;
+  private async handleJobFailure(job: JobQueueRow, errorMessage: string): Promise<void> {
+    const newAttempts = (job.attempts ?? 0) + 1;
+    const maxAttempts = job.max_attempts ?? this.MAX_RETRY_ATTEMPTS;
 
-    if (newAttempts >= job.max_attempts) {
+    if (newAttempts >= maxAttempts) {
       // Max attempts reached, mark as failed
       await this.updateJobStatus(job.id, 'failed', errorMessage);
       console.error(`Job failed permanently: ${job.job_type} - ${job.id} (${newAttempts} attempts)`);
@@ -410,7 +712,7 @@ export class JobQueueService {
     try {
       const cutoffTime = new Date(Date.now() - timeRange * 60 * 60 * 1000);
 
-      const result = await db.query(`
+      const result = await db.query<JobStatsRow>(`
         SELECT 
           COUNT(*) as total,
           COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
@@ -433,12 +735,12 @@ export class JobQueueService {
       const stats = result.rows[0];
       
       return {
-        total: parseInt(stats.total),
-        pending: parseInt(stats.pending),
-        processing: parseInt(stats.processing),
-        completed: parseInt(stats.completed),
-        failed: parseInt(stats.failed),
-        retrying: parseInt(stats.retrying),
+        total: parseInt(stats.total, 10),
+        pending: parseInt(stats.pending, 10),
+        processing: parseInt(stats.processing, 10),
+        completed: parseInt(stats.completed, 10),
+        failed: parseInt(stats.failed, 10),
+        retrying: parseInt(stats.retrying, 10),
         by_type: stats.by_type || {},
         by_priority: stats.by_priority || {}
       };
@@ -487,18 +789,18 @@ export class JobQueueService {
   /**
    * Get failed jobs for manual inspection
    * @param limit - Maximum number of jobs to return
-   * @returns Promise<JobQueue[]>
+   * @returns Promise<JobQueueRow[]>
    */
-  async getFailedJobs(limit: number = 100): Promise<JobQueue[]> {
+  async getFailedJobs(limit: number = 100): Promise<JobQueueRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<JobQueueRow>(`
         SELECT * FROM job_queue 
         WHERE status = 'failed'
         ORDER BY updated_at DESC
         LIMIT $1
       `, [limit]);
 
-      return result.rows as JobQueue[];
+      return result.rows;
 
     } catch (error) {
       console.error('Error getting failed jobs:', error);

@@ -24,6 +24,33 @@ interface TurnoverMetrics {
   }>;
 }
 
+/** Row shape returned by the turnover sales query. */
+type TurnoverSalesRow = {
+  product_id: string;
+  sku: string;
+  name: string;
+  category: string;
+  current_inventory: number | null;
+  cost_price: string | null;
+  base_price: string;
+  total_sales_quantity: number;
+  total_sales_revenue: number;
+  cost_of_goods_sold: number;
+  last_sale_date: Date | null;
+  average_inventory: number | null;
+  turnover_ratio: number;
+  days_to_sell: number;
+};
+
+/** Row shape of the per-product daily sales trend series. */
+interface TurnoverTrendRow {
+  [key: string]: unknown;
+  product_id: string;
+  date: Date;
+  sales: number;
+  inventory: number;
+}
+
 interface TurnoverStats {
   total_products: number;
   average_turnover_ratio: number;
@@ -59,37 +86,135 @@ export async function GET(request: NextRequest) {
     // Calculate days in period
     const daysInPeriod = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
 
-    // Get product sales data for the period - simplified version without order data
+    /*
+     * TURNOVER — THE PLACEHOLDER THAT SHIPPED.
+     *
+     * Every metric in this query was the literal 0 behind the comment
+     * "No order data available". Order data is available: 119 `order_items`
+     * rows. The report consequently declared all twelve products dead stock at
+     * 0.00x turnover with infinite days-to-sell and an INVENTORY VALUE of $0,
+     * for a store holding $22,275.99 of stock that sold $5,358.00 in 90 days.
+     * That is worse than shipping nothing — it is confidently, specifically
+     * wrong, and it is one of the three reports the marketing deck says come
+     * standard.
+     *
+     * The arithmetic now:
+     *   COGS      = SUM(qty * unit_cost)   over the window, cost snapshotted
+     *               at order time (migration 023)
+     *   turnover  = COGS / average inventory *at cost*, annualised to the
+     *               window — the standard inventory-turnover definition, not
+     *               units sold over units held
+     *   days_to_sell = window days / turnover for the window
+     *
+     * Average inventory is approximated as the midpoint between opening and
+     * closing stock, opening being closing plus what sold during the window.
+     * That is the usual approximation when no daily snapshot series exists;
+     * `inventory_snapshots` is the table that would replace it.
+     *
+     * Verified for the trailing 90 days:
+     *   SELECT SUM(oi.quantity * oi.unit_cost) FROM order_items oi
+     *     JOIN orders o ON o.id = oi.order_id
+     *    WHERE o.store_id = '650e8400-…0001' AND o.status <> 'cancelled'
+     *      AND o.created_at >= NOW() - INTERVAL '90 days';   -> 2972.01
+     */
     const salesQuery = `
-      SELECT 
-        p.id as product_id,
-        p.sku,
-        p.name,
-        COALESCE(c.name, 'Uncategorized') as category,
-        p.stock_quantity as current_inventory,
-        p.cost_price,
-        p.base_price,
-        0 as total_sales_quantity, -- No order data available
-        0 as total_sales_revenue,  -- No order data available
-        0 as cost_of_goods_sold,   -- No order data available
-        NULL as last_sale_date,    -- No order data available
-        p.stock_quantity as average_inventory, -- Use current inventory as average
-        0 as turnover_ratio,       -- No sales data to calculate
-        999999 as days_to_sell     -- No sales data available
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id 
-      WHERE p.store_id = $1
-        AND p.is_active = true
-      ORDER BY p.name
+      WITH window_sales AS (
+        SELECT
+          oi.product_id,
+          SUM(oi.quantity)                                          AS qty,
+          SUM(oi.quantity * oi.unit_price)                          AS revenue,
+          SUM(oi.quantity * COALESCE(oi.unit_cost, 0))              AS cogs,
+          MAX(o.created_at)                                         AS last_sale_date
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.store_id = $1
+          AND o.status <> 'cancelled'
+          AND o.created_at >= $2
+          AND o.created_at <= $3
+        GROUP BY oi.product_id
+      ),
+      all_time_sales AS (
+        SELECT oi.product_id, MAX(o.created_at) AS last_sale_date
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+         WHERE o.store_id = $1 AND o.status <> 'cancelled'
+         GROUP BY oi.product_id
+      ),
+      base AS (
+        SELECT
+          p.id                                     AS product_id,
+          p.sku,
+          p.name,
+          COALESCE(c.name, 'Uncategorized')        AS category,
+          p.stock_quantity                         AS current_inventory,
+          p.cost_price,
+          p.base_price,
+          COALESCE(ws.qty, 0)                      AS total_sales_quantity,
+          COALESCE(ws.revenue, 0)                  AS total_sales_revenue,
+          COALESCE(ws.cogs, 0)                     AS cost_of_goods_sold,
+          COALESCE(ws.last_sale_date, ats.last_sale_date) AS last_sale_date,
+          -- Midpoint of opening and closing stock, in units.
+          GREATEST(
+            (p.stock_quantity + (p.stock_quantity + COALESCE(ws.qty, 0))) / 2.0,
+            1
+          )                                        AS average_inventory
+        FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN window_sales ws ON ws.product_id = p.id
+        LEFT JOIN all_time_sales ats ON ats.product_id = p.id
+        WHERE p.store_id = $1
+          AND p.is_active = true
+      )
+      SELECT
+        b.*,
+        -- COGS over average inventory at cost, annualised across the window.
+        CASE
+          WHEN b.average_inventory * COALESCE(b.cost_price, b.base_price * 0.6) = 0 THEN 0
+          ELSE (b.cost_of_goods_sold
+                / (b.average_inventory * COALESCE(b.cost_price, b.base_price * 0.6)))
+               * (365.0 / $4::numeric)
+        END                                        AS turnover_ratio,
+        -- How long the stock on hand would take to sell at the window's rate.
+        CASE
+          WHEN b.total_sales_quantity = 0 THEN 999999
+          ELSE ROUND(b.current_inventory / (b.total_sales_quantity / $4::numeric))
+        END                                        AS days_to_sell
+      FROM base b
+      ORDER BY b.name
     `;
 
-    const salesResult = await db.query(salesQuery, [user.storeId]);
+    const salesResult = await db.query<TurnoverSalesRow>(salesQuery, [
+      user.storeId,
+      startDate,
+      endDate,
+      daysInPeriod,
+    ]);
 
-    // Skip daily sales trend data since we don't have order data
-    const trendResult = { rows: [] };
+    /*
+     * The per-product daily trend series. Was hardcoded empty ("we don't have
+     * order data"), so every sparkline in the report was a flat line.
+     */
+    const trendResult = await db.query<TurnoverTrendRow>(
+      `SELECT
+         oi.product_id,
+         DATE(o.created_at)      AS date,
+         SUM(oi.quantity)::int   AS sales,
+         0                       AS inventory
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE o.store_id = $1
+         AND o.status <> 'cancelled'
+         AND o.created_at >= $2
+         AND o.created_at <= $3
+       GROUP BY oi.product_id, DATE(o.created_at)
+       ORDER BY DATE(o.created_at)`,
+      [user.storeId, startDate, endDate]
+    );
 
     // Group trend data by product
-    const trendDataByProduct = trendResult.rows.reduce((acc, row) => {
+    const trendDataByProduct = trendResult.rows.reduce<
+      Record<string, Array<{ date: string; sales: number; inventory: number }>>
+    >((acc, row) => {
       if (!acc[row.product_id]) {
         acc[row.product_id] = [];
       }
@@ -99,7 +224,7 @@ export async function GET(request: NextRequest) {
         inventory: Number(row.inventory) || 0
       });
       return acc;
-    }, {} as Record<string, Array<{ date: string; sales: number; inventory: number }>>);
+    }, {});
 
     // Process and categorize products
     const turnoverData: TurnoverMetrics[] = salesResult.rows.map(row => {
@@ -110,9 +235,24 @@ export async function GET(request: NextRequest) {
         ? Math.round((new Date().getTime() - new Date(lastSaleDate).getTime()) / (1000 * 60 * 60 * 24))
         : 999999;
 
-      // Categorize velocity based on turnover ratio and days since last sale
+      /*
+       * Velocity band.
+       *
+       * "Dead" is a fact about the product, not about the window you happened
+       * to select. The old test was `daysSinceLastSale > 90 || turnoverRatio
+       * === 0`, and since every ratio was the literal 0 it caught all twelve
+       * products. Restoring real ratios is not enough on its own: with the
+       * default 30-day window, a SKU that last sold nine weeks ago has no
+       * sales *in the window* and would still be branded dead stock, which is
+       * how a merchant ends up marking down a slow line rather than a dead
+       * one.
+       *
+       * Dead therefore means: never sold, or not sold in 90 days — the same
+       * definition the dead-stock report uses, so the two agree. Everything
+       * that has sold recently but is turning slowly is `slow`.
+       */
       let velocityCategory: 'fast' | 'medium' | 'slow' | 'dead';
-      if (daysSinceLastSale > 90 || turnoverRatio === 0) {
+      if (daysSinceLastSale > 90) {
         velocityCategory = 'dead';
       } else if (turnoverRatio >= 6) {
         velocityCategory = 'fast';
@@ -149,9 +289,19 @@ export async function GET(request: NextRequest) {
       fast_moving_count: turnoverData.filter(item => item.velocity_category === 'fast').length,
       slow_moving_count: turnoverData.filter(item => item.velocity_category === 'slow').length,
       dead_stock_count: turnoverData.filter(item => item.velocity_category === 'dead').length,
-      total_inventory_value: turnoverData.reduce((sum, item) => {
-        const unitCost = item.cost_of_goods_sold / Math.max(1, item.total_sales_quantity);
-        return sum + (item.current_inventory * unitCost);
+      /*
+       * Inventory value read $0 because it derived a unit cost from COGS
+       * divided by units sold, and both were the literal 0. It now comes from
+       * the products themselves and reconciles with the Inventory tile and the
+       * valuation report.
+       *
+       * Verified: SELECT SUM(stock_quantity * COALESCE(cost_price, base_price*0.6))
+       *   FROM products WHERE store_id = '650e8400-…0001' AND is_active;
+       *   -> matches /admin/inventory and /admin/inventory/reports/valuation
+       */
+      total_inventory_value: salesResult.rows.reduce((sum, row) => {
+        const unitCost = Number(row.cost_price) || Number(row.base_price) * 0.6;
+        return sum + (Number(row.current_inventory) || 0) * unitCost;
       }, 0),
       total_sales_revenue: turnoverData.reduce((sum, item) => sum + item.total_sales_revenue, 0)
     };

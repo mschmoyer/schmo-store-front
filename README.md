@@ -42,41 +42,140 @@ A modern e-commerce storefront built with Next.js 15, TypeScript, and Mantine UI
 - **Social**: React Share for social media integration
 - **Security**: Input sanitization with DOMPurify and sanitize-html
 
-## Getting Started
+## Running the stack locally
+
+### One command
+
+```bash
+nvm use && npm install
+npm run dev-local
+```
+
+That is the whole thing. It finds your Postgres, creates the database if it is missing,
+writes `.env.local` with a generated `JWT_SECRET`, applies migrations, seeds demo data,
+prints your sign-in credentials, and starts the dev server.
+
+Every step is idempotent, so re-running it is safe and fast — it skips whatever is
+already done.
+
+```
+npm run dev-local              # set up what is missing, then run
+npm run dev-local -- --fresh   # also re-seed demo data
+npm run dev-local -- --setup   # set up but do not start the server
+```
+
+**Sign in:** `demo@schmostore.com` / `rebeldev` — every seeded user shares that password.
+
+### Why it probes for credentials
+
+Postgres defaults differ by platform and there is no connection string that is correct
+everywhere. Homebrew on macOS creates a superuser named after your OS account, with trust
+auth and usually no `postgres` role at all. Docker and most Linux packages do create
+`postgres`, often with a password. `dev-local` tries the plausible candidates and uses
+whichever actually connects, rather than documenting one and hoping.
+
+If you already have a `DATABASE_URL` in `.env.local` it is always used as-is, on the
+assumption that you meant it. That also means a stale one is not routed around — if it
+fails, `dev-local` reports the actual Postgres error and whether the server answered at
+all, so you can tell "not running" apart from "wrong password".
+
+### Running Postgres in Docker
+
+There is no native install requirement. A dedicated container keeps this project's data
+separate from anything else on your machine:
+
+```bash
+docker run -d --name rebelshops-postgres \
+  -e POSTGRES_USER=rebelshops \
+  -e POSTGRES_PASSWORD=rebelshops_dev \
+  -e POSTGRES_DB=rebelshops \
+  -p 5436:5432 --restart unless-stopped postgres:17
+```
+
+Port 5436 is deliberate — 5432 is often already taken by another project's container.
+Put the matching URL in `.env.local` before the first `dev-local` run, since the probe
+only guesses at 5432:
+
+```
+DATABASE_URL=postgresql://rebelshops:rebelshops_dev@127.0.0.1:5436/rebelshops
+```
+
+To find the values for a container you already have, the user and password come from its
+environment and the port is the host side of its mapping:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Ports}}'
+docker inspect <name> --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES
+```
 
 ### Prerequisites
-- Node.js 20+ (use nvm: `nvm use`)
-- ShipStation API account and API key
 
-### Installation
+- **Node 22** — `nvm use` reads `.nvmrc`
+- **PostgreSQL 16+** — running locally or in Docker (see above)
+- Nothing else. Stripe, ShipStation and OpenAI keys are optional; every feature that needs
+  one degrades to a labelled "not configured" state rather than crashing.
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### What you get
 
-3. Set up environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Configure your `.env` file:
-   ```env
-   # ShipStation API Configuration
-   SHIPSTATION_API_KEY=your_shipstation_api_key_here
+| URL | What it is |
+|---|---|
+| `/` | Marketing site |
+| `/pricing` | Plan, comparison, FAQ |
+| `/store/demo-electronics` | **Basecamp Audio** — dark, high-contrast preset |
+| `/store/artisan-craft` | **Fernwood Goods** — warm editorial preset |
+| `/store/fitness-pro` | **Ironline Fitness** — bright, roomy preset |
+| `/admin` | Merchant dashboard |
+| `/admin/design` | Storefront theme customizer with live preview |
+| `/create-store` | Merchant onboarding |
+| `/dev/design-system` | Every UI primitive in every state |
 
-   # ShipEngine Configuration (uses same API key as ShipStation)
-   SHIPENGINE_SELLER_ID=your_seller_id_here
-   SHIPENGINE_WAREHOUSE_ID=your_warehouse_id_here
-   ```
+The three demo storefronts deliberately use three different presets, so the theme engine
+is visibly doing something rather than recolouring one design.
 
-4. Start the development server:
-   ```bash
-   npm run dev
-   ```
+### Doing it by hand
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
+```bash
+createdb rebelshops
+cp .env.example .env.local          # then set DATABASE_URL and JWT_SECRET
+npm run db:migrate
+npm run db:seed-demo
+npm run dev
+```
+
+The app reads **`.env.local`**, not `.env`. `DATABASE_URL` is the only variable without a
+working fallback.
+
+### Optional integrations
+
+| Variable | Unlocks | Without it |
+|---|---|---|
+| `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Checkout and subscription billing | Checkout shows "payments not configured" |
+| `STRIPE_WEBHOOK_SECRET` | Order creation on payment | Webhooks rejected |
+| `OPENAI_API_KEY` | AI blog and HS-code generators | Those screens report unavailable |
+| `CRON_SECRET` | Vercel Cron endpoints | Cron routes return 401 |
+
+ShipStation credentials are entered **per store in the admin UI**, not via env — the
+platform is multi-tenant and each merchant supplies their own key.
+
+### Checks
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm test               # 612 unit tests
+npm run test:e2e       # Playwright; needs the dev server running
+```
+
+### Troubleshooting
+
+- **`password authentication failed`** — with no `DATABASE_URL` set, `npm run dev-local`
+  probes for working credentials. With one set it is used as-is, so fix it there;
+  `dev-local` will tell you whether the server rejected the credentials or never answered.
+  `scripts/seed-demo.js` also prints platform-specific guidance on this error rather than
+  a stack trace.
+- **Sign-in fails** — `npm run dev-local -- --fresh` resets the demo users.
+- **A storefront 404s** — the store must be `is_public`. The seed sets this; if you toggled
+  visibility in the admin, toggle it back.
 
 ## Features
 

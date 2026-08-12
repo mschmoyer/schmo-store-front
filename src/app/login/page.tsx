@@ -1,148 +1,186 @@
 'use client';
 
-import React, { useState } from 'react';
-import { 
-  Paper, 
-  TextInput, 
-  PasswordInput, 
-  Button, 
-  Title, 
-  Text, 
-  Container,
-  Alert,
-  Group,
-  rem,
-  Anchor
-} from '@mantine/core';
-import { useForm } from '@mantine/form';
-import { IconLogin2, IconAlertCircle } from '@tabler/icons-react';
-import { useRouter } from 'next/navigation';
+import * as React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
-import { rebelTheme } from '@/lib/theme/rebel-theme';
+import { useRouter } from 'next/navigation';
+import { Button, Input } from '@/components/ui';
+import { validateEmail } from '@/components/onboarding/lib/password';
+import styles from './Login.module.css';
 
-interface LoginFormData {
-  email: string;
-  password: string;
+/** Warning triangle for the failure alert. */
+function AlertMark(): React.ReactElement {
+  return (
+    <svg className={styles.alertIcon} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 1.9 15 14.3H1L8 1.9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M8 6.3v3.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="11.7" r="0.85" fill="currentColor" />
+    </svg>
+  );
 }
 
-export default function LoginPage() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * `/login` — sign in.
+ *
+ * Deliberately says the same thing whether the email is unknown or the password
+ * is wrong: **"That email and password don't match."** Anything more specific
+ * turns this form into an account-enumeration oracle. The server already returns
+ * one message for both cases; this screen does not undo that by rendering
+ * different copy per status code.
+ *
+ * @returns The sign-in page
+ */
+export default function LoginPage(): React.ReactElement {
   const router = useRouter();
-  
-  const form = useForm<LoginFormData>({
-    initialValues: {
-      email: '',
-      password: '',
-    },
-    validate: {
-      email: (value) => (!value ? 'Email is required' : !/^\S+@\S+$/.test(value) ? 'Invalid email' : null),
-      password: (value) => (!value ? 'Password is required' : null),
-    },
-  });
-  
-  const handleSubmit = async (values: LoginFormData) => {
-    setIsLoading(true);
-    setError(null);
-    
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [touched, setTouched] = React.useState<{ email?: boolean; password?: boolean }>({});
+  const [failure, setFailure] = React.useState<{ title: string; body: string } | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const emailError = validateEmail(email);
+  const passwordError = password ? null : 'This field is required';
+  const isValid = !emailError && !passwordError;
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setTouched({ email: true, password: true });
+    if (!isValid || busy) return;
+
+    setBusy(true);
+    setFailure(null);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(values),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Login failed');
+        // 401 and 404 are the same message on purpose: never confirm whether an
+        // address has an account here.
+        setFailure(
+          response.status === 401 || response.status === 400 || response.status === 404
+            ? {
+                title: 'That didn’t work',
+                body: 'That email and password don’t match. Check both and try again.',
+              }
+            : {
+                title: 'Something broke on our end',
+                body: 'We’ve been notified. Try again in a moment.',
+              }
+        );
+        // Clear the password but un-touch the field: showing "This field is
+        // required" under an empty box we just emptied ourselves is noise on top
+        // of the real message.
+        setPassword('');
+        setTouched((current) => ({ ...current, password: false }));
+        return;
       }
 
-      const result = await response.json();
-      
-      // Store authentication token
-      localStorage.setItem('authToken', result.token);
-      
-      // Redirect to user's store admin page
-      router.push(`/admin?store=${result.storeSlug}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during login');
-      console.error('Login error:', err);
+      const result = (await response.json()) as { token?: string; storeSlug?: string };
+      if (result.token && typeof window !== 'undefined') {
+        // MUST be `admin_token`. AdminContext and every admin screen read that
+        // key; this page previously wrote `authToken`, which nothing read. A
+        // successful sign-in therefore landed on /admin, found no token, and
+        // bounced the merchant to a second sign-in screen. Same credentials,
+        // same session, twice — because two pages disagreed on one string.
+        localStorage.setItem('admin_token', result.token);
+      }
+      router.push(result.storeSlug ? `/admin?store=${result.storeSlug}` : '/create-store');
+    } catch {
+      setFailure({
+        title: 'We couldn’t reach the server',
+        body: 'Check your connection and try again.',
+      });
     } finally {
-      setIsLoading(false);
+      setBusy(false);
     }
   };
-  
+
   return (
-    <div className={`min-h-screen ${rebelTheme.sections.hero} flex items-center justify-center py-12`}>
-      <Container size={420} my={40}>
-        <Title
-          ta="center"
-          className={`${rebelTheme.classes.text.heading} font-bold`}
-          style={{
-            fontFamily: 'var(--font-geist-sans)',
-            fontWeight: 900,
-          }}
-        >
-          Sign In
-        </Title>
-        <Text size="sm" ta="center" mt={5} className={rebelTheme.classes.text.body}>
-          Access your store admin dashboard
-        </Text>
-        
-        <Paper withBorder shadow="md" p={30} mt={30} radius="md" className={`${rebelTheme.classes.card.background} ${rebelTheme.classes.card.border} ${rebelTheme.classes.card.shadow}`}>
-          <form onSubmit={form.onSubmit(handleSubmit)}>
-            {error && (
-              <Alert
-                icon={<IconAlertCircle size="1rem" />}
-                color="red"
-                mb="md"
-                variant="light"
-                className="!border-red-200 !bg-red-50 !text-red-800"
-              >
-                {error}
-              </Alert>
-            )}
-            
-            <TextInput
+    <div className={styles.page}>
+      <header className={styles.masthead}>
+        <Link href="/" className={styles.brand} aria-label="RebelShops home">
+          <Image
+            src="/brand/logo-horizontal.svg"
+            alt="RebelShops"
+            width={134}
+            height={22}
+            priority
+            className={styles.brandMark}
+          />
+        </Link>
+      </header>
+
+      <main className={styles.main}>
+        <form className={styles.card} onSubmit={handleSubmit} noValidate>
+          <span className={styles.eyebrow}>Welcome back</span>
+          <h1 className={styles.title}>Sign in</h1>
+          <p className={styles.subtitle}>Your store, your catalog and your orders.</p>
+
+          {failure ? (
+            <div className={styles.alert} role="alert" aria-live="assertive">
+              <AlertMark />
+              <div className={styles.alertBody}>
+                <p className={styles.alertTitle}>{failure.title}</p>
+                <p className={styles.alertText}>{failure.body}</p>
+              </div>
+            </div>
+          ) : null}
+
+          <div className={styles.fields}>
+            <Input
               label="Email"
-              placeholder="your-email@example.com"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@company.com"
               required
-              {...form.getInputProps('email')}
-              mb="md"
+              autoFocus
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setFailure(null);
+              }}
+              onBlur={() => setTouched((current) => ({ ...current, email: true }))}
+              error={touched.email ? (emailError ?? undefined) : undefined}
             />
-            
-            <PasswordInput
+
+            {/* No "Forgot password?" link: there is no reset flow behind it yet,
+                and a link that goes nowhere is worse than no link. */}
+            <Input
               label="Password"
-              placeholder="Your password"
+              type="password"
+              autoComplete="current-password"
               required
-              {...form.getInputProps('password')}
-              mb="md"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setFailure(null);
+              }}
+              onBlur={() => setTouched((current) => ({ ...current, password: true }))}
+              error={touched.password ? (passwordError ?? undefined) : undefined}
             />
-            
-            <Button
-              type="submit"
-              fullWidth
-              mt="xl"
-              loading={isLoading}
-              leftSection={<IconLogin2 style={{ width: rem(16), height: rem(16) }} />}
-              className={rebelTheme.classes.button.primary}
-            >
-              Sign In
-            </Button>
-          </form>
-          
-          <Group justify="center" mt="lg">
-            <Text size="sm" className={rebelTheme.classes.text.muted}>
-              Don&apos;t have a store?{' '}
-              <Anchor component={Link} href="/create-store" size="sm" className={rebelTheme.classes.link.primary}>
-                Create one here
-              </Anchor>
-            </Text>
-          </Group>
-        </Paper>
-      </Container>
+          </div>
+
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            fullWidth
+            className={styles.submit}
+            loading={busy}
+            disabled={!isValid}
+          >
+            Sign in
+          </Button>
+
+          <p className={styles.footer}>
+            No store yet? <Link href="/create-store">Start for $1</Link>
+          </p>
+        </form>
+      </main>
     </div>
   );
 }

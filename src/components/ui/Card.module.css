@@ -1,0 +1,215 @@
+/* Card — §5: paper-raised, 1px border, radius-lg, shadow-sm. */
+
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+
+  transition:
+    border-color var(--duration-standard) var(--ease-out),
+    box-shadow var(--duration-standard) var(--ease-out),
+    transform var(--duration-standard) var(--ease-out);
+}
+
+/* Sunken variant for wells and inset panels. */
+.sunken {
+  background-color: var(--surface-sunken);
+  box-shadow: none;
+}
+
+/* Flat variant: hairline only, no elevation. Use inside already-raised chrome. */
+.flat {
+  box-shadow: none;
+}
+
+/*
+ * Interactive cards lift on hover. No scale transform — §5 forbids it on
+ * anything wider than 320px and we cannot know the width here.
+ */
+.interactive {
+  cursor: pointer;
+  text-align: inherit;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
+.interactive:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.interactive:active {
+  box-shadow: var(--shadow-xs);
+}
+
+/* Motion only when it is welcome — an instant 2px snap on every hover is
+   worse for a vestibular-sensitive user than the transition it replaces. */
+@media (prefers-reduced-motion: no-preference) {
+  .interactive:hover {
+    transform: translateY(-2px);
+  }
+  .interactive:active {
+    transform: translateY(0);
+  }
+}
+
+.interactive:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-md);
+}
+
+/* A hairline of ink along the top edge marks a promoted card. */
+.accent::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto -1px;
+  height: 3px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--accent);
+}
+
+/*
+ * Focus-ring grounds.
+ *
+ * The gap stop in --focus-ring must be the colour the ring is actually drawn
+ * on. That is set on the SLOTS rather than on .root deliberately: an
+ * interactive Card is itself a focusable control, and its own ring sits on the
+ * page, not on its fill. Children get the card's own surface.
+ */
+.root > .header,
+.root > .body,
+.root > .footer {
+  --focus-ring-gap: var(--surface-raised);
+}
+
+.sunken > .header,
+.sunken > .body,
+.sunken > .footer {
+  --focus-ring-gap: var(--surface-sunken);
+}
+
+.root > .footer {
+  --focus-ring-gap: var(--surface-sunken);
+}
+
+/* ----------------------------------------------------------------- pad -- */
+
+.padNone > .header,
+.padNone > .body,
+.padNone > .footer {
+  padding: 0;
+}
+
+.padSm > .header {
+  padding: var(--space-3) var(--space-4);
+}
+.padSm > .body {
+  padding: var(--space-4);
+}
+.padSm > .footer {
+  padding: var(--space-3) var(--space-4);
+}
+
+.padMd > .header {
+  padding: var(--space-4) var(--space-5);
+}
+.padMd > .body {
+  padding: var(--space-5);
+}
+.padMd > .footer {
+  padding: var(--space-3-5) var(--space-5);
+}
+
+.padLg > .header {
+  padding: var(--space-5) var(--space-7);
+}
+.padLg > .body {
+  padding: var(--space-7);
+}
+.padLg > .footer {
+  padding: var(--space-4) var(--space-7);
+}
+
+/* -------------------------------------------------------------- slots --- */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.headerAction {
+  flex: none;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  background-color: var(--surface-sunken);
+  border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
+}
+
+.footerEnd {
+  justify-content: flex-end;
+}
+
+.footerBetween {
+  justify-content: space-between;
+}
+
+/* When the footer is the only slot after the body, keep it visually attached. */
+.footerPlain {
+  background-color: transparent;
+}
+
+/* A plain footer has no tray of its own, so it inherits the card's surface. */
+.root > .footerPlain {
+  --focus-ring-gap: var(--surface-raised);
+}
+
+.sunken > .footerPlain {
+  --focus-ring-gap: var(--surface-sunken);
+}

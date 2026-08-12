@@ -1,0 +1,132 @@
+/*
+ * Price — §3: always the display face, always tabular numerals so columns of
+ * prices line up and a changing quantity does not make the number jitter.
+ */
+
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  color: var(--text-primary);
+}
+
+.stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-0-5);
+}
+
+.amount {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+/* The currency symbol rides a touch smaller and higher than the digits — the
+   number is the information, the symbol is the unit. */
+.symbol {
+  font-size: 0.66em;
+  font-weight: 600;
+  align-self: flex-start;
+  margin-top: 0.12em;
+  margin-inline-end: 0.06em;
+  color: inherit;
+  opacity: 0.78;
+}
+
+.fraction {
+  font-size: 0.68em;
+  font-weight: 600;
+  align-self: flex-start;
+  margin-top: 0.1em;
+  margin-inline-start: 0.06em;
+  letter-spacing: 0;
+}
+
+/* --------------------------------------------------------------- sizes -- */
+
+.sm .amount {
+  font-size: 0.9375rem;
+}
+.md .amount {
+  font-size: 1.25rem;
+}
+.lg .amount {
+  font-size: 1.75rem;
+}
+.xl .amount {
+  font-size: clamp(2rem, 3.2vw, 2.75rem);
+}
+
+/* ------------------------------------------------------------ compareAt -- */
+
+.compare {
+  font-family: var(--font-display);
+  font-weight: 500;
+  /* A shopper reads the was-price to judge the deal, so it is real content and
+     gets --text-secondary (5.90:1), not a decorative tertiary grey. */
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 65%, transparent);
+  white-space: nowrap;
+}
+
+.sm .compare {
+  font-size: 0.8125rem;
+}
+.md .compare {
+  font-size: 0.9375rem;
+}
+.lg .compare {
+  font-size: 1.125rem;
+}
+.xl .compare {
+  font-size: 1.375rem;
+}
+
+/* On sale, the live price takes the money colour so the discount is legible
+   at a glance without reading both numbers. */
+.onSale .amount {
+  color: var(--success-text);
+}
+
+/* --------------------------------------------------------------- save --- */
+
+.save {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+
+  height: 22px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-full);
+
+  background-color: var(--success-subtle);
+  border: 1px solid var(--success-border);
+  color: var(--success-text);
+
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.free {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--success-text);
+}

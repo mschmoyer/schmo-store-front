@@ -117,7 +117,7 @@ export function ShareModal({ opened, onClose, productName, productUrl }: ShareMo
           Share &quot;{productName}&quot; with your friends
         </Text>
 
-        {typeof navigator !== 'undefined' && navigator.share && (
+        {typeof navigator !== 'undefined' && 'share' in navigator && (
           <Button
             fullWidth
             size="md"

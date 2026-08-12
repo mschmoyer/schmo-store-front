@@ -1,101 +1,146 @@
-import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import { headers } from 'next/headers';
-import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
-import { TopNav } from '@/components';
-import { ThemeStyleElement } from '@/lib/themeSSR';
-import StorePageClient from './StorePageClient';
+import { cookies } from 'next/headers';
 
+import { StorefrontShell } from '@/components/store/StorefrontShell';
+import { SectionList } from '@/components/store/sections';
+import { EmptyCatalogue } from '@/components/store/states/EmptyStates';
+import { SectionHeading, StoreBand, StoreContainer } from '@/components/store/ui';
+import { verifySession } from '@/lib/auth/session';
+import { db } from '@/lib/database/connection';
 
-interface Store {
-  id: string;
-  store_name: string;
-  store_slug: string;
-  store_description: string;
-  hero_title: string;
-  hero_description: string;
-  theme_name: string;
-  currency: string;
-  is_active: boolean;
-  is_public: boolean;
-  meta_title: string;
-  meta_description: string;
-}
+import { loadStorefront, type SearchParams } from '../_lib/load';
+import { countActiveProducts } from '../_lib/queries';
 
 interface StorePageProps {
   params: Promise<{ storeSlug: string }>;
+  searchParams: Promise<SearchParams>;
 }
 
-async function getStoreData(storeSlug: string): Promise<Store | null> {
+/**
+ * Whether this request is the shop's own owner looking at it.
+ *
+ * The merchant-facing troubleshooting block ("Open your dashboard and go to
+ * Products…", plus a *Manage products* button) is useful advice for exactly one
+ * person, and internal noise on the public web for everybody else. Gating it on
+ * "the shop is empty" published it to shoppers; gating it on identity does not.
+ *
+ * Any failure to read the cookie is treated as "not the owner". The cost of a
+ * false negative is a merchant seeing the same polite line a shopper sees; the
+ * cost of a false positive is admin instructions on a public URL, which is the
+ * defect this exists to close.
+ *
+ * @param storeId - The store being rendered
+ * @returns True only for an authenticated owner of this store
+ */
+async function isStoreOwner(storeId: string): Promise<boolean> {
   try {
-    const headersList = await headers();
-    const host = headersList.get('host') || 'localhost:3000';
-    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-    const baseUrl = `${protocol}://${host}`;
+    const token = (await cookies()).get('session')?.value;
+    if (!token) return false;
+    const session = await verifySession(token);
+    if (!session?.userId) return false;
 
-    const response = await fetch(`${baseUrl}/api/stores/public?slug=${storeSlug}`, {
-      next: { revalidate: 300 }, // 5 minutes
-    });
+    // The fast path. The slow path exists because the session JWT is minted
+    // during onboarding *before* the store is created, so a merchant who has
+    // just finished the wizard is carrying a token with no `storeId` in it.
+    if (session.storeId === storeId) return true;
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.data) {
-        return data.data;
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error('Error fetching store:', error);
-    return null;
+    const owner = await db.query<{ owner_id: string }>(
+      'SELECT owner_id FROM stores WHERE id = $1 LIMIT 1',
+      [storeId],
+    );
+    return owner.rows[0]?.owner_id === session.userId;
+  } catch {
+    return false;
   }
 }
 
-export async function generateMetadata({ params }: StorePageProps): Promise<Metadata> {
-  const resolvedParams = await params;
-  const data = await getStoreData(resolvedParams.storeSlug);
-  
-  if (!data) {
-    return {
-      title: 'Store Not Found',
-      description: 'The requested store could not be found.'
-    };
-  }
-  
-  return {
-    title: `${data.hero_title || data.store_name} | Store`,
-    description: data.hero_description || data.store_description || `Shop at ${data.store_name}`,
-    openGraph: {
-      title: data.hero_title || data.store_name,
-      description: data.hero_description || data.store_description,
-      type: 'website',
-    },
-  };
-}
+/**
+ * The store home page.
+ *
+ * The page itself composes nothing: it renders the ordered `Section[]` from the
+ * theme engine through the one registry in `components/store/sections`
+ * (spec section 8). Reordering sections in the customizer therefore reorders
+ * this page with no code change, and a section type this build does not know
+ * about is skipped rather than crashing the shop.
+ *
+ * A shop with no products still renders its own home page. Most of what a
+ * merchant composes — the hero, the value props, the image-with-text, the rich
+ * text — needs no catalogue at all, and the product-bearing sections already
+ * return `null` when they have nothing to show. Suppressing all seven and
+ * replacing them with a single panel was how a freshly published store came out
+ * as a black page reading "NO PRODUCTS YET · If it is yours, here is how to fill
+ * it: Open your dashboard…" — internal instructions, addressed to the owner,
+ * served to whoever the merchant had just been told to send the link to.
+ *
+ * So the empty case now splits by audience: the owner gets the troubleshooting
+ * block, and everyone else gets one quiet line under the merchant's real
+ * sections.
+ *
+ * @param props - Route params and search params
+ * @returns The themed store home page
+ */
+export default async function StoreHomePage({ params, searchParams }: StorePageProps) {
+  const { storeSlug } = await params;
+  const search = await searchParams;
 
-export default async function StoreProductsPage({ params }: StorePageProps) {
-  const resolvedParams = await params;
-  const store = await getStoreData(resolvedParams.storeSlug);
-  
-  if (!store) {
-    notFound();
-  }
-  
-  console.log('Store data:', store);
-  console.log('Store theme_name:', store.theme_name);
-  
+  const result = await loadStorefront(storeSlug, search);
+  if (!result.ok) return result.fallback;
+
+  const { store, theme, sections, categories, isPreview } = result.data;
+  const productCount = await countActiveProducts(store.id);
+
+  // A preview token is already proof the viewer is authorised to see the draft,
+  // so it counts as the merchant looking at their own shop. Only asked when the
+  // shop is empty, which is the only case that renders anything owner-specific.
+  const isOwner =
+    productCount === 0 ? isPreview || (await isStoreOwner(store.id)) : false;
+
+  // The default sections and `footer.showNewsletter` are both on out of the
+  // box, which would stack two identical email forms at the bottom of the page.
+  const hasNewsletterSection = sections.some(
+    (section) => section.type === 'newsletter' && section.enabled,
+  );
+
   return (
-    <>
-      <ThemeStyleElement themeId={store.theme_name || 'default'} />
-      <StoreThemeProvider themeId={store.theme_name || 'default'}>
-        <div>
-          <TopNav />
-          <StorePageClient store={store} storeSlug={resolvedParams.storeSlug} />
-        </div>
-      </StoreThemeProvider>
-    </>
+    <StorefrontShell {...result.data} suppressFooterNewsletter={hasNewsletterSection}>
+      {productCount === 0 ? (
+        <>
+          {/* The merchant's own composition, exactly as they designed it. The
+              sections that need products bow out by themselves. */}
+          <SectionList sections={sections} ctx={{ store, theme, categories, isPreview }} />
+
+          <StoreBand>
+            <StoreContainer width="narrow">
+              {isOwner ? (
+                <EmptyCatalogue />
+              ) : (
+                <SectionHeading
+                  align="center"
+                  heading="Nothing for sale just yet"
+                  subheading="This shop is still being set up. Check back soon."
+                />
+              )}
+            </StoreContainer>
+          </StoreBand>
+        </>
+      ) : (
+        // Rendered inline, with no Suspense boundary.
+        //
+        // The boundary that used to be here bought a fast first paint at a
+        // price nobody had measured: React streams the contents of a suspended
+        // subtree into `<div hidden>` and un-hides it with an inline script, so
+        // with JavaScript disabled this page was a header, a footer, and 28,814
+        // characters of shop parked in a hidden div — an empty storefront for a
+        // failed bundle, a text-mode client, or a crawler that does not run JS.
+        // It also cost 0.3077 CLS, because the fallback was a hero skeleton and
+        // eight cards while the real page is a merchant-composed section list of
+        // entirely different geometry; there is no skeleton that can match a
+        // shape the customizer decides.
+        //
+        // The sections do query the catalogue, so this delays the first byte
+        // rather than the first section. A shop that renders is worth more than
+        // a shop that renders sooner.
+        <SectionList sections={sections} ctx={{ store, theme, categories, isPreview }} />
+      )}
+    </StorefrontShell>
   );
 }
-
-
-
-

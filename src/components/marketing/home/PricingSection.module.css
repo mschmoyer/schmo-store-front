@@ -1,0 +1,57 @@
+/*
+ * The homepage's ONE inverted section. The ground itself comes from
+ * `Section.module.css`'s `.dark`; this file only lays out what sits on it.
+ *
+ * Why this section and no other: it is the decision point. A single inversion
+ * where the reader has to choose reads as emphasis. The page previously had
+ * four dark blocks, which is not emphasis — it is stripes.
+ */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--stack-md);
+  align-items: start;
+  margin-top: var(--stack-md);
+}
+
+/*
+ * Centred, not top-aligned. The plan card is unavoidably the tallest thing in
+ * this section; aligning the prose to its top pooled ~600px of empty ink
+ * underneath. Centring splits that space above and below the paragraph, where
+ * it reads as margin rather than as a hole.
+ */
+.catch {
+  align-self: center;
+}
+
+.catchTitle {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.catchBody {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 52ch;
+}
+
+/* The two inclusion lists, given the full content width. */
+.listsBand {
+  margin-top: var(--stack-md);
+  padding-top: var(--stack-sm);
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 940px) {
+  .layout {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: var(--space-10);
+  }
+}

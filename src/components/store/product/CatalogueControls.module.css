@@ -1,0 +1,205 @@
+/*
+ * Listing-page controls and pagination.
+ *
+ * Every control is a link or a plain GET form, so the whole listing state lives
+ * in the URL: shareable, bookmarkable, and correct under the back button.
+ */
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+  margin-bottom: var(--st-space-5);
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  min-width: 0;
+}
+
+.count {
+  color: var(--st-text-muted);
+  font-size: var(--st-small);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-3);
+  padding-bottom: var(--st-space-5);
+  margin-bottom: var(--st-space-6);
+  border-bottom: 1px solid var(--st-border);
+}
+
+.searchForm {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  gap: var(--st-space-2);
+}
+
+.searchField {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.searchIcon {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 12px;
+  display: flex;
+  align-items: center;
+  color: var(--st-text-muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  padding-inline-start: 38px;
+}
+
+.sortForm {
+  display: flex;
+  align-items: center;
+  gap: var(--st-space-2);
+  margin-inline-start: auto;
+}
+
+.sortLabel {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  white-space: nowrap;
+}
+
+/* -- Category chips ------------------------------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+  width: 100%;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--st-space-2);
+  padding: 7px var(--st-space-4);
+  border: 1px solid var(--st-border-strong);
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--st-text);
+  font-size: var(--st-small);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.chip:hover {
+  border-color: var(--st-brand);
+  color: var(--st-brand);
+}
+
+/* The active filter is marked by fill *and* by `aria-current`, so it is not
+   communicated by colour alone. */
+.chipActive {
+  background-color: var(--st-brand);
+  border-color: var(--st-brand);
+  color: var(--st-on-brand);
+  font-weight: 600;
+}
+
+.chipActive:hover {
+  color: var(--st-on-brand);
+}
+
+.chipCount {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- Active filter summary ------------------------------------------------ */
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-3);
+  margin-bottom: var(--st-space-5);
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+}
+
+/* -- Pagination ----------------------------------------------------------- */
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-space-2);
+  margin-top: var(--st-space-9);
+}
+
+.page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 42px;
+  block-size: 42px;
+  padding-inline: var(--st-space-3);
+  border: 1px solid var(--st-border-strong);
+  border-radius: var(--st-radius-button);
+  color: var(--st-text);
+  text-decoration: none;
+  font-size: var(--st-small);
+  font-variant-numeric: tabular-nums;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.page:hover {
+  border-color: var(--st-brand);
+  color: var(--st-brand);
+}
+
+.pageCurrent {
+  background-color: var(--st-brand);
+  border-color: var(--st-brand);
+  color: var(--st-on-brand);
+  font-weight: 700;
+}
+
+.pageCurrent:hover {
+  color: var(--st-on-brand);
+}
+
+.pageDisabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 24px;
+  block-size: 42px;
+  color: var(--st-text-muted);
+}
+
+@media (max-width: 640px) {
+  .sortForm {
+    margin-inline-start: 0;
+    width: 100%;
+  }
+
+  .sortForm select {
+    flex: 1 1 auto;
+  }
+}

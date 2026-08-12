@@ -5,6 +5,27 @@
 
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/database';
+import { StoreIntegrationRow } from '@/lib/types/db-rows';
+
+/** Columns selected by the Basic Auth credential lookup. */
+type ShipStationAuthRow = Pick<
+  StoreIntegrationRow,
+  | 'id'
+  | 'store_id'
+  | 'is_active'
+  | 'configuration'
+  | 'api_key_encrypted'
+  | 'api_secret_encrypted'
+  | 'shipstation_username'
+  | 'shipstation_password_hash'
+  | 'shipstation_auth_enabled'
+>;
+
+/** Columns selected by the API key credential lookup. */
+type ShipStationApiKeyRow = Pick<
+  StoreIntegrationRow,
+  'id' | 'store_id' | 'is_active' | 'configuration' | 'api_key_encrypted' | 'api_secret_encrypted'
+>;
 
 /**
  * Simple decryption functions (should match the encryption in integrations route)
@@ -68,7 +89,7 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
     }
     
     // Look up credentials in database - support both API key/secret AND username/password authentication
-    const result = await db.query(
+    const result = await db.query<ShipStationAuthRow>(
       `SELECT 
         i.id,
         i.store_id,
@@ -93,10 +114,14 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
           if (username === integration.shipstation_username) {
             // For now, we'll use simple comparison - in production, use proper password hashing (bcrypt)
             const hashedPassword = Buffer.from(password).toString('base64');
-            if (hashedPassword === integration.shipstation_password_hash) {
+            if (
+              hashedPassword === integration.shipstation_password_hash &&
+              integration.api_key_encrypted !== null &&
+              integration.api_secret_encrypted !== null
+            ) {
               const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
               const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
-              
+
               return {
                 success: true,
                 storeId: integration.store_id,
@@ -106,7 +131,7 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
                   apiKey: decryptedApiKey,
                   apiSecret: decryptedApiSecret,
                   storeId: integration.store_id,
-                  isActive: integration.is_active
+                  isActive: integration.is_active ?? false
                 }
               };
             }
@@ -128,7 +153,7 @@ export async function authenticateShipStationRequest(request: NextRequest): Prom
                 apiKey: decryptedApiKey,
                 apiSecret: decryptedApiSecret,
                 storeId: integration.store_id,
-                isActive: integration.is_active
+                isActive: integration.is_active ?? false
               }
             };
           }
@@ -172,7 +197,7 @@ export async function authenticateShipStationAPIKey(request: NextRequest): Promi
     }
     
     // Look up API credentials in database
-    const result = await db.query(
+    const result = await db.query<ShipStationApiKeyRow>(
       `SELECT 
         i.id,
         i.store_id,
@@ -189,9 +214,12 @@ export async function authenticateShipStationAPIKey(request: NextRequest): Promi
     // Check each integration to find matching API credentials
     for (const integration of result.rows) {
       try {
+        if (integration.api_key_encrypted === null || integration.api_secret_encrypted === null) {
+          continue;
+        }
         const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
         const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
-        
+
         if (apiKey === decryptedApiKey && apiSecret === decryptedApiSecret) {
           return {
             success: true,
@@ -202,7 +230,7 @@ export async function authenticateShipStationAPIKey(request: NextRequest): Promi
               apiKey: decryptedApiKey,
               apiSecret: decryptedApiSecret,
               storeId: integration.store_id,
-              isActive: integration.is_active
+              isActive: integration.is_active ?? false
             }
           };
         }
@@ -259,7 +287,7 @@ export async function authenticateShipStationMulti(request: NextRequest): Promis
  */
 export async function getShipStationConfig(storeId: string): Promise<ShipStationCredentials | null> {
   try {
-    const result = await db.query(
+    const result = await db.query<ShipStationApiKeyRow>(
       `SELECT 
         i.id,
         i.store_id,
@@ -280,17 +308,21 @@ export async function getShipStationConfig(storeId: string): Promise<ShipStation
     
     const integration = result.rows[0];
     
+    if (integration.api_key_encrypted === null || integration.api_secret_encrypted === null) {
+      return null;
+    }
+
     try {
       const decryptedApiKey = decryptApiKey(integration.api_key_encrypted);
       const decryptedApiSecret = decryptApiSecret(integration.api_secret_encrypted);
-      
+
       return {
         username: decryptedApiKey, // API key as username
         password: decryptedApiSecret, // API secret as password
         apiKey: decryptedApiKey,
         apiSecret: decryptedApiSecret,
         storeId: integration.store_id,
-        isActive: integration.is_active
+        isActive: integration.is_active ?? false
       };
     } catch (error) {
       console.error('Failed to decrypt ShipStation credentials:', error);

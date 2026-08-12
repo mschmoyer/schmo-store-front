@@ -1,354 +1,267 @@
-import { Metadata } from 'next';
+import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { StoreThemeProvider } from '@/components/store/StoreThemeProvider';
-import { TopNav } from '@/components';
-import { ProductPageClient } from './ProductPageClient';
-import { Product } from '@/types/product';
+import { IconRuler2, IconTruck, IconWeight } from '@tabler/icons-react';
+
+import { ProductSchema } from '@/components/product/ProductSchema';
+import { StorefrontShell } from '@/components/store/StorefrontShell';
+import { BuyBox } from '@/components/store/product/BuyBox';
+import { ProductGallery } from '@/components/store/product/ProductGallery';
+import { ProductGrid } from '@/components/store/product/ProductGrid';
+import {
+  Notice,
+  Pill,
+  SectionHeading,
+  StockIndicator,
+  StoreBand,
+  StoreContainer,
+  StorePrice,
+  cx,
+} from '@/components/store/ui';
+
+import { loadStorefront, type SearchParams } from '../../../_lib/load';
+import { getProduct, getRelatedProducts, getStoreBySlug } from '../../../_lib/queries';
+import { sanitizeRichText, toParagraphs } from '../../../_lib/html';
+import {
+  formatDimensions,
+  formatWeight,
+  isPurchasable,
+  productHref,
+  stockState,
+} from '../../../_lib/present';
+import styles from '@/components/store/product/ProductDetail.module.css';
+import sectionStyles from '@/components/store/sections/Sections.module.css';
 
 interface ProductPageProps {
-  params: Promise<{ 
-    storeSlug: string;
-    productId: string; 
-  }>;
+  params: Promise<{ storeSlug: string; productId: string }>;
+  searchParams: Promise<SearchParams>;
 }
 
-interface Store {
-  id: string;
-  store_name: string;
-  store_slug: string;
-  theme_name: string;
-  currency: string;
-}
-
-interface ProductData {
-  product: Product;
-  reviews: Record<string, unknown>;
-  store: Store;
-}
-
-async function getProductData(storeSlug: string, productId: string): Promise<ProductData | null> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    
-    // First, get the store ID from the store slug
-    const storeResponse = await fetch(`${baseUrl}/api/stores/public?slug=${storeSlug}`, {
-      next: { revalidate: 300 }, // 5 minutes
-    });
-    
-    if (!storeResponse.ok) {
-      console.error('Failed to fetch store by slug:', storeSlug);
-      return null;
-    }
-    
-    const storeData = await storeResponse.json();
-    if (!storeData.success || !storeData.data) {
-      console.error('Store not found for slug:', storeSlug);
-      return null;
-    }
-    
-    const storeId = storeData.data.id;
-    
-    // Now fetch the product using the store ID
-    const response = await fetch(`${baseUrl}/api/stores/${storeId}/products/${productId}`, {
-      // Enable caching with revalidation
-      next: { revalidate: 300 }, // 5 minutes
-    });
-    
-    if (!response.ok) {
-      if (response.status === 404) {
-        return null;
-      }
-      if (response.status === 400) {
-        // Invalid product ID format - treat as not found
-        return null;
-      }
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (!data.success || !data.data) {
-      return null;
-    }
-    
-    return {
-      product: data.data.product,
-      reviews: data.data.reviews,
-      store: storeData.data
-    };
-  } catch (error) {
-    console.error('Error fetching product data:', error);
-    throw error;
-  }
-}
-
+/**
+ * Metadata built from the product's own copy.
+ * @param props - Route params
+ * @returns Product-specific metadata
+ */
 export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
-  try {
-    const resolvedParams = await params;
-    const data = await getProductData(resolvedParams.storeSlug, resolvedParams.productId);
-    
-    if (!data) {
-      return {
-        title: 'Product Not Found',
-        description: 'The requested product could not be found.'
-      };
-    }
-    
-    const { product } = data;
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const productUrl = `${baseUrl}/store/${resolvedParams.storeSlug}/product/${resolvedParams.productId}`;
-    
-    // Product details with fallbacks
-    const productTitle = product.name || 'Product';
-    const productDescription = product.description || product.customs_description || `${productTitle} available at ${resolvedParams.storeSlug}`;
-    const productPrice = product.customs_value?.amount || product.price || 29.99;
-    const productImage = product.thumbnail_url || `${baseUrl}/placeholder-product.svg`;
-    const storeName = resolvedParams.storeSlug; // TODO: Get actual store name from store data
-    
-    // TODO: Add these fields to product database schema
-    const productBrand = storeName; // Mock data - should come from product.brand
-    const productCondition = 'new'; // Mock data - should come from product.condition
-    const productAvailability = product.active ? 'in stock' : 'out of stock';
-    const productCategory = product.product_category?.name || 'General'; // Using existing field
-    const productRating = '4.5'; // Mock data - TODO: calculate from reviews
-    const productReviewCount = '0'; // Mock data - TODO: count from reviews table
-    const productKeywords = `${productTitle}, ${productCategory}, ${storeName}, online shopping`; // Mock data - TODO: add keywords field
-    const productSEOTitle = `${productTitle} - ${storeName} | Best ${productCategory} Online`;
-    
-    // Social media optimized metadata
-    const socialMetadata = {
-      // Basic metadata
-      title: productSEOTitle,
-      description: productDescription,
-      keywords: productKeywords,
-      
-      // Open Graph (Facebook, Instagram, LinkedIn)
-      openGraph: {
-        type: 'website', // Note: 'product' is not a standard OG type, using 'website'
-        title: productTitle,
-        description: productDescription,
-        url: productUrl,
-        siteName: storeName,
-        images: [
-          {
-            url: productImage,
-            width: 1200,
-            height: 630,
-            alt: productTitle,
-            type: 'image/jpeg', // TODO: detect actual image type
-          },
-          {
-            url: productImage,
-            width: 800,
-            height: 600,
-            alt: productTitle,
-            type: 'image/jpeg',
-          }
-        ],
-        locale: 'en_US', // TODO: make this dynamic based on store locale
-      },
-      
-      // Twitter Card (Twitter)
-      twitter: {
-        card: 'summary_large_image',
-        site: '@' + storeName, // TODO: get actual Twitter handle from store settings
-        creator: '@' + storeName, // TODO: get actual Twitter handle
-        title: productTitle,
-        description: productDescription,
-        images: [productImage],
-        
-        // Twitter-specific product metadata
-        label1: 'Price',
-        data1: `$${productPrice.toFixed(2)}`,
-        label2: 'Availability',
-        data2: productAvailability,
-      },
-      
-      // Additional meta tags for better SEO and social sharing
-      other: {
-        // Schema.org structured data hints
-        'product:price:amount': productPrice.toString(),
-        'product:price:currency': 'USD',
-        'product:availability': productAvailability,
-        'product:condition': productCondition,
-        'product:brand': productBrand,
-        'product:category': productCategory,
-        
-        // Additional social platform optimizations
-        'pinterest:rich_pin': 'true',
-        'pinterest:description': productDescription,
-        
-        // TikTok and general mobile optimizations
-        'mobile-web-app-capable': 'yes',
-        'apple-mobile-web-app-capable': 'yes',
-        'apple-mobile-web-app-status-bar-style': 'default',
-        'apple-mobile-web-app-title': productTitle,
-        
-        // SEO enhancements
-        'robots': 'index,follow',
-        'googlebot': 'index,follow',
-        'author': storeName,
-        'rating': productRating,
-        'review-count': productReviewCount,
-        
-        // E-commerce specific
-        'product:retailer_item_id': product.sku || product.product_id,
-        'product:mfr_part_no': product.sku, // TODO: add manufacturer part number field
-      }
-    };
-    
-    // Console log all metadata fields for debugging
-    console.log('=== SOCIAL MEDIA METADATA DEBUG ===');
-    console.log('Product URL:', productUrl);
-    console.log('Facebook/Instagram Open Graph:', {
-      type: socialMetadata.openGraph.type,
-      title: socialMetadata.openGraph.title,
-      description: socialMetadata.openGraph.description,
-      url: socialMetadata.openGraph.url,
-      siteName: socialMetadata.openGraph.siteName,
-      images: socialMetadata.openGraph.images,
-      locale: socialMetadata.openGraph.locale,
-    });
-    console.log('Twitter Card:', {
-      card: socialMetadata.twitter.card,
-      site: socialMetadata.twitter.site,
-      creator: socialMetadata.twitter.creator,
-      title: socialMetadata.twitter.title,
-      description: socialMetadata.twitter.description,
-      images: socialMetadata.twitter.images,
-    });
-    console.log('TikTok/Mobile Optimizations:', {
-      'mobile-web-app-capable': socialMetadata.other['mobile-web-app-capable'],
-      'apple-mobile-web-app-capable': socialMetadata.other['apple-mobile-web-app-capable'],
-      'apple-mobile-web-app-title': socialMetadata.other['apple-mobile-web-app-title'],
-    });
-    console.log('Pinterest Rich Pins:', {
-      'pinterest:rich_pin': socialMetadata.other['pinterest:rich_pin'],
-      'pinterest:description': socialMetadata.other['pinterest:description'],
-    });
-    console.log('Product Schema.org:', {
-      'product:price:amount': socialMetadata.other['product:price:amount'],
-      'product:price:currency': socialMetadata.other['product:price:currency'],
-      'product:availability': socialMetadata.other['product:availability'],
-      'product:condition': socialMetadata.other['product:condition'],
-      'product:brand': socialMetadata.other['product:brand'],
-      'product:category': socialMetadata.other['product:category'],
-    });
-    console.log('SEO Metadata:', {
-      title: socialMetadata.title,
-      description: socialMetadata.description,
-      keywords: socialMetadata.keywords,
-      robots: socialMetadata.other['robots'],
-      rating: socialMetadata.other['rating'],
-      'review-count': socialMetadata.other['review-count'],
-    });
-    console.log('===============================');
-    
-    return socialMetadata;
-  } catch (error) {
-    console.error('Error generating product metadata:', error);
-    return {
-      title: 'Product Not Found',
-      description: 'The requested product could not be found.'
-    };
-  }
+  const { storeSlug, productId } = await params;
+  const lookup = await getStoreBySlug(storeSlug);
+  if (!lookup.ok) return { title: 'Shop unavailable' };
+
+  const product = await getProduct(lookup.store.id, productId);
+  if (!product) return { title: 'Product not found' };
+
+  const description =
+    product.metaDescription || product.shortDescription || product.longDescription || '';
+
+  return {
+    title: product.metaTitle || product.name,
+    description: description.slice(0, 300),
+    openGraph: {
+      title: product.name,
+      description: description.slice(0, 300),
+      type: 'website',
+      ...(product.featuredImageUrl ? { images: [product.featuredImageUrl] } : {}),
+    },
+  };
 }
 
-export default async function ProductPage({ params }: ProductPageProps) {
-  const resolvedParams = await params;
-  const data = await getProductData(resolvedParams.storeSlug, resolvedParams.productId);
-  
-  if (!data) {
-    notFound();
-  }
-  
-  const { product, store } = data;
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-  const productUrl = `${baseUrl}/store/${resolvedParams.storeSlug}/product/${resolvedParams.productId}`;
-  
-  // Generate JSON-LD structured data for better social sharing and SEO
-  const productPrice = product.customs_value?.amount || product.price || 29.99;
-  const productImage = product.thumbnail_url || `${baseUrl}/placeholder-product.svg`;
-  
-  const jsonLd = {
-    "@context": "https://schema.org/",
-    "@type": "Product",
-    "name": product.name,
-    "description": product.description || product.customs_description,
-    "sku": product.sku,
-    "mpn": product.sku, // TODO: add actual manufacturer part number
-    "brand": {
-      "@type": "Brand",
-      "name": resolvedParams.storeSlug // TODO: get actual brand name
-    },
-    "category": product.product_category?.name || "General",
-    "image": productImage,
-    "url": productUrl,
-    "offers": {
-      "@type": "Offer",
-      "price": productPrice.toString(),
-      "priceCurrency": "USD", // TODO: get from store currency
-      "availability": product.active ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      "condition": "https://schema.org/NewCondition", // TODO: add condition field to database
-      "seller": {
-        "@type": "Organization",
-        "name": resolvedParams.storeSlug // TODO: get actual store name
-      },
-      "url": productUrl
-    },
-    "aggregateRating": {
-      "@type": "AggregateRating",
-      "ratingValue": "4.5", // TODO: calculate from actual reviews
-      "reviewCount": "0", // TODO: count from reviews table
-      "bestRating": "5",
-      "worstRating": "1"
-    },
-    "review": [], // TODO: populate from actual reviews
-    "additionalProperty": [
-      {
-        "@type": "PropertyValue",
-        "name": "Condition",
-        "value": "New" // TODO: get from product condition field
-      },
-      {
-        "@type": "PropertyValue", 
-        "name": "Availability",
-        "value": product.active ? "In Stock" : "Out of Stock"
-      }
-    ]
-  };
-  
-  // Add weight and dimensions if available
-  if (product.weight) {
-    jsonLd.additionalProperty.push({
-      "@type": "PropertyValue",
-      "name": "Weight",
-      "value": `${product.weight.value} ${product.weight.unit}`
-    });
-  }
-  
-  if (product.dimensions) {
-    jsonLd.additionalProperty.push({
-      "@type": "PropertyValue",
-      "name": "Dimensions", 
-      "value": `${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"`
-    });
-  }
-  
+/**
+ * The product detail page.
+ *
+ * Built around what a shopper actually needs to decide: a gallery they can
+ * operate with the keyboard, an honest price with a real compare-at, a concrete
+ * stock state, a quantity control, and — because this platform is
+ * shipping-centric — the recorded weight and boxed dimensions stated plainly
+ * rather than hidden in a spec table nobody opens.
+ *
+ * Any merchant HTML in the description is sanitised before rendering; see
+ * `_lib/html.ts`. Structured data is emitted from real fields only, with no
+ * fabricated ratings or reviews.
+ *
+ * @param props - Route and search params
+ * @returns The themed product page
+ */
+export default async function ProductPage({ params, searchParams }: ProductPageProps) {
+  const [{ storeSlug, productId }, search] = await Promise.all([params, searchParams]);
+
+  const result = await loadStorefront(storeSlug, search);
+  if (!result.ok) return result.fallback;
+
+  const { store, theme } = result.data;
+  const product = await getProduct(store.id, productId);
+  if (!product) notFound();
+
+  const related = await getRelatedProducts(product, 4);
+
+  const state = stockState(product);
+  const purchasable = isPurchasable(product);
+  const weight = formatWeight(product);
+  const dimensions = formatDimensions(product);
+  const base = `/store/${store.storeSlug}`;
+  const path = productHref(store.storeSlug, product);
+
+  const images = [product.featuredImageUrl, ...product.galleryImages]
+    .filter((url): url is string => Boolean(url))
+    // The featured image is often repeated in the gallery column.
+    .filter((url, index, all) => all.indexOf(url) === index);
+
+  const descriptionHtml = sanitizeRichText(product.descriptionHtml);
+  const paragraphs = descriptionHtml ? [] : toParagraphs(product.longDescription);
+
+  const maxQuantity =
+    product.trackInventory && !product.allowBackorder
+      ? Math.max(product.stockQuantity, 1)
+      : 99;
+
   return (
-    <StoreThemeProvider themeId={store?.theme_name || 'default'}>
-      <>
-        <TopNav />
-        {/* JSON-LD Structured Data for Social Platforms and SEO */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(jsonLd),
-          }}
-        />
-        
-        <ProductPageClient product={product} store={store} />
-      </>
-    </StoreThemeProvider>
+    <StorefrontShell {...result.data}>
+      <ProductSchema product={product} store={store} path={path} />
+
+      <StoreBand>
+        <StoreContainer>
+          <nav className={styles.crumbs} aria-label="Breadcrumb">
+            <Link href={base} className={styles.crumbLink}>
+              {store.storeName}
+            </Link>
+            <span className={styles.crumbSep} aria-hidden="true">
+              /
+            </span>
+            <Link href={`${base}/products`} className={styles.crumbLink}>
+              Products
+            </Link>
+            {product.categoryName && product.categorySlug ? (
+              <>
+                <span className={styles.crumbSep} aria-hidden="true">
+                  /
+                </span>
+                <Link
+                  href={`${base}/products?category=${encodeURIComponent(product.categorySlug)}`}
+                  className={styles.crumbLink}
+                >
+                  {product.categoryName}
+                </Link>
+              </>
+            ) : null}
+            <span className={styles.crumbSep} aria-hidden="true">
+              /
+            </span>
+            <span className={styles.crumbCurrent} aria-current="page">
+              {product.name}
+            </span>
+          </nav>
+
+          <div className={styles.layout}>
+            <ProductGallery images={images} name={product.name} sku={product.sku} />
+
+            <div className={styles.buy}>
+              <div className={styles.titleBlock}>
+                {product.categoryName ? (
+                  <span className={styles.category}>{product.categoryName}</span>
+                ) : null}
+                <h1>{product.name}</h1>
+                <span className={styles.sku}>SKU {product.sku}</span>
+              </div>
+
+              <div className={styles.priceRow}>
+                <StorePrice
+                  value={product.price}
+                  compareAt={product.compareAtPrice}
+                  currency={store.currency}
+                  size="lg"
+                />
+                <StockIndicator state={state} quantity={product.stockQuantity} />
+              </div>
+
+              {product.shortDescription ? (
+                <p className={styles.summary}>{product.shortDescription}</p>
+              ) : null}
+
+              <BuyBox
+                productId={product.id}
+                productName={product.name}
+                maxQuantity={maxQuantity}
+                disabled={!purchasable}
+                cartHref={`${base}/cart`}
+              />
+
+              {weight || dimensions || product.requiresShipping ? (
+                <div className={styles.facts}>
+                  {weight ? (
+                    <div className={styles.fact}>
+                      <span className={styles.factLabel}>
+                        <IconWeight size={15} aria-hidden="true" />
+                        Shipping weight
+                      </span>
+                      <span className={styles.factValue}>{weight}</span>
+                    </div>
+                  ) : null}
+                  {dimensions ? (
+                    <div className={styles.fact}>
+                      <span className={styles.factLabel}>
+                        <IconRuler2 size={15} aria-hidden="true" />
+                        Boxed size
+                      </span>
+                      <span className={styles.factValue}>{dimensions}</span>
+                    </div>
+                  ) : null}
+                  <div className={styles.fact}>
+                    <span className={styles.factLabel}>
+                      <IconTruck size={15} aria-hidden="true" />
+                      Delivery
+                    </span>
+                    <span className={styles.factValue}>
+                      {product.requiresShipping ? 'Ships to you' : 'No shipping needed'}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              <Notice icon={<IconTruck size={16} />}>
+                Shipping is calculated at checkout from your delivery address — we do not estimate
+                it here, because a guess would be wrong as often as it was right.
+              </Notice>
+
+              {product.tags.length > 0 ? (
+                <div className={styles.tags}>
+                  {product.tags.slice(0, 8).map((tag) => (
+                    <Pill key={tag}>{tag}</Pill>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {descriptionHtml || paragraphs.length > 0 ? (
+            <div className={styles.description}>
+              <SectionHeading heading="Details" level={2} />
+              <div className={sectionStyles.prose}>
+                {descriptionHtml ? (
+                  <div dangerouslySetInnerHTML={{ __html: descriptionHtml }} />
+                ) : (
+                  paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)
+                )}
+              </div>
+            </div>
+          ) : null}
+        </StoreContainer>
+      </StoreBand>
+
+      {related.length > 0 ? (
+        <StoreBand tone="sunken">
+          <StoreContainer>
+            <SectionHeading heading="You might also like" level={2} />
+            <ProductGrid
+              products={related}
+              storeSlug={store.storeSlug}
+              currency={store.currency}
+              card={theme.productCard}
+              columns={4}
+              priorityCount={0}
+              className={cx()}
+            />
+          </StoreContainer>
+        </StoreBand>
+      ) : null}
+    </StorefrontShell>
   );
 }

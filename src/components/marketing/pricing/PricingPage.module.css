@@ -1,0 +1,61 @@
+/*
+ * Page-local layout only. The ground, the container and the block padding come
+ * from `parts/Section`; the `.head` band and its bespoke `max-width` are gone.
+ */
+
+.headInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-8);
+  /* Top-aligned: the plan card is far taller than the copy, and centring left
+     the h1 floating at mid-height with ~350px of nothing above it. */
+  align-items: start;
+}
+
+.headCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-h1);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  max-width: 12ch;
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 44ch;
+}
+
+.headActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.cardWrap {
+  min-width: 0;
+}
+
+@media (min-width: 940px) {
+  .headInner {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: var(--space-10);
+  }
+}

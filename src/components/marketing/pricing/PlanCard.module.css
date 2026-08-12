@@ -1,0 +1,203 @@
+/*
+ * Every colour here is a semantic token, never a ramp step. That is what lets
+ * the same card sit on the white /pricing page and inside the homepage's one
+ * inverted section without a single `onDark` branch: `Section.module.css`
+ * re-points the tokens, and this file does not need to know.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-sm);
+  width: 100%;
+  padding: clamp(24px, 4vw, 32px);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+/* An ink hairline, not a brand hue. On the dark section it inverts to white. */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  flex-wrap: wrap;
+  padding-top: var(--space-1);
+}
+
+.eyebrow {
+  margin: 0;
+  width: 100%;
+  font-size: var(--text-eyebrow);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.planName {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.badge {
+  margin-inline-start: auto;
+}
+
+.priceBlock {
+  padding-block: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The price is money, so it is the one place the signal green belongs. */
+.price {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 7vw, 3.75rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--signal);
+}
+
+.priceSymbol {
+  font-size: 0.52em;
+  vertical-align: 0.42em;
+  margin-inline-end: 2px;
+}
+
+.priceNote {
+  margin: var(--space-1-5) 0 0;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+}
+
+.thenLine {
+  margin: var(--space-2) 0 var(--space-2-5);
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/*
+ * Two columns from the tablet breakpoint up. Fifteen stacked rows made this
+ * card roughly 900px tall on its own; side by side it is half that, and the
+ * "not included" column sits where a reader will actually still be looking.
+ */
+.lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * The rail variant of the same pair — `parts/Rail` owns the grid, so this only
+ * carries the rule and the spacing that separate the lists from the block
+ * above them.
+ */
+.listsRail {
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.listHeading {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-eyebrow);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--space-2-5);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/*
+ * Ink, not green. A tick beside "A blog for your store" is not money, stock or
+ * a saving, and ten of them turned the signal into decoration — which is
+ * exactly how a reserved colour stops meaning anything.
+ */
+.tick {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.itemOut {
+  color: var(--text-secondary);
+}
+
+.dash {
+  width: 10px;
+  height: 2px;
+  margin: var(--space-2-5) 0 0 var(--space-1);
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
+.itemLead {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+@media (min-width: 720px) {
+  .lists {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-7);
+  }
+}

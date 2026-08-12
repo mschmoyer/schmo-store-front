@@ -1,0 +1,55 @@
+/*
+ * No ground of its own. This was a full-bleed `--ink-950` block wedged between
+ * two light sections, which is most of what made the page read as "some dark on
+ * top of light". The evidence is the product; it does not need a stage.
+ *
+ * Layout is `parts/Rail`: three cards side by side above 760px, one snap rail
+ * below it. The twelve-tile product wall that used to sit above these cards is
+ * gone, and so is the CSS that laid it out.
+ */
+
+.cards {
+  margin-top: var(--stack-md);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  height: 100%;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--text-h3);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.cardBody {
+  margin: 0;
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+@media (min-width: 860px) {
+  .card {
+    padding: var(--space-6);
+  }
+}
+
+/*
+ * TAP TARGET. `Button variant="link"` renders as inline text, which is right
+ * inside a sentence and wrong for a standalone call to action: at 24px tall it
+ * is under the 44px thumb target and it sits beside a 48px primary. Raising
+ * the box, not the type, keeps the visual weight of a link.
+ */
+.card > a {
+  min-height: 44px;
+}

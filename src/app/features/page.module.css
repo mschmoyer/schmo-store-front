@@ -1,0 +1,22 @@
+/*
+ * Page-local styles only. The opening block now comes from
+ * `components/marketing/parts/PageHead` and the section geometry from
+ * `parts/Section`, so the `.head` / `.headInner` / container rules that used to
+ * live here — in three near-identical copies, on three slightly different
+ * widths — are gone.
+ */
+
+.listInner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-7);
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}

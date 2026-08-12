@@ -1,5 +1,22 @@
 // @ts-check
+const fs = require('fs');
 const { defineConfig, devices } = require('@playwright/test');
+
+/**
+ * Sandboxed CI containers pre-install ONE Chromium under
+ * `PLAYWRIGHT_BROWSERS_PATH` and forbid `playwright install`. Its build number
+ * does not have to match the pinned `@playwright/test`, and when it doesn't,
+ * Playwright's own resolution looks for a revision that was never downloaded
+ * and every test fails before it navigates.
+ *
+ * Pointing at the binary that is actually present — only when it is present —
+ * fixes that without changing a thing on a normal machine, where the check is
+ * false and Playwright resolves the browser itself exactly as before.
+ */
+const SANDBOX_CHROMIUM = '/opt/pw-browsers/chromium';
+const chromiumLaunchOptions = fs.existsSync(SANDBOX_CHROMIUM)
+  ? { executablePath: SANDBOX_CHROMIUM, args: ['--no-sandbox'] }
+  : {};
 
 /**
  * @see https://playwright.dev/docs/test-configuration
@@ -43,7 +60,7 @@ module.exports = defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], launchOptions: chromiumLaunchOptions },
     },
 
     {

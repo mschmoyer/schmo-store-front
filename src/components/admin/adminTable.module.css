@@ -1,0 +1,45 @@
+/*
+ * Shared table conventions for the admin (§5).
+ *
+ * Header band on `--surface-2`, `--border` hairlines and tabular numerals come
+ * from the Mantine theme; what cannot be expressed there is per-column
+ * alignment, which is what this module carries. Import it wherever a table has
+ * a numeric column — a money column set left-aligned in proportional figures is
+ * the difference between a ledger and a list.
+ */
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  white-space: nowrap;
+}
+
+/* Flex children inside a right-aligned cell (a Price, a Badge, a Group) have
+   to be pushed to the same edge as the text. */
+.numeric > * {
+  justify-content: flex-end;
+}
+
+/* A secondary figure that qualifies the primary one — revenue under a unit
+   count — sits under it rather than beside it, so the two are never mistaken
+   for two separate columns of data. */
+.stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.sub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Monospace identifiers: SKUs, order numbers, API keys (§3). */
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}

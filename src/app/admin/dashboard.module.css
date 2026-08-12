@@ -1,0 +1,150 @@
+/* Dashboard-only composition. Colours come from the token layer, never a hex. */
+
+.visibility {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2-5) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+/* §5: numbers are right-aligned and tabular so columns of money line up. */
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.numeric > * {
+  justify-content: flex-end;
+}
+
+/* An inset well — a fill, never a section band (§2). */
+.well {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+}
+
+.wellIcon {
+  color: var(--text-secondary);
+  flex: none;
+}
+
+/* --------------------------------------------------------- quick actions */
+
+.action {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-primary);
+  transition:
+    border-color var(--duration-micro) var(--ease-out),
+    background-color var(--duration-micro) var(--ease-out);
+}
+
+.action:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.actionIcon {
+  display: inline-flex;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  flex: none;
+}
+
+.actionTitle {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.actionDetail {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------- checklist */
+
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-2-5);
+}
+
+.checkRow + .checkRow {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/*
+ * A completed step is the one place on this screen the signal is earned: §2
+ * lists success as a signal use. An incomplete step is an empty ring, not a red
+ * cross — "not done yet" is not an error.
+ */
+.checkMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border-strong);
+  color: transparent;
+}
+
+.checkRow[data-done] .checkMark {
+  background: var(--success-subtle);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.checkLabel {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.checkState {
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+.checkRow[data-done] .checkState {
+  color: var(--success-text);
+}
+
+/* Row thumbnail. Fixed so a 4:3 photograph cannot stretch the row height. */
+.thumb {
+  width: 30px;
+  flex: none;
+}

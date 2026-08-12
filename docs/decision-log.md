@@ -912,3 +912,210 @@ The fix ensures reliable ShipStation data synchronization on Heroku by avoiding 
 - [ ] Add integration tests for the report endpoint
 
 The scripts provide both programmatic exports for use in other modules and CLI execution for direct running via npm scripts.
+## 2026-08-12
+
+### Full redesign: RebelShops storefront platform
+
+Goal: a Shopify-quality storefront product on top of ShipStation + Stripe, hosted on
+Vercel with Neon Postgres, on rebelshops.com. Executed with parallel specialist agents
+against two binding contracts, each reviewed by an independent hostile critic.
+
+**Contracts**
+- [x] `docs/design-system.md` — RebelShops chrome: ink/paper/ember palette, Space Grotesk +
+      Inter + JetBrains Mono, fluid type scale, layered warm elevation, accessibility floor
+- [x] `docs/storefront-theme-spec.md` — the merchant-facing theme layer: `StorefrontTheme`,
+      the `--st-*` contract, six presets, section composition, custom-CSS sanitization,
+      customizer preview protocol
+
+**Platform**
+- [x] Retire Heroku: delete `Procfile` and the scheduler doc; remove the hardcoded
+      herokuapp.com production redirect that would have broken rebelshops.com
+- [x] Neon serverless driver selected by hostname rather than by "running on Vercel",
+      which would break against a non-Neon host; pool cached on `globalThis`
+- [x] Rewrite the migration runner. The previous one never wrote tracking rows, so
+      migrations re-ran on every deploy and the non-idempotent ones failed outright.
+      Now keyed on full filename + SHA-256 with a session advisory lock.
+- [x] `vercel.json`: region, per-route function limits, cron schedules, cache headers
+- [x] `docs/deployment-vercel.md` runbook and a real `.env.example`
+
+**Security and integrity**
+- [x] Remove `/api/admin/sync/background`. It accepted `x-heroku-scheduler: true` as proof
+      of identity — verified live returning 200 unauthenticated before removal.
+- [x] Strip fabricated social proof from SEO structured data: an invented 4.8/150-customer
+      aggregateRating, a fake named testimonial, and an FAQ advertising a nonexistent
+      14-day trial plus unsupported payment methods
+- [x] Consolidate four competing product names onto RebelShops
+
+**Design and content**
+- [x] Token layer, Mantine theme mapping and a 20-component primitive kit with 48 tests
+- [x] Marketing copy deck with honesty gating on unshipped features
+- [x] Demo catalog: three stores, 36 products, 74 orders with trigger-accurate stock
+
+**Audits**
+- [x] `docs/audits/shipstation-audit.md` — 10 P0 findings; the integration is not currently
+      the "robust workflow support" the product claims
+- [ ] Act on the ShipStation P0s, including the webhook tenancy hole and order push
+- [ ] Fix `create_inventory_snapshot()` — migration 016 throws on nested aggregates
+- [ ] Fix `backgroundSyncService.getActiveStores()` — queries a nonexistent table
+- [ ] Turn off `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds` once clean
+      (TypeScript errors reduced 500 -> 183 so far)
+
+### Marketing site rebuilt on palette C
+
+Owner rejected the ember scheme and the page composition outright: "looks like
+trash… some dark on top of light… it looks disjointed and I hate the existing
+colour scheme." An independent critic graded the page **D** and measured why.
+
+- [x] Owner picked **palette C** — near-monochrome plus one signal green
+      (`#0F7B4A`), reserved for money, stock and savings only - 2026-08-12
+- [x] Homepage **12,381px → 6,382px** (−48%), against a ≤6,500 target - 2026-08-12
+- [x] Grounds 4 → 2 · containers 5 → 1 (1120px) · left edges 4 → 1 · signal-green
+      usages 14 (10 out of contract) → 11 (0 out of contract) - 2026-08-12
+- [x] Deleted `src/components/landing/**`, an orphaned 7-file duplicate of the
+      marketing site whose only reference was a comment - 2026-08-12
+- [x] Fixed the biggest lever: `ROUTES.pricing` was `/#pricing`, an anchor
+      scrolling 7,533px, while a real `/pricing` sat unlinked. That is *why* the
+      homepage had to carry a duplicate pricing block, comparison table and FAQ.
+      Found `marketing/pricing/PricingPage.tsx` orphaned behind a 336-line
+      inline-styled stopgap that had no site header or footer - 2026-08-12
+- [x] `/features` and `/how-it-works` no longer share section modules with the
+      homepage; 5,937px (48%) was byte-identical to pages the nav links to - 2026-08-12
+- [x] No-JS rendering fixed: the page shipped 65 elements at `opacity: 0` and
+      rendered **zero words** without JavaScript. Now renders 1,213 - 2026-08-12
+- [x] Primary button moved to `#111214` on white (18.9:1). The previous
+      white-on-`#F94E1B` measured **3.42:1** and failed AA on every primary
+      button in the product - 2026-08-12
+- [x] Guard tests added: one container token, no bespoke widths, padding from
+      the shared scale, no raw `--ink-*`/`--ember-*` in marketing CSS, and any
+      solid fill carrying white text must clear **5.0:1** — not 4.5, because
+      ember-600 "passed" at 4.51 and that near-miss is what shipped the defect - 2026-08-12
+- [x] `npm run dev-local`: one-command local setup that probes for working
+      Postgres credentials rather than documenting one platform's - 2026-08-12
+- [x] Seed password was a hash whose plaintext nobody knew, so a fresh seed
+      produced accounts nobody could log into. Now `rebeldev`, documented - 2026-08-12
+
+Open:
+- [ ] Mobile is 10,772px against a 7,000 target — needs a mobile-specific pass
+- [ ] Brand assets, favicon and OG image still ember; the header wordmark still
+      renders an orange R, the most visible remaining item
+- [ ] `--text-subtle #8A8E96` is 3.29:1, below AA; restricted to meta that
+      repeats information available elsewhere
+- [ ] No e2e coverage for marketing; `tests/e2e/` is admin-only
+
+### Customizer & onboarding — acting on the hostile review
+
+`docs/audits/customizer-onboarding-critique.md` graded the two surfaces **D** and **C+**, both
+driven with Playwright rather than read. The engine behind them measured well — 120ms colour
+repaint, schema-generated panels, correct auto-contrast, a sanitiser that names what it removed —
+so nothing below is a rewrite. Every item is something the product *said* that was not true, or a
+control that was advertised and did not work.
+
+- [x] **BD-1** Preview iframe blocked by our own `X-Frame-Options: DENY` on `/(.*)`. Fixed
+      separately in `next.config.ts`; verified here — the frame loads, handshakes and repaints in
+      **146ms with zero reloads** - 2026-08-12
+- [x] **BD-6** The catalog import read **page 1 only** of ShipStation inventory, so in a 5,000-SKU
+      catalogue 4,900 products were written `stock = 0` and the import reported success. Stock is
+      now looked up per products page, filtered to that page's SKUs, paged to exhaustion and summed
+      across warehouses; 429s are retried honouring `Retry-After`; `total` is read from the list
+      envelope. Unit-tested against a mocked multi-page ShipStation: all 5,000 arrive, none at
+      zero - 2026-08-12
+- [x] **BD-7** Progress bar divided by `found` (pages already fetched), so it read 100% from page
+      one. Now divides by the catalog size, and shows an indeterminate bar when ShipStation does
+      not send one - 2026-08-12
+- [x] **BD-4** A newly published store served "NO PRODUCTS YET · Open your dashboard…" and a
+      *Manage products* button to the public web. The merchant's real sections now render, the
+      troubleshooting block is gated on an authenticated owner or a preview token, and a shopper
+      gets "Nothing for sale just yet" - 2026-08-12
+- [x] **BD-5** Skipped steps were marked "Done" and the launch screen claimed "Anyone with this
+      address can shop it right now" 60px above a note that it cannot take payments. The indicator
+      has a `skipped` state, the summary counts skips, and the launch headline is gated on what is
+      actually true - 2026-08-12
+- [x] **BD-2** Alt+Arrow reorder was dead code — `onKeyDown` was declared before `{...listeners}`
+      and dnd-kit's own handler won. Handlers merged, and a test that presses the keys and asserts
+      the order changed (it fails against the old ordering) - 2026-08-12
+- [x] **BD-3** Added the missing `brand on surface` pair at WCAG 1.4.11's 3:1: a pale yellow brand
+      now raises a warning in the rail and in the publish dialog instead of shipping an invisible
+      button silently. The fix preview computes the replacement from a theme with the pin removed,
+      so it no longer renders `#FFFFFF → #FFFFFF`, and the three near-identical `colorOnBrand`
+      findings collapse to one - 2026-08-12
+- [x] **BD-8** Presets shipped the announcement bar **on**, carrying delivery promises the merchant
+      never wrote ("Next-day dispatch on every order placed before 3pm"). It now ships off and
+      empty; the wording moved to help text in the Header panel - 2026-08-12
+- [x] **BD-13** "Desktop" was 738px at a 1440 window — a hamburger nav for a breakpoint that shows
+      a full one — and "Tablet" clamped to the same 738px. The frame now gets the real device width
+      (1280 / 834 / 390) and is scaled to fit, with a badge saying how far. Measured: iframe
+      `innerWidth` 1278, full navigation visible - 2026-08-12
+- [x] **BD-11** Custom CSS never appeared in the preview and nothing said why. The panel now
+      detects the stale state and offers a reload - 2026-08-12
+- [x] **BD-12** The countdown deadline was a hand-typed ISO string, and shipped empty with "hide
+      when expired" on, so the section was invisible from the moment it was added. Real
+      `datetime-local` control, UTC echoed back, and a deadline seeded a week out - 2026-08-12
+- [x] **BD-10** Browser Back left the wizard. Each step now has its own address
+      (`/create-store?step=…`) with a `popstate` handler; Forward works too - 2026-08-12
+- [x] **BD-9** No payment step exists and none was added — `docs/payments.md` puts the $1 intro
+      plan and Stripe Connect *after* launch, which is a defensible choice that the funnel simply
+      never mentioned. The launch screen now states that no card was taken, what the price is, and
+      that nothing can be bought until Stripe is connected - 2026-08-12
+- [x] Copy audit: "This is your real store" removed from step 5 (no preview on that screen);
+      "you can close this tab" corrected on the import step (closing it stops the import, it only
+      *resumes* on return); design page button is "Publish changes" per deck §5.1 - 2026-08-12
+
+Open, and owned elsewhere:
+- [ ] **`SettingFieldType` needs a real `'datetime'` member** (`src/lib/storefront-theme/types.ts`).
+      The date control is currently selected by a one-entry field-id shim in
+      `customizer/controls/registry.ts`, documented as deletable the moment the type exists
+- [ ] **Preset *section* copy still asserts policy on the merchant's behalf** — value props reading
+      "Same-day dispatch · 30-day returns · Two-year warranty" and an FAQ answering "Within 30
+      days, unused, in its original packaging" publish on a store the merchant has not configured.
+      Same argument as BD-8; the preset section compositions are owned by another agent
+- [ ] **Seeded stores keep the old announcement text**, because `storefront_themes` rows store a
+      fully resolved theme rather than a patch. `database/seeds/development.sql` needs the same
+      edit presets.ts got
+- [ ] **The customizer should take over the window on `/admin/design`** (BD-13's other half). With
+      232px of admin sidebar plus a 360px rail, a 1280 desktop preview is scaled to 57% at a 1440
+      window and hits the 45% floor at 1024. `src/components/admin/AdminChrome` is out of scope here
+- [ ] **`docs/marketing-copy.md` §5.5 needs two corrections the build is right about**: step 3 says
+      "Paste your API key **and secret**" (V2 takes one key), and step 5 promises a hero-copy field
+      that does not exist. §5.5's step 5 preview line should be dropped
+- [ ] **Version number not bumped** — `package.json` was outside this change's file ownership
+
+### Session pause — state of play
+
+Green at pause: **733 tests / 44 suites**, `tsc` **0 errors**, `lint` clean,
+all routes 200. Marketing, admin, storefront, customizer and onboarding are all
+on palette C and hold together.
+
+**The one thing that blocks a real e-commerce loop:** `pushOrderToShipStation()`
+has **zero callers**. A shopper pays, Stripe confirms, the order is written to
+our database — and stops there. The merchant never sees it and never ships it.
+`docs/payments.md` §8 states the same independently. The function also targets
+`/v2/shipments`, which creates a shipment rather than an order in the merchant's
+queue, and the bundled OpenAPI documents that path as GET-only.
+
+**Why it is not wired yet:** `api.shipstation.com` is blocked by this
+environment's network policy, so no ShipStation call has ever been executed
+against a live account this session. Every integration path is written to spec
+and unit-tested, never verified. Two questions need a live call before the money
+path can be trusted:
+
+- does `GET /v2/products` exist? Catalog sync depends on it and it has no
+  documented path. If it 404s, sync must be rebuilt on `/v2/inventory`.
+- is `POST /v2/shipments` (or an order-create equivalent) real and accepted?
+
+A read-only probe that answers both in one run is ready at
+`.scratch/shipstation-probe.js`. Unblock by allowlisting the host, or run it
+against a Vercel preview.
+
+**Production build:** compiles in 72s, then fails collecting page data with
+`Cannot find module for page: /admin/analytics`. Every import on that page
+resolves and a clean-tree typecheck is 0, so this is most likely an artifact of
+building while agents were still writing. Needs one clean confirming run.
+
+Open, in priority order:
+- [ ] Wire order push, after the API is verified
+- [ ] Confirm the production build from a quiet tree
+- [ ] Admin: Orders page, profit tiles, reconcile four differing inventory
+      values, repair the coupons endpoint (agent work in flight at pause)
+- [ ] Storefront: checkout theming, the `a { color: inherit }` contrast bypass
+- [ ] Tax is always zero; shipping is three hardcoded rates; no entitlement
+      enforcement; stock is not reserved during the Stripe redirect

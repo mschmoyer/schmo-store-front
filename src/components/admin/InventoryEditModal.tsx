@@ -27,7 +27,13 @@ import {
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 
-interface InventoryItem {
+/**
+ * The inventory fields this modal reads and edits.
+ *
+ * Callers may pass a richer item type; the generic parameter below preserves it
+ * so `onSuccess` hands the caller back its own shape.
+ */
+export interface InventoryItem {
   id: string;
   name: string;
   sku: string;
@@ -47,11 +53,11 @@ interface InventoryItem {
   status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued';
 }
 
-interface InventoryEditModalProps {
+interface InventoryEditModalProps<TItem extends InventoryItem> {
   opened: boolean;
   onClose: () => void;
-  item: InventoryItem | null;
-  onSuccess: (updatedItem: InventoryItem) => void;
+  item: TItem | null;
+  onSuccess: (updatedItem: TItem) => void;
 }
 
 interface FormValues {
@@ -74,12 +80,12 @@ interface FormValues {
  * @param item - The inventory item to edit
  * @param onSuccess - Function called when edit is successful
  */
-export default function InventoryEditModal({ 
-  opened, 
-  onClose, 
-  item, 
-  onSuccess 
-}: InventoryEditModalProps) {
+export default function InventoryEditModal<TItem extends InventoryItem>({
+  opened,
+  onClose,
+  item,
+  onSuccess
+}: InventoryEditModalProps<TItem>) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -345,7 +351,7 @@ export default function InventoryEditModal({
               <NumberInput
                 label="Unit Cost ($)"
                 min={0}
-                precision={2}
+                decimalScale={2}
                 {...form.getInputProps('unit_cost')}
                 style={{ flex: 1 }}
               />
@@ -371,12 +377,6 @@ export default function InventoryEditModal({
               data={suppliers}
               {...form.getInputProps('supplier')}
               searchable
-              creatable
-              getCreateLabel={(query) => `+ Create "${query}"`}
-              onCreate={(query) => {
-                const newSupplier = { value: query, label: query };
-                return newSupplier;
-              }}
               leftSection={<IconTruckDelivery size="1rem" />}
             />
 

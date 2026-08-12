@@ -50,6 +50,7 @@ import {
   ChartOptions
 } from 'chart.js';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { seriesColor, seriesFill } from '@/components/admin/chartPalette';
 
 // Register Chart.js components
 ChartJS.register(
@@ -112,9 +113,10 @@ interface InventoryTurnoverReportProps {
  */
 export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProps) {
   const { session } = useAdmin();
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
-    startOfDay(subDays(new Date(), 30)),
-    endOfDay(new Date())
+  // Mantine v8 date inputs work with 'yyyy-MM-dd' strings rather than Date objects.
+  const [dateRange, setDateRange] = useState<[string | null, string | null]>([
+    format(startOfDay(subDays(new Date(), 30)), 'yyyy-MM-dd'),
+    format(endOfDay(new Date()), 'yyyy-MM-dd')
   ]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,8 +141,8 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
 
     try {
       const params = new URLSearchParams({
-        startDate: format(dateRange[0], 'yyyy-MM-dd'),
-        endDate: format(dateRange[1], 'yyyy-MM-dd')
+        startDate: dateRange[0],
+        endDate: dateRange[1]
       });
 
       const response = await fetch(`/api/admin/inventory/reports/turnover?${params}`, {
@@ -308,15 +310,15 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
         {
           label: 'Daily Sales',
           data: selectedProduct.trend_data.map(d => d.sales),
-          borderColor: 'rgb(75, 192, 192)',
-          backgroundColor: 'rgba(75, 192, 192, 0.1)',
+          borderColor: seriesColor(1),
+          backgroundColor: seriesFill(1),
           yAxisID: 'y-sales',
         },
         {
           label: 'Inventory Level',
           data: selectedProduct.trend_data.map(d => d.inventory),
-          borderColor: 'rgb(255, 99, 132)',
-          backgroundColor: 'rgba(255, 99, 132, 0.1)',
+          borderColor: seriesColor(0),
+          backgroundColor: seriesFill(0),
           yAxisID: 'y-inventory',
         }
       ]
@@ -387,9 +389,9 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
         <Stack gap="md">
           <Group justify="space-between" align="flex-start">
             <div>
-              <Title order={2}>Inventory Turnover Report</Title>
-              <Text c="dimmed" size="sm" mt="xs">
-                Analyze product movement and identify optimization opportunities
+              {/* The route wrapper renders the page's h1; this repeated it. */}
+              <Text c="dimmed" size="sm">
+                Analyse product movement and identify optimisation opportunities.
               </Text>
             </div>
             <Group gap="xs">
@@ -477,7 +479,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.total_products}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="blue">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -493,7 +495,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   {stats.average_turnover_ratio.toFixed(2)}x
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="teal">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconTrendingUp size={20} />
               </ThemeIcon>
             </Group>
@@ -505,11 +507,11 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Fast Moving
                 </Text>
-                <Text fw={700} size="xl" c="green">
+                <Text fw={700} size="xl" c="var(--success-text)">
                   {stats.fast_moving_count}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="green">
+              <ThemeIcon size="lg" variant="light">
                 <IconTrendingUp size={20} />
               </ThemeIcon>
             </Group>
@@ -521,11 +523,11 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Slow Moving
                 </Text>
-                <Text fw={700} size="xl" c="orange">
+                <Text fw={700} size="xl" c="var(--warning-text)">
                   {stats.slow_moving_count}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="orange">
+              <ThemeIcon size="lg" variant="light">
                 <IconTrendingDown size={20} />
               </ThemeIcon>
             </Group>
@@ -537,11 +539,11 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                   Dead Stock
                 </Text>
-                <Text fw={700} size="xl" c="red">
+                <Text fw={700} size="xl" c="var(--danger-text)">
                   {stats.dead_stock_count}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="red">
+              <ThemeIcon size="lg" variant="light">
                 <IconAlertCircle size={20} />
               </ThemeIcon>
             </Group>
@@ -557,7 +559,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
                   ${stats.total_inventory_value.toLocaleString()}
                 </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="violet">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconClock size={20} />
               </ThemeIcon>
             </Group>

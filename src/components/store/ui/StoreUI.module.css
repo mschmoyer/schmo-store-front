@@ -1,0 +1,488 @@
+/*
+ * Storefront primitive kit.
+ *
+ * Every value in this file is either a `--st-*` token from the theme engine, an
+ * `--stx-*` value the renderer derived from it, or a geometric constant. There
+ * are no colors here. That is the rule that makes a merchant's theme actually
+ * mean something, and it is the first thing a reviewer should grep for.
+ */
+
+/* -- Layout -------------------------------------------------------------- */
+
+.container {
+  width: 100%;
+  max-width: var(--st-container);
+  margin-inline: auto;
+  padding-inline: var(--st-space-5);
+}
+
+.containerWide {
+  max-width: calc(var(--st-container) + 240px);
+}
+
+.containerNarrow {
+  max-width: 720px;
+}
+
+.band {
+  padding-block: var(--st-space-10);
+}
+
+.bandTight {
+  padding-block: var(--st-space-7);
+}
+
+.bandSurface {
+  background-color: var(--st-surface);
+}
+
+.bandSunken {
+  background-color: var(--st-surface-sunken);
+}
+
+.bandRaised {
+  background-color: var(--st-surface-raised);
+}
+
+.bandBrand {
+  background-color: var(--st-brand);
+  color: var(--st-on-brand);
+}
+
+/*
+ * A brand-filled band changes what "readable ink" means for everything inside
+ * it. `--st-text` and `--st-text-muted` are lifted to 4.5:1 against the *page*,
+ * not against the brand fill, so on this band they are the wrong colour by
+ * construction — a muted caption on a saturated fill was the least readable
+ * thing on the home page. Everything that paints text here is re-pointed at
+ * `--st-on-brand`, which the engine did compute against this exact fill.
+ *
+ * Controls that bring their own surface (the newsletter input, cards) are
+ * deliberately not in this list: they are still sitting on `--st-surface-raised`
+ * and their own tokens are already right for it.
+ */
+.bandBrand :is(h1, h2, h3, h4, h5, h6),
+.bandBrand p,
+.bandBrand .sectionSub,
+.bandBrand .eyebrow,
+.bandBrand .muted {
+  color: var(--st-on-brand);
+}
+
+/* -- Section heading ------------------------------------------------------ */
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+  margin-bottom: var(--st-space-6);
+}
+
+.sectionHeadCenter {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.sectionHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  min-width: 0;
+}
+
+.sectionSub {
+  color: var(--st-text-muted);
+  font-size: var(--st-body);
+  max-width: 62ch;
+}
+
+.eyebrow {
+  font-size: var(--st-small);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--st-brand);
+}
+
+/* -- Button --------------------------------------------------------------- */
+
+.btn {
+  --_bg: var(--stx-btn-bg);
+  --_fg: var(--stx-btn-fg);
+  --_bd: var(--stx-btn-border);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-space-2);
+  padding: var(--st-space-3) var(--st-space-5);
+  min-height: 44px;
+  border: var(--stx-btn-border-width) solid var(--_bd);
+  border-radius: var(--st-radius-button);
+  background-color: var(--_bg);
+  color: var(--_fg);
+  font-family: var(--st-font-body);
+  font-size: var(--st-body);
+  font-weight: var(--stx-btn-weight);
+  letter-spacing: var(--stx-btn-tracking);
+  text-transform: var(--stx-btn-case);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  --_bg: var(--stx-btn-bg-hover);
+  --_fg: var(--stx-btn-fg-hover);
+  --_bd: var(--stx-btn-border-hover);
+}
+
+/* Secondary: always reads as the quieter of the two, whatever the theme's
+   primary treatment is, so a pair of buttons never looks like two primaries. */
+.btnSecondary {
+  --_bg: transparent;
+  --_fg: var(--st-text);
+  --_bd: var(--st-border-strong);
+}
+
+.btnSecondary:hover:not(:disabled) {
+  --_bg: var(--st-surface-sunken);
+  --_fg: var(--st-text);
+  --_bd: var(--st-border-strong);
+}
+
+.btnGhost {
+  --_bg: transparent;
+  --_fg: var(--st-text);
+  --_bd: transparent;
+  padding-inline: var(--st-space-3);
+}
+
+.btnGhost:hover:not(:disabled) {
+  --_bg: var(--st-surface-sunken);
+  --_fg: var(--st-text);
+  --_bd: transparent;
+}
+
+.btnSmall {
+  min-height: 36px;
+  padding: var(--st-space-2) var(--st-space-4);
+  font-size: var(--st-small);
+}
+
+.btnLarge {
+  min-height: 52px;
+  padding: var(--st-space-4) var(--st-space-7);
+}
+
+.btnBlock {
+  width: 100%;
+}
+
+/* On a brand-colored band the brand-colored button would vanish, so it
+   inverts to the on-brand ink. */
+.bandBrand .btn {
+  --_bg: var(--st-on-brand);
+  --_fg: var(--st-brand);
+  --_bd: var(--st-on-brand);
+}
+
+/*
+ * Disabled is information, not decoration, so it gets a real treatment rather
+ * than a blanket `opacity`.
+ *
+ * Fading a brand-filled button fades the label and the fill together and the
+ * ratio between them collapses — measured 1.71:1 on a solid preset and 1.75:1
+ * on an outline one, which made "Out of stock" the least readable thing in the
+ * buy box while remaining the largest. Instead the control drops to the sunken
+ * ground with muted ink at full opacity: the engine lifts `--st-text-muted` to
+ * 4.5:1 against the sunken fill, so this stays legible on every preset, and the
+ * loss of the brand colour is itself the "you cannot press this" signal.
+ */
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  --_bg: var(--st-surface-sunken);
+  --_fg: var(--st-text-muted);
+  --_bd: var(--st-border);
+  cursor: not-allowed;
+}
+
+/* Hover must not resurrect a dead control. */
+.btn:disabled:hover,
+.btn[aria-disabled='true']:hover {
+  --_bg: var(--st-surface-sunken);
+  --_fg: var(--st-text-muted);
+  --_bd: var(--st-border);
+}
+
+/* -- Price ---------------------------------------------------------------- */
+
+.price {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+  font-family: var(--st-font-body);
+}
+
+.priceNow {
+  font-size: var(--st-h5);
+  font-weight: 650;
+  color: var(--st-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.priceLarge .priceNow {
+  font-size: var(--st-h3);
+}
+
+.priceWas {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  text-decoration: line-through;
+  font-variant-numeric: tabular-nums;
+}
+
+.priceSave {
+  font-size: var(--st-small);
+  font-weight: 600;
+  color: var(--st-success);
+}
+
+/* -- Stock ---------------------------------------------------------------- */
+
+/* Colour is never the only cue: every state carries a word as well as a dot,
+   and the dot shapes differ so the states survive a greyscale print. */
+.stock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--st-space-2);
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  line-height: 1.2;
+}
+
+.stockDot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.stockIn .stockDot {
+  background-color: var(--st-success);
+}
+
+.stockLow .stockDot {
+  background-color: var(--st-warning);
+}
+
+.stockBackorder .stockDot {
+  background-color: var(--st-warning);
+  border-radius: 2px;
+}
+
+.stockOut .stockDot {
+  background-color: transparent;
+  border: 2px solid var(--st-text-muted);
+}
+
+.stockUntracked .stockDot {
+  background-color: var(--st-border-strong);
+}
+
+.stockIn,
+.stockLow,
+.stockBackorder {
+  color: var(--st-text);
+}
+
+/* -- Pill / tag ----------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--st-space-2);
+  padding: 4px var(--st-space-3);
+  border-radius: 999px;
+  border: 1px solid var(--st-border);
+  background-color: var(--st-surface-raised);
+  color: var(--st-text-muted);
+  font-size: var(--st-small);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.pillBrand {
+  background-color: var(--st-brand);
+  border-color: var(--st-brand);
+  color: var(--st-on-brand);
+  font-weight: 600;
+}
+
+/* -- Form controls -------------------------------------------------------- */
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--st-space-3) var(--st-space-4);
+  border: 1px solid var(--st-border-strong);
+  border-radius: var(--st-radius-input);
+  background-color: var(--st-surface-raised);
+  color: var(--st-text);
+  font-family: var(--st-font-body);
+  font-size: var(--st-body);
+}
+
+.input::placeholder {
+  color: var(--st-text-muted);
+}
+
+.input:focus-visible {
+  border-color: var(--st-brand);
+}
+
+.select {
+  composes: input;
+  padding-inline-end: var(--st-space-8);
+  cursor: pointer;
+  appearance: none;
+}
+
+.selectWrap {
+  position: relative;
+  display: inline-block;
+}
+
+.selectChevron {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--st-space-3);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  color: var(--st-text-muted);
+}
+
+.label {
+  display: block;
+  font-size: var(--st-small);
+  font-weight: 600;
+  color: var(--st-text);
+  margin-bottom: var(--st-space-2);
+}
+
+/* -- Quantity stepper ----------------------------------------------------- */
+
+.qty {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--st-border-strong);
+  border-radius: var(--st-radius-button);
+  background-color: var(--st-surface-raised);
+  overflow: hidden;
+}
+
+.qtyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 40px;
+  block-size: 42px;
+  border: 0;
+  background: transparent;
+  color: var(--st-text);
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.qtyBtn:hover:not(:disabled) {
+  background-color: var(--st-surface-sunken);
+}
+
+/* Muted ink rather than a fade, for the same reason `.btn:disabled` is: an
+   icon at 0.4 opacity on a light ground is a smudge, not a control. */
+.qtyBtn:disabled {
+  color: var(--st-text-muted);
+  cursor: not-allowed;
+}
+
+.qtyValue {
+  inline-size: 46px;
+  block-size: 42px;
+  border: 0;
+  border-inline: 1px solid var(--st-border);
+  background: transparent;
+  color: var(--st-text);
+  text-align: center;
+  font-family: var(--st-font-body);
+  font-size: var(--st-body);
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.qtyValue::-webkit-outer-spin-button,
+.qtyValue::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+/* -- Utility -------------------------------------------------------------- */
+
+.muted {
+  color: var(--st-text-muted);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.link {
+  color: var(--st-brand);
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid transparent;
+}
+
+.link:hover {
+  border-bottom-color: currentColor;
+}
+
+.divider {
+  border: 0;
+  border-top: 1px solid var(--st-border);
+  margin: 0;
+}
+
+.notice {
+  display: flex;
+  gap: var(--st-space-3);
+  padding: var(--st-space-4);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-sunken);
+  color: var(--st-text-muted);
+  font-size: var(--st-small);
+  line-height: 1.5;
+}
+
+.noticeIcon {
+  flex: none;
+  color: var(--st-text-muted);
+  margin-top: 1px;
+}

@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
 
+/**
+ * A product id is a uuid. Anything else is a bad route, not a database error.
+ *
+ * Passing a non-uuid straight into `WHERE id = $1` made Postgres raise
+ * `invalid input syntax for type uuid`, which surfaced as a 500. The
+ * "Add Product" button navigates to `/admin/products/add`, so the most
+ * ordinary action on the catalog page produced a stack trace in the server log
+ * every time it was used.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 
 /**
  * GET /api/admin/products/[productId]
@@ -21,7 +32,11 @@ export async function GET(
     }
 
     const { productId } = await params;
-    
+
+    if (!UUID.test(productId)) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
     // Get the product with validation that it belongs to the user's store
     const productResult = await db.query(
       'SELECT * FROM products WHERE id = $1 AND store_id = $2',
@@ -182,8 +197,13 @@ export async function PUT(
     }
 
     const { productId } = await params;
+
+    if (!UUID.test(productId)) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
     const body = await request.json();
-    
+
     // Verify product exists and belongs to user's store
     const existingProductResult = await db.query(
       'SELECT * FROM products WHERE id = $1 AND store_id = $2',
@@ -441,7 +461,11 @@ export async function DELETE(
     }
 
     const { productId } = await params;
-    
+
+    if (!UUID.test(productId)) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
     // Verify product exists and belongs to user's store
     const existingProductResult = await db.query(
       'SELECT * FROM products WHERE id = $1 AND store_id = $2',

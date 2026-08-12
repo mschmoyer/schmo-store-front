@@ -159,9 +159,9 @@ export default function SmartReorderWidget({
 
   const getTrendIcon = (trend: 'increasing' | 'stable' | 'decreasing') => {
     switch (trend) {
-      case 'increasing': return <IconTrendingUp size="0.8rem" color="green" />;
-      case 'decreasing': return <IconTrendingDown size="0.8rem" color="red" />;
-      case 'stable': return <IconMinus size="0.8rem" color="gray" />;
+      case 'increasing': return <IconTrendingUp size="0.8rem" color="var(--success-text)" />;
+      case 'decreasing': return <IconTrendingDown size="0.8rem" color="var(--danger-text)" />;
+      case 'stable': return <IconMinus size="0.8rem" color="var(--text-quaternary)" />;
     }
   };
 
@@ -193,7 +193,7 @@ export default function SmartReorderWidget({
       <Card withBorder>
         <Group justify="space-between">
           <Group>
-            <IconBrain size="1.2rem" color="green" />
+            <IconBrain size="1.2rem" color="var(--success-text)" />
             <Text fw={500}>AI Recommendations</Text>
           </Group>
           <Button
@@ -217,7 +217,7 @@ export default function SmartReorderWidget({
       {/* Header */}
       <Group justify="space-between" mb="sm">
         <Group>
-          <IconBrain size="1.2rem" color="blue" />
+          <IconBrain size="1.2rem" color="var(--text-primary)" />
           <Text fw={500}>Smart Reorder Recommendations</Text>
           {urgentCount > 0 && (
             <Badge color="red" size="sm">
@@ -264,9 +264,9 @@ export default function SmartReorderWidget({
             justify="space-between"
             p="xs"
             style={{
-              border: '1px solid #e9ecef',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              backgroundColor: selectedItems.has(rec.product_id) ? '#f8f9fa' : 'transparent',
+              backgroundColor: selectedItems.has(rec.product_id) ? 'var(--surface-2)' : 'transparent',
               cursor: 'pointer'
             }}
             onClick={() => handleSelectItem(rec.product_id)}
@@ -306,8 +306,8 @@ export default function SmartReorderWidget({
               
               {rec.days_until_stockout <= 14 && (
                 <Group gap={4} mt={2}>
-                  <IconAlertTriangle size="0.8rem" color="orange" />
-                  <Text size="xs" c="orange">
+                  <IconAlertTriangle size="0.8rem" color="var(--warning-text)" />
+                  <Text size="xs" c="var(--warning-text)">
                     {rec.days_until_stockout} days until stockout
                   </Text>
                 </Group>
@@ -318,7 +318,7 @@ export default function SmartReorderWidget({
               <ActionIcon
                 size="sm"
                 variant="light"
-                color="blue"
+                color="ink"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (onQuickReorder) {
@@ -362,7 +362,7 @@ export default function SmartReorderWidget({
 
       {/* Expanded Summary */}
       <Collapse in={expanded}>
-        <Card withBorder mt="sm" bg="gray.0">
+        <Card withBorder mt="sm" bg="var(--surface-2)">
           <Text fw={500} size="sm" mb="xs">Summary</Text>
           <Group justify="space-between" mb="xs">
             <Text size="xs">Total Recommendations:</Text>
@@ -370,11 +370,11 @@ export default function SmartReorderWidget({
           </Group>
           <Group justify="space-between" mb="xs">
             <Text size="xs">Urgent Items:</Text>
-            <Text size="xs" fw={500} c="red">{urgentCount}</Text>
+            <Text size="xs" fw={500} c="var(--danger-text)">{urgentCount}</Text>
           </Group>
           <Group justify="space-between" mb="xs">
             <Text size="xs">High Priority:</Text>
-            <Text size="xs" fw={500} c="orange">{highCount}</Text>
+            <Text size="xs" fw={500} c="var(--warning-text)">{highCount}</Text>
           </Group>
           <Group justify="space-between">
             <Text size="xs">Estimated Cost:</Text>

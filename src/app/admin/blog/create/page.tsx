@@ -57,7 +57,7 @@ export default function CreateBlogPostPage() {
                   leftSection={<IconArrowLeft size={16} />}
                   size="sm"
                   style={{
-                    color: 'var(--theme-primary)',
+                    color: 'var(--accent)',
                     backgroundColor: 'transparent'
                   }}
                 >
@@ -69,12 +69,12 @@ export default function CreateBlogPostPage() {
             <Text
               size="xl"
               fw={700}
-              style={{ color: 'var(--theme-text)' }}
+              style={{ color: 'var(--text-primary)' }}
             >
               Create New Blog Post
             </Text>
             
-            <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+            <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
               Write and publish a new blog post. You can save it as a draft or publish it immediately.
             </Text>
           </Stack>

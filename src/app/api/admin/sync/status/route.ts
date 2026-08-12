@@ -8,6 +8,30 @@ import { requireAuth } from '@/lib/auth/session';
 import BackgroundSyncService from '@/lib/services/backgroundSyncService';
 import { db } from '@/lib/database/connection';
 
+/** Aggregate figures computed over recent `sync_logs` entries. */
+type SyncStatisticsRow = {
+  total_syncs: string;
+  successful_syncs: string | null;
+  avg_duration: string | null;
+  last_sync: Date | null;
+  total_operations: string | null;
+  total_successful_operations: string | null;
+  total_failed_operations: string | null;
+  success_rate: string;
+  operation_success_rate: string;
+};
+
+/** A `sync_logs` entry that recorded at least one failed operation. */
+type RecentErrorRow = {
+  timestamp: Date;
+  results: Array<{
+    operation: string;
+    success: boolean;
+    error?: string;
+    duration: number;
+  }>;
+};
+
 export async function GET(request: NextRequest) {
   try {
     // Verify admin authentication
@@ -22,16 +46,20 @@ export async function GET(request: NextRequest) {
     const syncService = new BackgroundSyncService();
     
     // Get sync history
-    const history = await syncService.getSyncHistory(10);
+    const history = await syncService.getSyncHistory(user.storeId, 10);
     
     // Get sync statistics
-    const stats = await getSyncStatistics();
+    const stats = await getSyncStatistics(user.storeId);
     
-    // Get active integrations
-    const activeStores = await syncService.getActiveStores();
+    // Deliberately NOT calling getActiveStores(): it returns every store on
+    // the platform that has a ShipStation integration, so exposing it here
+    // handed one merchant a directory of every other merchant's id and name.
+    // This endpoint answers "is MY sync healthy", so it reports only whether
+    // this store's own integration is connected.
+    const integrationConnected = await syncService.hasActiveIntegration(user.storeId);
     
     // Get recent errors
-    const recentErrors = await getRecentErrors();
+    const recentErrors = await getRecentErrors(user.storeId);
     
     return NextResponse.json({
       success: true,
@@ -39,8 +67,7 @@ export async function GET(request: NextRequest) {
         lastSync: history[0] || null,
         recentSyncs: history,
         statistics: stats,
-        activeIntegrations: activeStores.length,
-        activeStores: activeStores,
+        integrationConnected,
         recentErrors: recentErrors,
         systemStatus: {
           healthy: stats.success_rate >= 0.8,
@@ -61,13 +88,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getSyncStatistics() {
+async function getSyncStatistics(storeId: string) {
   try {
     const query = `
       WITH recent_syncs AS (
         SELECT *
         FROM sync_logs
         WHERE timestamp >= NOW() - INTERVAL '7 days'
+          AND store_id = $1
       ),
       success_stats AS (
         SELECT 
@@ -95,8 +123,8 @@ async function getSyncStatistics() {
       FROM success_stats
     `;
     
-    const result = await db.query(query);
-    
+    const result = await db.query<SyncStatisticsRow>(query, [storeId]);
+
     if (result.rows.length === 0) {
       return {
         total_syncs: 0,
@@ -111,8 +139,19 @@ async function getSyncStatistics() {
       };
     }
     
-    return result.rows[0];
-    
+    const row = result.rows[0];
+    return {
+      total_syncs: Number(row.total_syncs) || 0,
+      successful_syncs: Number(row.successful_syncs) || 0,
+      success_rate: Number(row.success_rate) || 0,
+      avg_duration: Number(row.avg_duration) || 0,
+      last_sync: row.last_sync ? row.last_sync.toISOString() : null,
+      total_operations: Number(row.total_operations) || 0,
+      total_successful_operations: Number(row.total_successful_operations) || 0,
+      total_failed_operations: Number(row.total_failed_operations) || 0,
+      operation_success_rate: Number(row.operation_success_rate) || 0
+    };
+
   } catch (error) {
     console.error('Failed to get sync statistics:', error);
     return {
@@ -129,7 +168,7 @@ async function getSyncStatistics() {
   }
 }
 
-async function getRecentErrors() {
+async function getRecentErrors(storeId: string) {
   try {
     const query = `
       SELECT 
@@ -137,23 +176,19 @@ async function getRecentErrors() {
         results
       FROM sync_logs
       WHERE failed_operations > 0
+        AND store_id = $1
       ORDER BY timestamp DESC
       LIMIT 5
     `;
     
-    const result = await db.query(query);
-    
+    const result = await db.query<RecentErrorRow>(query, [storeId]);
+
     return result.rows.map(row => {
-      const results = JSON.parse(row.results) as Array<{
-        operation: string;
-        success: boolean;
-        error?: string;
-        duration: number;
-      }>;
-      const failedOperations = results.filter(r => !r.success);
-      
+      // `results` is a jsonb column, so pg already returns it parsed.
+      const failedOperations = row.results.filter(r => !r.success);
+
       return {
-        timestamp: row.timestamp,
+        timestamp: row.timestamp.toISOString(),
         failedOperations: failedOperations.map(op => ({
           operation: op.operation,
           error: op.error,

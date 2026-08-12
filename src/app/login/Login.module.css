@@ -1,0 +1,175 @@
+/*
+ * Sign-in. Same ground and type as the setup wizard so the two screens read as
+ * one product.
+ */
+
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--surface);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  isolation: isolate;
+}
+
+/*
+ * The two radial "ember blooms" that used to sit here are gone. They were
+ * authored against the vermilion ramp; after the repalette `--ember-500-rgb`
+ * resolves to ink, so the warm glow became a grey haze washing the top 420px
+ * of a page whose ground is pure white. §2: "The marketing site is --bg from
+ * the header to the footer... never alternating background colour." One
+ * ground, no bloom.
+ */
+
+.masthead {
+  padding: 20px var(--app-pad, 24px);
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.brand:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.brandMark {
+  /* The real mark from public/brand, not an "R" in a tinted tile. */
+  display: block;
+  height: 22px;
+  width: auto;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px var(--app-pad, 24px) 72px;
+}
+
+@media (min-width: 720px) {
+  .main {
+    align-items: center;
+    padding-top: 0;
+    padding-bottom: 96px;
+  }
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 28px 24px;
+}
+
+@media (min-width: 480px) {
+  .card {
+    padding: 36px 32px;
+  }
+}
+
+.eyebrow {
+  display: block;
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 10px;
+}
+
+.title {
+  font-family: var(--font-display, inherit);
+  font-size: clamp(1.5rem, 3.2vw, 1.875rem);
+  line-height: 1.14;
+  letter-spacing: -0.022em;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.subtitle {
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  color: var(--text-secondary);
+  margin: 0 0 24px;
+}
+
+.fields {
+  display: grid;
+  gap: 18px;
+}
+
+.submit {
+  margin-top: 24px;
+}
+
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  background: var(--danger-subtle);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  margin-bottom: 20px;
+}
+
+.alertIcon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.alertBody {
+  min-width: 0;
+}
+
+.alertTitle {
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.alertText {
+  margin: 0;
+}
+
+.footer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.footer a {
+  color: var(--accent-text);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.footer a:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-xs);
+}

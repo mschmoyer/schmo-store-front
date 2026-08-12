@@ -949,13 +949,13 @@ export interface Supplier {
   id: UUID;
   store_id: UUID;
   name: string;
-  contact_person?: string;
-  email?: string;
-  phone?: string;
-  address?: Address;
-  tax_id?: string;
-  payment_terms?: string;
-  notes?: string;
+  contact_person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: Address | null;
+  tax_id?: string | null;
+  payment_terms?: string | null;
+  notes?: string | null;
   is_active: boolean;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -968,21 +968,21 @@ export interface PurchaseOrder {
   purchase_order_number: string;
   status: 'draft' | 'pending' | 'approved' | 'sent' | 'received' | 'partially_received' | 'cancelled';
   order_date: Timestamp;
-  expected_delivery_date?: Timestamp;
-  received_date?: Timestamp;
+  expected_delivery_date?: Timestamp | null;
+  received_date?: Timestamp | null;
   subtotal: number;
   tax_amount: number;
   shipping_amount: number;
   total_amount: number;
   currency: string;
   payment_status: 'pending' | 'paid' | 'partial' | 'overdue';
-  payment_terms?: string;
-  notes?: string;
+  payment_terms?: string | null;
+  notes?: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
-  created_by?: UUID;
-  approved_by?: UUID;
-  approved_at?: Timestamp;
+  created_by?: UUID | null;
+  approved_by?: UUID | null;
+  approved_at?: Timestamp | null;
 }
 
 export interface PurchaseOrderItem {

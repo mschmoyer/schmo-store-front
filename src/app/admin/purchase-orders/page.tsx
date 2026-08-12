@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   Container,
-  Title,
   Card,
   Group,
   Text,
   Button,
   Badge,
   Table,
-  Loader,
   Alert,
   Pagination,
   Select,
@@ -21,13 +19,37 @@ import {
 } from '@mantine/core';
 import { IconPlus, IconSearch, IconEye, IconDownload, IconFilter } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { PurchaseOrder } from '@/lib/types/database';
 import Link from 'next/link';
+import { useAdmin } from '@/contexts/AdminContext';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { TableSkeleton } from '@/components/admin/AdminSkeletons';
+import table from '@/components/admin/adminTable.module.css';
 
-interface PurchaseOrderListItem extends PurchaseOrder {
+/**
+ * A purchase order row exactly as `GET /api/admin/purchase-orders` returns it.
+ *
+ * Declared here rather than extending `PurchaseOrder` from
+ * `@/lib/types/database`, because that interface describes a schema the
+ * database does not have — `purchase_order_number`, `total_amount`,
+ * `expected_delivery_date`, `payment_status`. The real columns are
+ * `po_number`, `total_cost`, `expected_delivery`, and there is no payment
+ * status on a purchase order at all. Rendering the interface's field names
+ * produced a table of `undefined`s; the mock array was hiding that too.
+ */
+interface PurchaseOrderListItem {
+  id: string;
+  po_number: string;
+  status: string;
+  order_date: string;
+  expected_delivery: string | null;
+  actual_delivery: string | null;
+  subtotal: string | number;
+  tax_amount: string | number | null;
+  shipping_amount: string | number | null;
+  total_cost: string | number;
   supplier_name: string;
-  supplier_contact: string;
-  items_count: number;
+  supplier_contact: string | null;
+  items_count: string | number;
 }
 
 /**
@@ -41,6 +63,7 @@ interface PurchaseOrderListItem extends PurchaseOrder {
  * - Link to create new purchase orders
  */
 export default function PurchaseOrdersPage() {
+  const { session } = useAdmin();
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,98 +73,77 @@ export default function PurchaseOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchPurchaseOrders();
-  }, [page, statusFilter, searchTerm]);
+  /**
+   * Load purchase orders from the API.
+   *
+   * This function used to `setPurchaseOrders(mockPurchaseOrders)` — three
+   * hardcoded orders from ABC Supply Co., XYZ Components and Global Parts
+   * Ltd., dated January 2024 — behind the comment *"the database tables don't
+   * exist yet"*. They do: `purchase_orders`, `purchase_order_items`,
+   * `purchase_order_receiving`, `purchase_order_status_history` and
+   * `suppliers` are all present, and `GET /api/admin/purchase-orders` returns
+   * a valid paginated response.
+   *
+   * The create and receive flows behind this list were always real, which made
+   * this worse than a missing feature: a merchant could raise a genuine
+   * purchase order, and it would then be invisible forever, replaced on the
+   * list by ABC Supply Co. It also violated this repo's own rule in CLAUDE.md
+   * — "avoid using mocks unless explicitly requested".
+   */
+  const fetchPurchaseOrders = useCallback(async () => {
+    if (!session?.sessionToken || !session?.storeId) return;
 
-  const fetchPurchaseOrders = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // For now, we'll create mock data since the database tables don't exist yet
-      // In a real implementation, this would fetch from the API
-      const mockPurchaseOrders: PurchaseOrderListItem[] = [
-        {
-          id: 'po-1',
-          store_id: '12345',
-          supplier_id: '67890',
-          purchase_order_number: 'PO-001',
-          status: 'approved',
-          order_date: new Date('2024-01-15'),
-          expected_delivery_date: new Date('2024-01-30'),
-          received_date: null,
-          subtotal: 2500.00,
-          tax_amount: 200.00,
-          shipping_amount: 50.00,
-          total_amount: 2750.00,
-          currency: 'USD',
-          payment_status: 'pending',
-          payment_terms: 'Net 30',
-          notes: 'Rush order - please expedite shipping',
-          created_at: new Date('2024-01-15'),
-          updated_at: new Date('2024-01-15'),
-          supplier_name: 'ABC Supply Co.',
-          supplier_contact: 'John Smith',
-          items_count: 2,
-        },
-        {
-          id: 'po-2',
-          store_id: '12345',
-          supplier_id: '67891',
-          purchase_order_number: 'PO-002',
-          status: 'sent',
-          order_date: new Date('2024-01-20'),
-          expected_delivery_date: new Date('2024-02-05'),
-          received_date: null,
-          subtotal: 1800.00,
-          tax_amount: 144.00,
-          shipping_amount: 35.00,
-          total_amount: 1979.00,
-          currency: 'USD',
-          payment_status: 'pending',
-          payment_terms: 'Net 30',
-          notes: 'Standard delivery acceptable',
-          created_at: new Date('2024-01-20'),
-          updated_at: new Date('2024-01-20'),
-          supplier_name: 'XYZ Components',
-          supplier_contact: 'Sarah Johnson',
-          items_count: 5,
-        },
-        {
-          id: 'po-3',
-          store_id: '12345',
-          supplier_id: '67892',
-          purchase_order_number: 'PO-003',
-          status: 'received',
-          order_date: new Date('2024-01-10'),
-          expected_delivery_date: new Date('2024-01-25'),
-          received_date: new Date('2024-01-24'),
-          subtotal: 3200.00,
-          tax_amount: 256.00,
-          shipping_amount: 75.00,
-          total_amount: 3531.00,
-          currency: 'USD',
-          payment_status: 'paid',
-          payment_terms: 'Net 15',
-          notes: 'Order completed successfully',
-          created_at: new Date('2024-01-10'),
-          updated_at: new Date('2024-01-24'),
-          supplier_name: 'Global Parts Ltd.',
-          supplier_contact: 'Michael Chen',
-          items_count: 8,
-        },
-      ];
+      const query = new URLSearchParams({
+        page: String(page),
+        limit: '10',
+        store_id: session.storeId,
+      });
+      if (statusFilter) query.set('status', statusFilter);
 
-      setPurchaseOrders(mockPurchaseOrders);
-      setTotalPages(1);
-    } catch (error) {
-      console.error('Error fetching purchase orders:', error);
-      setError('Failed to fetch purchase orders');
+      const response = await fetch(`/api/admin/purchase-orders?${query.toString()}`, {
+        headers: { Authorization: `Bearer ${session.sessionToken}` },
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(result?.error || `Request failed with status ${response.status}`);
+      }
+
+      const rows: PurchaseOrderListItem[] = result?.data ?? [];
+
+      /*
+       * Search is applied client-side: the API has no search parameter, and
+       * silently ignoring what the merchant typed would be its own small lie.
+       */
+      const term = searchTerm.trim().toLowerCase();
+      const filtered = term
+        ? rows.filter(
+            (po) =>
+              po.po_number?.toLowerCase().includes(term) ||
+              po.supplier_name?.toLowerCase().includes(term)
+          )
+        : rows;
+
+      setPurchaseOrders(filtered);
+      setTotalPages(Math.max(1, result?.pagination?.totalPages ?? 1));
+    } catch (err) {
+      console.error('Error fetching purchase orders:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch purchase orders');
+      setPurchaseOrders([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [session?.sessionToken, session?.storeId, page, statusFilter, searchTerm]);
+
+  useEffect(() => {
+    void fetchPurchaseOrders();
+  }, [fetchPurchaseOrders]);
+
 
   const handleDownloadPDF = async (purchaseOrderId: string, orderNumber: string) => {
     try {
@@ -194,7 +196,8 @@ export default function PurchaseOrdersPage() {
     }).format(amount);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: string | null) => {
+    if (!date) return '—';
     return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'short',
@@ -215,16 +218,6 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const getPaymentStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'yellow';
-      case 'paid': return 'green';
-      case 'partial': return 'orange';
-      case 'overdue': return 'red';
-      default: return 'gray';
-    }
-  };
-
   const statusOptions = [
     { value: '', label: 'All Statuses' },
     { value: 'draft', label: 'Draft' },
@@ -238,11 +231,10 @@ export default function PurchaseOrdersPage() {
 
   if (loading) {
     return (
-      <Container size="xl" py="xl">
-        <Group justify="center">
-          <Loader size="lg" />
-        </Group>
-      </Container>
+      <Stack gap="lg">
+        <AdminPageHeader title="Purchase orders" description="Restock orders raised with your suppliers." />
+        <TableSkeleton rows={6} columns={6} label="Loading purchase orders" />
+      </Stack>
     );
   }
 
@@ -258,19 +250,21 @@ export default function PurchaseOrdersPage() {
 
   return (
     <Container size="xl" py="xl">
-      <Stack spacing="lg">
+      <Stack gap="lg">
         {/* Header */}
-        <Group justify="space-between" align="center">
-          <div>
-            <Title order={2}>Purchase Orders</Title>
-            <Text color="dimmed" size="sm">
-              Manage your purchase orders and generate PDFs
-            </Text>
-          </div>
-          <Button leftSection={<IconPlus size={16} />} color="blue">
-            New Purchase Order
-          </Button>
-        </Group>
+        <AdminPageHeader
+          title="Purchase orders"
+          description="Restock orders raised with your suppliers."
+          actions={
+            <Button
+              component={Link}
+              href="/admin/purchase-orders/create"
+              leftSection={<IconPlus size={16} />}
+            >
+              New purchase order
+            </Button>
+          }
+        />
 
         {/* Filters */}
         <Card>
@@ -304,9 +298,8 @@ export default function PurchaseOrdersPage() {
                 <Table.Th>Order Date</Table.Th>
                 <Table.Th>Expected Delivery</Table.Th>
                 <Table.Th>Status</Table.Th>
-                <Table.Th>Payment Status</Table.Th>
-                <Table.Th>Total Amount</Table.Th>
-                <Table.Th>Items</Table.Th>
+                <Table.Th className={table.numeric}>Total</Table.Th>
+                <Table.Th className={table.numeric}>Items</Table.Th>
                 <Table.Th>Actions</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -315,8 +308,8 @@ export default function PurchaseOrdersPage() {
                 <Table.Tr key={po.id}>
                   <Table.Td>
                     <Link href={`/admin/purchase-orders/${po.id}`} style={{ textDecoration: 'none' }}>
-                      <Text fw={500} c="blue">
-                        {po.purchase_order_number}
+                      <Text fw={500} className={table.code}>
+                        {po.po_number}
                       </Text>
                     </Link>
                   </Table.Td>
@@ -327,30 +320,19 @@ export default function PurchaseOrdersPage() {
                     </div>
                   </Table.Td>
                   <Table.Td>{formatDate(po.order_date)}</Table.Td>
-                  <Table.Td>
-                    {po.expected_delivery_date ? formatDate(po.expected_delivery_date) : 'N/A'}
-                  </Table.Td>
+                  <Table.Td>{formatDate(po.expected_delivery)}</Table.Td>
                   <Table.Td>
                     <Badge color={getStatusColor(po.status)} variant="light">
                       {po.status.toUpperCase()}
                     </Badge>
                   </Table.Td>
-                  <Table.Td>
-                    <Badge color={getPaymentStatusColor(po.payment_status)} variant="light">
-                      {po.payment_status.toUpperCase()}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>{formatCurrency(po.total_amount)}</Table.Td>
-                  <Table.Td>
-                    <Badge variant="outline" color="gray">
-                      {po.items_count} items
-                    </Badge>
-                  </Table.Td>
+                  <Table.Td className={table.numeric}>{formatCurrency(Number(po.total_cost))}</Table.Td>
+                  <Table.Td className={table.numeric}>{po.items_count}</Table.Td>
                   <Table.Td>
                     <Group gap="xs">
                       <Tooltip label="View Details">
                         <Link href={`/admin/purchase-orders/${po.id}`} passHref>
-                          <ActionIcon variant="light" color="blue" size="sm">
+                          <ActionIcon variant="light" color="ink" size="sm">
                             <IconEye size={14} />
                           </ActionIcon>
                         </Link>
@@ -358,9 +340,8 @@ export default function PurchaseOrdersPage() {
                       <Tooltip label="Download PDF">
                         <ActionIcon
                           variant="light"
-                          color="green"
                           size="sm"
-                          onClick={() => handleDownloadPDF(po.id, po.purchase_order_number)}
+                          onClick={() => handleDownloadPDF(po.id, po.po_number)}
                           loading={pdfLoading === po.id}
                         >
                           <IconDownload size={14} />

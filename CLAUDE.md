@@ -85,17 +85,19 @@ The system automatically syncs the following data from ShipStation:
 4. **Products** - Product information, SKUs, prices, images
 5. **Inventory** - Stock levels and quantities
 
-### Heroku
-1. Set environment variable: `SYNC_AUTH_TOKEN=your-secure-token`
-2. Apply database migration: `015_sync_logs_table.sql`
-3. Configure Heroku Scheduler to run `npm run sync:background`
-4. See `/docs/heroku-scheduler-setup.md` for detailed setup instructions
-5. Our app is: rebel-shops
+### Deployment (Vercel)
+1. Set `CRON_SECRET` and `SYNC_AUTH_TOKEN` in the Vercel project
+2. Migrations run from the Vercel build command (`node database/migrate.js`)
+3. Schedules are declared in `vercel.json` under `crons`
+4. See `/docs/deployment-vercel.md` for the full runbook
+5. Production domain: rebelshops.com
 
 ### Monitoring
 - API endpoint: `/api/admin/sync/status` - View sync history and statistics
 - Database table: `sync_logs` - Detailed sync results
-- Manual trigger: POST to `/api/admin/sync/background`
+- Scheduled trigger: Vercel Cron calls `GET /api/cron/sync` with `Authorization: Bearer $CRON_SECRET`
+  (the old `/api/admin/sync/background` route was removed — it accepted an unauthenticated
+  `x-heroku-scheduler: true` header as proof of identity)
 
 ## Completing a Task
 When completing a task, follow these steps:

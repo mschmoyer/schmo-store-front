@@ -36,7 +36,10 @@ export interface ProductStructuredData {
     unitCode: string;
   };
   keywords?: string;
-  warranty?: string;
+  warranty?: {
+    '@type': 'WarrantyPromise';
+    description: string;
+  };
   offers: {
     '@type': 'Offer';
     price: string;

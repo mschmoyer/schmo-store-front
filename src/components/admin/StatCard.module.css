@@ -1,0 +1,130 @@
+/* One stat, one treatment. No per-card tint. */
+
+.grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  text-decoration: none;
+  color: inherit;
+}
+
+.linked {
+  transition:
+    border-color var(--duration-standard) var(--ease-out),
+    box-shadow var(--duration-standard) var(--ease-out);
+}
+
+.linked:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.linked:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/*
+ * Two lines' worth of room, always.
+ *
+ * A row of cards is read by scanning the FIGURES, and that only works if the
+ * figures sit on one baseline. When the head sized to its content, "Revenue
+ * this month" wrapped to two lines while "Products" stayed on one, and the two
+ * numbers underneath fell 18px out of alignment — a ragged row that looks like
+ * a rendering bug. Reserving the second line costs nothing and the baseline
+ * holds however long a label gets.
+ */
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 34px;
+}
+
+.label {
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.icon {
+  margin-top: 1px;
+}
+
+/* The mark is furniture. It is never tinted — that was the "pastel per card"
+   pattern this component exists to end. */
+.icon {
+  display: inline-flex;
+  color: var(--text-quaternary);
+}
+
+.valueRow {
+  display: flex;
+  align-items: baseline;
+  min-height: 34px;
+}
+
+.value,
+.price {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: var(--text-primary);
+}
+
+/* Tone is a fact about the NUMBER. Default is ink. */
+.valueRow[data-tone='signal'] .value,
+.valueRow[data-tone='signal'] .price {
+  color: var(--success-text);
+}
+
+.valueRow[data-tone='warning'] .value,
+.valueRow[data-tone='warning'] .price {
+  color: var(--warning-text);
+}
+
+.valueRow[data-tone='danger'] .value,
+.valueRow[data-tone='danger'] .price {
+  color: var(--danger-text);
+}
+
+.meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.meter {
+  margin-top: var(--space-1);
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--surface-inset);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  /* --text-muted, not --text: a meter is a secondary reading of a number the
+     card already states, and a full-width ink bar reads as an underline. */
+  background: var(--text-muted);
+}

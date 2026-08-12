@@ -58,7 +58,7 @@ export interface AdminDashboardStats {
   totalCategories: number;
   visibleCategories: number;
   integrations: {
-    shipengine: boolean;
+    shipstation: boolean;
     stripe: boolean;
   };
 }

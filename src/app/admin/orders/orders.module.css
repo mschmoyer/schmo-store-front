@@ -1,0 +1,53 @@
+/*
+ * Orders list.
+ *
+ * The only visual idea here is that a late order should be legible as late from
+ * across the room. Everything else is the standard admin table treatment, which
+ * lives in `adminTable.module.css` and the Mantine theme.
+ */
+
+.ageingAlert {
+  border-radius: var(--radius-lg);
+}
+
+.controls {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.search {
+  flex: 1 1 260px;
+  max-width: 340px;
+}
+
+.tableCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/*
+ * A late row is marked with a rule on its leading edge, not a filled
+ * background. A wash across a whole row fights the tabular numerals in the
+ * money column and, at five rows out of twenty-five, reads as a highlight
+ * rather than as an alarm; a 3px rose rule reads as an alarm and leaves the
+ * figures on the same ground as every other row.
+ */
+.tableCard tr[data-ageing='true'] td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--danger);
+}
+
+/* Its own line under the order number. Inline, it read as part of the order
+   number and pushed the column wide enough to squeeze the money column. */
+.ageLine {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--danger-text);
+}

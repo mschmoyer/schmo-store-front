@@ -1,0 +1,281 @@
+/* Showcase-only styling. Nothing here is part of the design system. */
+
+.page {
+  background-color: var(--surface);
+  min-height: 100dvh;
+  padding-bottom: 64px;
+}
+
+.pageTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  margin: 0;
+}
+
+.pageLede {
+  max-width: 62ch;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--ink-300);
+  margin: 0;
+}
+
+.pageLede code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--ember-300);
+}
+
+/* ------------------------------------------------------------------ row -- */
+
+.row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 40px;
+  padding-block: 44px;
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.rowHead {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+}
+
+.rowTitle {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+
+.rowNote {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.rowBody {
+  min-width: 0;
+}
+
+.tail {
+  height: 40px;
+}
+
+/* -------------------------------------------------------------- palette -- */
+
+.swatchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 92px;
+}
+
+.swatchChip {
+  display: block;
+  height: 52px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.swatchLabel {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
+}
+
+/* ----------------------------------------------------------- typography -- */
+
+.display {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  margin: 0;
+}
+
+.h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  margin: 0;
+}
+
+.h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.lead {
+  max-width: 62ch;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.body {
+  max-width: 68ch;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- cards -- */
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.cardCopy {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* §6: product grids are repeat(auto-fill, minmax(260px, 1fr)) with a 24px gap. */
+.productGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 24px;
+}
+
+.productCard {
+  overflow: hidden;
+}
+
+.productBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+
+.productName {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------- forms -- */
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 40px;
+  align-items: start;
+}
+
+/* ------------------------------------------------------------ feedback -- */
+
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.emptyGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.emberText {
+  color: var(--ember-500);
+  display: inline-flex;
+}
+
+/* ----------------------------------------------------------- elevation -- */
+
+.shadowTile {
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 96px;
+
+  background-color: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.radiusRow {
+  margin-top: 24px;
+}
+
+.radiusTile {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+
+  background-color: var(--accent-subtle);
+  border: 1px solid var(--accent-subtle-border);
+  color: var(--accent-text);
+
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.productBadge {
+  align-self: flex-start;
+  margin-top: 2px;
+}

@@ -1,0 +1,99 @@
+/* No ground: the page is one white ground and sections are separated by rules. */
+.root {
+  border-bottom: 1px solid var(--border);
+  padding-block: var(--section-y);
+}
+
+.inner {
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  margin-top: clamp(32px, 5vw, 44px);
+}
+
+.column {
+  padding: clamp(20px, 3vw, 28px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.columnOut {
+  background: transparent;
+  border-style: dashed;
+}
+
+.columnHeading {
+  margin: 0 0 16px;
+  font-family: var(--font-sans);
+  font-size: var(--text-eyebrow);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/*
+ * Ink, not green — matching `pricing/PlanCard`. A tick beside "A blog for your
+ * store" is not money, stock or a saving, and twenty of them on one page turned
+ * the reserved signal into decoration.
+ */
+.tick {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.itemOut {
+  color: var(--text-muted);
+}
+
+.dash {
+  width: 10px;
+  height: 2px;
+  margin: 10px 0 0 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
+.itemLead {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (min-width: 900px) {
+  .columns {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    align-items: start;
+  }
+}

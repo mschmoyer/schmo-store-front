@@ -1,0 +1,56 @@
+/*
+ * The closing offer. No ground of its own: this used to be a second full-bleed
+ * ink block, immediately after the ink proof section and the ink sync section.
+ * The page's one inversion is pricing, so this one closes on the page ground
+ * and gets its emphasis from type size and whitespace instead.
+ *
+ * Left-aligned, like every other section — a centred column here was the third
+ * distinct alignment on the page.
+ */
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-h1);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  max-width: 18ch;
+}
+
+.subhead {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 52ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/*
+ * TAP TARGET. `Button variant="link"` renders as inline text, which is right
+ * inside a sentence and wrong for a standalone call to action: at 24px tall it
+ * is under the 44px thumb target and it sits beside a 48px primary. Raising
+ * the box, not the type, keeps the visual weight of a link.
+ */
+.actions > a {
+  min-height: 44px;
+}

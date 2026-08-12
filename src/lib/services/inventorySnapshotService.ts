@@ -7,7 +7,7 @@ export class InventorySnapshotService {
   async createDailySnapshot(storeId: string, snapshotDate: Date = new Date()): Promise<{ success: boolean; snapshotId?: string; error?: string }> {
     try {
       // Call the database function to create snapshot
-      const result = await db.query(
+      const result = await db.query<{ snapshot_id: string | null }>(
         'SELECT create_inventory_snapshot($1, $2::date) as snapshot_id',
         [storeId, snapshotDate]
       );
@@ -182,7 +182,7 @@ export class InventorySnapshotService {
     endDate: Date = new Date()
   ): Promise<{ success: boolean; count: number; error?: string }> {
     try {
-      const result = await db.query(
+      const result = await db.query<{ count: number | null }>(
         'SELECT backfill_inventory_snapshots($1, $2::date, $3::date) as count',
         [storeId, startDate, endDate]
       );
@@ -232,7 +232,7 @@ export class InventorySnapshotService {
         ) as exists
       `;
 
-      const result = await db.query(query, [storeId, date]);
+      const result = await db.query<{ exists: boolean }>(query, [storeId, date]);
       return result.rows[0]?.exists || false;
     } catch (error) {
       console.error('Error checking snapshot existence:', error);

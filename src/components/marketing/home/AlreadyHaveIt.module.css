@@ -1,0 +1,200 @@
+/* No `.root` and no background — the shared Section owns both. */
+
+.inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--stack-lg);
+  align-items: start;
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-sm);
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-h2);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  max-width: 20ch;
+  color: var(--text);
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 52ch;
+}
+
+.body {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 58ch;
+}
+
+/* CTA and its qualifier are one block, flush left with the prose above. */
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- the checklist */
+
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3-5);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowLabel {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.rowNote {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  text-align: right;
+}
+
+/*
+ * Ink, not green. "Products" and "Warehouses" are inventory records, not stock
+ * levels or money, so they are outside the signal's contract.
+ */
+.check {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.box {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-xs);
+}
+
+/*
+ * The fifth row is the gap we fill. It is emphasised with a fill and weight,
+ * not with a second dark block — the page gets exactly one of those.
+ */
+.rowTodo {
+  background: var(--surface-2);
+}
+
+.rowTodo .rowLabel {
+  font-size: 1.125rem;
+}
+
+.rowTodo .rowNote {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 1000px) {
+  .inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+  }
+}
+
+/*
+ * TWO-UP on a phone, not a ladder.
+ *
+ * Five full-width rows were 412px — and the four "done" rows are two words
+ * each, so most of that was a right-hand column holding nothing. Paired, the
+ * four things the reader already finished read as a block of four, which is
+ * the point the section is making, and the one empty box still gets the full
+ * width to itself. Every label and every note is unchanged.
+ */
+@media (max-width: 759px) {
+  .checklist {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row {
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--space-2-5);
+    row-gap: 2px;
+    padding: var(--space-3);
+  }
+
+  .rowLabel {
+    font-size: 1rem;
+  }
+
+  .row:nth-child(odd) {
+    border-inline-end: 1px solid var(--border);
+  }
+
+  /* Full width under the label, so a 170px cell fits both on one line each. */
+  .rowNote {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .check,
+  .box {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+  }
+
+  /* The gap we fill keeps the full measure. */
+  .rowTodo {
+    grid-column: 1 / -1;
+    border-inline-end: 0;
+  }
+}
+
+/*
+ * TAP TARGET. `Button variant="link"` renders as inline text, which is right
+ * inside a sentence and wrong for a standalone call to action: at 24px tall it
+ * is under the 44px thumb target and it sits beside a 48px primary. Raising
+ * the box, not the type, keeps the visual weight of a link.
+ */
+.actions > a {
+  min-height: 44px;
+}

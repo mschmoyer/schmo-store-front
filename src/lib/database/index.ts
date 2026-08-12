@@ -2,6 +2,28 @@
 
 // Connection management
 export { db } from './connection';
+export {
+  getPool,
+  getConnectionInfo,
+  initializeDatabase,
+  closeDatabase,
+  query,
+  transaction,
+  healthCheck,
+  queryWithStore,
+  buildStoreQuery,
+  DatabaseError,
+  getFirstRow,
+  getAllRows,
+  getRowCount,
+  buildPaginationQuery,
+  sanitizeInput,
+  validateUUID,
+  ensureTablesExist,
+  getSlowQueries,
+  monitorConnections,
+} from './connection';
+export type { DatabaseDriver } from './connection';
 
 // Types
 export type {

@@ -27,7 +27,7 @@ export class OpenAIService {
   async generateWithFunctionCalling<T>(
     systemPrompt: string,
     userPrompt: string,
-    functionSchema: object,
+    functionSchema: Record<string, unknown>,
     functionName: string
   ): Promise<T> {
     try {

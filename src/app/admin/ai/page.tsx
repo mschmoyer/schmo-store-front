@@ -21,7 +21,6 @@ import {
   ThemeIcon
 } from '@mantine/core';
 import {
-  IconBrain,
   IconWand,
   IconPencil,
   IconBulb,
@@ -40,13 +39,13 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useAdmin } from '@/contexts/AdminContext';
 import { type GeneratedStoreDetails } from '@/lib/prompts/store-details';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 
 interface AIFeature {
   id: string;
   title: string;
   description: string;
   icon: React.ComponentType<{ size?: number; color?: string }>;
-  color: string;
   category: 'content' | 'automation' | 'optimization';
   status: 'available' | 'coming-soon' | 'beta';
   benefits: string[];
@@ -58,7 +57,6 @@ const aiFeatures: AIFeature[] = [
     title: 'Store Details Generator',
     description: 'Automatically generate compelling store titles, hero descriptions, and meta content based on your product catalog.',
     icon: IconWand,
-    color: 'blue',
     category: 'content',
     status: 'available',
     benefits: [
@@ -73,7 +71,6 @@ const aiFeatures: AIFeature[] = [
     title: 'Blog Post Generator',
     description: 'Create engaging, product-focused blog posts that drive traffic and showcase your inventory.',
     icon: IconPencil,
-    color: 'green',
     category: 'content',
     status: 'available',
     benefits: [
@@ -88,7 +85,6 @@ const aiFeatures: AIFeature[] = [
     title: 'HS Code Generator',
     description: 'Generate Harmonized System trade classification codes for all your products using AI analysis.',
     icon: IconFileText,
-    color: 'indigo',
     category: 'automation',
     status: 'available',
     benefits: [
@@ -103,7 +99,6 @@ const aiFeatures: AIFeature[] = [
     title: 'AI Product Descriptions',
     description: 'Generate compelling, unique product descriptions that convert browsers into buyers.',
     icon: IconBulb,
-    color: 'orange',
     category: 'content',
     status: 'coming-soon',
     benefits: [
@@ -118,7 +113,6 @@ const aiFeatures: AIFeature[] = [
     title: 'Smart Pricing Assistant',
     description: 'AI-powered pricing recommendations based on market data, competitor analysis, and demand patterns.',
     icon: IconTarget,
-    color: 'red',
     category: 'optimization',
     status: 'coming-soon',
     benefits: [
@@ -133,7 +127,6 @@ const aiFeatures: AIFeature[] = [
     title: 'Customer Behavior Insights',
     description: 'Analyze customer patterns and provide actionable recommendations to boost sales.',
     icon: IconChartLine,
-    color: 'purple',
     category: 'optimization',
     status: 'coming-soon',
     benefits: [
@@ -148,7 +141,6 @@ const aiFeatures: AIFeature[] = [
     title: 'AI Email Campaigns',
     description: 'Automatically create personalized email campaigns for abandoned carts, promotions, and re-engagement.',
     icon: IconMail,
-    color: 'cyan',
     category: 'automation',
     status: 'coming-soon',
     benefits: [
@@ -359,46 +351,31 @@ export default function AIPage() {
     }
   };
 
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'content':
-        return 'blue';
-      case 'automation':
-        return 'green';
-      case 'optimization':
-        return 'purple';
-      default:
-        return 'gray';
-    }
-  };
-
   return (
     <Container size="xl" py="xl">
       <Stack gap="xl">
         {/* Header */}
-        <div>
-          <Group gap="sm" mb="sm">
-            <IconBrain size={32} color="var(--mantine-color-violet-6)" />
-            <Title order={1}>AI Assistant</Title>
-          </Group>
-          <Text size="lg" c="dimmed" mb="xl">
-            Supercharge your store with AI-powered tools that automate content creation, 
-            optimize operations, and boost sales performance.
-          </Text>
-        </div>
+        <AdminPageHeader
+          title="AI assistant"
+          description="Generate store copy, blog posts and HS codes from your own catalog."
+        />
 
         {/* Quick Stats */}
-        <Alert icon={<IconSparkles size={16} />} color="violet" variant="light">
+        <Alert icon={<IconSparkles size={16} />} color="ink" variant="light">
           <Group justify="space-between">
             <div>
               <Text fw={500}>AI Features Available</Text>
               <Text size="sm" c="dimmed">
-                {aiFeatures.filter(f => f.status === 'available').length} features ready to use, 
-                {aiFeatures.filter(f => f.status === 'coming-soon').length} more coming soon
+                {aiFeatures.filter((f) => f.status === 'available').length} ready to use
+                {', '}
+                {aiFeatures.filter((f) => f.status === 'coming-soon').length} more coming soon
               </Text>
             </div>
-            <Badge color="violet" size="lg" variant="gradient">
-              {aiFeatures.length} Total Features
+            {/* Was variant="gradient" — §1's anti-goals list "no pastel
+                gradient soup" first, and a gradient on a count badge is
+                decoration with nothing to say. */}
+            <Badge size="lg" variant="default">
+              {aiFeatures.length} total features
             </Badge>
           </Group>
         </Alert>
@@ -406,7 +383,10 @@ export default function AIPage() {
         {/* Feature Categories */}
         {['content', 'automation', 'optimization'].map(category => (
           <div key={category}>
-            <Title order={2} mb="md" c={getCategoryColor(category)}>
+            {/* Section headings used to be tinted per category — blue,
+                green, purple. §2: the signal is money/stock/success and
+                nothing else, and rank is carried by type, not by hue. */}
+            <Title order={2} fz="1.125rem" mb="md">
               {category === 'content' && 'Content Generation'}
               {category === 'automation' && 'Process Automation'}
               {category === 'optimization' && 'Performance Optimization'}
@@ -434,7 +414,7 @@ export default function AIPage() {
                       <CardSection withBorder inheritPadding py="xs">
                         <Group justify="space-between">
                           <Group gap="sm">
-                            <feature.icon size={20} color={`var(--mantine-color-${feature.color}-6)`} />
+                            <feature.icon size={18} color="var(--text-secondary)" />
                             <Text fw={500}>{feature.title}</Text>
                           </Group>
                           {getStatusBadge(feature.status)}
@@ -448,15 +428,14 @@ export default function AIPage() {
                       <Stack gap="xs" mb="md" style={{ flex: 1 }}>
                         {feature.benefits.slice(0, 3).map((benefit, index) => (
                           <Group key={index} gap="xs">
-                            <IconCheck size={14} color="var(--mantine-color-green-6)" />
+                            <IconCheck size={14} color="var(--text-quaternary)" />
                             <Text size="xs">{benefit}</Text>
                           </Group>
                         ))}
                       </Stack>
 
                       <Button
-                        variant={feature.status === 'available' ? 'filled' : 'light'}
-                        color={feature.color}
+                        variant={feature.status === 'available' ? 'filled' : 'default'}
                         fullWidth
                         disabled={feature.status !== 'available'}
                         leftSection={feature.status === 'available' ? <IconRocket size={16} /> : null}
@@ -521,7 +500,7 @@ export default function AIPage() {
               <Stack gap="xs">
                 {selectedFeature.benefits.map((benefit, index) => (
                   <Group key={index} gap="xs">
-                    <IconCheck size={16} color="var(--mantine-color-green-6)" />
+                    <IconCheck size={16} color="var(--text-quaternary)" />
                     <Text size="sm">{benefit}</Text>
                   </Group>
                 ))}
@@ -533,7 +512,6 @@ export default function AIPage() {
               loading={isGenerating}
               leftSection={<IconWand size={16} />}
               size="md"
-              color={selectedFeature.color}
             >
               {isGenerating ? 'Generating...' : (selectedFeature.id === 'store-details-generator' ? 'Generate Store Details' : selectedFeature.id === 'blog-post-generator' ? 'Generate Blog Post' : 'Generate Now')}
             </Button>
@@ -544,9 +522,7 @@ export default function AIPage() {
                 <Textarea
                   value={generatedContent}
                   onChange={(e) => setGeneratedContent(e.currentTarget.value)}
-                  minRows={6}
-                  maxRows={12}
-                  autosize
+                  rows={8}
                 />
                 <Group mt="sm">
                   <Button variant="light" size="sm">
@@ -568,7 +544,7 @@ export default function AIPage() {
         onClose={closeResults}
         title={
           <Group gap="sm">
-            <IconSparkles size={24} color="var(--mantine-color-blue-6)" />
+            <IconSparkles size={24} color="var(--text-primary)" />
             <Text fw={500}>Generated Store Details</Text>
           </Group>
         }
@@ -576,7 +552,7 @@ export default function AIPage() {
       >
         {generatedStoreDetails && (
           <Stack gap="lg">
-            <Alert color="blue" icon={<IconInfoCircle size={16} />}>
+            <Alert color="ink" icon={<IconInfoCircle size={16} />}>
               Review the generated content below and click &quot;Apply to Store&quot; to update your store settings.
             </Alert>
 
@@ -609,7 +585,7 @@ export default function AIPage() {
                 <div>
                   <Text fw={500} mb="xs">Selected Theme:</Text>
                   <Group gap="xs">
-                    <ThemeIcon color="blue" size="sm" variant="light">
+                    <ThemeIcon color="ink" size="sm" variant="light">
                       <IconColorSwatch size={14} />
                     </ThemeIcon>
                     <Text tt="capitalize">{generatedStoreDetails.selectedTheme}</Text>
@@ -651,7 +627,6 @@ export default function AIPage() {
                 onClick={handleApplyStoreDetails}
                 loading={isApplying}
                 leftSection={<IconCheck size={16} />}
-                color="green"
               >
                 {isApplying ? 'Applying...' : 'Apply to Store'}
               </Button>
@@ -666,7 +641,7 @@ export default function AIPage() {
         onClose={closeHsCodeResults}
         title={
           <Group gap="sm">
-            <IconFileText size={24} color="var(--mantine-color-indigo-6)" />
+            <IconFileText size={24} color="var(--text-primary)" />
             <Text fw={500}>HS Code Generation Results</Text>
           </Group>
         }
@@ -674,7 +649,7 @@ export default function AIPage() {
       >
         {hsCodeResults && (
           <Stack gap="lg">
-            <Alert color="indigo" icon={<IconInfoCircle size={16} />}>
+            <Alert color="ink" icon={<IconInfoCircle size={16} />}>
               Generated HS codes for {hsCodeResults.stats?.successful || 0} of {hsCodeResults.stats?.total || 0} products.
               HS codes have been automatically saved to your products.
             </Alert>
@@ -683,7 +658,7 @@ export default function AIPage() {
               <Stack gap="md">
                 <Group justify="space-between">
                   <Text fw={500}>Processing Summary</Text>
-                  <Badge color="indigo" variant="light">
+                  <Badge color="ink" variant="light">
                     {hsCodeResults.stats?.successful || 0} / {hsCodeResults.stats?.total || 0} successful
                   </Badge>
                 </Group>
@@ -691,7 +666,7 @@ export default function AIPage() {
                 <Grid>
                   <GridCol span={4}>
                     <div style={{ textAlign: 'center' }}>
-                      <Text size="xl" fw={700} color="green">
+                      <Text size="xl" fw={700} c="var(--success-text)">
                         {hsCodeResults.stats?.successful || 0}
                       </Text>
                       <Text size="sm" c="dimmed">Successful</Text>
@@ -699,7 +674,7 @@ export default function AIPage() {
                   </GridCol>
                   <GridCol span={4}>
                     <div style={{ textAlign: 'center' }}>
-                      <Text size="xl" fw={700} color="red">
+                      <Text size="xl" fw={700} c="var(--danger-text)">
                         {hsCodeResults.stats?.failed || 0}
                       </Text>
                       <Text size="sm" c="dimmed">Failed</Text>
@@ -707,7 +682,7 @@ export default function AIPage() {
                   </GridCol>
                   <GridCol span={4}>
                     <div style={{ textAlign: 'center' }}>
-                      <Text size="xl" fw={700} color="blue">
+                      <Text size="xl" fw={700}>
                         {hsCodeResults.stats?.total || 0}
                       </Text>
                       <Text size="sm" c="dimmed">Total</Text>
@@ -772,7 +747,7 @@ export default function AIPage() {
               <Button 
                 onClick={closeHsCodeResults}
                 leftSection={<IconCheck size={16} />}
-                color="indigo"
+                color="ink"
               >
                 Done
               </Button>

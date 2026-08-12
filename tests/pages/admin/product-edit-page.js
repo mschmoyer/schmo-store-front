@@ -8,7 +8,10 @@ class AdminProductEditPage {
     
     // Header elements
     this.pageTitle = 'h1';
-    this.backButton = 'button:has-text("Back")';
+    // The back control is an icon-only ActionIcon; it now carries an
+    // aria-label rather than visible text, which is what a screen reader and a
+    // role-based locator both need.
+    this.backButton = 'button[aria-label="Back to products"]';
     this.previewButton = 'button:has-text("Preview")';
     this.deleteButton = 'button:has-text("Delete")';
     this.breadcrumbs = 'nav[aria-label="breadcrumb"]';
@@ -45,8 +48,9 @@ class AdminProductEditPage {
     this.discountSettings = '[data-testid="discount-settings"]';
     this.customFields = '[data-testid="custom-fields"]';
     
-    // Delete confirmation modal
-    this.deleteModal = '[data-testid="delete-modal"]';
+    // Delete confirmation modal. There is no `data-testid` on it — it is a
+    // Mantine Modal, so the reliable handle is its dialog role.
+    this.deleteModal = '[role="dialog"]';
     this.confirmDeleteButton = 'button:has-text("Delete Product")';
     this.cancelDeleteButton = 'button:has-text("Cancel")';
     
@@ -325,16 +329,21 @@ class AdminProductEditPage {
   async verifyAnalyticsContent() {
     await this.goToAnalyticsTab();
     
-    // Check for common analytics elements
-    const elements = [
-      'text=Sales',
-      'text=Revenue',
-      'text=Views',
-      'text=Conversion'
-    ];
-    
+    /*
+     * Presence probes, not assertions. `.first()` because each of these words
+     * legitimately appears several times on the tab — "Sales" matches a
+     * heading, a stat label and a chart caption — and an unscoped
+     * `isVisible()` on a multi-match locator throws a strict-mode violation
+     * rather than returning false.
+     */
+    const elements = ['Sales', 'Revenue', 'Views', 'Conversion'];
+
     for (const element of elements) {
-      const isVisible = await this.page.locator(element).isVisible();
+      const isVisible = await this.page
+        .getByText(element)
+        .first()
+        .isVisible()
+        .catch(() => false);
       if (isVisible) {
         console.log(`✓ Found analytics element: ${element}`);
       }
@@ -347,16 +356,17 @@ class AdminProductEditPage {
   async verifyAdvancedSettingsContent() {
     await this.goToAdvancedTab();
     
-    // Check for common advanced settings elements
-    const elements = [
-      'text=Shipping',
-      'text=Discount',
-      'text=Inventory',
-      'text=Custom Fields'
-    ];
-    
+    // Presence probes. Same reason as the analytics tab: "Shipping" alone
+    // matches seven elements here, and `isVisible()` on a multi-match locator
+    // throws rather than answering the question being asked.
+    const elements = ['Shipping', 'Discount', 'Inventory', 'Custom Fields'];
+
     for (const element of elements) {
-      const isVisible = await this.page.locator(element).isVisible();
+      const isVisible = await this.page
+        .getByText(element)
+        .first()
+        .isVisible()
+        .catch(() => false);
       if (isVisible) {
         console.log(`✓ Found advanced setting: ${element}`);
       }

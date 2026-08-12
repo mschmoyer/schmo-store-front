@@ -44,7 +44,7 @@ export default function InventoryEditDemo() {
     status: 'in_stock' as const
   };
 
-  const handleEditSuccess = (updatedItem: { id: string; name: string; [key: string]: unknown }) => {
+  const handleEditSuccess = (updatedItem: typeof sampleInventoryItem) => {
     console.log('Item updated successfully:', updatedItem);
     // In real implementation, this would update the inventory list
   };
@@ -54,12 +54,12 @@ export default function InventoryEditDemo() {
       <Stack gap="md">
         <Group justify="space-between">
           <Text size="lg" fw={600}>Inventory Edit Modal Demo</Text>
-          <Badge color="blue" variant="light">Demo Component</Badge>
+          <Badge color="ink" variant="light">Demo Component</Badge>
         </Group>
 
         <Alert
           icon={<IconInfoCircle size="1rem" />}
-          color="blue"
+          color="ink"
           variant="light"
           title="Demo Information"
         >

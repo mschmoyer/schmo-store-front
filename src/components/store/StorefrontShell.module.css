@@ -1,0 +1,43 @@
+/*
+ * The storefront wrapper.
+ *
+ * The colour tokens themselves are emitted inline by `StorefrontStyle`, scoped
+ * to this element. This file only carries the geometry that does not depend on
+ * the theme.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  /*
+   * The document body is painted by RebelShops' own tokens, so the wrapper has
+   * to cover the viewport. Otherwise a short page on a dark merchant theme
+   * shows our background below the footer.
+   */
+  min-height: 100dvh;
+  /* Nothing inside a storefront may push the page sideways. */
+  overflow-x: clip;
+}
+
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A keyboard user's first Tab should be able to skip the whole header. */
+.skipLink {
+  position: absolute;
+  inset-inline-start: -9999px;
+  top: 0;
+  z-index: 200;
+  padding: var(--st-space-3) var(--st-space-5);
+  background-color: var(--st-brand);
+  color: var(--st-on-brand);
+  border-radius: 0 0 var(--st-radius-button) 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skipLink:focus-visible {
+  inset-inline-start: 0;
+}

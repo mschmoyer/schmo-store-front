@@ -1,1134 +1,716 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Stack,
-  Title,
-  Card,
-  Text,
+  ActionIcon,
+  Alert,
   Button,
   Group,
-  Badge,
-  Table,
-  ActionIcon,
   Modal,
-  TextInput,
-  Select,
+  MultiSelect,
   NumberInput,
+  Paper,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  Text,
+  TextInput,
   Textarea,
-  Tabs,
-  SimpleGrid,
-  Loader,
-  Center,
-  Collapse,
-  Divider,
-  Avatar,
-  Checkbox,
-  Box,
-  ScrollArea
+  Tooltip,
 } from '@mantine/core';
-import {
-  IconPlus,
-  IconEdit,
-  IconTrash,
-  IconTicket,
-  IconPercentage,
-  IconCurrencyDollar,
-  IconSearch,
-  IconPackage,
-  IconCategory,
-  IconShoppingCart
-} from '@tabler/icons-react';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
+import {
+  IconAlertTriangle,
+  IconEdit,
+  IconPlus,
+  IconTrash,
+} from '@tabler/icons-react';
+import { useAdmin } from '@/contexts/AdminContext';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { StatCard, StatGrid } from '@/components/admin/StatCard';
+import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { Badge, EmptyState } from '@/components/ui';
+import table from '@/components/admin/adminTable.module.css';
 
-interface Discount {
+/** A coupon as the `coupons` table stores it. There is no separate discount. */
+interface Coupon {
   id: string;
-  store_id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  discount_type: 'percentage' | 'fixed_amount';
+  discount_value: string | number;
+  minimum_order_amount: string | number | null;
+  maximum_discount_amount: string | number | null;
+  usage_limit: number | null;
+  usage_limit_per_customer: number | null;
+  used_count: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  is_active: boolean;
+  applies_to: 'entire_order' | 'specific_products' | 'specific_categories';
+  applicable_product_ids: string[] | null;
+  applicable_category_ids: string[] | null;
+  redemption_count: string | number;
+  discount_total: string | number;
+}
+
+interface CouponStats {
+  total: number;
+  active: number;
+  expired: number;
+  redemptions: number;
+  discountTotal: number;
+}
+
+const EMPTY_STATS: CouponStats = {
+  total: 0,
+  active: 0,
+  expired: 0,
+  redemptions: 0,
+  discountTotal: 0,
+};
+
+interface CouponForm {
+  code: string;
   name: string;
   description: string;
   discount_type: 'percentage' | 'fixed_amount';
   discount_value: number;
-  minimum_order_amount: number;
-  maximum_discount_amount?: number;
+  minimum_order_amount: number | '';
+  maximum_discount_amount: number | '';
+  usage_limit: number | '';
+  usage_limit_per_customer: number | '';
+  valid_until: string;
   is_active: boolean;
-  created_at: string;
-  coupon_count?: number;
+  applies_to: 'entire_order' | 'specific_products' | 'specific_categories';
+  applicable_product_ids: string[];
+  applicable_category_ids: string[];
 }
 
-interface Coupon {
-  id: string;
-  store_id: string;
-  discount_id: string;
-  code: string;
-  description: string;
-  is_active: boolean;
-  max_uses?: number;
-  max_uses_per_customer: number;
-  current_uses: number;
-  created_at: string;
-  applies_to?: 'entire_order' | 'specific_products' | 'specific_categories';
-  applicable_product_ids?: string[];
-  applicable_category_ids?: string[];
-  discount?: {
-    name: string;
-    discount_type: 'percentage' | 'fixed_amount';
-    discount_value: number;
-  };
+const BLANK_FORM: CouponForm = {
+  code: '',
+  name: '',
+  description: '',
+  discount_type: 'percentage',
+  discount_value: 10,
+  minimum_order_amount: '',
+  maximum_discount_amount: '',
+  usage_limit: '',
+  usage_limit_per_customer: 1,
+  valid_until: '',
+  is_active: true,
+  applies_to: 'entire_order',
+  applicable_product_ids: [],
+  applicable_category_ids: [],
+};
+
+const money = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+/**
+ * Renders a coupon's discount as the merchant wrote it.
+ *
+ * @param coupon - The coupon row.
+ * @returns "10% off" or "$9.99 off".
+ */
+function describeDiscount(coupon: Coupon): string {
+  const value = Number(coupon.discount_value) || 0;
+  return coupon.discount_type === 'percentage' ? `${value}% off` : `${money(value)} off`;
 }
 
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  base_price: number;
-  featured_image_url: string | null;
-  category_id: string;
-  is_active: boolean;
+/**
+ * Whether a coupon is genuinely live: switched on and inside its window.
+ *
+ * @param coupon - The coupon row.
+ * @returns True when a shopper could redeem it right now.
+ */
+function isLive(coupon: Coupon): boolean {
+  if (!coupon.is_active) return false;
+  if (coupon.valid_until && new Date(coupon.valid_until) < new Date()) return false;
+  if (coupon.valid_from && new Date(coupon.valid_from) > new Date()) return false;
+  return true;
 }
 
-interface Category {
-  id: string;
-  name: string;
-  description: string;
-  is_active: boolean;
-  product_count: number;
-}
+/**
+ * Coupons.
+ *
+ * This page reported "Active coupons 0 / Total redemptions 0" and the empty
+ * state *"No coupon codes yet"* while two coupons were live on the storefront.
+ * Two separate failures stacked:
+ *
+ * 1. `GET /api/admin/coupons` returned a 500 —
+ *    `relation "discounts" does not exist` — from an abandoned refactor.
+ *    That is fixed in the API.
+ * 2. **This page swallowed the 500.** The fetch was wrapped in
+ *    `if (response.ok) { … }` with no `else`, so a failed request left the
+ *    coupon list at its initial `[]` and the component rendered its empty
+ *    state. An empty state is a claim about the data — "you have not made one
+ *    of these yet" — and making that claim on the strength of an error is how
+ *    a completely broken feature stayed invisible. A merchant would have
+ *    created duplicates of promotions they already had.
+ *
+ * Every fetch here now distinguishes "no rows" from "could not ask", and the
+ * second renders the error with the server's own message.
+ *
+ * The Discounts tab is gone with the table it queried; `coupons` carries
+ * `discount_type`, `discount_value` and `minimum_order_amount` inline and
+ * needs no parent row.
+ *
+ * @returns The coupons route.
+ */
+export default function CouponsPage(): React.ReactElement {
+  const { session } = useAdmin();
 
-export default function CouponsManagementPage() {
-  const [activeTab, setActiveTab] = useState<string>('coupons');
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [stats, setStats] = useState<CouponStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [productSearchTerm, setProductSearchTerm] = useState('');
-  const [showAdvancedTargeting, setShowAdvancedTargeting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Modal states
-  const [couponModalOpened, { open: openCouponModal, close: closeCouponModal }] = useDisclosure(false);
-  const [discountModalOpened, { open: openDiscountModal, close: closeDiscountModal }] = useDisclosure(false);
-  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
-  const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
-  const [deleteConfirmOpened, { open: openDeleteConfirm, close: closeDeleteConfirm }] = useDisclosure(false);
-  const [itemToDelete, setItemToDelete] = useState<{ type: 'coupon' | 'discount', id: string, name: string } | null>(null);
+  const [products, setProducts] = useState<Array<{ value: string; label: string }>>([]);
+  const [categories, setCategories] = useState<Array<{ value: string; label: string }>>([]);
 
-  // Form states
-  const [couponForm, setCouponForm] = useState(() => ({
-    discount_id: '',
-    code: '',
-    description: '',
-    max_uses: '',
-    max_uses_per_customer: 1,
-    applies_to: 'entire_order' as 'entire_order' | 'specific_products' | 'specific_categories',
-    applicable_product_ids: [] as string[],
-    applicable_category_ids: [] as string[]
-  }));
+  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
+  const [editing, setEditing] = useState<Coupon | null>(null);
+  const [form, setForm] = useState<CouponForm>(BLANK_FORM);
 
-  const [discountForm, setDiscountForm] = useState(() => ({
-    name: '',
-    description: '',
-    discount_type: 'percentage' as 'percentage' | 'fixed_amount',
-    discount_value: 0,
-    minimum_order_amount: 0,
-    maximum_discount_amount: ''
-  }));
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (couponModalOpened) {
-      fetchCategories();
-    }
-  }, [couponModalOpened]);
-
-  const fetchProducts = useCallback(async (search: string = '') => {
-    setLoadingProducts(true);
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-
-      const params = new URLSearchParams();
-      if (search) params.append('search', search);
-      params.append('limit', '100');
-
-      const response = await fetch(`/api/admin/products/simple?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setProducts(result.data || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-    } finally {
-      setLoadingProducts(false);
-    }
-  }, []);
-
-  const fetchCategories = async () => {
-    setLoadingCategories(true);
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-
-      const response = await fetch('/api/admin/categories/simple', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setCategories(result.data || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    } finally {
-      setLoadingCategories(false);
-    }
-  };
-
-  const debouncedFetchProducts = React.useMemo(
-    () => debounce((search: string) => {
-      fetchProducts(search);
-    }, 300),
-    [fetchProducts]
+  const authHeaders = useMemo(
+    () => (session?.sessionToken ? { Authorization: `Bearer ${session.sessionToken}` } : undefined),
+    [session?.sessionToken]
   );
 
-  useEffect(() => {
-    if (showAdvancedTargeting) {
-      debouncedFetchProducts(productSearchTerm);
-    }
-  }, [productSearchTerm, showAdvancedTargeting, debouncedFetchProducts]);
+  const fetchCoupons = useCallback(async () => {
+    if (!authHeaders) return;
 
-  function debounce<T extends (...args: unknown[]) => unknown>(func: T, wait: number) {
-    let timeout: NodeJS.Timeout;
-    return function executedFunction(...args: Parameters<T>) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
-    };
-  }
-
-  const fetchData = async () => {
     setLoading(true);
+    setError(null);
+
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
+      const response = await fetch('/api/admin/coupons', { headers: authHeaders });
+      const result = await response.json().catch(() => null);
 
-      // Fetch coupons
-      const couponsResponse = await fetch('/api/admin/coupons?type=coupons', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (couponsResponse.ok) {
-        const couponsResult = await couponsResponse.json();
-        if (couponsResult.success) {
-          setCoupons(couponsResult.data.coupons || []);
-        }
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result?.message || result?.error || `Request failed with status ${response.status}`
+        );
       }
 
-      // Fetch discounts
-      const discountsResponse = await fetch('/api/admin/coupons?type=discounts', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (discountsResponse.ok) {
-        const discountsResult = await discountsResponse.json();
-        if (discountsResult.success) {
-          setDiscounts(discountsResult.data.discounts || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
+      setCoupons(result.data.coupons ?? []);
+      setStats(result.data.stats ?? EMPTY_STATS);
+    } catch (err) {
+      console.error('Error fetching coupons:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load coupons');
+      setCoupons([]);
+      setStats(EMPTY_STATS);
     } finally {
       setLoading(false);
     }
-  };
+  }, [authHeaders]);
 
-  const handleCreateCoupon = async () => {
+  /* Targeting options. A failure here is not fatal — the editor falls back to
+     whole-order coupons rather than blocking the page. */
+  const fetchTargets = useCallback(async () => {
+    if (!authHeaders) return;
+
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
+      const [productsRes, categoriesRes] = await Promise.all([
+        fetch('/api/admin/products?limit=200', { headers: authHeaders }),
+        fetch('/api/admin/categories', { headers: authHeaders }),
+      ]);
 
-      const payload = {
-        type: 'coupon',
-        ...couponForm,
-        max_uses: couponForm.max_uses ? parseInt(couponForm.max_uses) : null
-      };
-
-      const isEditing = editingCoupon !== null;
-      const url = isEditing ? `/api/admin/coupons/${editingCoupon.id}` : '/api/admin/coupons';
-      const method = isEditing ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        notifications.show({
-          title: 'Success',
-          message: `Coupon ${isEditing ? 'updated' : 'created'} successfully`,
-          color: 'green'
-        });
-        closeCouponModal();
-        resetCouponForm();
-        fetchData();
-      } else {
-        notifications.show({
-          title: 'Error',
-          message: result.error || `Failed to ${isEditing ? 'update' : 'create'} coupon`,
-          color: 'red'
-        });
+      if (productsRes.ok) {
+        const body = await productsRes.json();
+        setProducts(
+          (body?.data?.products ?? []).map((p: { id: string; name: string; sku?: string }) => ({
+            value: p.id,
+            label: p.sku ? `${p.name} (${p.sku})` : p.name,
+          }))
+        );
       }
-    } catch (error) {
-      console.error(`Error ${editingCoupon ? 'updating' : 'creating'} coupon:`, error);
-      notifications.show({
-        title: 'Error',
-        message: `Failed to ${editingCoupon ? 'update' : 'create'} coupon`,
-        color: 'red'
-      });
-    }
-  };
 
-  const handleCreateDiscount = async () => {
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-
-      const payload = {
-        type: 'discount',
-        ...discountForm,
-        maximum_discount_amount: discountForm.maximum_discount_amount 
-          ? parseFloat(discountForm.maximum_discount_amount) 
-          : null
-      };
-
-      const isEditing = editingDiscount !== null;
-      const url = isEditing ? `/api/admin/coupons/${editingDiscount.id}` : '/api/admin/coupons';
-      const method = isEditing ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        notifications.show({
-          title: 'Success',
-          message: `Discount ${isEditing ? 'updated' : 'created'} successfully`,
-          color: 'green'
-        });
-        closeDiscountModal();
-        resetDiscountForm();
-        fetchData();
-      } else {
-        notifications.show({
-          title: 'Error',
-          message: result.error || `Failed to ${isEditing ? 'update' : 'create'} discount`,
-          color: 'red'
-        });
+      if (categoriesRes.ok) {
+        const body = await categoriesRes.json();
+        const rows = body?.data?.categories ?? body?.data ?? [];
+        setCategories(
+          (Array.isArray(rows) ? rows : []).map((c: { id: string; name: string }) => ({
+            value: c.id,
+            label: c.name,
+          }))
+        );
       }
-    } catch (error) {
-      console.error(`Error ${editingDiscount ? 'updating' : 'creating'} discount:`, error);
-      notifications.show({
-        title: 'Error',
-        message: `Failed to ${editingDiscount ? 'update' : 'create'} discount`,
-        color: 'red'
-      });
+    } catch (err) {
+      console.error('Error fetching coupon targeting options:', err);
     }
+  }, [authHeaders]);
+
+  useEffect(() => {
+    void fetchCoupons();
+    void fetchTargets();
+  }, [fetchCoupons, fetchTargets]);
+
+  const startCreate = () => {
+    setEditing(null);
+    setForm(BLANK_FORM);
+    openModal();
   };
 
-  const resetCouponForm = () => {
-    setCouponForm({
-      discount_id: '',
-      code: '',
-      description: '',
-      max_uses: '',
-      max_uses_per_customer: 1,
-      applies_to: 'entire_order',
-      applicable_product_ids: [],
-      applicable_category_ids: []
-    });
-    setShowAdvancedTargeting(false);
-    setProductSearchTerm('');
-    setEditingCoupon(null);
-  };
-
-  const resetDiscountForm = () => {
-    setDiscountForm({
-      name: '',
-      description: '',
-      discount_type: 'percentage',
-      discount_value: 0,
-      minimum_order_amount: 0,
-      maximum_discount_amount: ''
-    });
-    setEditingDiscount(null);
-  };
-
-  const openCreateCouponModal = () => {
-    resetCouponForm();
-    openCouponModal();
-  };
-
-  const openCreateDiscountModal = () => {
-    resetDiscountForm();
-    openDiscountModal();
-  };
-
-  const openEditCouponModal = (coupon: Coupon) => {
-    setEditingCoupon(coupon);
-    setCouponForm({
-      discount_id: coupon.discount_id,
+  const startEdit = (coupon: Coupon) => {
+    setEditing(coupon);
+    setForm({
       code: coupon.code,
-      description: coupon.description,
-      max_uses: coupon.max_uses?.toString() || '',
-      max_uses_per_customer: coupon.max_uses_per_customer,
-      applies_to: coupon.applies_to || 'entire_order',
-      applicable_product_ids: coupon.applicable_product_ids || [],
-      applicable_category_ids: coupon.applicable_category_ids || []
+      name: coupon.name ?? '',
+      description: coupon.description ?? '',
+      discount_type: coupon.discount_type,
+      discount_value: Number(coupon.discount_value) || 0,
+      minimum_order_amount:
+        coupon.minimum_order_amount === null ? '' : Number(coupon.minimum_order_amount),
+      maximum_discount_amount:
+        coupon.maximum_discount_amount === null ? '' : Number(coupon.maximum_discount_amount),
+      usage_limit: coupon.usage_limit ?? '',
+      usage_limit_per_customer: coupon.usage_limit_per_customer ?? '',
+      valid_until: coupon.valid_until ? coupon.valid_until.slice(0, 10) : '',
+      is_active: coupon.is_active,
+      applies_to: coupon.applies_to,
+      applicable_product_ids: coupon.applicable_product_ids ?? [],
+      applicable_category_ids: coupon.applicable_category_ids ?? [],
     });
-    if (coupon.applies_to && coupon.applies_to !== 'entire_order') {
-      setShowAdvancedTargeting(true);
+    openModal();
+  };
+
+  const save = async () => {
+    if (!authHeaders) return;
+
+    if (!form.code.trim()) {
+      notifications.show({ title: 'Code required', message: 'Give the coupon a code shoppers can type.', color: 'red' });
+      return;
     }
-    openCouponModal();
-  };
 
-  const openEditDiscountModal = (discount: Discount) => {
-    setEditingDiscount(discount);
-    setDiscountForm({
-      name: discount.name,
-      description: discount.description,
-      discount_type: discount.discount_type,
-      discount_value: discount.discount_value,
-      minimum_order_amount: discount.minimum_order_amount,
-      maximum_discount_amount: discount.maximum_discount_amount?.toString() || ''
-    });
-    openDiscountModal();
-  };
-
-  const handleDeleteCoupon = (coupon: Coupon) => {
-    setItemToDelete({
-      type: 'coupon',
-      id: coupon.id,
-      name: coupon.code
-    });
-    openDeleteConfirm();
-  };
-
-  const handleDeleteDiscount = (discount: Discount) => {
-    setItemToDelete({
-      type: 'discount',
-      id: discount.id,
-      name: discount.name
-    });
-    openDeleteConfirm();
-  };
-
-  const confirmDelete = async () => {
-    if (!itemToDelete) return;
+    setSaving(true);
 
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
+      const payload = {
+        code: form.code.trim().toUpperCase(),
+        name: form.name.trim() || form.code.trim().toUpperCase(),
+        description: form.description.trim() || null,
+        discount_type: form.discount_type,
+        discount_value: form.discount_value,
+        minimum_order_amount: form.minimum_order_amount === '' ? null : form.minimum_order_amount,
+        maximum_discount_amount:
+          form.maximum_discount_amount === '' ? null : form.maximum_discount_amount,
+        usage_limit: form.usage_limit === '' ? null : form.usage_limit,
+        usage_limit_per_customer:
+          form.usage_limit_per_customer === '' ? null : form.usage_limit_per_customer,
+        valid_until: form.valid_until || null,
+        is_active: form.is_active,
+        applies_to: form.applies_to,
+        applicable_product_ids:
+          form.applies_to === 'specific_products' ? form.applicable_product_ids : null,
+        applicable_category_ids:
+          form.applies_to === 'specific_categories' ? form.applicable_category_ids : null,
+      };
 
-      const response = await fetch(`/api/admin/coupons/${itemToDelete.id}?type=${itemToDelete.type}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const response = await fetch(
+        editing ? `/api/admin/coupons/${editing.id}` : '/api/admin/coupons',
+        {
+          method: editing ? 'PUT' : 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result?.message || result?.error || `Request failed with status ${response.status}`
+        );
+      }
+
+      notifications.show({
+        title: editing ? 'Coupon updated' : 'Coupon created',
+        message: `${payload.code} is ${payload.is_active ? 'live on your storefront' : 'saved but switched off'}.`,
+        color: 'green',
       });
 
-      const result = await response.json();
-
-      if (result.success) {
-        notifications.show({
-          title: 'Success',
-          message: `${itemToDelete.type === 'coupon' ? 'Coupon' : 'Discount'} deleted successfully`,
-          color: 'green'
-        });
-        fetchData();
-      } else {
-        notifications.show({
-          title: 'Error',
-          message: result.error || 'Failed to delete item',
-          color: 'red'
-        });
-      }
-    } catch (error) {
-      console.error('Error deleting item:', error);
+      closeModal();
+      await fetchCoupons();
+    } catch (err) {
+      console.error('Error saving coupon:', err);
       notifications.show({
-        title: 'Error',
-        message: 'Failed to delete item',
-        color: 'red'
+        title: 'Could not save the coupon',
+        message: err instanceof Error ? err.message : 'Unknown error',
+        color: 'red',
       });
     } finally {
-      setItemToDelete(null);
-      closeDeleteConfirm();
+      setSaving(false);
     }
   };
 
-  const getDiscountTypeIcon = (type: 'percentage' | 'fixed_amount') => {
-    return type === 'percentage' ? <IconPercentage size={16} /> : <IconCurrencyDollar size={16} />;
-  };
+  const remove = async (coupon: Coupon) => {
+    if (!authHeaders) return;
+    if (!window.confirm(`Delete ${coupon.code}? Shoppers using it will be turned away.`)) return;
 
-  const getDiscountValue = (discount: Discount) => {
-    return discount.discount_type === 'percentage' 
-      ? `${discount.discount_value}%`
-      : `$${(Number(discount.discount_value) || 0).toFixed(2)}`;
-  };
+    try {
+      const response = await fetch(`/api/admin/coupons/${coupon.id}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      const result = await response.json().catch(() => null);
 
-  const getAppliesTo = (coupon: Coupon) => {
-    switch (coupon.applies_to) {
-      case 'entire_order':
-        return 'Entire order';
-      case 'specific_products':
-        return `${coupon.applicable_product_ids?.length || 0} product(s)`;
-      case 'specific_categories':
-        return `${coupon.applicable_category_ids?.length || 0} category(s)`;
-      default:
-        return 'Entire order';
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result?.message || result?.error || `Request failed with status ${response.status}`
+        );
+      }
+
+      notifications.show({ title: 'Coupon deleted', message: `${coupon.code} is gone.`, color: 'green' });
+      await fetchCoupons();
+    } catch (err) {
+      notifications.show({
+        title: 'Could not delete the coupon',
+        message: err instanceof Error ? err.message : 'Unknown error',
+        color: 'red',
+      });
     }
   };
-
-
-  if (loading) {
-    return (
-      <Center style={{ height: '400px' }}>
-        <Stack align="center">
-          <Loader size="lg" />
-          <Text>Loading coupons and discounts...</Text>
-        </Stack>
-      </Center>
-    );
-  }
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} mb="xs">
-            Coupons & Discounts
-          </Title>
-          <Text c="dimmed">
-            Manage promotional codes and discount offers for your store
-          </Text>
-        </div>
-      </Group>
+      <AdminPageHeader
+        title="Coupons"
+        description="Codes shoppers type at checkout, and what they have cost you."
+        actions={
+          <Button leftSection={<IconPlus size={16} />} onClick={startCreate}>
+            New coupon
+          </Button>
+        }
+      />
 
-      {/* Stats Cards */}
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Active Coupons</Text>
-            <IconTicket size={20} color="var(--mantine-color-blue-6)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {coupons.filter(c => c.is_active).length}
-          </Text>
-        </Card>
+      {loading && coupons.length === 0 ? (
+        <StatGridSkeleton count={4} />
+      ) : (
+        <StatGrid min={200}>
+          <StatCard
+            label="Live now"
+            value={stats.active}
+            meta={`${stats.total} coupon${stats.total === 1 ? '' : 's'} in total`}
+          />
+          <StatCard label="Expired" value={stats.expired} meta="Past their end date" />
+          <StatCard label="Redemptions" value={stats.redemptions} meta="Times a code has been used" />
+          <StatCard
+            label="Given away"
+            value={stats.discountTotal}
+            format="currency"
+            meta="Discount taken off orders"
+            tone={stats.discountTotal > 0 ? 'warning' : 'neutral'}
+          />
+        </StatGrid>
+      )}
 
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Discounts</Text>
-            <IconPercentage size={20} color="var(--mantine-color-green-6)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {discounts.length}
-          </Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Total Uses</Text>
-            <IconCurrencyDollar size={20} color="var(--mantine-color-orange-6)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {coupons.reduce((sum, c) => sum + c.current_uses, 0)}
-          </Text>
-        </Card>
-
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" c="dimmed" fw={500}>Avg. Discount</Text>
-            <IconPercentage size={20} color="var(--mantine-color-violet-6)" />
-          </Group>
-          <Text size="xl" fw={700}>
-            {discounts.length > 0 
-              ? `${(discounts.reduce((sum, d) => sum + (Number(d.discount_value) || 0), 0) / discounts.length).toFixed(1)}%`
-              : '0%'
-            }
-          </Text>
-        </Card>
-      </SimpleGrid>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'coupons')}>
-        <Tabs.List>
-          <Tabs.Tab value="coupons" leftSection={<IconTicket size="1rem" />}>
-            Coupons ({coupons.length})
-          </Tabs.Tab>
-          <Tabs.Tab value="discounts" leftSection={<IconPercentage size="1rem" />}>
-            Discounts ({discounts.length})
-          </Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="coupons" pt="md">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Group justify="space-between" mb="md">
-              <Title order={3}>Coupon Codes</Title>
-              <Button leftSection={<IconPlus size="1rem" />} onClick={openCreateCouponModal}>
-                Create Coupon
+      {error ? (
+        <Alert
+          color="red"
+          variant="light"
+          title="Could not load your coupons"
+          icon={<IconAlertTriangle size={18} />}
+        >
+          <Stack gap="xs">
+            <Text size="sm">
+              This is a failure to read them, not a sign that you have none. Do not create
+              replacements until it is fixed — you may already have live codes.
+            </Text>
+            <Text size="xs" c="dimmed">
+              {error}
+            </Text>
+            <div>
+              <Button size="xs" variant="default" onClick={() => void fetchCoupons()}>
+                Try again
               </Button>
-            </Group>
+            </div>
+          </Stack>
+        </Alert>
+      ) : loading ? (
+        <TableSkeleton rows={4} columns={6} label="Loading coupons" />
+      ) : coupons.length === 0 ? (
+        <EmptyState
+          title="No coupon codes yet"
+          description="Create a code shoppers can type at checkout for a percentage or fixed amount off."
+          action={<Button onClick={startCreate}>New coupon</Button>}
+        />
+      ) : (
+        <Paper withBorder radius="md">
+          <Table.ScrollContainer minWidth={820}>
+            <Table highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Code</Table.Th>
+                  <Table.Th>Discount</Table.Th>
+                  <Table.Th>Applies to</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th className={table.numeric}>Used</Table.Th>
+                  <Table.Th className={table.numeric}>Given away</Table.Th>
+                  <Table.Th />
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {coupons.map((coupon) => {
+                  const live = isLive(coupon);
+                  const expired =
+                    coupon.valid_until !== null && new Date(coupon.valid_until) < new Date();
 
-            {coupons.length === 0 ? (
-              <Stack align="center" py="xl">
-                <IconTicket size={48} color="var(--mantine-color-gray-5)" />
-                <Text size="lg" c="dimmed">No coupons created yet</Text>
-                <Button onClick={openCreateCouponModal}>Create your first coupon</Button>
-              </Stack>
-            ) : (
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Code</Table.Th>
-                    <Table.Th>Discount</Table.Th>
-                    <Table.Th>Applies To</Table.Th>
-                    <Table.Th>Usage</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                    <Table.Th>Actions</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {coupons.map((coupon) => (
+                  return (
                     <Table.Tr key={coupon.id}>
                       <Table.Td>
-                        <Stack gap={2}>
-                          <Text fw={500}>{coupon.code}</Text>
-                          <Text size="sm" c="dimmed">{coupon.description}</Text>
-                        </Stack>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          {getDiscountTypeIcon(coupon.discount?.discount_type || 'percentage')}
-                          <Text>
-                            {coupon.discount?.discount_type === 'percentage' 
-                              ? `${coupon.discount.discount_value}%`
-                              : `$${(Number(coupon.discount?.discount_value) || 0).toFixed(2)}`
-                            }
-                          </Text>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          {coupon.applies_to === 'entire_order' && <IconShoppingCart size={16} />}
-                          {coupon.applies_to === 'specific_products' && <IconPackage size={16} />}
-                          {coupon.applies_to === 'specific_categories' && <IconCategory size={16} />}
-                          <Text size="sm">{getAppliesTo(coupon)}</Text>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text>
-                          {coupon.current_uses}
-                          {coupon.max_uses && ` / ${coupon.max_uses}`}
+                        <Text fw={600} className={table.code}>
+                          {coupon.code}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {coupon.name}
                         </Text>
                       </Table.Td>
+
                       <Table.Td>
-                        <Badge color={coupon.is_active ? 'green' : 'gray'} variant="light">
-                          {coupon.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
+                        <Text size="sm">{describeDiscount(coupon)}</Text>
+                        {coupon.minimum_order_amount ? (
+                          <Text size="xs" c="dimmed">
+                            on orders over {money(Number(coupon.minimum_order_amount))}
+                          </Text>
+                        ) : null}
                       </Table.Td>
+
                       <Table.Td>
-                        <Group gap="xs">
-                          <ActionIcon size="sm" variant="subtle" onClick={() => openEditCouponModal(coupon)}>
-                            <IconEdit size="1rem" />
-                          </ActionIcon>
-                          <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDeleteCoupon(coupon)}>
-                            <IconTrash size="1rem" />
-                          </ActionIcon>
+                        <Text size="sm">
+                          {coupon.applies_to === 'entire_order'
+                            ? 'Whole order'
+                            : coupon.applies_to === 'specific_products'
+                              ? `${coupon.applicable_product_ids?.length ?? 0} products`
+                              : `${coupon.applicable_category_ids?.length ?? 0} categories`}
+                        </Text>
+                      </Table.Td>
+
+                      <Table.Td>
+                        <Badge tone={live ? 'mint' : expired ? 'neutral' : 'amber'} size="sm" dot>
+                          {live ? 'live' : expired ? 'expired' : 'off'}
+                        </Badge>
+                        {coupon.valid_until ? (
+                          <Text size="xs" c="dimmed" mt={2}>
+                            {expired ? 'ended' : 'ends'}{' '}
+                            {new Date(coupon.valid_until).toLocaleDateString('en-US', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </Text>
+                        ) : null}
+                      </Table.Td>
+
+                      <Table.Td className={table.numeric}>
+                        {Number(coupon.redemption_count) || 0}
+                        {coupon.usage_limit ? (
+                          <Text size="xs" c="dimmed">
+                            of {coupon.usage_limit}
+                          </Text>
+                        ) : null}
+                      </Table.Td>
+
+                      <Table.Td className={table.numeric}>
+                        {money(Number(coupon.discount_total) || 0)}
+                      </Table.Td>
+
+                      <Table.Td>
+                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <Tooltip label="Edit">
+                            <ActionIcon
+                              variant="subtle"
+                              onClick={() => startEdit(coupon)}
+                              aria-label={`Edit ${coupon.code}`}
+                            >
+                              <IconEdit size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Delete">
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              onClick={() => void remove(coupon)}
+                              aria-label={`Delete ${coupon.code}`}
+                            >
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </Tooltip>
                         </Group>
                       </Table.Td>
                     </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            )}
-          </Card>
-        </Tabs.Panel>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Paper>
+      )}
 
-        <Tabs.Panel value="discounts" pt="md">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Group justify="space-between" mb="md">
-              <Title order={3}>Discount Rules</Title>
-              <Button leftSection={<IconPlus size="1rem" />} onClick={openCreateDiscountModal}>
-                Create Discount
-              </Button>
-            </Group>
-
-            {discounts.length === 0 ? (
-              <Stack align="center" py="xl">
-                <IconPercentage size={48} color="var(--mantine-color-gray-5)" />
-                <Text size="lg" c="dimmed">No discounts created yet</Text>
-                <Button onClick={openCreateDiscountModal}>Create your first discount</Button>
-              </Stack>
-            ) : (
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Type</Table.Th>
-                    <Table.Th>Value</Table.Th>
-                    <Table.Th>Min. Order</Table.Th>
-                    <Table.Th>Coupons</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                    <Table.Th>Actions</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {discounts.map((discount) => (
-                    <Table.Tr key={discount.id}>
-                      <Table.Td>
-                        <Stack gap={2}>
-                          <Text fw={500}>{discount.name}</Text>
-                          <Text size="sm" c="dimmed">{discount.description}</Text>
-                        </Stack>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          {getDiscountTypeIcon(discount.discount_type)}
-                          <Text tt="capitalize">
-                            {discount.discount_type.replace('_', ' ')}
-                          </Text>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text fw={500}>
-                          {getDiscountValue(discount)}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text>${(Number(discount.minimum_order_amount) || 0).toFixed(2)}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge variant="light">
-                          {discount.coupon_count || 0} coupons
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge color={discount.is_active ? 'green' : 'gray'} variant="light">
-                          {discount.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <ActionIcon size="sm" variant="subtle" onClick={() => openEditDiscountModal(discount)}>
-                            <IconEdit size="1rem" />
-                          </ActionIcon>
-                          <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDeleteDiscount(discount)}>
-                            <IconTrash size="1rem" />
-                          </ActionIcon>
-                        </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            )}
-          </Card>
-        </Tabs.Panel>
-      </Tabs>
-
-      {/* Create/Edit Coupon Modal */}
-      <Modal opened={couponModalOpened} onClose={closeCouponModal} title={editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}>
+      <Modal
+        opened={modalOpened}
+        onClose={closeModal}
+        title={editing ? `Edit ${editing.code}` : 'New coupon'}
+        size="lg"
+      >
         <Stack gap="md">
-          <Select
-            label="Discount Rule"
-            placeholder="Select a discount to link this coupon to"
-            data={discounts
-              .filter(d => d.is_active)
-              .map(d => ({ 
-                value: d.id, 
-                label: `${d.name} - ${getDiscountValue(d)}` 
-              }))}
-            value={couponForm.discount_id || null}
-            onChange={(value) => setCouponForm(prev => ({ ...prev, discount_id: value || '' }))}
-            required
-          />
-
-          <TextInput
-            label="Coupon Code"
-            placeholder="e.g., SAVE20, WELCOME10"
-            value={couponForm.code}
-            onChange={(e) => setCouponForm(prev => ({ 
-              ...prev, 
-              code: (e.currentTarget?.value || '').toUpperCase() 
-            }))}
-            required
-          />
-
-          <Textarea
-            label="Description"
-            placeholder="Describe when and how this coupon can be used"
-            value={couponForm.description}
-            onChange={(e) => setCouponForm(prev => ({ 
-              ...prev, 
-              description: e.currentTarget?.value || '' 
-            }))}
-            autosize
-            minRows={2}
-          />
-
-          <Group grow>
+          <Group grow align="flex-start">
             <TextInput
-              label="Maximum Uses (Total)"
-              placeholder="Leave empty for unlimited"
-              value={couponForm.max_uses}
-              onChange={(e) => setCouponForm(prev => ({ 
-                ...prev, 
-                max_uses: e.currentTarget?.value || '' 
-              }))}
-              type="number"
+              label="Code"
+              description="What the shopper types. Uppercased automatically."
+              placeholder="WELCOME10"
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.currentTarget.value })}
+              required
             />
-            <NumberInput
-              label="Max Uses Per Customer"
-              value={couponForm.max_uses_per_customer}
-              onChange={(value) => setCouponForm(prev => ({ 
-                ...prev, 
-                max_uses_per_customer: Number(value) || 1 
-              }))}
-              min={1}
+            <TextInput
+              label="Name"
+              description="For your own reference"
+              placeholder="Welcome discount"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
             />
           </Group>
-
-          <Divider my="md" />
-
-          {/* Targeting Section */}
-          <Stack gap="md">
-            <Group justify="space-between">
-              <div>
-                <Text fw={500}>Coupon Targeting</Text>
-                <Text size="sm" c="dimmed">Choose what this coupon applies to</Text>
-              </div>
-              <Button
-                variant="light"
-                size="xs"
-                onClick={() => setShowAdvancedTargeting(!showAdvancedTargeting)}
-              >
-                {showAdvancedTargeting ? 'Simple' : 'Advanced'}
-              </Button>
-            </Group>
-
-            {!showAdvancedTargeting ? (
-              <Select
-                label="Applies To"
-                data={[
-                  { value: 'entire_order', label: 'Entire Order' },
-                  { value: 'specific_products', label: 'Specific Products' },
-                  { value: 'specific_categories', label: 'Specific Categories' }
-                ]}
-                value={couponForm.applies_to}
-                onChange={(value) => {
-                  setCouponForm(prev => ({ 
-                    ...prev, 
-                    applies_to: (value || 'entire_order') as 'entire_order' | 'specific_products' | 'specific_categories',
-                    applicable_product_ids: [],
-                    applicable_category_ids: []
-                  }));
-                  if (value === 'specific_products' || value === 'specific_categories') {
-                    setShowAdvancedTargeting(true);
-                  }
-                }}
-              />
-            ) : (
-              <Stack gap="md">
-                <Group>
-                  <Button
-                    variant={couponForm.applies_to === 'entire_order' ? 'filled' : 'light'}
-                    leftSection={<IconShoppingCart size={16} />}
-                    onClick={() => setCouponForm(prev => ({ 
-                      ...prev, 
-                      applies_to: 'entire_order',
-                      applicable_product_ids: [],
-                      applicable_category_ids: []
-                    }))}
-                  >
-                    Entire Order
-                  </Button>
-                  <Button
-                    variant={couponForm.applies_to === 'specific_products' ? 'filled' : 'light'}
-                    leftSection={<IconPackage size={16} />}
-                    onClick={() => setCouponForm(prev => ({ 
-                      ...prev, 
-                      applies_to: 'specific_products',
-                      applicable_category_ids: []
-                    }))}
-                  >
-                    Specific Products
-                  </Button>
-                  <Button
-                    variant={couponForm.applies_to === 'specific_categories' ? 'filled' : 'light'}
-                    leftSection={<IconCategory size={16} />}
-                    onClick={() => setCouponForm(prev => ({ 
-                      ...prev, 
-                      applies_to: 'specific_categories',
-                      applicable_product_ids: []
-                    }))}
-                  >
-                    Specific Categories
-                  </Button>
-                </Group>
-
-                <Collapse in={couponForm.applies_to === 'specific_products'}>
-                  <Stack gap="md">
-                    <TextInput
-                      label="Search Products"
-                      placeholder="Type to search products..."
-                      value={productSearchTerm}
-                      onChange={(e) => setProductSearchTerm(e.currentTarget?.value || '')}
-                      leftSection={<IconSearch size={16} />}
-                    />
-                    
-                    <Box>
-                      <Text size="sm" fw={500} mb="xs">
-                        Select Products ({couponForm.applicable_product_ids.length} selected)
-                      </Text>
-                      <ScrollArea h={200} type="auto">
-                        <Stack gap="xs">
-                          {loadingProducts ? (
-                            <Center py="md">
-                              <Loader size="sm" />
-                            </Center>
-                          ) : (
-                            products.map((product) => (
-                              <Group key={product.id} justify="space-between" p="xs" style={{ border: '1px solid var(--mantine-color-gray-3)', borderRadius: '4px' }}>
-                                <Group>
-                                  <Avatar src={product.featured_image_url} size={32} radius="sm">
-                                    <IconPackage size={16} />
-                                  </Avatar>
-                                  <div>
-                                    <Text size="sm" fw={500}>{product.name}</Text>
-                                    <Text size="xs" c="dimmed">{product.sku} • ${product.base_price}</Text>
-                                  </div>
-                                </Group>
-                                <Checkbox
-                                  checked={couponForm.applicable_product_ids.includes(product.id)}
-                                  onChange={(event) => {
-                                    const checked = event.currentTarget.checked;
-                                    setCouponForm(prev => ({
-                                      ...prev,
-                                      applicable_product_ids: checked
-                                        ? [...prev.applicable_product_ids, product.id]
-                                        : prev.applicable_product_ids.filter(id => id !== product.id)
-                                    }));
-                                  }}
-                                />
-                              </Group>
-                            ))
-                          )}
-                        </Stack>
-                      </ScrollArea>
-                    </Box>
-                  </Stack>
-                </Collapse>
-
-                <Collapse in={couponForm.applies_to === 'specific_categories'}>
-                  <Box>
-                    <Text size="sm" fw={500} mb="xs">
-                      Select Categories ({couponForm.applicable_category_ids.length} selected)
-                    </Text>
-                    <ScrollArea h={200} type="auto">
-                      <Stack gap="xs">
-                        {loadingCategories ? (
-                          <Center py="md">
-                            <Loader size="sm" />
-                          </Center>
-                        ) : (
-                          categories.map((category) => (
-                            <Group key={category.id} justify="space-between" p="xs" style={{ border: '1px solid var(--mantine-color-gray-3)', borderRadius: '4px' }}>
-                              <Group>
-                                <Avatar size={32} radius="sm">
-                                  <IconCategory size={16} />
-                                </Avatar>
-                                <div>
-                                  <Text size="sm" fw={500}>{category.name}</Text>
-                                  <Text size="xs" c="dimmed">{category.product_count} products</Text>
-                                </div>
-                              </Group>
-                              <Checkbox
-                                checked={couponForm.applicable_category_ids.includes(category.id)}
-                                onChange={(event) => {
-                                  const checked = event.currentTarget.checked;
-                                  setCouponForm(prev => ({
-                                    ...prev,
-                                    applicable_category_ids: checked
-                                      ? [...prev.applicable_category_ids, category.id]
-                                      : prev.applicable_category_ids.filter(id => id !== category.id)
-                                  }));
-                                }}
-                              />
-                            </Group>
-                          ))
-                        )}
-                      </Stack>
-                    </ScrollArea>
-                  </Box>
-                </Collapse>
-              </Stack>
-            )}
-          </Stack>
-
-          <Group justify="flex-end" mt="md">
-            <Button variant="light" onClick={closeCouponModal}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleCreateCoupon}
-              disabled={!couponForm.discount_id || !couponForm.code ||
-                (couponForm.applies_to === 'specific_products' && couponForm.applicable_product_ids.length === 0) ||
-                (couponForm.applies_to === 'specific_categories' && couponForm.applicable_category_ids.length === 0)
-              }
-            >
-              {editingCoupon ? 'Update Coupon' : 'Create Coupon'}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      {/* Create/Edit Discount Modal */}
-      <Modal opened={discountModalOpened} onClose={closeDiscountModal} title={editingDiscount ? 'Edit Discount' : 'Create New Discount'}>
-        <Stack gap="md">
-          <TextInput
-            label="Discount Name"
-            placeholder="e.g., Welcome Discount, Black Friday Sale"
-            value={discountForm.name}
-            onChange={(e) => setDiscountForm(prev => ({ 
-              ...prev, 
-              name: e.currentTarget?.value || '' 
-            }))}
-            required
-          />
 
           <Textarea
             label="Description"
-            placeholder="Describe this discount offer"
-            value={discountForm.description}
-            onChange={(e) => setDiscountForm(prev => ({ 
-              ...prev, 
-              description: e.currentTarget?.value || '' 
-            }))}
-            autosize
-            minRows={2}
+            placeholder="10% off a first order"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.currentTarget.value })}
+            rows={2}
           />
 
-          <Group grow>
+          <Group grow align="flex-start">
             <Select
-              label="Discount Type"
+              label="Discount type"
               data={[
-                { value: 'percentage', label: 'Percentage' },
-                { value: 'fixed_amount', label: 'Fixed Amount' }
+                { value: 'percentage', label: 'Percentage off' },
+                { value: 'fixed_amount', label: 'Fixed amount off' },
               ]}
-              value={discountForm.discount_type || null}
-              onChange={(value) => setDiscountForm(prev => ({ 
-                ...prev, 
-                discount_type: (value || 'percentage') as 'percentage' | 'fixed_amount' 
-              }))}
-              required
+              value={form.discount_type}
+              onChange={(value) =>
+                setForm({ ...form, discount_type: (value as CouponForm['discount_type']) || 'percentage' })
+              }
+              allowDeselect={false}
             />
             <NumberInput
-              label="Discount Value"
-              value={discountForm.discount_value}
-              onChange={(value) => setDiscountForm(prev => ({ 
-                ...prev, 
-                discount_value: Number(value) || 0 
-              }))}
+              label={form.discount_type === 'percentage' ? 'Percent off' : 'Amount off'}
               min={0}
-              max={discountForm.discount_type === 'percentage' ? 100 : undefined}
-              leftSection={discountForm.discount_type === 'percentage' ? <IconPercentage size={16} /> : <IconCurrencyDollar size={16} />}
-              required
+              max={form.discount_type === 'percentage' ? 100 : undefined}
+              decimalScale={2}
+              prefix={form.discount_type === 'fixed_amount' ? '$' : undefined}
+              suffix={form.discount_type === 'percentage' ? '%' : undefined}
+              value={form.discount_value}
+              onChange={(value) => setForm({ ...form, discount_value: Number(value) || 0 })}
             />
           </Group>
 
-          <Group grow>
+          <Group grow align="flex-start">
             <NumberInput
-              label="Minimum Order Amount"
-              value={discountForm.minimum_order_amount}
-              onChange={(value) => setDiscountForm(prev => ({ 
-                ...prev, 
-                minimum_order_amount: Number(value) || 0 
-              }))}
+              label="Minimum order"
+              description="Leave blank for no minimum"
               min={0}
-              leftSection={<IconCurrencyDollar size={16} />}
+              decimalScale={2}
+              prefix="$"
+              value={form.minimum_order_amount}
+              onChange={(value) =>
+                setForm({ ...form, minimum_order_amount: value === '' ? '' : Number(value) })
+              }
+            />
+            <NumberInput
+              label="Maximum discount"
+              description="Caps a percentage coupon"
+              min={0}
+              decimalScale={2}
+              prefix="$"
+              value={form.maximum_discount_amount}
+              onChange={(value) =>
+                setForm({ ...form, maximum_discount_amount: value === '' ? '' : Number(value) })
+              }
+            />
+          </Group>
+
+          <Group grow align="flex-start">
+            <NumberInput
+              label="Total uses"
+              description="Leave blank for unlimited"
+              min={1}
+              value={form.usage_limit}
+              onChange={(value) => setForm({ ...form, usage_limit: value === '' ? '' : Number(value) })}
+            />
+            <NumberInput
+              label="Uses per customer"
+              min={1}
+              value={form.usage_limit_per_customer}
+              onChange={(value) =>
+                setForm({ ...form, usage_limit_per_customer: value === '' ? '' : Number(value) })
+              }
             />
             <TextInput
-              label="Maximum Discount Amount"
-              placeholder="Optional limit for percentage discounts"
-              value={discountForm.maximum_discount_amount}
-              onChange={(e) => setDiscountForm(prev => ({ 
-                ...prev, 
-                maximum_discount_amount: e.currentTarget?.value || '' 
-              }))}
-              type="number"
-              leftSection={<IconCurrencyDollar size={16} />}
-              disabled={discountForm.discount_type === 'fixed_amount'}
+              label="Ends on"
+              description="Leave blank to run indefinitely"
+              type="date"
+              value={form.valid_until}
+              onChange={(e) => setForm({ ...form, valid_until: e.currentTarget.value })}
             />
           </Group>
 
-          <Group justify="flex-end" mt="md">
-            <Button variant="light" onClick={closeDiscountModal}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleCreateDiscount}
-              disabled={!discountForm.name || !discountForm.discount_value}
-            >
-              {editingDiscount ? 'Update Discount' : 'Create Discount'}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+          <Select
+            label="Applies to"
+            data={[
+              { value: 'entire_order', label: 'The whole order' },
+              { value: 'specific_products', label: 'Specific products' },
+              { value: 'specific_categories', label: 'Specific categories' },
+            ]}
+            value={form.applies_to}
+            onChange={(value) =>
+              setForm({ ...form, applies_to: (value as CouponForm['applies_to']) || 'entire_order' })
+            }
+            allowDeselect={false}
+          />
 
-      {/* Delete Confirmation Modal */}
-      <Modal opened={deleteConfirmOpened} onClose={closeDeleteConfirm} title="Confirm Delete">
-        <Stack gap="md">
-          <Text>
-            Are you sure you want to delete this {itemToDelete?.type}?
-          </Text>
-          <Text fw={500} c="red">
-            {itemToDelete?.name}
-          </Text>
-          <Text size="sm" c="dimmed">
-            This action cannot be undone.
-          </Text>
-          <Group justify="flex-end" mt="md">
-            <Button variant="light" onClick={closeDeleteConfirm}>
+          {form.applies_to === 'specific_products' ? (
+            <MultiSelect
+              label="Products"
+              placeholder="Search your catalog"
+              data={products}
+              value={form.applicable_product_ids}
+              onChange={(value) => setForm({ ...form, applicable_product_ids: value })}
+              searchable
+              clearable
+            />
+          ) : null}
+
+          {form.applies_to === 'specific_categories' ? (
+            <MultiSelect
+              label="Categories"
+              placeholder="Pick categories"
+              data={categories}
+              value={form.applicable_category_ids}
+              onChange={(value) => setForm({ ...form, applicable_category_ids: value })}
+              searchable
+              clearable
+            />
+          ) : null}
+
+          <Switch
+            label="Live on the storefront"
+            description="Switch off to keep the coupon without letting anyone redeem it"
+            checked={form.is_active}
+            onChange={(e) => setForm({ ...form, is_active: e.currentTarget.checked })}
+          />
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={closeModal}>
               Cancel
             </Button>
-            <Button color="red" onClick={confirmDelete}>
-              Delete
+            <Button loading={saving} onClick={() => void save()}>
+              {editing ? 'Save changes' : 'Create coupon'}
             </Button>
           </Group>
         </Stack>

@@ -1,0 +1,98 @@
+/* Loading geometry for the admin. Mirrors the real layouts' measurements so a
+   skeleton never resolves into a different shape. */
+
+.shell {
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+.shellHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 60px;
+  padding-inline: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.shellBody {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+}
+
+.shellNav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--border);
+  min-height: calc(100vh - 60px);
+}
+
+.shellMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+}
+
+.shellCards,
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 767px) {
+  .shellBody {
+    grid-template-columns: 1fr;
+  }
+
+  .shellNav {
+    display: none;
+  }
+
+  .shellMain {
+    padding: var(--space-4);
+  }
+}
+
+/* ------------------------------------------------------------------ Table */
+
+.table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.tableHead,
+.tableRow {
+  display: grid;
+  grid-template-columns: 2.2fr repeat(auto-fit, minmax(80px, 1fr));
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.tableHead {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.tableRow + .tableRow,
+.tableHead + .tableRow {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ------------------------------------------------------------------ Panel */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+}

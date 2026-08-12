@@ -8,7 +8,6 @@ import {
   Button,
   Stack,
   Text,
-  Badge,
   Table,
   LoadingOverlay,
   Alert,
@@ -51,6 +50,8 @@ import {
   ArcElement
 } from 'chart.js';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { seriesColor, seriesFill } from '@/components/admin/chartPalette';
+import table from '@/components/admin/adminTable.module.css';
 
 // Register Chart.js components
 ChartJS.register(
@@ -70,6 +71,8 @@ interface ValuationSummary {
   total_quantity: number;
   total_products: number;
   average_margin_percentage: number;
+  /** The same spread over cost. Merchants use both words; they are not the same number. */
+  average_markup_percentage: number;
   total_potential_profit: number;
 }
 
@@ -163,9 +166,10 @@ interface StockValuationReportProps {
  */
 export default function StockValuationReport({ }: StockValuationReportProps) {
   const { session } = useAdmin();
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
-    startOfDay(subDays(new Date(), 30)),
-    endOfDay(new Date())
+  // Mantine v8 date inputs work with 'yyyy-MM-dd' strings rather than Date objects.
+  const [dateRange, setDateRange] = useState<[string | null, string | null]>([
+    format(startOfDay(subDays(new Date(), 30)), 'yyyy-MM-dd'),
+    format(endOfDay(new Date()), 'yyyy-MM-dd')
   ]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -185,8 +189,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
 
     try {
       const params = new URLSearchParams({
-        startDate: format(dateRange[0], 'yyyy-MM-dd'),
-        endDate: format(dateRange[1], 'yyyy-MM-dd'),
+        startDate: dateRange[0],
+        endDate: dateRange[1],
         comparePrevious: comparePrevious.toString()
       });
 
@@ -350,21 +354,16 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
     );
 
     const values = sortedData.map(item => item.cost_value);
-    const colors = [
-      'rgba(255, 99, 132, 0.8)',
-      'rgba(54, 162, 235, 0.8)',
-      'rgba(255, 206, 86, 0.8)',
-      'rgba(75, 192, 192, 0.8)',
-      'rgba(153, 102, 255, 0.8)',
-      'rgba(255, 159, 64, 0.8)'
-    ];
-
+    /* One slice per category, walking the sanctioned ramp instead of Chart.js's
+       demo palette. The fill is the series colour at 85%; the border is the
+       same colour at full strength, so the wedges separate without a second
+       hue doing the work. */
     return {
       labels,
       datasets: [{
         data: values,
-        backgroundColor: colors,
-        borderColor: colors.map(c => c.replace('0.8', '1')),
+        backgroundColor: labels.map((_, index) => seriesFill(index, 0.85)),
+        borderColor: labels.map((_, index) => seriesColor(index)),
         borderWidth: 1
       }]
     };
@@ -380,15 +379,15 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
         {
           label: 'Cost Value',
           data: data.historical_trend.map(point => point.total_cost_value),
-          borderColor: 'rgb(255, 99, 132)',
-          backgroundColor: 'rgba(255, 99, 132, 0.1)',
+          borderColor: seriesColor(0),
+          backgroundColor: seriesFill(0),
           tension: 0.3
         },
         {
           label: 'Retail Value',
           data: data.historical_trend.map(point => point.total_retail_value),
-          borderColor: 'rgb(75, 192, 192)',
-          backgroundColor: 'rgba(75, 192, 192, 0.1)',
+          borderColor: seriesColor(1),
+          backgroundColor: seriesFill(1),
           tension: 0.3
         }
       ]
@@ -474,9 +473,11 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
         <Stack gap="md">
           <Group justify="space-between" align="flex-start">
             <div>
-              <Title order={2}>Stock Valuation Report</Title>
-              <Text c="dimmed" size="sm" mt="xs">
-                Comprehensive analysis of inventory value and profitability
+              {/* The route wrapper already renders "Stock Valuation Report"
+                  as the page's h1; repeating it here gave the screen two
+                  identical headings 60px apart. */}
+              <Text c="dimmed" size="sm">
+                Comprehensive analysis of inventory value and profitability.
               </Text>
             </div>
             <Group gap="xs">
@@ -541,7 +542,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                     value={data.summary.total_cost_value} 
                     prefix="$" 
                     thousandSeparator 
-                    decimalScale={0}
+                    decimalScale={2}
+                    fixedDecimalScale
                   />
                 </Text>
                 {data.period_comparison && (
@@ -553,7 +555,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   </Group>
                 )}
               </Box>
-              <ThemeIcon size="lg" variant="light" color="red">
+              <ThemeIcon size="lg" variant="light">
                 <IconCurrencyDollar size={20} />
               </ThemeIcon>
             </Group>
@@ -570,7 +572,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                     value={data.summary.total_retail_value} 
                     prefix="$" 
                     thousandSeparator 
-                    decimalScale={0}
+                    decimalScale={2}
+                    fixedDecimalScale
                   />
                 </Text>
                 {data.period_comparison && (
@@ -582,7 +585,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   </Group>
                 )}
               </Box>
-              <ThemeIcon size="lg" variant="light" color="green">
+              <ThemeIcon size="lg" variant="light">
                 <IconCurrencyDollar size={20} />
               </ThemeIcon>
             </Group>
@@ -591,19 +594,30 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
           <Card withBorder p="md">
             <Group justify="space-between">
               <Box>
+                {/*
+                  * Labelled "Potential Profit" and set in the same visual
+                  * register as money the merchant has. It is neither profit
+                  * nor realisable — it is the spread on stock that has not
+                  * sold, and it only becomes profit if every unit sells at
+                  * full price. The label now says which.
+                  */}
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                  Potential Profit
+                  Unrealised Spread
                 </Text>
                 <Text fw={700} size="xl">
-                  <NumberFormatter 
-                    value={data.summary.total_potential_profit} 
-                    prefix="$" 
-                    thousandSeparator 
-                    decimalScale={0}
+                  <NumberFormatter
+                    value={data.summary.total_potential_profit}
+                    prefix="$"
+                    thousandSeparator
+                    decimalScale={2}
+                    fixedDecimalScale
                   />
                 </Text>
+                <Text size="xs" c="dimmed">
+                  If all stock sold at list price
+                </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="teal">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconTrendingUp size={20} />
               </ThemeIcon>
             </Group>
@@ -618,8 +632,14 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                 <Text fw={700} size="xl">
                   {data.summary.average_margin_percentage.toFixed(1)}%
                 </Text>
+                {/* The old figure, under its real name. It read 97.3% here
+                    while the tile said "margin", which is a 48-point error in
+                    the direction that loses a merchant money on pricing. */}
+                <Text size="xs" c="dimmed">
+                  {data.summary.average_markup_percentage.toFixed(1)}% markup on cost
+                </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="violet">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconChartPie size={20} />
               </ThemeIcon>
             </Group>
@@ -647,7 +667,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                   </Group>
                 )}
               </Box>
-              <ThemeIcon size="lg" variant="light" color="blue">
+              <ThemeIcon size="lg" variant="light" color="ink">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -657,13 +677,20 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
             <Group justify="space-between">
               <Box>
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                  Total Products
+                  Products With Stock
                 </Text>
                 <Text fw={700} size="xl">
                   {data.summary.total_products}
                 </Text>
+                {/* Was labelled "Total Products" while filtering
+                    `stock_quantity > 0`, giving 11 against the catalog's 12 —
+                    a third product count in an app that already had two. The
+                    label now states the filter. */}
+                <Text size="xs" c="dimmed">
+                  Holding one unit or more
+                </Text>
               </Box>
-              <ThemeIcon size="lg" variant="light" color="orange">
+              <ThemeIcon size="lg" variant="light">
                 <IconPackage size={20} />
               </ThemeIcon>
             </Group>
@@ -747,23 +774,32 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                                 value={item.cost_value} 
                                 prefix="$" 
                                 thousandSeparator 
-                                decimalScale={0}
+                                decimalScale={2}
+                                fixedDecimalScale
                               />
                             </Text>
                           </Table.Td>
                           {breakdownView !== 'warehouse' && (
-                            <Table.Td>
-                              <Badge 
-                                size="sm" 
-                                color={
-                                  'margin_percentage' in item && item.margin_percentage > 50 ? 'green' : 
-                                  'margin_percentage' in item && item.margin_percentage > 30 ? 'blue' : 
-                                  'orange'
+                            <Table.Td className={table.numeric}>
+                              {/* Was a three-colour pill (green / blue /
+                                  orange) that the narrow column clipped to
+                                  "110…". A margin is a number: set it as one,
+                                  right-aligned and tabular. Colour is reserved
+                                  for the one case worth flagging — a margin
+                                  thin enough to be a problem. */}
+                              <Text
+                                size="sm"
+                                fw={500}
+                                c={
+                                  'margin_percentage' in item && item.margin_percentage <= 30
+                                    ? 'var(--warning-text)'
+                                    : undefined
                                 }
-                                variant="light"
                               >
-                                {'margin_percentage' in item ? `${item.margin_percentage.toFixed(1)}%` : 'N/A'}
-                              </Badge>
+                                {'margin_percentage' in item
+                                  ? `${item.margin_percentage.toFixed(1)}%`
+                                  : '—'}
+                              </Text>
                             </Table.Td>
                           )}
                         </Table.Tr>
@@ -849,7 +885,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                             value={product.total_cost_value} 
                             prefix="$" 
                             thousandSeparator 
-                            decimalScale={0}
+                            decimalScale={2}
+                            fixedDecimalScale
                           />
                         </Text>
                       </Table.Td>
@@ -859,22 +896,19 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                             value={product.total_retail_value} 
                             prefix="$" 
                             thousandSeparator 
-                            decimalScale={0}
+                            decimalScale={2}
+                            fixedDecimalScale
                           />
                         </Text>
                       </Table.Td>
-                      <Table.Td>
-                        <Badge 
-                          size="sm" 
-                          color={
-                            product.margin_percentage > 50 ? 'green' : 
-                            product.margin_percentage > 30 ? 'blue' : 
-                            'orange'
-                          }
-                          variant="light"
+                      <Table.Td className={table.numeric}>
+                        <Text
+                          size="sm"
+                          fw={500}
+                          c={product.margin_percentage <= 30 ? 'var(--warning-text)' : undefined}
                         >
                           {product.margin_percentage.toFixed(1)}%
-                        </Badge>
+                        </Text>
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -902,7 +936,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.current_period.total_cost_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -913,7 +948,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.current_period.total_retail_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -946,7 +982,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.previous_period.total_cost_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -957,7 +994,8 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
                         value={data.period_comparison.previous_period.total_retail_value} 
                         prefix="$" 
                         thousandSeparator 
-                        decimalScale={0}
+                        decimalScale={2}
+                        fixedDecimalScale
                       />
                     </Text>
                   </Group>
@@ -981,7 +1019,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
               </Paper>
             </SimpleGrid>
 
-            <Paper p="md" withBorder bg="gray.0">
+            <Paper p="md" withBorder bg="var(--surface-2)">
               <Stack gap="xs">
                 <Text size="sm" fw={600} c="dimmed">Changes</Text>
                 <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">

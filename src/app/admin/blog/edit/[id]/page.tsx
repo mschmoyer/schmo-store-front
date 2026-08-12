@@ -99,8 +99,8 @@ export default function EditBlogPostPage() {
       <Container size="xl" py="xl">
         <Center style={{ minHeight: '400px' }}>
           <Stack align="center" gap="md">
-            <Loader size="lg" color="var(--theme-primary)" />
-            <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+            <Loader size="lg" color="var(--accent)" />
+            <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
               Loading blog post...
             </Text>
           </Stack>
@@ -120,7 +120,7 @@ export default function EditBlogPostPage() {
                 leftSection={<IconArrowLeft size={16} />}
                 size="sm"
                 style={{
-                  color: 'var(--theme-primary)',
+                  color: 'var(--accent)',
                   backgroundColor: 'transparent'
                 }}
               >
@@ -155,7 +155,7 @@ export default function EditBlogPostPage() {
                   leftSection={<IconArrowLeft size={16} />}
                   size="sm"
                   style={{
-                    color: 'var(--theme-primary)',
+                    color: 'var(--accent)',
                     backgroundColor: 'transparent'
                   }}
                 >
@@ -171,8 +171,8 @@ export default function EditBlogPostPage() {
                   href={`/blog/${post.slug}`}
                   target="_blank"
                   style={{
-                    borderColor: 'var(--theme-primary)',
-                    color: 'var(--theme-primary)',
+                    borderColor: 'var(--accent)',
+                    color: 'var(--accent)',
                     backgroundColor: 'transparent'
                   }}
                 >
@@ -184,12 +184,12 @@ export default function EditBlogPostPage() {
             <Text
               size="xl"
               fw={700}
-              style={{ color: 'var(--theme-text)' }}
+              style={{ color: 'var(--text-primary)' }}
             >
               Edit Blog Post
             </Text>
             
-            <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+            <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
               Update your blog post content, settings, and publishing options.
             </Text>
           </Stack>

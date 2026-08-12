@@ -412,9 +412,12 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
       <Group justify="space-between" align="flex-start" mb="xl">
         <Box>
           <Group gap="sm" align="center" mb="xs">
+            {/* Icon-only, so it needs a name. Without one it announced as
+                "button" and was unreachable by role. */}
             <ActionIcon
               variant="light"
               size="lg"
+              aria-label="Back to products"
               onClick={handleBack}
             >
               <IconArrowLeft size={20} />

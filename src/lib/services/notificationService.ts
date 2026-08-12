@@ -1,42 +1,100 @@
 import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { UUID } from '@/lib/types/database';
 import {
-  UUID,
-  Order,
-  OrderItem,
-  Store,
-  NotificationTemplate
-} from '@/lib/types/database';
+  OrderRow,
+  OrderItemRow,
+  StoreRow,
+  NotificationTemplateRow
+} from '@/lib/types/db-rows';
+import { getErrorMessage } from '@/lib/errors';
+
+/** A single order line rendered inside an email template. */
+interface OrderItemSummary {
+  name: string;
+  quantity: number;
+  price: string;
+}
+
+/** Any value that can be interpolated into an email template. */
+type TemplateVariableValue = string | OrderItemSummary[];
 
 // Email template interfaces
 interface EmailTemplateVariables {
+  [key: string]: TemplateVariableValue | undefined;
   order_number: string;
   order_total: string;
   customer_name: string;
   store_name: string;
   store_url: string;
-  shipping_address: string;
   contact_email: string;
 }
 
 interface ShipmentTemplateVariables extends EmailTemplateVariables {
-  order_items: Array<{ name: string; quantity: number; price: string }>;
+  shipping_address: string;
+  order_items: OrderItemSummary[];
   tracking_number: string;
-  carrier_name: string;
-  tracking_url?: string;
-  estimated_delivery?: string;
+  carrier: string;
+  tracking_url: string;
+  estimated_delivery: string;
 }
 
 interface DeliveryTemplateVariables extends EmailTemplateVariables {
+  shipping_address: string;
+  order_items: OrderItemSummary[];
   delivered_date: string;
-  delivery_location?: string;
+  tracking_number: string;
+  carrier: string;
+  delivery_confirmation: string;
 }
 
 interface ExceptionTemplateVariables extends EmailTemplateVariables {
-  exception_type: string;
   exception_description: string;
-  resolution_instructions?: string;
-  estimated_resolution?: string;
+  tracking_number: string;
+  carrier: string;
+  exception_date: string;
+  next_steps: string;
+}
+
+/** Tracking details supplied when a shipment notification is sent. */
+export interface ShipmentTrackingData {
+  tracking_number?: string;
+  carrier?: string;
+  tracking_url?: string;
+  estimated_delivery?: string;
+  shipment_cost?: number;
+  service_code?: string;
+}
+
+/** Delivery details supplied when a delivery notification is sent. */
+export interface DeliveryData {
+  delivered_date?: string;
+  tracking_number?: string;
+  carrier?: string;
+  delivery_confirmation?: string;
+  signature_required?: boolean;
+}
+
+/** Exception details supplied when an exception notification is sent. */
+export interface ExceptionData {
+  exception_description?: string;
+  tracking_number?: string;
+  carrier?: string;
+  exception_date?: string;
+  next_steps?: string;
+}
+
+/**
+ * Format a Postgres `numeric` column for display.
+ *
+ * `pg` returns numeric/decimal columns as strings to preserve precision, so they
+ * must be converted before formatting.
+ *
+ * @param value - Raw column value
+ * @returns The amount rendered with two decimal places
+ */
+function formatAmount(value: string | number | null): string {
+  return Number(value ?? 0).toFixed(2);
 }
 
 /**
@@ -66,14 +124,7 @@ export class NotificationService {
    */
   async sendShipmentNotificationEmail(
     orderId: UUID,
-    trackingData: {
-      tracking_number?: string;
-      carrier?: string;
-      tracking_url?: string;
-      estimated_delivery?: string;
-      shipment_cost?: number;
-      service_code?: string;
-    }
+    trackingData: ShipmentTrackingData
   ): Promise<boolean> {
     try {
       // Get order details
@@ -103,7 +154,7 @@ export class NotificationService {
         store,
         orderItems,
         trackingData,
-        template
+        template ?? undefined
       );
 
       // Send email
@@ -112,7 +163,7 @@ export class NotificationService {
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
-        from: store.contact_email || this.DEFAULT_FROM_EMAIL,
+        from: this.DEFAULT_FROM_EMAIL,
         fromName: store.store_name || this.DEFAULT_FROM_NAME
       });
 
@@ -135,13 +186,7 @@ export class NotificationService {
    */
   async sendDeliveryNotificationEmail(
     orderId: UUID,
-    deliveryData: {
-      delivered_date?: string;
-      tracking_number?: string;
-      carrier?: string;
-      delivery_confirmation?: string;
-      signature_required?: boolean;
-    }
+    deliveryData: DeliveryData
   ): Promise<boolean> {
     try {
       const order = await this.getOrderWithDetails(orderId);
@@ -165,7 +210,7 @@ export class NotificationService {
         store,
         orderItems,
         deliveryData,
-        template
+        template ?? undefined
       );
 
       const success = await this.sendEmail({
@@ -173,7 +218,7 @@ export class NotificationService {
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
-        from: store.contact_email || this.DEFAULT_FROM_EMAIL,
+        from: this.DEFAULT_FROM_EMAIL,
         fromName: store.store_name || this.DEFAULT_FROM_NAME
       });
 
@@ -194,13 +239,7 @@ export class NotificationService {
    */
   async sendExceptionNotificationEmail(
     orderId: UUID,
-    exceptionData: {
-      exception_description?: string;
-      tracking_number?: string;
-      carrier?: string;
-      exception_date?: string;
-      next_steps?: string;
-    }
+    exceptionData: ExceptionData
   ): Promise<boolean> {
     try {
       const order = await this.getOrderWithDetails(orderId);
@@ -224,7 +263,7 @@ export class NotificationService {
         store,
         orderItems,
         exceptionData,
-        template
+        template ?? undefined
       );
 
       const success = await this.sendEmail({
@@ -232,7 +271,7 @@ export class NotificationService {
         subject: emailContent.subject,
         html: emailContent.html,
         text: emailContent.text,
-        from: store.contact_email || this.DEFAULT_FROM_EMAIL,
+        from: this.DEFAULT_FROM_EMAIL,
         fromName: store.store_name || this.DEFAULT_FROM_NAME
       });
 
@@ -255,19 +294,13 @@ export class NotificationService {
    * @returns Promise<EmailContent>
    */
   private async generateShipmentEmailContent(
-    order: Order,
-    store: Store,
-    orderItems: OrderItem[],
-    trackingData: {
-      tracking_number: string;
-      carrier_name: string;
-      tracking_url?: string;
-      estimated_delivery?: Date;
-      service_code?: string;
-    },
-    template?: NotificationTemplate
+    order: OrderRow,
+    store: StoreRow,
+    orderItems: OrderItemRow[],
+    trackingData: ShipmentTrackingData,
+    template?: NotificationTemplateRow
   ): Promise<{ subject: string; html: string; text: string }> {
-    const variables = {
+    const variables: ShipmentTemplateVariables = {
       customer_name: `${order.customer_first_name} ${order.customer_last_name}`,
       order_number: order.order_number,
       store_name: store.store_name,
@@ -275,14 +308,14 @@ export class NotificationService {
       carrier: trackingData.carrier || 'N/A',
       tracking_url: trackingData.tracking_url || '#',
       estimated_delivery: trackingData.estimated_delivery || 'N/A',
-      order_total: `$${order.total_amount.toFixed(2)}`,
+      order_total: `$${formatAmount(order.total_amount)}`,
       order_items: orderItems.map(item => ({
         name: item.product_name,
         quantity: item.quantity,
-        price: `$${item.unit_price.toFixed(2)}`
+        price: `$${formatAmount(item.unit_price)}`
       })),
       shipping_address: `${order.shipping_address_line1}, ${order.shipping_city}, ${order.shipping_state} ${order.shipping_postal_code}`,
-      contact_email: store.contact_email || this.DEFAULT_FROM_EMAIL,
+      contact_email: this.DEFAULT_FROM_EMAIL,
       store_url: store.domain || `https://${store.store_slug}.rebelcart.com`
     };
 
@@ -308,19 +341,13 @@ export class NotificationService {
    * @returns Promise<EmailContent>
    */
   private async generateDeliveryEmailContent(
-    order: Order,
-    store: Store,
-    orderItems: OrderItem[],
-    deliveryData: {
-      delivered_date: Date;
-      delivery_location?: string;
-      recipient_name?: string;
-      signature_required?: boolean;
-      proof_of_delivery_url?: string;
-    },
-    template?: NotificationTemplate
+    order: OrderRow,
+    store: StoreRow,
+    orderItems: OrderItemRow[],
+    deliveryData: DeliveryData,
+    template?: NotificationTemplateRow
   ): Promise<{ subject: string; html: string; text: string }> {
-    const variables = {
+    const variables: DeliveryTemplateVariables = {
       customer_name: `${order.customer_first_name} ${order.customer_last_name}`,
       order_number: order.order_number,
       store_name: store.store_name,
@@ -328,14 +355,14 @@ export class NotificationService {
       tracking_number: deliveryData.tracking_number || 'N/A',
       carrier: deliveryData.carrier || 'N/A',
       delivery_confirmation: deliveryData.delivery_confirmation || 'Standard',
-      order_total: `$${order.total_amount.toFixed(2)}`,
+      order_total: `$${formatAmount(order.total_amount)}`,
       order_items: orderItems.map(item => ({
         name: item.product_name,
         quantity: item.quantity,
-        price: `$${item.unit_price.toFixed(2)}`
+        price: `$${formatAmount(item.unit_price)}`
       })),
       shipping_address: `${order.shipping_address_line1}, ${order.shipping_city}, ${order.shipping_state} ${order.shipping_postal_code}`,
-      contact_email: store.contact_email || this.DEFAULT_FROM_EMAIL,
+      contact_email: this.DEFAULT_FROM_EMAIL,
       store_url: store.domain || `https://${store.store_slug}.rebelcart.com`
     };
 
@@ -361,19 +388,13 @@ export class NotificationService {
    * @returns Promise<EmailContent>
    */
   private async generateExceptionEmailContent(
-    order: Order,
-    store: Store,
-    orderItems: OrderItem[],
-    exceptionData: {
-      exception_type: string;
-      exception_description: string;
-      resolution_instructions?: string;
-      contact_carrier_url?: string;
-      estimated_resolution_date?: Date;
-    },
-    template?: NotificationTemplate
+    order: OrderRow,
+    store: StoreRow,
+    orderItems: OrderItemRow[],
+    exceptionData: ExceptionData,
+    template?: NotificationTemplateRow
   ): Promise<{ subject: string; html: string; text: string }> {
-    const variables = {
+    const variables: ExceptionTemplateVariables = {
       customer_name: `${order.customer_first_name} ${order.customer_last_name}`,
       order_number: order.order_number,
       store_name: store.store_name,
@@ -382,8 +403,8 @@ export class NotificationService {
       carrier: exceptionData.carrier || 'N/A',
       exception_date: exceptionData.exception_date || new Date().toLocaleDateString(),
       next_steps: exceptionData.next_steps || 'Please contact customer service for assistance',
-      order_total: `$${order.total_amount.toFixed(2)}`,
-      contact_email: store.contact_email || this.DEFAULT_FROM_EMAIL,
+      order_total: `$${formatAmount(order.total_amount)}`,
+      contact_email: this.DEFAULT_FROM_EMAIL,
       store_url: store.domain || `https://${store.store_slug}.rebelcart.com`
     };
 
@@ -694,9 +715,13 @@ export class NotificationService {
    * @param variables - Variables to replace
    * @returns string
    */
-  private replaceVariables(template: string, variables: EmailTemplateVariables | ShipmentTemplateVariables | DeliveryTemplateVariables | ExceptionTemplateVariables): string {
-    return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-      return variables[key] || match;
+  private replaceVariables(template: string, variables: EmailTemplateVariables): string {
+    return template.replace(/\{\{(\w+)\}\}/g, (match: string, key: string) => {
+      const value = variables[key];
+      if (!value) {
+        return match;
+      }
+      return typeof value === 'string' ? value : String(value);
     });
   }
 
@@ -739,13 +764,13 @@ export class NotificationService {
    * @param orderId - Order UUID
    * @returns Promise<Order | null>
    */
-  private async getOrderWithDetails(orderId: UUID): Promise<Order | null> {
+  private async getOrderWithDetails(orderId: UUID): Promise<OrderRow | null> {
     try {
-      const result = await db.query(`
+      const result = await db.query<OrderRow>(`
         SELECT * FROM orders WHERE id = $1
       `, [orderId]);
 
-      return result.rows.length > 0 ? result.rows[0] as Order : null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error getting order details:', error);
       return null;
@@ -757,13 +782,13 @@ export class NotificationService {
    * @param storeId - Store UUID
    * @returns Promise<Store | null>
    */
-  private async getStoreDetails(storeId: UUID): Promise<Store | null> {
+  private async getStoreDetails(storeId: UUID): Promise<StoreRow | null> {
     try {
-      const result = await db.query(`
+      const result = await db.query<StoreRow>(`
         SELECT * FROM stores WHERE id = $1
       `, [storeId]);
 
-      return result.rows.length > 0 ? result.rows[0] as Store : null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error getting store details:', error);
       return null;
@@ -775,13 +800,13 @@ export class NotificationService {
    * @param orderId - Order UUID
    * @returns Promise<OrderItem[]>
    */
-  private async getOrderItems(orderId: UUID): Promise<OrderItem[]> {
+  private async getOrderItems(orderId: UUID): Promise<OrderItemRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<OrderItemRow>(`
         SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at
       `, [orderId]);
 
-      return result.rows as OrderItem[];
+      return result.rows;
     } catch (error) {
       console.error('Error getting order items:', error);
       return [];
@@ -797,14 +822,14 @@ export class NotificationService {
   private async getNotificationTemplate(
     storeId: UUID,
     templateType: 'order_confirmation' | 'shipment_notification' | 'delivery_notification' | 'exception_notification'
-  ): Promise<NotificationTemplate | null> {
+  ): Promise<NotificationTemplateRow | null> {
     try {
-      const result = await db.query(`
+      const result = await db.query<NotificationTemplateRow>(`
         SELECT * FROM notification_templates 
         WHERE store_id = $1 AND template_type = $2 AND is_active = true
       `, [storeId, templateType]);
 
-      return result.rows.length > 0 ? result.rows[0] as NotificationTemplate : null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error getting notification template:', error);
       return null;
@@ -823,7 +848,7 @@ export class NotificationService {
     orderId: UUID,
     notificationType: string,
     success: boolean,
-    error?: Error | string
+    error?: unknown
   ): Promise<void> {
     try {
       await db.query(`
@@ -836,7 +861,7 @@ export class NotificationService {
         notificationType,
         new Date(),
         success,
-        error ? (error.message || error.toString()) : null,
+        error === undefined ? null : getErrorMessage(error),
         new Date()
       ]);
     } catch (dbError) {

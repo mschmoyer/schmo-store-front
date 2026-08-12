@@ -15,7 +15,6 @@ import {
   Select,
   Pagination,
   Center,
-  Loader,
   Alert,
   Modal,
   Container
@@ -40,6 +39,9 @@ import {
   truncateText
 } from '@/lib/blogHelpers';
 import { BlogEmptyState } from '@/components/blog/BlogEmptyState';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { EmptyState } from '@/components/ui';
 
 export default function AdminBlogPage() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
@@ -213,32 +215,15 @@ export default function AdminBlogPage() {
     <Container size="xl" py="xl">
       <Stack gap="xl">
         {/* Header */}
-        <Group justify="space-between" align="center">
-          <Stack gap="xs">
-            <Text
-              size="xl"
-              fw={700}
-              style={{ color: 'var(--theme-text)' }}
-            >
-              Blog Administration
-            </Text>
-            <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
-              Manage your blog posts, monitor performance, and create new content.
-            </Text>
-          </Stack>
-          
-          <Link href="/admin/blog/create" style={{ textDecoration: 'none' }}>
-            <Button
-              leftSection={<IconPlus size={16} />}
-              style={{
-                backgroundColor: 'var(--theme-primary)',
-                color: 'var(--theme-text-on-primary)'
-              }}
-            >
-              New Post
-            </Button>
-          </Link>
-        </Group>
+        <AdminPageHeader
+          title="Blog"
+          description="Write, publish and measure the posts that bring shoppers to your store."
+          actions={
+            <Link href="/admin/blog/create" style={{ textDecoration: 'none' }}>
+              <Button leftSection={<IconPlus size={16} />}>New post</Button>
+            </Link>
+          }
+        />
 
         {/* Statistics */}
         {stats && (
@@ -247,16 +232,16 @@ export default function AdminBlogPage() {
               <Card
                 padding="lg"
                 style={{
-                  backgroundColor: 'var(--theme-card)',
-                  borderColor: 'var(--theme-border)',
+                  backgroundColor: 'var(--surface-raised)',
+                  borderColor: 'var(--border)',
                   textAlign: 'center'
                 }}
               >
                 <Stack gap="xs">
-                  <Text size="xl" fw={700} style={{ color: 'var(--theme-primary)' }}>
+                  <Text size="xl" fw={700} style={{ color: 'var(--accent)' }}>
                     {stats.totalPosts}
                   </Text>
-                  <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+                  <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                     Total Posts
                   </Text>
                 </Stack>
@@ -267,16 +252,16 @@ export default function AdminBlogPage() {
               <Card
                 padding="lg"
                 style={{
-                  backgroundColor: 'var(--theme-card)',
-                  borderColor: 'var(--theme-border)',
+                  backgroundColor: 'var(--surface-raised)',
+                  borderColor: 'var(--border)',
                   textAlign: 'center'
                 }}
               >
                 <Stack gap="xs">
-                  <Text size="xl" fw={700} style={{ color: 'var(--theme-success)' }}>
+                  <Text size="xl" fw={700} style={{ color: 'var(--success-text)' }}>
                     {stats.publishedPosts}
                   </Text>
-                  <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+                  <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                     Published
                   </Text>
                 </Stack>
@@ -287,16 +272,16 @@ export default function AdminBlogPage() {
               <Card
                 padding="lg"
                 style={{
-                  backgroundColor: 'var(--theme-card)',
-                  borderColor: 'var(--theme-border)',
+                  backgroundColor: 'var(--surface-raised)',
+                  borderColor: 'var(--border)',
                   textAlign: 'center'
                 }}
               >
                 <Stack gap="xs">
-                  <Text size="xl" fw={700} style={{ color: 'var(--theme-warning)' }}>
+                  <Text size="xl" fw={700} style={{ color: 'var(--warning-text)' }}>
                     {stats.draftPosts}
                   </Text>
-                  <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+                  <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                     Drafts
                   </Text>
                 </Stack>
@@ -307,16 +292,16 @@ export default function AdminBlogPage() {
               <Card
                 padding="lg"
                 style={{
-                  backgroundColor: 'var(--theme-card)',
-                  borderColor: 'var(--theme-border)',
+                  backgroundColor: 'var(--surface-raised)',
+                  borderColor: 'var(--border)',
                   textAlign: 'center'
                 }}
               >
                 <Stack gap="xs">
-                  <Text size="xl" fw={700} style={{ color: 'var(--theme-text)' }}>
+                  <Text size="xl" fw={700} style={{ color: 'var(--text-primary)' }}>
                     {formatViewCount(stats.totalViews)}
                   </Text>
-                  <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+                  <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                     Total Views
                   </Text>
                 </Stack>
@@ -329,8 +314,8 @@ export default function AdminBlogPage() {
         <Card
           padding="lg"
           style={{
-            backgroundColor: 'var(--theme-card)',
-            borderColor: 'var(--theme-border)'
+            backgroundColor: 'var(--surface-raised)',
+            borderColor: 'var(--border)'
           }}
         >
           <Group gap="md">
@@ -342,10 +327,10 @@ export default function AdminBlogPage() {
               style={{ flex: 1 }}
               styles={{
                 input: {
-                  backgroundColor: 'var(--theme-background-secondary)',
-                  borderColor: 'var(--theme-border)',
-                  color: 'var(--theme-text)',
-                  '&::placeholder': { color: 'var(--theme-text-muted)' }
+                  backgroundColor: 'var(--surface-2)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text-primary)',
+                  '&::placeholder': { color: 'var(--text-secondary)' }
                 }
               }}
             />
@@ -362,9 +347,9 @@ export default function AdminBlogPage() {
               onChange={(value) => setFilters(prev => ({ ...prev, status: value || '' }))}
               styles={{
                 input: {
-                  backgroundColor: 'var(--theme-background-secondary)',
-                  borderColor: 'var(--theme-border)',
-                  color: 'var(--theme-text)'
+                  backgroundColor: 'var(--surface-2)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text-primary)'
                 }
               }}
             />
@@ -375,32 +360,30 @@ export default function AdminBlogPage() {
         <Card
           padding="lg"
           style={{
-            backgroundColor: 'var(--theme-card)',
-            borderColor: 'var(--theme-border)'
+            backgroundColor: 'var(--surface-raised)',
+            borderColor: 'var(--border)'
           }}
         >
           {loading ? (
-            <Center py="xl">
-              <Stack align="center" gap="md">
-                <Loader size="md" color="var(--theme-primary)" />
-                <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
-                  Loading blog posts...
-                </Text>
-              </Stack>
-            </Center>
+            /* §5: a table skeleton at the real grid's geometry, not a spinner
+               inside an empty card. */
+            <TableSkeleton rows={5} columns={4} label="Loading blog posts" />
           ) : posts.length === 0 ? (
             // Show enhanced empty state only when no filters are applied
             filters.search || filters.status ? (
-              <Center py="xl">
-                <Stack align="center" gap="md">
-                  <Text size="lg" fw={600} style={{ color: 'var(--theme-text)' }}>
-                    No blog posts found
-                  </Text>
-                  <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
-                    Try adjusting your filters.
-                  </Text>
-                </Stack>
-              </Center>
+              <EmptyState
+                titleAs="p"
+                title="No posts match these filters"
+                description="Clear the search or the status filter to see the rest of your posts."
+                action={
+                  <Button
+                    variant="default"
+                    onClick={() => setFilters({ ...filters, search: '', status: '' })}
+                  >
+                    Clear filters
+                  </Button>
+                }
+              />
             ) : (
               <BlogEmptyState />
             )
@@ -408,17 +391,17 @@ export default function AdminBlogPage() {
             <Stack gap="md">
               <Table
                 style={{
-                  backgroundColor: 'var(--theme-background)',
-                  color: 'var(--theme-text)'
+                  backgroundColor: 'var(--surface)',
+                  color: 'var(--text-primary)'
                 }}
               >
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th style={{ color: 'var(--theme-text)' }}>Title</Table.Th>
-                    <Table.Th style={{ color: 'var(--theme-text)' }}>Status</Table.Th>
-                    <Table.Th style={{ color: 'var(--theme-text)' }}>Views</Table.Th>
-                    <Table.Th style={{ color: 'var(--theme-text)' }}>Date</Table.Th>
-                    <Table.Th style={{ color: 'var(--theme-text)' }}>Actions</Table.Th>
+                    <Table.Th style={{ color: 'var(--text-primary)' }}>Title</Table.Th>
+                    <Table.Th style={{ color: 'var(--text-primary)' }}>Status</Table.Th>
+                    <Table.Th style={{ color: 'var(--text-primary)' }}>Views</Table.Th>
+                    <Table.Th style={{ color: 'var(--text-primary)' }}>Date</Table.Th>
+                    <Table.Th style={{ color: 'var(--text-primary)' }}>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -429,14 +412,14 @@ export default function AdminBlogPage() {
                           <Text
                             size="sm"
                             fw={600}
-                            style={{ color: 'var(--theme-text)' }}
+                            style={{ color: 'var(--text-primary)' }}
                           >
                             {truncateText(post.title, 60)}
                           </Text>
                           {post.excerpt && (
                             <Text
                               size="xs"
-                              style={{ color: 'var(--theme-text-muted)' }}
+                              style={{ color: 'var(--text-secondary)' }}
                             >
                               {truncateText(post.excerpt, 100)}
                             </Text>
@@ -453,12 +436,12 @@ export default function AdminBlogPage() {
                         </Badge>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" style={{ color: 'var(--theme-text)' }}>
+                        <Text size="sm" style={{ color: 'var(--text-primary)' }}>
                           {formatViewCount(post.view_count || 0)}
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" style={{ color: 'var(--theme-text-muted)' }}>
+                        <Text size="sm" style={{ color: 'var(--text-secondary)' }}>
                           {formatDate(post.published_at || post.created_at)}
                         </Text>
                       </Table.Td>
@@ -471,7 +454,7 @@ export default function AdminBlogPage() {
                               component="a"
                               href={`/blog/${post.slug}`}
                               target="_blank"
-                              style={{ color: 'var(--theme-primary)' }}
+                              style={{ color: 'var(--accent)' }}
                             >
                               <IconEye size={14} />
                             </ActionIcon>
@@ -482,7 +465,7 @@ export default function AdminBlogPage() {
                             size="sm"
                             component={Link}
                             href={`/admin/blog/edit/${post.id}`}
-                            style={{ color: 'var(--theme-warning)' }}
+                            style={{ color: 'var(--warning-text)' }}
                           >
                             <IconEdit size={14} />
                           </ActionIcon>
@@ -528,7 +511,7 @@ export default function AdminBlogPage() {
           centered
         >
           <Stack gap="md">
-            <Text size="sm" style={{ color: 'var(--theme-text)' }}>
+            <Text size="sm" style={{ color: 'var(--text-primary)' }}>
               Are you sure you want to delete &quot;{selectedPost?.title}&quot;? This action cannot be undone.
             </Text>
             
@@ -537,8 +520,8 @@ export default function AdminBlogPage() {
                 variant="outline"
                 onClick={closeDeleteModal}
                 style={{
-                  borderColor: 'var(--theme-border)',
-                  color: 'var(--theme-text)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text-primary)',
                   backgroundColor: 'transparent'
                 }}
               >

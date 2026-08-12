@@ -1,0 +1,256 @@
+/*
+ * Mantine overrides.
+ *
+ * Palette, radius, shadows, fonts and default props are configured in
+ * `src/lib/theme/rebel-theme.ts`. This file carries everything the theme
+ * *cannot* express:
+ *
+ *  1. Interactive states. Mantine v8's `styles` prop takes flat inline-style
+ *     objects — `&:hover`, `&::placeholder` and friends are dropped with an
+ *     "Unsupported style property" warning. They have to be written as CSS.
+ *  2. Portalled surfaces (notifications, dropdowns) that render outside the
+ *     component tree.
+ *
+ * Selectors use Mantine's stable static classes (`.mantine-<Component>-<part>`).
+ */
+
+/* ============================================================ Button ==== */
+
+.mantine-Button-root {
+  transition:
+    transform var(--duration-micro) var(--ease-out),
+    box-shadow var(--duration-micro) var(--ease-out),
+    background-color var(--duration-micro) var(--ease-out),
+    border-color var(--duration-micro) var(--ease-out);
+}
+
+/* §5 heights: 32 / 40 / 48. */
+.mantine-Button-root[data-size='xs'],
+.mantine-Button-root[data-size='sm'] {
+  height: 32px;
+}
+.mantine-Button-root[data-size='md'] {
+  height: 40px;
+}
+.mantine-Button-root[data-size='lg'],
+.mantine-Button-root[data-size='xl'] {
+  height: 48px;
+}
+
+/* Filled buttons get the lit top edge + ember elevation, so a Mantine button
+   and one of our own primitives read as the same object. */
+.mantine-Button-root[data-variant='filled'] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    var(--shadow-ember-sm);
+}
+
+.mantine-Button-root[data-variant='filled']:hover:not(:disabled):not([data-disabled]) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    var(--shadow-ember);
+}
+
+.mantine-Button-root[data-variant='default']:hover:not(:disabled):not([data-disabled]),
+.mantine-Button-root[data-variant='outline']:hover:not(:disabled):not([data-disabled]) {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+}
+
+.mantine-Button-root:active:not(:disabled):not([data-disabled]) {
+  box-shadow: var(--shadow-xs);
+}
+
+/* The lift lives behind the motion guard — see globals.css §8. */
+@media (prefers-reduced-motion: no-preference) {
+  .mantine-Button-root[data-variant='filled']:hover:not(:disabled):not([data-disabled]),
+  .mantine-Button-root[data-variant='default']:hover:not(:disabled):not([data-disabled]),
+  .mantine-Button-root[data-variant='outline']:hover:not(:disabled):not([data-disabled]) {
+    transform: translateY(-1px);
+  }
+
+  .mantine-Button-root:active:not(:disabled):not([data-disabled]) {
+    transform: translateY(0);
+  }
+}
+
+.mantine-Button-root:disabled,
+.mantine-Button-root[data-disabled] {
+  transform: none;
+  box-shadow: none;
+}
+
+.mantine-ActionIcon-root {
+  transition:
+    background-color var(--duration-micro) var(--ease-out),
+    transform var(--duration-micro) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mantine-ActionIcon-root:active:not(:disabled):not([data-disabled]) {
+    transform: translateY(1px);
+  }
+}
+
+/* ============================================================= Inputs === */
+
+.mantine-Input-input::placeholder,
+.mantine-TextInput-input::placeholder,
+.mantine-Textarea-input::placeholder,
+.mantine-NumberInput-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.mantine-Input-input {
+  /* WCAG 1.4.11: the field edge is the affordance. See globals.css. */
+  border-color: var(--border-control);
+  box-shadow: var(--shadow-xs);
+}
+
+.mantine-Input-input:hover:not(:disabled):not([data-error]),
+.mantine-InputWrapper-root:hover .mantine-Input-input:not(:disabled):not([data-error]) {
+  border-color: var(--text-secondary);
+}
+
+.mantine-Input-input:focus,
+.mantine-Input-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.mantine-Input-input[data-error] {
+  border-color: var(--danger);
+}
+
+.mantine-Input-input[data-error]:focus,
+.mantine-Input-input[data-error]:focus-within {
+  box-shadow: var(--focus-ring-danger);
+}
+
+.mantine-Input-input:disabled,
+.mantine-Input-input[data-disabled] {
+  background-color: var(--surface-inset);
+  color: var(--text-disabled);
+  opacity: 1;
+}
+
+/* ============================================================== Card ==== */
+
+.mantine-Card-root[data-with-border]:hover {
+  /* Only cards that opted into an href/onClick should lift; Mantine has no
+     flag for that, so lifting is left to our own Card primitive. */
+  border-color: var(--border);
+}
+
+/* ============================================================= Table ==== */
+
+.mantine-Table-thead {
+  background-color: var(--surface-sunken);
+}
+
+.mantine-Table-th {
+  border-color: var(--border) !important;
+}
+
+.mantine-Table-td,
+.mantine-Table-tr {
+  border-color: var(--border-subtle) !important;
+}
+
+.mantine-Table-tr[data-hover]:hover > .mantine-Table-td {
+  background-color: var(--surface-inset);
+}
+
+/* ============================================== Modal / Drawer chrome === */
+
+.mantine-Modal-content,
+.mantine-Drawer-content {
+  background-color: var(--surface-overlay);
+  color: var(--text-primary);
+}
+
+.mantine-Modal-header,
+.mantine-Drawer-header {
+  background-color: var(--surface-overlay);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mantine-Modal-title,
+.mantine-Drawer-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.mantine-Modal-overlay,
+.mantine-Drawer-overlay {
+  background-color: var(--surface-scrim);
+}
+
+/* ================================================ Portalled surfaces ==== */
+
+.mantine-Notifications-root {
+  z-index: 400;
+}
+
+.mantine-Notification-root {
+  background-color: var(--surface-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.mantine-Notification-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.mantine-Notification-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.mantine-Popover-dropdown,
+.mantine-Select-dropdown,
+.mantine-MultiSelect-dropdown,
+.mantine-Autocomplete-dropdown,
+.mantine-Menu-dropdown {
+  background-color: var(--surface-overlay);
+  border-color: var(--border);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.mantine-Menu-item:hover,
+.mantine-Select-option:hover,
+.mantine-MultiSelect-option:hover {
+  background-color: var(--surface-inset);
+}
+
+.mantine-Select-option[data-combobox-selected],
+.mantine-MultiSelect-option[data-combobox-selected] {
+  background-color: var(--accent-subtle);
+  color: var(--accent-text);
+}
+
+/* ============================================================= Focus ==== */
+
+/* Mantine paints its own focus ring; §2 says ours is the two-stop ring. */
+.mantine-focus-auto:focus-visible,
+.mantine-focus-always:focus-visible,
+.mantine-Button-root:focus-visible,
+.mantine-ActionIcon-root:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/*
+ * Filled controls need a ring that contrasts with the CONTROL, not just the
+ * page — an ember ring on an ember button measures 1.00:1.
+ */
+.mantine-Button-root[data-variant='filled']:focus-visible,
+.mantine-ActionIcon-root[data-variant='filled']:focus-visible {
+  box-shadow: var(--focus-ring-accent);
+}

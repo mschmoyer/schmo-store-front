@@ -1,0 +1,742 @@
+/*
+ * Home-page sections.
+ *
+ * One file for the twelve section types, because they share a rhythm and
+ * splitting them would mean twelve copies of the same spacing decisions.
+ * As everywhere in the storefront: `--st-*` tokens only, no literal colours.
+ */
+
+/* -- Hero ----------------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.heroSplit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--st-space-8);
+  align-items: center;
+}
+
+/*
+ * With no photograph there is no second column to fill, so the hero becomes a
+ * centred statement rather than a text block marooned in the left half of a
+ * wide screen. The brand-tinted wash gives the band a ground of its own so it
+ * still reads as a hero and not as the first paragraph of the page.
+ */
+.heroPlain {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding-block: var(--st-space-11);
+  border-radius: var(--st-radius-image);
+  background-image: radial-gradient(
+      ellipse 90% 120% at 50% -20%,
+      color-mix(in oklab, var(--st-brand) 14%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(var(--st-surface-sunken), var(--st-surface));
+}
+
+.heroPlain .heroCopy {
+  align-items: center;
+  text-align: center;
+  max-width: 44ch;
+  padding-inline: var(--st-space-5);
+}
+
+.heroPlain .heroLead {
+  max-width: 52ch;
+}
+
+/* Left-aligned copy is still honoured; only the dead column is removed. */
+.heroPlainStart {
+  place-items: center start;
+  text-align: start;
+}
+
+.heroPlainStart .heroCopy {
+  align-items: flex-start;
+  text-align: start;
+  max-width: 62ch;
+}
+
+.heroCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.heroCopyCenter {
+  align-items: center;
+  text-align: center;
+  margin-inline: auto;
+  max-width: 780px;
+}
+
+.heroLead {
+  font-size: var(--st-h5);
+  line-height: 1.5;
+  color: var(--st-text-muted);
+  max-width: 56ch;
+  font-weight: 400;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-3);
+  margin-top: var(--st-space-2);
+}
+
+.heroMedia {
+  position: relative;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+  aspect-ratio: 4 / 3;
+}
+
+.heroMedia img {
+  object-fit: cover;
+}
+
+/* Overlay layout: copy sits on the image, dimmed enough to stay readable. */
+.heroOverlay {
+  position: relative;
+  display: grid;
+  align-items: center;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.heroOverlayImage {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+
+.heroOverlayImage img {
+  object-fit: cover;
+}
+
+.heroScrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--stx-hero-scrim, var(--st-overlay));
+  opacity: var(--_scrim, 0.55);
+}
+
+.heroOverlay .heroCopy {
+  padding: var(--st-space-9) var(--st-space-7);
+}
+
+/*
+ * Copy over a photograph is only as legible as the scrim under it, and the
+ * scrim is only ever dark — `--st-overlay` is a near-black tinted with the
+ * surface hue on both schemes. So the ink here cannot be `--st-text`: on a
+ * light theme that is near-black over a dark scrim, and on a dark theme over a
+ * pale product photograph the un-scrimmed original was white on light grey.
+ * Both grounds want the palette's lightest neutral, which is the raised surface
+ * on a light theme and the text colour on a dark one. Neither is invented; both
+ * come out of the merchant's own palette.
+ *
+ * `Hero.tsx` floors the scrim opacity to match, so the pair is a guarantee
+ * rather than a hope.
+ */
+:global(.storefront[data-scheme='light']) .heroOverlay .heroCopy,
+:global(.storefront[data-scheme='light']) .heroOverlay .heroCopy :is(h1, p) {
+  color: var(--st-surface-raised);
+}
+
+:global(.storefront[data-scheme='dark']) .heroOverlay .heroCopy,
+:global(.storefront[data-scheme='dark']) .heroOverlay .heroCopy :is(h1, p) {
+  color: var(--st-text);
+}
+
+/* The eyebrow's brand colour has no contrast promise against a scrim either. */
+.heroOverlay .heroCopy .heroEyebrow {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.heightSmall {
+  min-height: 280px;
+}
+
+.heightMedium {
+  min-height: 440px;
+}
+
+.heightLarge {
+  min-height: min(80vh, 720px);
+}
+
+@media (max-width: 860px) {
+  .heroSplit {
+    grid-template-columns: 1fr;
+  }
+
+  .heroMedia {
+    order: -1;
+    aspect-ratio: 16 / 10;
+  }
+
+  .heightMedium,
+  .heightLarge {
+    min-height: 0;
+  }
+}
+
+/* -- Collection grid ------------------------------------------------------ */
+
+.tiles {
+  --_cols: 3;
+  display: grid;
+  gap: var(--st-space-5);
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(
+      min(100%, max(240px, calc((100% - (var(--_cols) - 1) * var(--st-space-5)) / var(--_cols)))),
+      1fr
+    )
+  );
+}
+
+/*
+ * The label sits *below* the artwork rather than on top of it.
+ *
+ * Overlaying the name on the image needs a guaranteed-legible ink, and there
+ * isn't one: `--st-overlay` is derived from the merchant's surface, so on a
+ * dark theme a scrim plus dark text is invisible, and there is no "always
+ * light" token to reach for that would not be a hardcoded colour. Captioning
+ * underneath uses `--st-text`, which the engine has already contrast-checked
+ * against the surface — so it is legible in every theme, by construction.
+ */
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  text-decoration: none;
+  color: var(--st-text);
+}
+
+.tileFrame {
+  position: relative;
+  display: block;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+}
+
+.tileSquare {
+  aspect-ratio: 1 / 1;
+}
+
+.tilePortrait {
+  aspect-ratio: 3 / 4;
+}
+
+.tileLandscape {
+  aspect-ratio: 4 / 3;
+}
+
+.tile img {
+  object-fit: cover;
+  transition: transform 320ms ease;
+}
+
+.tile:hover img {
+  transform: scale(1.04);
+}
+
+.tileBody {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+
+.tileName {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  font-weight: var(--st-heading-weight);
+  text-transform: var(--st-heading-case);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+}
+
+.tile:hover .tileName {
+  color: var(--st-brand);
+}
+
+.tileCount {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  white-space: nowrap;
+}
+
+/* -- Rich text ------------------------------------------------------------ */
+
+.prose {
+  color: var(--st-text-muted);
+  font-size: var(--st-body);
+  line-height: 1.7;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+}
+
+.prose :is(h2, h3, h4) {
+  color: var(--st-text);
+  margin-top: var(--st-space-3);
+}
+
+.prose a {
+  color: var(--st-brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prose :is(ul, ol) {
+  padding-inline-start: var(--st-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+}
+
+.prose li {
+  list-style: revert;
+}
+
+.prose strong {
+  color: var(--st-text);
+  font-weight: 650;
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--st-radius-image);
+}
+
+.proseCenter {
+  text-align: center;
+  align-items: center;
+}
+
+.proseNarrow {
+  max-width: 68ch;
+  margin-inline: auto;
+}
+
+/* -- Image with text ------------------------------------------------------ */
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--st-space-8);
+  align-items: center;
+}
+
+.splitImageRight .splitMedia {
+  order: 2;
+}
+
+.splitMedia {
+  position: relative;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+}
+
+.splitMedia img {
+  object-fit: cover;
+}
+
+.splitCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--st-space-4);
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .splitImageRight .splitMedia {
+    order: -1;
+  }
+}
+
+/* -- Value props ---------------------------------------------------------- */
+
+.props {
+  --_cols: 3;
+  display: grid;
+  gap: var(--st-space-5);
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, max(220px, calc((100% - (var(--_cols) - 1) * var(--st-space-5)) / var(--_cols)))), 1fr)
+  );
+}
+
+.prop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+}
+
+.propCard {
+  padding: var(--st-space-5);
+  border: var(--stx-border-visible) solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-raised);
+  box-shadow: var(--st-shadow-card);
+}
+
+/* The `bar` style is a single compact strip — value props as reassurance
+   rather than as a feature grid. */
+.propsBar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--st-space-4) var(--st-space-8);
+  padding: var(--st-space-4) var(--st-space-5);
+  border-block: 1px solid var(--st-border);
+}
+
+.propsBar .prop {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--st-space-3);
+}
+
+.propsBar .propBody {
+  display: none;
+}
+
+.propIcon {
+  display: inline-flex;
+  color: var(--st-brand);
+}
+
+.propTitle {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  font-weight: var(--st-heading-weight);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+}
+
+.propBody {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  line-height: 1.55;
+}
+
+/* -- Testimonials --------------------------------------------------------- */
+
+.quotes {
+  display: grid;
+  gap: var(--st-space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+/* The `carousel` layout is a scroll-snap rail: real horizontal scrolling with
+   a keyboard-reachable track, not a JS slideshow that hides content. */
+.quotesRail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: min(360px, 82%);
+  gap: var(--st-space-5);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: var(--st-space-3);
+  scrollbar-width: thin;
+}
+
+.quotesRail > * {
+  scroll-snap-align: start;
+}
+
+.quotesSingle {
+  grid-template-columns: minmax(0, 720px);
+  justify-content: center;
+  text-align: center;
+}
+
+.quote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  padding: var(--st-space-6);
+  border: var(--stx-border-visible) solid var(--st-border);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-raised);
+  box-shadow: var(--st-shadow-card);
+}
+
+.quoteText {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  line-height: 1.5;
+  color: var(--st-text);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.quoteAuthor {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  margin-top: auto;
+}
+
+.stars {
+  display: inline-flex;
+  gap: 2px;
+  color: var(--st-warning);
+}
+
+/* -- FAQ ------------------------------------------------------------------ */
+
+.faq {
+  max-width: 780px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.faqItem {
+  border-bottom: 1px solid var(--st-border);
+}
+
+.faqSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+  padding-block: var(--st-space-4);
+  cursor: pointer;
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  font-weight: var(--st-heading-weight);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+  list-style: none;
+}
+
+.faqSummary::-webkit-details-marker {
+  display: none;
+}
+
+.faqChevron {
+  flex: none;
+  color: var(--st-text-muted);
+  transition: transform 200ms ease;
+}
+
+.faqItem[open] .faqChevron {
+  transform: rotate(180deg);
+}
+
+.faqAnswer {
+  padding-bottom: var(--st-space-5);
+  color: var(--st-text-muted);
+  line-height: 1.65;
+}
+
+/* -- Newsletter ----------------------------------------------------------- */
+
+.newsletter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--st-space-4);
+  max-width: 620px;
+  margin-inline: auto;
+}
+
+.newsletterForm {
+  display: flex;
+  gap: var(--st-space-2);
+  width: 100%;
+  max-width: 460px;
+  flex-wrap: wrap;
+}
+
+.newsletterForm input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.consent {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+}
+
+.formNote {
+  font-size: var(--st-small);
+  min-height: 1.2em;
+}
+
+/* -- Blog ----------------------------------------------------------------- */
+
+.posts {
+  display: grid;
+  gap: var(--st-space-6);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.post {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.postMedia {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--st-radius-image);
+  overflow: hidden;
+  background-color: var(--st-surface-sunken);
+}
+
+.postMedia img {
+  object-fit: cover;
+}
+
+.postTitle {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  font-weight: var(--st-heading-weight);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+  line-height: 1.35;
+}
+
+.post:hover .postTitle {
+  color: var(--st-brand);
+}
+
+.postMeta {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+}
+
+.postExcerpt {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* -- Logo bar ------------------------------------------------------------- */
+
+.logos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-space-7);
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+}
+
+.logo img {
+  max-height: 34px;
+  width: auto;
+  object-fit: contain;
+}
+
+.logosMuted .logo img {
+  filter: grayscale(1);
+  opacity: 0.65;
+  transition: filter 200ms ease, opacity 200ms ease;
+}
+
+.logosMuted .logo:hover img {
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+/* A text fallback so a merchant who supplies names rather than images still
+   gets a credible row instead of a gap. */
+.logoText {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h6);
+  font-weight: var(--st-heading-weight);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--st-text-muted);
+}
+
+/* -- Countdown ------------------------------------------------------------ */
+
+.countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--st-space-5);
+}
+
+.clock {
+  display: flex;
+  gap: var(--st-space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.clockUnit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 68px;
+}
+
+.clockValue {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h2);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.clockLabel {
+  font-size: var(--st-small);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  opacity: 0.75;
+}
+
+/* -- Failure card (customizer preview only) ------------------------------- */
+
+.failed {
+  padding: var(--st-space-5);
+  border: 1px dashed var(--st-danger);
+  border-radius: var(--st-radius-card);
+  color: var(--st-danger);
+  font-size: var(--st-small);
+  text-align: center;
+}

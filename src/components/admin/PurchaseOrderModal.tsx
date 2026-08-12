@@ -31,7 +31,7 @@ import {
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 
-interface PurchaseOrderItem {
+export interface PurchaseOrderItem {
   id?: string;
   product_id?: string;
   product_sku: string;
@@ -352,7 +352,7 @@ export default function PurchaseOrderModal({
       centered
     >
       <Stack gap="md">
-        <Stepper active={activeStep} onStepClick={setActiveStep} breakpoint="sm">
+        <Stepper active={activeStep} onStepClick={setActiveStep}>
           <Stepper.Step label="Supplier" description="Choose supplier">
             <Stack gap="md" mt="md">
               <Autocomplete
@@ -425,7 +425,7 @@ export default function PurchaseOrderModal({
                   
                   <Stack gap="xs">
                     {recommendations.slice(0, 3).map((rec, index) => (
-                      <Group key={index} justify="space-between" p="xs" style={{ border: '1px solid #e9ecef', borderRadius: '4px' }}>
+                      <Group key={index} justify="space-between" p="xs" style={{ border: '1px solid var(--border)', borderRadius: '4px' }}>
                         <div>
                           <Text size="sm" fw={500}>{rec.product_name}</Text>
                           <Text size="xs" c="dimmed">

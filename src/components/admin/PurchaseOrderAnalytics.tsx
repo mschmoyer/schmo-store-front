@@ -84,8 +84,9 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
     const averageOrderValue = totalPOs > 0 ? totalSpend / totalPOs : 0;
 
     // Calculate on-time delivery rate
-    const deliveredPOs = filteredPOs.filter(po => 
-      po.status === 'delivered' && po.expected_delivery && po.actual_delivery
+    const deliveredPOs = filteredPOs.filter(
+      (po): po is typeof po & { expected_delivery: string; actual_delivery: string } =>
+        po.status === 'delivered' && Boolean(po.expected_delivery) && Boolean(po.actual_delivery)
     );
     const onTimePOs = deliveredPOs.filter(po => 
       new Date(po.actual_delivery) <= new Date(po.expected_delivery)
@@ -241,7 +242,7 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
               <Text size="sm" c="dimmed">Total Purchase Orders</Text>
               <Text size="xl" fw={700}>{analytics.totalPOs}</Text>
             </div>
-            <ThemeIcon color="blue" variant="light" size="lg">
+            <ThemeIcon color="ink" variant="light" size="lg">
               <IconPackage style={{ width: rem(20), height: rem(20) }} />
             </ThemeIcon>
           </Group>
@@ -265,7 +266,7 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
               <Text size="sm" c="dimmed">Average Order Value</Text>
               <Text size="xl" fw={700}>${analytics.averageOrderValue.toLocaleString()}</Text>
             </div>
-            <ThemeIcon color="cyan" variant="light" size="lg">
+            <ThemeIcon color="ink" variant="light" size="lg">
               <IconChartBar style={{ width: rem(20), height: rem(20) }} />
             </ThemeIcon>
           </Group>

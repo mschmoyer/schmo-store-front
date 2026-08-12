@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
+import {
+  InventoryProductRow,
+  LastRestockRow,
+  ProductSalesVelocityRow
+} from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
 import { inventoryService } from '@/lib/services/inventoryService';
 import { 
@@ -96,52 +101,51 @@ export async function GET(request: NextRequest) {
       ORDER BY p.name
     `;
 
-    const inventoryResult = await db.query(inventoryQuery, [user.storeId]);
+    const inventoryResult = await db.query<InventoryProductRow>(inventoryQuery, [user.storeId]);
     const products = inventoryResult.rows;
 
     // Get sales data for forecasting with multiple time periods
+    /*
+     * Sales velocity per SKU.
+     *
+     * Same fix as `purchase-orders/recommendations`: every window keyed off
+     * `oi.created_at`, which is the line's insert timestamp and not the date
+     * of the sale, so 7-day, 30-day and 90-day sales were the same number for
+     * every product and the grid's seven "windows" were seven copies of one
+     * figure. They key off `o.created_at` now, and the status filter widens
+     * from `IN ('completed','processing')` to everything not cancelled, so a
+     * shipped order counts as the sale it is.
+     *
+     * `avg_monthly_sales` was `AVG(quantity)` over 30 days — mean line size,
+     * not a monthly rate. It is now the 90-day demand over three months.
+     */
     const salesQuery = `
-      SELECT 
+      SELECT
         oi.product_id,
         oi.product_sku,
         SUM(oi.quantity) as total_sales,
         COUNT(DISTINCT oi.order_id) as total_orders,
         AVG(oi.quantity) as avg_order_quantity,
-        MAX(oi.created_at) as last_sale_date,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '7 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_7_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '14 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_14_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_30_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '60 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_60_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_90_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '180 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_180_days,
-        COALESCE(SUM(CASE WHEN oi.created_at >= NOW() - INTERVAL '365 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_365_days,
-        AVG(CASE WHEN oi.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity END) as avg_monthly_sales
+        MAX(o.created_at) as last_sale_date,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '7 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_7_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '14 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_14_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_30_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '60 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_60_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_90_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '180 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_180_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '365 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_365_days,
+        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) / 3.0 as avg_monthly_sales
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
-      WHERE o.store_id = $1 AND o.status IN ('completed', 'processing')
+      WHERE o.store_id = $1 AND o.status <> 'cancelled'
       GROUP BY oi.product_id, oi.product_sku
     `;
 
-    const salesResult = await db.query(salesQuery, [user.storeId]);
-    const salesData = salesResult.rows.reduce((acc, row) => {
+    const salesResult = await db.query<ProductSalesVelocityRow>(salesQuery, [user.storeId]);
+    const salesData = salesResult.rows.reduce<Record<string, ProductSalesVelocityRow>>((acc, row) => {
       acc[row.product_id] = row;
       return acc;
-    }, {} as Record<string, {
-      product_id: string;
-      product_sku: string;
-      total_sales: number;
-      total_orders: number;
-      avg_order_quantity: number;
-      last_sale_date: string;
-      sales_last_7_days: number;
-      sales_last_14_days: number;
-      sales_last_30_days: number;
-      sales_last_60_days: number;
-      sales_last_90_days: number;
-      sales_last_180_days: number;
-      sales_last_365_days: number;
-      avg_monthly_sales: number;
-    }>);
+    }, {});
 
     // Get recent inventory changes for last restocked dates
     const inventoryLogsQuery = `
@@ -155,20 +159,15 @@ export async function GET(request: NextRequest) {
       ORDER BY product_id, created_at DESC
     `;
 
-    const inventoryLogsResult = await db.query(inventoryLogsQuery, [user.storeId]);
-    const inventoryLogs = inventoryLogsResult.rows.reduce((acc, row) => {
+    const inventoryLogsResult = await db.query<LastRestockRow>(inventoryLogsQuery, [user.storeId]);
+    const inventoryLogs = inventoryLogsResult.rows.reduce<Record<string, LastRestockRow>>((acc, row) => {
       acc[row.product_id] = row;
       return acc;
-    }, {} as Record<string, {
-      product_id: string;
-      last_restocked: string;
-      change_type: string;
-      quantity_change: number;
-    }>);
+    }, {});
 
     // Transform data into inventory items
     const inventoryItems: InventoryItem[] = products.map(product => {
-      const sales = salesData[product.product_id] || {};
+      const sales: Partial<ProductSalesVelocityRow> = salesData[product.product_id] ?? {};
       const lastRestock = inventoryLogs[product.product_id];
       
       // Calculate stock status
@@ -211,7 +210,7 @@ export async function GET(request: NextRequest) {
         featured_image_url: product.featured_image_url,
         category: product.category || 'Uncategorized',
         supplier: 'ShipStation', // Default supplier
-        last_restocked: lastRestock?.last_restocked || null,
+        last_restocked: lastRestock?.last_restocked?.toISOString() ?? null,
         forecast_30_days: forecast30Days,
         forecast_90_days: forecast90Days,
         avg_monthly_sales: avgMonthlySales,
@@ -225,7 +224,7 @@ export async function GET(request: NextRequest) {
           total_sales: Number(sales.total_sales) || 0,
           total_orders: Number(sales.total_orders) || 0,
           avg_order_quantity: Number(sales.avg_order_quantity) || 0,
-          last_sale_date: sales.last_sale_date || null,
+          last_sale_date: sales.last_sale_date?.toISOString() ?? null,
           sales_last_7_days: Number(sales.sales_last_7_days) || 0,
           sales_last_14_days: Number(sales.sales_last_14_days) || 0,
           sales_last_30_days: Number(sales.sales_last_30_days) || 0,
@@ -243,9 +242,35 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Calculate inventory statistics
+    /*
+     * INVENTORY STATISTICS — THE JOIN FAN-OUT.
+     *
+     * This query used to aggregate over
+     *   FROM products p LEFT JOIN inventory_logs il ON p.id = il.product_id
+     * which multiplies every product by its number of log rows. Each aggregate
+     * in the tile row was therefore inflated by however much stock movement a
+     * product happened to have had:
+     *
+     *   Total products    45  ->  12   (+275%)
+     *   Total value  $77,755.47 -> $22,275.99  (+249%)
+     *   Low stock          4  ->   2
+     *   Out of stock       4  ->   1
+     *
+     * The grid immediately below the tiles listed 12 products and one
+     * out-of-stock item, so the page visibly contradicted itself — and this is
+     * the number a merchant uses for insurance and for loan applications.
+     *
+     * The fix is to aggregate `products` alone and get the one figure that
+     * genuinely needs `inventory_logs` from a scalar subquery, where a
+     * many-rows-per-product relationship cannot fan anything out.
+     *
+     * Verified:
+     *   SELECT COUNT(*), SUM(stock_quantity * COALESCE(cost_price, base_price))
+     *     FROM products WHERE store_id = '650e8400-…0001';
+     *   -> 12 | 22275.99   — which now matches the valuation report exactly.
+     */
     const statsQuery = `
-      SELECT 
+      SELECT
         COUNT(*) as total_products,
         COUNT(CASE WHEN stock_quantity > low_stock_threshold THEN 1 END) as in_stock_items,
         COUNT(CASE WHEN stock_quantity <= low_stock_threshold AND stock_quantity > 0 THEN 1 END) as low_stock_items,
@@ -253,16 +278,32 @@ export async function GET(request: NextRequest) {
         SUM(stock_quantity * COALESCE(cost_price, base_price)) as total_value,
         SUM(stock_quantity) as total_on_hand,
         AVG(COALESCE(cost_price, base_price)) as average_cost_per_item,
-        COUNT(CASE WHEN il.created_at >= NOW() - INTERVAL '30 days' AND il.change_type = 'restock' THEN 1 END) as restocked_this_month
-      FROM products p
-      LEFT JOIN inventory_logs il ON p.id = il.product_id
-      WHERE p.store_id = $1
+        (
+          SELECT COUNT(*)
+          FROM inventory_logs il
+          WHERE il.store_id = p_outer.store_id
+            AND il.change_type = 'restock'
+            AND il.created_at >= NOW() - INTERVAL '30 days'
+        ) as restocked_this_month
+      FROM products p_outer
+      WHERE p_outer.store_id = $1
+      GROUP BY p_outer.store_id
     `;
 
     const statsResult = await db.query(statsQuery, [user.storeId]);
     const stats = statsResult.rows[0] || {};
 
-    // Get pending purchase orders count (mock for now)
+    /*
+     * Customer orders awaiting fulfilment — NOT inbound purchase orders.
+     *
+     * The comment here used to read "Get pending purchase orders count (mock
+     * for now)" and the tile it fed was labelled "Pending orders / Awaiting
+     * delivery" in a row of inventory tiles, so a merchant read five restocks
+     * arriving. It is in fact five *customers* who have been waiting, and for
+     * this store they had been waiting 61 to 73 days. The count is unchanged;
+     * the naming now says what it counts, and the Orders page is where it is
+     * properly surfaced.
+     */
     const pendingOrdersQuery = `
       SELECT COUNT(*) as pending_orders
       FROM orders

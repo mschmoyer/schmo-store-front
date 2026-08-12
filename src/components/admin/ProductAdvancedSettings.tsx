@@ -691,8 +691,7 @@ export default function ProductAdvancedSettings({
               onChange={setNewFieldValue}
               validationError="Invalid JSON"
               formatOnBlur
-              autosize
-              minRows={3}
+              rows={4}
             />
           ) : (
             <TextInput
@@ -709,8 +708,7 @@ export default function ProductAdvancedSettings({
             placeholder="Enter field description (optional)"
             value={newFieldDescription}
             onChange={(event) => setNewFieldDescription(event.currentTarget.value)}
-            autosize
-            minRows={2}
+            rows={2}
           />
           
           <Group justify="flex-end" mt="md">

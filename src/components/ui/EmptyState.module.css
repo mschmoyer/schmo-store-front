@@ -1,0 +1,105 @@
+/*
+ * EmptyState — §5: always an illustrative mark, one sentence of what goes
+ * here, and one primary action. Never a bare "No data".
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-1-5);
+
+  padding: var(--space-9) var(--space-7);
+  border-radius: var(--radius-lg);
+}
+
+.bordered {
+  border: 1px dashed var(--border-strong);
+  background-color: var(--surface-sunken);
+
+  /* The action buttons sit in this well, so their focus gap must be the well. */
+  --focus-ring-gap: var(--surface-sunken);
+}
+
+.compact {
+  padding: var(--space-7) var(--space-6);
+}
+
+.left {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* ------------------------------------------------------------- default -- */
+
+.figure {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin-bottom: var(--space-3-5);
+  border-radius: var(--radius-lg);
+
+  color: var(--accent-text);
+  background-image: linear-gradient(160deg, var(--accent-subtle), transparent 70%);
+  border: 1px solid var(--accent-subtle-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* A soft neutral halo so the mark reads as intentional artwork, not an icon
+   someone forgot to style. */
+.figure::after {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: var(--radius-xl);
+  background-image: radial-gradient(
+    circle,
+    rgb(var(--ink-900-rgb) / 0.07),
+    rgb(var(--ink-900-rgb) / 0) 68%
+  );
+  z-index: -1;
+}
+
+.figure > svg {
+  width: 34px;
+  height: 34px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.description {
+  max-width: 46ch;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.left .description {
+  margin-inline: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2-5);
+  margin-top: var(--space-5);
+}
+
+.left .actions {
+  justify-content: flex-start;
+}

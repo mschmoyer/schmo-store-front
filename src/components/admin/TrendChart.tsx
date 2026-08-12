@@ -41,6 +41,7 @@ import {
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import { format, parseISO } from 'date-fns';
+import { CHART_INK, seriesColor, withAlpha } from '@/components/admin/chartPalette';
 
 // Register Chart.js components
 ChartJS.register(
@@ -77,7 +78,10 @@ export default function TrendChart({
   title,
   data,
   dataKey,
-  color = '#3498db',
+  /* Was '#3498db' — a colour from no palette at all. The default is now the
+     primary series from the sanctioned ramp (ink), so a chart rendered without
+     an explicit colour lands on the design system rather than off it. */
+  color = seriesColor(0),
   dateRange,
   onRefresh,
   loading = false,
@@ -118,9 +122,12 @@ export default function TrendChart({
         label: title,
         data: processedData.values,
         borderColor: color,
-        backgroundColor: chartType === 'area' ? 
-          color.replace(')', ', 0.1)').replace('rgb', 'rgba') : 
-          chartType === 'bar' ? color : 'transparent',
+        backgroundColor:
+          chartType === 'area'
+            ? withAlpha(color, 0.1)
+            : chartType === 'bar'
+              ? color
+              : 'transparent',
         fill: chartType === 'area',
         tension: 0.4,
         pointRadius: 4,
@@ -140,9 +147,9 @@ export default function TrendChart({
       tooltip: {
         mode: 'index',
         intersect: false,
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        titleColor: '#fff',
-        bodyColor: '#fff',
+        backgroundColor: CHART_INK.tooltipBg,
+        titleColor: CHART_INK.tooltipFg,
+        bodyColor: CHART_INK.tooltipFg,
         borderColor: color,
         borderWidth: 1
       }
@@ -159,7 +166,7 @@ export default function TrendChart({
       y: {
         beginAtZero: true,
         grid: {
-          color: 'rgba(0,0,0,0.1)'
+          color: CHART_INK.grid
         },
         ticks: {
           callback: (value) => {
@@ -268,7 +275,7 @@ export default function TrendChart({
           <ThemeIcon size="xl" color="red" variant="light" mb="md">
             <IconAlertTriangle size="1.5rem" />
           </ThemeIcon>
-          <Text mb="md" c="red">
+          <Text mb="md" c="var(--danger-text)">
             Failed to load chart data
           </Text>
           <Text size="sm" c="dimmed" mb="md">
@@ -339,7 +346,7 @@ export default function TrendChart({
             />
             
             <Group gap={0} style={{ 
-              border: '1px solid var(--mantine-color-gray-3)', 
+              border: '1px solid var(--border)', 
               borderRadius: '6px',
               overflow: 'hidden'
             }}>
@@ -406,7 +413,7 @@ export default function TrendChart({
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'csv' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'csv' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('csv')}
             >
@@ -415,7 +422,7 @@ export default function TrendChart({
                   <Text fw={500}>CSV</Text>
                   <Text size="sm" c="dimmed">Export raw data as comma-separated values</Text>
                 </div>
-                {exportFormat === 'csv' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'csv' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
             
@@ -423,7 +430,7 @@ export default function TrendChart({
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'json' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'json' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('json')}
             >
@@ -432,7 +439,7 @@ export default function TrendChart({
                   <Text fw={500}>JSON</Text>
                   <Text size="sm" c="dimmed">Export data as JSON format</Text>
                 </div>
-                {exportFormat === 'json' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'json' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
             
@@ -440,7 +447,7 @@ export default function TrendChart({
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'png' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'png' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('png')}
             >
@@ -449,7 +456,7 @@ export default function TrendChart({
                   <Text fw={500}>PNG</Text>
                   <Text size="sm" c="dimmed">Export chart as PNG image</Text>
                 </div>
-                {exportFormat === 'png' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'png' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
           </Stack>

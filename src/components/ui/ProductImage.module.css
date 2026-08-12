@@ -1,0 +1,155 @@
+/*
+ * ProductImage — §5: the fallback is a generated mark derived from the SKU,
+ * never a grey camera glyph. A catalogue with missing photography should still
+ * look like a designed grid.
+ */
+
+.frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  isolation: isolate;
+  /* Container queries let the generated mark scale with the tile, not the viewport. */
+  container-type: inline-size;
+}
+
+.roundedNone {
+  border-radius: 0;
+}
+.roundedSm {
+  border-radius: var(--radius-sm);
+}
+.roundedLg {
+  border-radius: var(--radius-lg);
+}
+.roundedXl {
+  border-radius: var(--radius-xl);
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  transition: transform var(--duration-entrance) var(--ease-out);
+}
+
+.cover {
+  object-fit: cover;
+}
+.contain {
+  object-fit: contain;
+  padding: 8%;
+}
+
+/* Only pan the photograph when the caller opted in — a whole grid of drifting
+   images is noise, a single hero tile is delight. */
+.zoomOnHover:hover .image {
+  transform: scale(1.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoomOnHover:hover .image {
+    transform: none;
+  }
+}
+
+/* --------------------------------------------------------- generated ---- */
+
+.mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/*
+ * Three layers: the hue-pair gradient, a soft off-centre light source, and a
+ * fine diagonal weave. Together they read as a designed placeholder tile
+ * rather than an empty box.
+ */
+.markGradient {
+  position: absolute;
+  inset: 0;
+  background-image: var(--mark-gradient);
+}
+
+.markGlow {
+  position: absolute;
+  inset: -20%;
+  /* Held at .22: the glow lightens the ground under the initials, and the
+     gradient's white-contrast floor is measured on the un-glowed stop. */
+  background-image: radial-gradient(
+    circle at var(--mark-glow-x) var(--mark-glow-y),
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0) 58%
+  );
+}
+
+.markWeave {
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  background-image: repeating-linear-gradient(
+    var(--mark-weave-angle),
+    rgba(255, 255, 255, 0.5) 0 1px,
+    rgba(255, 255, 255, 0) 1px 9px
+  );
+  mix-blend-mode: overlay;
+}
+
+.markVignette {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.22) 100%);
+}
+
+.markInitials {
+  position: relative;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.5rem, 26cqw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--mark-fg);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.22);
+  user-select: none;
+}
+
+/* One glyph gets a larger optical size so it does not sit undersized next to
+   two-glyph siblings in the same grid. */
+.markInitialsSingle {
+  font-size: clamp(1.9rem, 34cqw, 7.5rem);
+}
+
+/*
+ * Space Grotesk is loaded latin-only. Rather than let a CJK/Arabic tile fall
+ * back to whatever the OS provides, switch it to Inter, which ships far
+ * broader coverage and is already in the document.
+ */
+.markInitialsNonLatin {
+  font-family: var(--font-sans);
+  font-size: clamp(1.3rem, 21cqw, 5rem);
+  letter-spacing: -0.01em;
+}
+
+.markSku {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8%;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: clamp(0.5rem, 3.4cqw, 0.75rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mark-fg);
+  opacity: 0.66;
+  user-select: none;
+  padding-inline: 8%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

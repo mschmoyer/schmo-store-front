@@ -42,6 +42,8 @@ import {
 } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import { EmptyState } from '@/components/ui';
+import table from '@/components/admin/adminTable.module.css';
 
 // Types
 interface Product {
@@ -65,8 +67,9 @@ interface PurchaseOrderItem {
 
 interface CreatePurchaseOrderForm {
   supplier: string;
-  order_date: Date | null;
-  expected_delivery: Date | null;
+  // Mantine v8 date inputs work with 'yyyy-MM-dd' strings rather than Date objects.
+  order_date: string | null;
+  expected_delivery: string | null;
   notes: string;
   items: PurchaseOrderItem[];
 }
@@ -95,7 +98,7 @@ export default function CreatePurchaseOrderPage() {
   // Form state
   const [form, setForm] = useState<CreatePurchaseOrderForm>({
     supplier: '',
-    order_date: new Date(),
+    order_date: new Date().toISOString().split('T')[0],
     expected_delivery: null,
     notes: '',
     items: []
@@ -288,8 +291,8 @@ export default function CreatePurchaseOrderPage() {
 
       const requestBody = {
         supplier: form.supplier,
-        order_date: form.order_date.toISOString().split('T')[0],
-        expected_delivery: form.expected_delivery ? form.expected_delivery.toISOString().split('T')[0] : undefined,
+        order_date: form.order_date,
+        expected_delivery: form.expected_delivery ?? undefined,
         notes: form.notes,
         items: form.items.map(item => ({
           product_id: item.product_id,
@@ -503,9 +506,9 @@ export default function CreatePurchaseOrderPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Product</Table.Th>
-                <Table.Th>Quantity</Table.Th>
-                <Table.Th>Unit Cost</Table.Th>
-                <Table.Th>Total</Table.Th>
+                <Table.Th className={table.numeric}>Quantity</Table.Th>
+                <Table.Th className={table.numeric}>Unit cost</Table.Th>
+                <Table.Th className={table.numeric}>Total</Table.Th>
                 <Table.Th>Actions</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -515,9 +518,7 @@ export default function CreatePurchaseOrderPage() {
                   <Table.Td>
                     <Stack gap="xs">
                       <Text fw={500}>{item.product_name}</Text>
-                      <Text size="sm" c="dimmed" ff="monospace">
-                        SKU: {item.product_sku}
-                      </Text>
+                      <Text component="span" className={table.code}>{item.product_sku}</Text>
                     </Stack>
                   </Table.Td>
                   
@@ -545,7 +546,7 @@ export default function CreatePurchaseOrderPage() {
                     />
                   </Table.Td>
                   
-                  <Table.Td>
+                  <Table.Td className={table.numeric}>
                     <Text fw={500}>{formatCurrency(item.total_cost)}</Text>
                   </Table.Td>
                   
@@ -563,15 +564,12 @@ export default function CreatePurchaseOrderPage() {
             </Table.Tbody>
           </Table>
         ) : (
-          <Box ta="center" py="xl">
-            <Stack align="center">
-              <IconPackage size={48} color="var(--mantine-color-gray-4)" />
-              <Text size="lg" c="dimmed">No items added yet</Text>
-              <Text size="sm" c="dimmed">
-                Click &quot;Add Product&quot; to start building your purchase order
-              </Text>
-            </Stack>
-          </Box>
+          <EmptyState
+            compact
+            titleAs="p"
+            title="No line items yet"
+            description="Add the products you want to restock and their quantities. Totals update as you go."
+          />
         )}
       </Card>
       

@@ -107,7 +107,10 @@ export async function GET(request: NextRequest) {
     const comparisonDateCondition = `WHERE store_id = $1 AND created_at >= NOW() - INTERVAL '${days * 2} days' AND created_at < NOW() - INTERVAL '${days} days'`;
     
     // Check if tables exist
-    const tablesExist = await db.query(`
+    const tablesExist = await db.query<{
+      search_tracking_exists: boolean;
+      visitors_exists: boolean;
+    }>(`
       SELECT 
         EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'search_tracking') as search_tracking_exists,
         EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'visitors') as visitors_exists
@@ -127,7 +130,7 @@ export async function GET(request: NextRequest) {
         if (hasSearchTracking) {
           try {
             // Current period searches
-            const currentSearches = await db.query(`
+            const currentSearches = await db.query<{ total: string }>(`
               SELECT COUNT(*) as total
               FROM search_tracking
               ${dateCondition}
@@ -135,7 +138,7 @@ export async function GET(request: NextRequest) {
             totalSearches = parseInt(currentSearches.rows[0]?.total || '0');
 
             // Previous period searches for trend calculation
-            const previousSearches = await db.query(`
+            const previousSearches = await db.query<{ total: string }>(`
               SELECT COUNT(*) as total
               FROM search_tracking
               ${comparisonDateCondition}
@@ -147,7 +150,7 @@ export async function GET(request: NextRequest) {
             }
 
             // Get top search term
-            const topSearchResult = await db.query(`
+            const topSearchResult = await db.query<{ search_query: string; search_count: string }>(`
               SELECT search_query, COUNT(*) as search_count
               FROM search_tracking
               ${dateCondition}
@@ -158,7 +161,7 @@ export async function GET(request: NextRequest) {
             
             if (topSearchResult.rows.length > 0) {
               topSearchTerm = topSearchResult.rows[0].search_query;
-              topSearchCount = parseInt(topSearchResult.rows[0].search_count);
+              topSearchCount = parseInt(topSearchResult.rows[0].search_count, 10);
             }
           } catch (error) {
             console.error('Error querying search data:', error);
@@ -170,16 +173,31 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Get real visitor data
+        /*
+         * Get real visitor data.
+         *
+         * `avgSessionDuration` and `bounceRate` are pinned to 0 and stay there.
+         * They used to default to 180 and 45.0 and then get "estimated" by a
+         * three-branch ladder off pages-per-session
+         * (`avgPagesPerSession <= 1.5 ? 70 : …`), which produced the 70.0% and
+         * 2m 0s that this page's own narrative asserted 200px above tiles
+         * reading 32.1% and 4m 32s. Neither figure had a data source; the
+         * `visitors` table records one row per visitor per day, so
+         * pages-per-session is 1 by construction and the ladder was measuring
+         * a UNIQUE constraint.
+         *
+         * Zero means "not measured" here, and the narrative below skips any
+         * sentence about engagement rather than asserting a made-up one.
+         */
         let uniqueVisitors = 0;
         let visitorTrend = 0;
-        let avgSessionDuration = 180; // 3 minutes default
-        let bounceRate = 45.0; // Default bounce rate
+        const avgSessionDuration = 0;
+        const bounceRate = 0;
 
         if (hasVisitorTracking) {
           try {
             // Current period visitors
-            const currentVisitors = await db.query(`
+            const currentVisitors = await db.query<{ total: string }>(`
               SELECT COUNT(DISTINCT ip_address) as total
               FROM visitors
               ${dateCondition}
@@ -187,7 +205,7 @@ export async function GET(request: NextRequest) {
             uniqueVisitors = parseInt(currentVisitors.rows[0]?.total || '0');
 
             // Previous period visitors for trend calculation
-            const previousVisitors = await db.query(`
+            const previousVisitors = await db.query<{ total: string }>(`
               SELECT COUNT(DISTINCT ip_address) as total
               FROM visitors
               ${comparisonDateCondition}
@@ -198,34 +216,10 @@ export async function GET(request: NextRequest) {
               visitorTrend = ((uniqueVisitors - previousTotal) / previousTotal) * 100;
             }
 
-            // Calculate simple bounce rate based on single page visits
-            const bounceRateQuery = await db.query(`
-              SELECT 
-                COUNT(DISTINCT ip_address) as total_sessions,
-                COUNT(*) as total_page_views
-              FROM visitors
-              ${dateCondition}
-            `, dateParams);
-            
-            if (bounceRateQuery.rows.length > 0) {
-              const stats = bounceRateQuery.rows[0];
-              const totalSessions = parseInt(stats.total_sessions || '1');
-              const totalPageViews = parseInt(stats.total_page_views || '0');
-              
-              // Simple bounce rate estimation: if page views per session is close to 1, higher bounce rate
-              const avgPagesPerSession = totalPageViews / totalSessions;
-              bounceRate = avgPagesPerSession <= 1.5 ? 70 : avgPagesPerSession <= 2.5 ? 45 : 25;
-              
-              // Simple session duration estimation based on activity
-              avgSessionDuration = Math.max(120, Math.min(300, avgPagesPerSession * 45));
-            }
           } catch (error) {
             console.error('Error querying visitor data:', error);
-            // Fall back to showing no data message
             uniqueVisitors = 0;
             visitorTrend = 0;
-            avgSessionDuration = 0;
-            bounceRate = 0;
           }
         }
 
@@ -233,7 +227,7 @@ export async function GET(request: NextRequest) {
         let zeroResultsCount = 0;
         if (hasSearchTracking && totalSearches > 0) {
           try {
-            const zeroResultsQuery = await db.query(`
+            const zeroResultsQuery = await db.query<{ zero_results: string }>(`
               SELECT COUNT(*) as zero_results
               FROM search_tracking
               ${dateCondition}
@@ -296,24 +290,48 @@ export async function GET(request: NextRequest) {
           };
         }
 
-        // Convert insights to simple arrays for frontend compatibility
-        const keyInsights = businessAnalysis.keyInsights.map(insight => 
-          insight.actionItems && insight.actionItems.length > 0 
-            ? `${insight.description} ${insight.actionItems.join(' ')}`
-            : insight.description
-        );
-        
-        const alerts = businessAnalysis.alerts.map(alert => 
-          alert.actionItems && alert.actionItems.length > 0 
-            ? `${alert.description} ${alert.actionItems.join(' ')}`
-            : alert.description
-        );
-        
-        const recommendations = businessAnalysis.recommendations.map(rec => 
-          rec.actionItems && rec.actionItems.length > 0 
-            ? `${rec.description} ${rec.actionItems.join(' ')}`
-            : rec.description
-        );
+        /*
+         * FILTERING OUT WHAT CANNOT BE MEASURED, AND WHAT IS ONLY NOISE.
+         *
+         * `analyzeStorePerformance` (src/lib/ai/business-advisor.ts) branches
+         * on `bounceRate` and `avgSessionDuration` to produce lines like "Your
+         * bounce rate of 0.0% is excellent, indicating high-quality traffic"
+         * and "Users are leaving quickly, which may indicate content or
+         * usability issues". Neither figure is derivable from this schema — see
+         * the note where they are pinned to 0 above — so with the fabricated
+         * inputs removed the advisor now confidently praises a bounce rate of
+         * zero. A statement about a metric that is not measured is worthless
+         * whichever direction it points, so those lines are dropped here.
+         *
+         * The traffic alert is dropped too when the sample is tiny. "Visitor
+         * traffic decreased by 12.9%, requiring immediate attention" was seven
+         * people on a 54-visitor store; an alert box that cries wolf over noise
+         * trains the merchant to ignore the alert box.
+         */
+        const UNMEASURABLE = /bounce rate|session duration|leaving quickly/i;
+        const SMALL_SAMPLE_VISITORS = 100;
+
+        const describe = (item: { description: string; actionItems?: string[] }) =>
+          item.actionItems && item.actionItems.length > 0
+            ? `${item.description} ${item.actionItems.join(' ')}`
+            : item.description;
+
+        const keyInsights = businessAnalysis.keyInsights
+          .filter((insight) => !UNMEASURABLE.test(insight.description))
+          .map(describe);
+
+        const alerts = businessAnalysis.alerts
+          .filter((alert) => !UNMEASURABLE.test(alert.description))
+          .filter(
+            (alert) =>
+              !/visitor traffic (decreased|increased)/i.test(alert.description) ||
+              uniqueVisitors >= SMALL_SAMPLE_VISITORS
+          )
+          .map(describe);
+
+        const recommendations = businessAnalysis.recommendations
+          .filter((rec) => !UNMEASURABLE.test(rec.description))
+          .map(describe);
 
         return {
           period: businessMetrics.period,

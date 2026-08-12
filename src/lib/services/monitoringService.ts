@@ -2,10 +2,51 @@ import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import {
   UUID,
-  IntegrationLog,
   LogRequestData,
   LogResponseData
 } from '@/lib/types/database';
+import { IntegrationAlertRow, IntegrationLogRow } from '@/lib/types/db-rows';
+
+/** Aggregate counts returned by the integration metrics query. */
+type IntegrationMetricsRow = {
+  total_operations: string;
+  successful_operations: string;
+  failed_operations: string;
+  warning_operations: string;
+  avg_execution_time: string | null;
+  max_execution_time: number | null;
+  min_execution_time: number | null;
+};
+
+/** `operation, COUNT(*)` grouping over `integration_logs`. */
+type OperationCountRow = {
+  operation: string;
+  count: string;
+};
+
+/** Hourly status breakdown over `integration_logs`. */
+type HourlyBreakdownRow = {
+  hour: Date;
+  total: string;
+  success: string;
+  failure: string;
+  warning: string;
+};
+
+/** Recent failure projection from `integration_logs`. */
+type RecentErrorRow = Pick<
+  IntegrationLogRow,
+  'id' | 'operation' | 'error_message' | 'created_at' | 'execution_time_ms'
+>;
+
+/** Daily aggregate used for performance-trend analysis. */
+type DailyStat = {
+  date: string;
+  total_operations: number;
+  success_rate: number;
+  avg_execution_time: number;
+  error_count: number;
+};
 
 export interface MonitoringEventData {
   request?: LogRequestData;
@@ -22,6 +63,30 @@ export interface MonitoringEventData {
     correlation_id?: string;
     operation_context?: string;
   };
+}
+
+/**
+ * Normalize the `metadata` column of an alert row.
+ *
+ * The column is JSONB, so `pg` usually returns an object, but older rows were
+ * written as JSON text.
+ *
+ * @param metadata - Raw column value
+ * @returns The metadata as an object, empty when absent or unparseable
+ */
+function parseAlertMetadata(metadata: Record<string, unknown> | null): Record<string, unknown> {
+  if (metadata === null) {
+    return {};
+  }
+  if (typeof metadata === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(metadata);
+      return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return metadata;
 }
 
 /**
@@ -153,7 +218,7 @@ export class MonitoringService {
         : [integrationType, cutoffTime];
 
       // Get overall metrics
-      const metricsResult = await db.query(`
+      const metricsResult = await db.query<IntegrationMetricsRow>(`
         SELECT 
           COUNT(*) as total_operations,
           COUNT(CASE WHEN status = 'success' THEN 1 END) as successful_operations,
@@ -172,7 +237,7 @@ export class MonitoringService {
       const failed = parseInt(metrics.failed_operations);
 
       // Get operations by type
-      const operationTypesResult = await db.query(`
+      const operationTypesResult = await db.query<OperationCountRow>(`
         SELECT operation, COUNT(*) as count
         FROM integration_logs 
         ${whereClause}
@@ -186,7 +251,7 @@ export class MonitoringService {
       }, {});
 
       // Get hourly breakdown
-      const hourlyResult = await db.query(`
+      const hourlyResult = await db.query<HourlyBreakdownRow>(`
         SELECT 
           DATE_TRUNC('hour', created_at) as hour,
           COUNT(*) as total,
@@ -209,7 +274,7 @@ export class MonitoringService {
       }));
 
       // Get recent errors
-      const errorsResult = await db.query(`
+      const errorsResult = await db.query<RecentErrorRow>(`
         SELECT id, operation, error_message, created_at, execution_time_ms
         FROM integration_logs 
         ${whereClause} AND status = 'failure'
@@ -220,9 +285,9 @@ export class MonitoringService {
       const recentErrors = errorsResult.rows.map(row => ({
         id: row.id,
         operation: row.operation,
-        error_message: row.error_message,
-        created_at: row.created_at,
-        execution_time_ms: row.execution_time_ms
+        error_message: row.error_message ?? '',
+        created_at: row.created_at ?? new Date(0),
+        execution_time_ms: row.execution_time_ms ?? 0
       }));
 
       return {
@@ -232,9 +297,9 @@ export class MonitoringService {
         warning_operations: parseInt(metrics.warning_operations),
         success_rate: total > 0 ? successful / total : 0,
         error_rate: total > 0 ? failed / total : 0,
-        avg_execution_time: parseFloat(metrics.avg_execution_time) || 0,
-        max_execution_time: parseInt(metrics.max_execution_time) || 0,
-        min_execution_time: parseInt(metrics.min_execution_time) || 0,
+        avg_execution_time: parseFloat(metrics.avg_execution_time ?? '') || 0,
+        max_execution_time: metrics.max_execution_time ?? 0,
+        min_execution_time: metrics.min_execution_time ?? 0,
         operations_by_type: operationsByType,
         operations_by_hour: operationsByHour,
         recent_errors: recentErrors
@@ -302,7 +367,7 @@ export class MonitoringService {
 
       // Check for no recent activity
       const cutoffTime = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours
-      const recentActivityResult = await db.query(`
+      const recentActivityResult = await db.query<{ last_activity: Date | null }>(`
         SELECT MAX(created_at) as last_activity
         FROM integration_logs 
         WHERE integration_type = $1 
@@ -319,7 +384,7 @@ export class MonitoringService {
       }
 
       // Get last successful and failed operations
-      const lastOpsResult = await db.query(`
+      const lastOpsResult = await db.query<{ last_success: Date | null; last_failure: Date | null }>(`
         SELECT 
           MAX(CASE WHEN status = 'success' THEN created_at END) as last_success,
           MAX(CASE WHEN status = 'failure' THEN created_at END) as last_failure
@@ -378,7 +443,7 @@ export class MonitoringService {
       // Check recent error rate (last hour)
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       
-      const recentErrorsResult = await db.query(`
+      const recentErrorsResult = await db.query<{ total: string; failures: string }>(`
         SELECT 
           COUNT(*) as total,
           COUNT(CASE WHEN status = 'failure' THEN 1 END) as failures
@@ -412,7 +477,7 @@ export class MonitoringService {
       }
 
       // Check for consecutive failures
-      const consecutiveFailuresResult = await db.query(`
+      const consecutiveFailuresResult = await db.query<{ consecutive_failures: string }>(`
         SELECT COUNT(*) as consecutive_failures
         FROM (
           SELECT status,
@@ -444,7 +509,7 @@ export class MonitoringService {
         )
       `, [storeId, integrationType, operation, oneHourAgo]);
 
-      const consecutiveFailures = parseInt(consecutiveFailuresResult.rows[0]?.consecutive_failures || 0);
+      const consecutiveFailures = parseInt(consecutiveFailuresResult.rows[0]?.consecutive_failures ?? '0', 10);
 
       if (consecutiveFailures >= 5) {
         await this.triggerAlert({
@@ -548,7 +613,7 @@ export class MonitoringService {
         params.push(level);
       }
 
-      const result = await db.query(`
+      const result = await db.query<IntegrationAlertRow>(`
         SELECT * FROM integration_alerts 
         ${whereClause}
         ORDER BY created_at DESC
@@ -557,7 +622,8 @@ export class MonitoringService {
 
       return result.rows.map(row => ({
         ...row,
-        metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata
+        created_at: row.created_at ?? new Date(0),
+        metadata: parseAlertMetadata(row.metadata)
       }));
 
     } catch (error) {
@@ -602,7 +668,13 @@ export class MonitoringService {
         ? [integrationType, cutoffTime, storeId]
         : [integrationType, cutoffTime];
 
-      const dailyStatsResult = await db.query(`
+      const dailyStatsResult = await db.query<{
+        date: Date;
+        total_operations: string;
+        success_rate: string | null;
+        avg_execution_time: string | null;
+        error_count: string;
+      }>(`
         SELECT 
           DATE(created_at) as date,
           COUNT(*) as total_operations,
@@ -615,12 +687,12 @@ export class MonitoringService {
         ORDER BY date DESC
       `, params);
 
-      const dailyStats = dailyStatsResult.rows.map(row => ({
+      const dailyStats: DailyStat[] = dailyStatsResult.rows.map(row => ({
         date: row.date.toISOString().split('T')[0],
-        total_operations: parseInt(row.total_operations),
-        success_rate: parseFloat(row.success_rate) || 0,
-        avg_execution_time: parseFloat(row.avg_execution_time) || 0,
-        error_count: parseInt(row.error_count)
+        total_operations: parseInt(row.total_operations, 10),
+        success_rate: parseFloat(row.success_rate ?? '') || 0,
+        avg_execution_time: parseFloat(row.avg_execution_time ?? '') || 0,
+        error_count: parseInt(row.error_count, 10)
       }));
 
       // Calculate trends
@@ -642,14 +714,7 @@ export class MonitoringService {
    * @param dailyStats - Daily statistics
    * @returns Trend analysis
    */
-  private calculateTrends(dailyStats: Array<{
-    date: string;
-    success_count: number;
-    failure_count: number;
-    total_count: number;
-    avg_execution_time: number;
-    success_rate: number;
-  }>): {
+  private calculateTrends(dailyStats: DailyStat[]): {
     success_rate_trend: 'improving' | 'stable' | 'declining';
     response_time_trend: 'improving' | 'stable' | 'declining';
     volume_trend: 'increasing' | 'stable' | 'decreasing';
@@ -705,16 +770,16 @@ export class MonitoringService {
    * @param integrationType - Integration type
    * @param startDate - Start date
    * @param endDate - End date
-   * @returns Promise<IntegrationLog[]>
+   * @returns Promise<IntegrationLogRow[]>
    */
   async exportIntegrationLogs(
     storeId: UUID,
     integrationType: string,
     startDate: Date,
     endDate: Date
-  ): Promise<IntegrationLog[]> {
+  ): Promise<IntegrationLogRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<IntegrationLogRow>(`
         SELECT * FROM integration_logs 
         WHERE store_id = $1 
           AND integration_type = $2 
@@ -722,7 +787,7 @@ export class MonitoringService {
         ORDER BY created_at DESC
       `, [storeId, integrationType, startDate, endDate]);
 
-      return result.rows as IntegrationLog[];
+      return result.rows;
 
     } catch (error) {
       console.error('Error exporting integration logs:', error);

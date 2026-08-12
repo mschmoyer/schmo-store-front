@@ -40,6 +40,7 @@ import {
 } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
+import table from '@/components/admin/adminTable.module.css';
 
 // Types
 export type PurchaseOrderStatus = 'pending' | 'approved' | 'shipped' | 'delivered' | 'cancelled';
@@ -105,10 +106,14 @@ const STATUS_LABELS = {
  * - Item receiving functionality
  * - Notes and tracking
  * 
- * @param params - Route parameters containing purchase order ID
+ * @param props - Route props; `params` is a promise in the App Router, which
+ *   this page previously typed as a plain object. Next's generated route
+ *   validator rejects that, so the page failed type-checking on any build that
+ *   had produced `.next/types`.
  * @returns JSX.Element
  */
-export default function PurchaseOrderDetailPage({ params }: { params: { id: string } }) {
+export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: purchaseOrderId } = React.use(params);
   const router = useRouter();
   const { session, isAuthenticated } = useAdmin();
   
@@ -148,7 +153,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch(`/api/admin/purchase-orders/${params.id}`, {
+      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrderId}`, {
         headers: {
           'Authorization': `Bearer ${session.sessionToken}`
         }
@@ -191,7 +196,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
     } finally {
       setLoading(false);
     }
-  }, [params.id, session?.sessionToken]);
+  }, [purchaseOrderId, session?.sessionToken]);
   
   /**
    * Update purchase order
@@ -610,10 +615,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               <Text fw={500}>Order Date:</Text>
               {editing ? (
                 <DateInput
-                  value={formData.order_date ? new Date(formData.order_date) : null}
-                  onChange={(date) => setFormData(prev => ({ 
-                    ...prev, 
-                    order_date: date ? date.toISOString().split('T')[0] : '' 
+                  value={formData.order_date || null}
+                  onChange={(date) => setFormData(prev => ({
+                    ...prev,
+                    order_date: date ?? ''
                   }))}
                   style={{ flex: 1, maxWidth: 200 }}
                 />
@@ -626,10 +631,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
               <Text fw={500}>Expected Delivery:</Text>
               {editing ? (
                 <DateInput
-                  value={formData.expected_delivery ? new Date(formData.expected_delivery) : null}
-                  onChange={(date) => setFormData(prev => ({ 
-                    ...prev, 
-                    expected_delivery: date ? date.toISOString().split('T')[0] : '' 
+                  value={formData.expected_delivery || null}
+                  onChange={(date) => setFormData(prev => ({
+                    ...prev,
+                    expected_delivery: date ?? ''
                   }))}
                   style={{ flex: 1, maxWidth: 200 }}
                 />
@@ -723,10 +728,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Product</Table.Th>
-              <Table.Th>Quantity</Table.Th>
-              <Table.Th>Unit Cost</Table.Th>
-              <Table.Th>Total</Table.Th>
-              <Table.Th>Received</Table.Th>
+              <Table.Th className={table.numeric}>Quantity</Table.Th>
+              <Table.Th className={table.numeric}>Unit cost</Table.Th>
+              <Table.Th className={table.numeric}>Total</Table.Th>
+              <Table.Th className={table.numeric}>Received</Table.Th>
               <Table.Th>Progress</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -736,29 +741,26 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                 <Table.Td>
                   <Stack gap="xs">
                     <Text fw={500}>{item.product_name}</Text>
-                    <Text size="sm" c="dimmed" ff="monospace">
-                      SKU: {item.product_sku}
-                    </Text>
+                    <Text component="span" className={table.code}>{item.product_sku}</Text>
                   </Stack>
                 </Table.Td>
                 
-                <Table.Td>
+                <Table.Td className={table.numeric}>
                   <Text fw={500}>{item.quantity}</Text>
                 </Table.Td>
                 
-                <Table.Td>
+                <Table.Td className={table.numeric}>
                   <Text>{formatCurrency(item.unit_cost)}</Text>
                 </Table.Td>
                 
-                <Table.Td>
+                <Table.Td className={table.numeric}>
                   <Text fw={500}>{formatCurrency(item.total_cost)}</Text>
                 </Table.Td>
                 
-                <Table.Td>
-                  <Badge
-                    color={item.received_quantity === item.quantity ? 'green' : 'yellow'}
-                    variant="light"
-                  >
+                <Table.Td className={table.numeric}>
+                  {/* Fully received is a success (§2 permits the signal);
+                      partially received is not a warning, it is just progress. */}
+                  <Badge color={item.received_quantity === item.quantity ? 'green' : 'gray'}>
                     {item.received_quantity}/{item.quantity}
                   </Badge>
                 </Table.Td>
@@ -767,7 +769,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                   <Stack gap="xs">
                     <Progress
                       value={getReceivingProgress(item)}
-                      color={item.received_quantity === item.quantity ? 'green' : 'blue'}
+                      color={item.received_quantity === item.quantity ? 'green' : 'ink'}
                       size="sm"
                     />
                     <Text size="xs" c="dimmed">
@@ -846,9 +848,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Product</Table.Th>
-                <Table.Th>Ordered</Table.Th>
-                <Table.Th>Already Received</Table.Th>
-                <Table.Th>Receive Now</Table.Th>
+                <Table.Th className={table.numeric}>Ordered</Table.Th>
+                <Table.Th className={table.numeric}>Already received</Table.Th>
+                <Table.Th className={table.numeric}>Receive now</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -857,17 +859,15 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
                   <Table.Td>
                     <Stack gap="xs">
                       <Text fw={500} size="sm">{item.product_name}</Text>
-                      <Text size="xs" c="dimmed" ff="monospace">
-                        SKU: {item.product_sku}
-                      </Text>
+                      <Text component="span" className={table.code}>{item.product_sku}</Text>
                     </Stack>
                   </Table.Td>
                   
-                  <Table.Td>
+                  <Table.Td className={table.numeric}>
                     <Text fw={500}>{item.quantity}</Text>
                   </Table.Td>
                   
-                  <Table.Td>
+                  <Table.Td className={table.numeric}>
                     <Text>{item.received_quantity}</Text>
                   </Table.Td>
                   

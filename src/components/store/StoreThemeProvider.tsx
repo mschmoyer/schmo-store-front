@@ -1,129 +1,38 @@
-'use client';
-
-import React, { useEffect } from 'react';
-import { themes } from '@/lib/themes';
+import type { ReactNode } from 'react';
 
 interface StoreThemeProviderProps {
-  themeId: string;
-  children: React.ReactNode;
+  /** Legacy `stores.theme_name`. Retained for call-site compatibility only. */
+  themeId?: string;
+  children: ReactNode;
 }
 
 /**
- * Applies the store's selected theme to the page
- * @param themeId - The theme ID from the store configuration
- * @param children - The content to wrap with the theme
+ * Deprecated. A pass-through kept only so existing call sites keep compiling.
+ *
+ * This used to be the storefront's theming mechanism, and it was the source of
+ * the flash of unstyled theme: a `'use client'` component that, on mount, wrote
+ * two dozen `--theme-*` properties onto `document.documentElement`, forced
+ * `background-color` and `color` onto `document.body`, and then **did it all
+ * again behind a `setTimeout(applyTheme, 100)`** to win a race against the
+ * global theme context. Its cleanup then reset every one of those properties to
+ * the default palette on unmount, so navigating between store pages repainted
+ * the whole document twice.
+ *
+ * That is all gone. Storefront theming is now resolved on the server and
+ * emitted as a scoped custom-property block that ships with the first byte —
+ * see `StorefrontStyle` and `docs/storefront-theme-spec.md` section 4. There is
+ * no client-side application step to race with, and nothing is written to
+ * `:root` or `<body>`, so a storefront can no longer leak its palette into
+ * admin chrome.
+ *
+ * The component survives as a no-op because the blog, checkout and
+ * order-success routes are owned by other tracks and still import it. Once they
+ * move to `StorefrontShell`, delete this file and those imports together.
+ *
+ * @param props.children - The subtree to render
+ * @returns The children, unchanged
+ * @deprecated Render inside `StorefrontShell` instead.
  */
-export function StoreThemeProvider({ themeId, children }: StoreThemeProviderProps) {
-  useEffect(() => {
-    console.log('StoreThemeProvider: Initializing with theme:', themeId);
-    console.log('StoreThemeProvider: Available themes:', Object.keys(themes));
-    console.log('StoreThemeProvider: Selected theme exists:', !!themes[themeId]);
-    
-    // Check if theme styles are already applied server-side
-    const existingThemeStyle = document.querySelector(`style[data-theme-id="${themeId}"]`);
-    console.log('StoreThemeProvider: Server-side theme element found:', !!existingThemeStyle);
-    
-    if (existingThemeStyle) {
-      console.log('StoreThemeProvider: Server-side theme found, applying client-side override to ensure precedence');
-      // We still apply the theme variables to override any global theme context
-    }
-
-    // Apply theme immediately and with timeout to ensure it overrides global theme
-    const applyTheme = () => {
-      // Apply the store's theme (overrides global theme)
-      const theme = themes[themeId] || themes.default;
-      console.log('StoreThemeProvider: Resolved theme:', theme.name);
-      console.log('StoreThemeProvider: Theme colors:', theme.colors);
-      const root = document.documentElement;
-      const body = document.body;
-      const colors = theme.colors;
-
-    // Apply theme CSS variables
-    root.style.setProperty('--theme-primary', colors.primary);
-    root.style.setProperty('--theme-primary-dark', colors.primaryDark);
-    root.style.setProperty('--theme-primary-darker', colors.primaryDarker);
-    root.style.setProperty('--theme-secondary', colors.secondary);
-    root.style.setProperty('--theme-accent', colors.accent);
-    
-    root.style.setProperty('--theme-background', colors.background);
-    root.style.setProperty('--theme-background-secondary', colors.backgroundSecondary);
-    root.style.setProperty('--theme-background-tertiary', colors.backgroundTertiary);
-    root.style.setProperty('--theme-card', colors.card);
-    root.style.setProperty('--theme-card-hover', colors.cardHover);
-    
-    root.style.setProperty('--theme-text', colors.text);
-    root.style.setProperty('--theme-text-secondary', colors.textSecondary);
-    root.style.setProperty('--theme-text-muted', colors.textMuted);
-    root.style.setProperty('--theme-text-on-primary', colors.textOnPrimary);
-    
-    root.style.setProperty('--theme-border', colors.border);
-    root.style.setProperty('--theme-hover-overlay', colors.hoverOverlay);
-    root.style.setProperty('--theme-disabled', colors.disabled);
-    
-    root.style.setProperty('--theme-success', colors.success);
-    root.style.setProperty('--theme-error', colors.error);
-    root.style.setProperty('--theme-warning', colors.warning);
-    root.style.setProperty('--theme-info', colors.info);
-    
-    root.style.setProperty('--theme-primary-gradient', colors.primaryGradient);
-    root.style.setProperty('--theme-header-gradient', colors.headerGradient);
-    root.style.setProperty('--theme-hero-gradient', colors.heroGradient);
-
-      // Apply background color to body
-      body.style.backgroundColor = colors.background;
-      body.style.color = colors.text;
-      body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
-    };
-
-    // Apply theme immediately
-    applyTheme();
-
-    // Also apply theme after a short delay to override any global theme context
-    const timeoutId = setTimeout(applyTheme, 100);
-
-    // Cleanup function to restore default theme when leaving the store
-    return () => {
-      clearTimeout(timeoutId);
-      console.log('StoreThemeProvider: Restoring default theme');
-      const defaultTheme = themes.default;
-      const defaultColors = defaultTheme.colors;
-      const root = document.documentElement;
-      const body = document.body;
-      
-      root.style.setProperty('--theme-primary', defaultColors.primary);
-      root.style.setProperty('--theme-primary-dark', defaultColors.primaryDark);
-      root.style.setProperty('--theme-primary-darker', defaultColors.primaryDarker);
-      root.style.setProperty('--theme-secondary', defaultColors.secondary);
-      root.style.setProperty('--theme-accent', defaultColors.accent);
-      
-      root.style.setProperty('--theme-background', defaultColors.background);
-      root.style.setProperty('--theme-background-secondary', defaultColors.backgroundSecondary);
-      root.style.setProperty('--theme-background-tertiary', defaultColors.backgroundTertiary);
-      root.style.setProperty('--theme-card', defaultColors.card);
-      root.style.setProperty('--theme-card-hover', defaultColors.cardHover);
-      
-      root.style.setProperty('--theme-text', defaultColors.text);
-      root.style.setProperty('--theme-text-secondary', defaultColors.textSecondary);
-      root.style.setProperty('--theme-text-muted', defaultColors.textMuted);
-      root.style.setProperty('--theme-text-on-primary', defaultColors.textOnPrimary);
-      
-      root.style.setProperty('--theme-border', defaultColors.border);
-      root.style.setProperty('--theme-hover-overlay', defaultColors.hoverOverlay);
-      root.style.setProperty('--theme-disabled', defaultColors.disabled);
-      
-      root.style.setProperty('--theme-success', defaultColors.success);
-      root.style.setProperty('--theme-error', defaultColors.error);
-      root.style.setProperty('--theme-warning', defaultColors.warning);
-      root.style.setProperty('--theme-info', defaultColors.info);
-      
-      root.style.setProperty('--theme-primary-gradient', defaultColors.primaryGradient);
-      root.style.setProperty('--theme-header-gradient', defaultColors.headerGradient);
-      root.style.setProperty('--theme-hero-gradient', defaultColors.heroGradient);
-
-      body.style.backgroundColor = defaultColors.background;
-      body.style.color = defaultColors.text;
-    };
-  }, [themeId]);
-
+export function StoreThemeProvider({ children }: StoreThemeProviderProps) {
   return <>{children}</>;
 }

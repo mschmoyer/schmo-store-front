@@ -18,7 +18,9 @@ class AdminLoginPage {
    * Navigate to admin login page
    */
   async goto() {
-    await this.page.goto('/admin/login');
+    // The sign-in route is `/login`. `/admin/login` has never existed, so every
+    // spec using this page object was testing a 404.
+    await this.page.goto('/login');
   }
 
   /**
@@ -55,8 +57,9 @@ class AdminLoginPage {
    * Wait for login to complete and redirect to admin dashboard
    */
   async waitForLoginSuccess() {
-    await this.page.waitForURL('/admin');
-    await this.page.waitForSelector('text=Admin Dashboard');
+    await this.page.waitForURL(/\/admin(\?.*)?$/, { timeout: 20000 });
+    // `Admin Dashboard` is not text the app renders; the heading is `Dashboard`.
+    await this.page.waitForSelector('h1:has-text("Dashboard")', { timeout: 20000 });
   }
 
   /**

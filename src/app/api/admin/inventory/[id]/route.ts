@@ -19,7 +19,7 @@ interface UpdateInventoryData {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -30,7 +30,7 @@ export async function GET(
       }, { status: 404 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     
     // Get the specific inventory item
     const inventoryQuery = `
@@ -185,7 +185,7 @@ export async function GET(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -196,7 +196,7 @@ export async function PUT(
       }, { status: 404 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const updateData: UpdateInventoryData = await request.json();
 
     // Validate the product exists and belongs to the store
@@ -319,7 +319,7 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await requireAuth(request);
@@ -330,7 +330,7 @@ export async function DELETE(
       }, { status: 404 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     
     // Soft delete by setting is_active to false
     const deleteQuery = `

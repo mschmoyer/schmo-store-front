@@ -1,0 +1,108 @@
+/*
+ * ONE reflow rule for every group of peer cards on the marketing site.
+ *
+ * Below `--rail-until` (760px) a group of three peers is a horizontal
+ * snap-scroller exactly one card wide. Above it, the same markup is the grid it
+ * always was. Nothing about the cards themselves changes, and no section gets
+ * to hand-roll its own mobile behaviour — which is what turned the homepage
+ * into nine full-height stacked cards at 390px.
+ *
+ * The rail bleeds to both screen edges with a negative margin that is exactly
+ * the shared gutter, so the first card still starts on the site's single left
+ * edge and the document never gains a horizontal scrollbar of its own.
+ */
+
+.rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--rail-item);
+  gap: var(--rail-gap);
+
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline-start: var(--gutter);
+
+  margin-inline: calc(-1 * var(--gutter));
+  padding-inline: var(--gutter);
+  /* Room for the scrollbar on the platforms that reserve one. */
+  padding-block-end: var(--space-2);
+}
+
+/*
+ * A scroll container has to be reachable by keyboard, and the cards inside it
+ * are not all focusable (the three setup steps contain no links at all).
+ */
+.rail:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-md);
+}
+
+.item {
+  display: flex;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+/* The card itself always fills its track, so a rail of three is one height. */
+.item > * {
+  width: 100%;
+}
+
+/*
+ * Two-up, for peers whose content is short enough that a full-width card would
+ * be mostly padding.
+ */
+.tight {
+  grid-auto-columns: min(46vw, 240px);
+}
+
+@media (min-width: 860px) {
+  .rail {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-template-columns: repeat(var(--rail-columns, 3), minmax(0, 1fr));
+    gap: var(--space-6);
+    overflow-x: visible;
+    scroll-snap-type: none;
+    margin-inline: 0;
+    padding-inline: 0;
+    padding-block-end: 0;
+  }
+
+  .rail:focus-visible {
+    box-shadow: none;
+  }
+}
+
+/*
+ * The `divided` variant replaces card borders with the site's hairline rule —
+ * used where the peers are prose rather than objects. On the rail each item
+ * keeps a leading rule so the card edges still read; in the grid the first
+ * column drops it, exactly as the old three-column rails did.
+ */
+.divided > .item {
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: var(--space-5);
+}
+
+@media (min-width: 860px) {
+  .divided {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .divided > .item {
+    padding-block: var(--space-6);
+    padding-inline-start: var(--space-6);
+  }
+
+  .divided > .item:first-child {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+}

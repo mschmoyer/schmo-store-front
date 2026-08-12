@@ -32,8 +32,9 @@ import {
   IconAlertTriangle
 } from '@tabler/icons-react';
 import TrendChart from './TrendChart';
-import ExecutiveSummary from './ExecutiveSummary';
+import ExecutiveSummary, { type ExecutiveSummaryData } from './ExecutiveSummary';
 import { format, parseISO } from 'date-fns';
+import { CHART_SEMANTIC } from '@/components/admin/chartPalette';
 
 interface TrendData {
   date: string;
@@ -45,27 +46,13 @@ interface TrendData {
 interface TrendStats {
   totalSearches: number;
   uniqueVisitors: number;
-  avgSessionDuration: number;
-  bounceRate: number;
+  totalPageViews: number;
+  /** Metrics the schema cannot support, with the reason. See the API route. */
+  unavailable: Array<{ metric: string; reason: string }>;
   trendsData: {
     searchTrends: TrendData[];
     visitorTrends: TrendData[];
   };
-}
-
-interface ExecutiveSummaryData {
-  period: string;
-  totalSearches: number;
-  uniqueVisitors: number;
-  searchTrend: number;
-  visitorTrend: number;
-  topSearchTerm: string;
-  topSearchCount: number;
-  bounceRate: number;
-  avgSessionDuration: number;
-  keyInsights: string[];
-  alerts: string[];
-  recommendations: string[];
 }
 
 interface TrendDashboardProps {
@@ -220,8 +207,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
       stats: {
         totalSearches: data.totalSearches,
         uniqueVisitors: data.uniqueVisitors,
-        avgSessionDuration: data.avgSessionDuration,
-        bounceRate: data.bounceRate
+        totalPageViews: data.totalPageViews
       },
       trends: data.trendsData
     };
@@ -317,13 +303,13 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-control)' }}
                 />
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-control)' }}
                 />
               </Group>
             )}
@@ -358,7 +344,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               <Text size="sm" c="dimmed" fw={500}>
                 Total Searches
               </Text>
-              <ThemeIcon color="blue" variant="light" size="lg">
+              <ThemeIcon color="ink" variant="light" size="lg">
                 <IconSearch style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
@@ -423,64 +409,61 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
             )}
           </Card>
 
+          {/*
+            * These two cards used to read `Avg Session Duration 4m 32s` and
+            * `Bounce Rate 32.1%`, badged "Lower is better" and "needs
+            * improvement". Both were literals in the API with no data source,
+            * identical for every store forever, and contradicted by the AI
+            * narrative on the same page saying 2m 0s and 70.0%.
+            *
+            * They are replaced by page views, which is measured, and by an
+            * honest statement of what is not. Billing is the model here: it
+            * explains its degraded state in plain language instead of
+            * resolving to a confident-looking placeholder.
+            */}
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Group justify="space-between" mb="xs">
               <Text size="sm" c="dimmed" fw={500}>
-                Avg Session Duration
+                Page Views
               </Text>
-              <ThemeIcon color="cyan" variant="light" size="lg">
+              <ThemeIcon color="ink" variant="light" size="lg">
                 <IconEye style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
-            
+
             <Group align="flex-end" gap="xs">
               <Text size="xl" fw={700}>
-                {Math.floor(data.avgSessionDuration / 60)}m {data.avgSessionDuration % 60}s
+                {data.totalPageViews.toLocaleString()}
               </Text>
             </Group>
-            
-            <Group gap="xs" mt="sm">
-              <ThemeIcon 
-                size="sm" 
-                variant="light" 
-                color="gray"
-              >
-                <IconTrendingUp size="0.8rem" />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed">
-                vs last period
-              </Text>
-            </Group>
+
+            <Text size="xs" c="dimmed" mt="sm">
+              Recorded page loads in this period
+            </Text>
           </Card>
 
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Group justify="space-between" mb="xs">
               <Text size="sm" c="dimmed" fw={500}>
-                Bounce Rate
+                Not measured yet
               </Text>
-              <ThemeIcon color="orange" variant="light" size="lg">
+              <ThemeIcon color="gray" variant="light" size="lg">
                 <IconChartLine style={{ width: rem(20), height: rem(20) }} />
               </ThemeIcon>
             </Group>
-            
-            <Group align="flex-end" gap="xs">
-              <Text size="xl" fw={700}>
-                {data.bounceRate.toFixed(1)}%
-              </Text>
-            </Group>
-            
-            <Group gap="xs" mt="sm">
-              <ThemeIcon 
-                size="sm" 
-                variant="light" 
-                color="green"
-              >
-                <IconTrendingDown size="0.8rem" />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed">
-                Lower is better
-              </Text>
-            </Group>
+
+            <Stack gap={4}>
+              {(data.unavailable ?? []).map((item) => (
+                <div key={item.metric}>
+                  <Text size="sm" fw={600}>
+                    {item.metric}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {item.reason}
+                  </Text>
+                </div>
+              ))}
+            </Stack>
           </Card>
         </SimpleGrid>
       )}
@@ -492,7 +475,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
             title="Search Volume Trends"
             data={data.trendsData.searchTrends}
             dataKey="search_count"
-            color="#3498db"
+            color={CHART_SEMANTIC.neutral}
             dateRange={dateRange}
             onRefresh={fetchTrendData}
             loading={loading}
@@ -503,7 +486,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
             title="Visitor Patterns"
             data={data.trendsData.visitorTrends}
             dataKey="visitor_count"
-            color="#2ecc71"
+            color={CHART_SEMANTIC.signal}
             dateRange={dateRange}
             onRefresh={fetchTrendData}
             loading={loading}
@@ -529,7 +512,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'csv' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'csv' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('csv')}
             >
@@ -538,7 +521,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   <Text fw={500}>CSV</Text>
                   <Text size="sm" c="dimmed">Export raw data as comma-separated values</Text>
                 </div>
-                {exportFormat === 'csv' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'csv' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
             
@@ -546,7 +529,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'json' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'json' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('json')}
             >
@@ -555,7 +538,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   <Text fw={500}>JSON</Text>
                   <Text size="sm" c="dimmed">Export data as JSON format</Text>
                 </div>
-                {exportFormat === 'json' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'json' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
             
@@ -563,7 +546,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
               padding="md" 
               style={{ 
                 cursor: 'pointer',
-                border: exportFormat === 'pdf' ? '2px solid var(--mantine-color-blue-6)' : '1px solid var(--mantine-color-gray-3)'
+                border: exportFormat === 'pdf' ? '2px solid var(--text-primary)' : '1px solid var(--border)'
               }}
               onClick={() => setExportFormat('pdf')}
             >
@@ -572,7 +555,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
                   <Text fw={500}>PDF Report</Text>
                   <Text size="sm" c="dimmed">Generate a comprehensive PDF report</Text>
                 </div>
-                {exportFormat === 'pdf' && <Badge color="blue">Selected</Badge>}
+                {exportFormat === 'pdf' && <Badge color="ink">Selected</Badge>}
               </Group>
             </Card>
           </Stack>

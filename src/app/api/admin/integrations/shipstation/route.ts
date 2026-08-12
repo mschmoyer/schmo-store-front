@@ -1,397 +1,215 @@
+/**
+ * The merchant-facing ShipStation integration API.
+ *
+ * This route used to display credentials the server would not accept. The screen generated a
+ * username and password client-side with `Math.random()`, told the merchant to paste them into
+ * ShipStation, and then never sent them anywhere — the server derived a *different*,
+ * deterministic pair and authenticated against that (audit P0-1). Anyone who followed the
+ * instructions got 401s on their first order export.
+ *
+ * The fix is not "show the deterministic pair instead". It is to stop having two credential systems
+ * at all. The V2 API key the merchant pastes in from ShipStation is the only credential now: it is
+ * what sync uses, what order push uses, and what webhook registration uses. The legacy Custom-Store
+ * Basic-Auth pair is no longer generated or displayed here. What the merchant gets back is exactly
+ * what the server will honour: their masked key, and their per-store webhook URL.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/session';
 import { db } from '@/lib/database/connection';
+import { ShipStationKeyError, isEncryptionConfigured } from '@/lib/shipstation/crypto';
+import {
+  deleteIntegration,
+  getIntegrationSummary,
+  saveCredentials
+} from '@/lib/shipstation/credentials';
+import { getOrCreateWebhookSecret } from '@/lib/shipstation/webhookSecurity';
+import { registerStoreWebhook, unregisterStoreWebhook } from '@/lib/shipstation/webhookRegistration';
 
-interface ShipStationConfig {
-  id?: string;
-  isActive: boolean;
-  username: string;
-  password: string;
-  apiKey: string;
-  apiSecret: string;
-  endpointUrl: string;
-  storeId?: string;
-  autoSyncEnabled: boolean;
-  autoSyncInterval: '10min' | '1hour' | '1day';
-  shipFromAddress?: {
-    name: string;
-    phone: string;
-    email?: string;
-    company_name?: string;
-    address_line1: string;
-    address_line2?: string;
-    address_line3?: string;
-    city_locality: string;
-    state_province: string;
-    postal_code: string;
-    country_code: string;
-    address_residential_indicator: 'yes' | 'no' | 'unknown';
-    instructions?: string;
-  };
-}
+/** Node runtime: encryption and Postgres. */
+export const runtime = 'nodejs';
 
-interface StoreIntegrationRow {
-  id: string;
-  is_active: boolean;
-  configuration: Record<string, unknown>;
-  auto_sync_enabled: boolean;
-  auto_sync_interval: string;
-  api_key_encrypted?: string;
-  api_secret_encrypted?: string;
-  shipstation_username?: string;
-  shipstation_password_hash?: string;
-  shipstation_auth_enabled?: boolean;
-  created_at: string;
-  updated_at: string;
+/**
+ * Resolve the public origin for building webhook URLs.
+ *
+ * @param request - Incoming request, used as a last resort in local development.
+ * @returns Absolute origin with no trailing slash.
+ */
+function resolveBaseUrl(request: NextRequest): string {
+  const configured =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.NEXT_PUBLIC_BASE_URL ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : undefined);
+
+  return (configured ?? request.nextUrl.origin).replace(/\/+$/, '');
 }
 
 /**
- * GET - Retrieve ShipStation configuration
+ * Resolve the store the authenticated user administers.
+ *
+ * Reads ownership from the database rather than trusting the session claim, so a stale token
+ * cannot address a store the user no longer owns.
+ *
+ * @param userId - Authenticated user id.
+ * @returns The store id, or null.
  */
-export async function GET(request: NextRequest) {
+async function resolveStoreId(userId: string): Promise<string | null> {
+  const result = await db.query<{ id: string }>(
+    'SELECT id FROM stores WHERE owner_id = $1 LIMIT 1',
+    [userId]
+  );
+  return result.rows[0]?.id ?? null;
+}
+
+/**
+ * Translate a thrown error into the right HTTP response.
+ *
+ * @param error - Caught error.
+ * @param fallback - Message used for unrecognised errors.
+ * @returns The response to send.
+ */
+function errorResponse(error: unknown, fallback: string): NextResponse {
+  if (error instanceof Error && error.message === 'Authentication required') {
+    return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+  }
+
+  if (error instanceof ShipStationKeyError) {
+    // 503, not 500: the deployment is misconfigured, and the message says exactly how to fix it.
+    return NextResponse.json({ success: false, error: error.message }, { status: 503 });
+  }
+
+  console.error(`${fallback}:`, error);
+  return NextResponse.json({ success: false, error: fallback }, { status: 500 });
+}
+
+/**
+ * GET — the merchant's current ShipStation configuration.
+ *
+ * Returns no secrets: a masked key, the webhook URL, and sync state.
+ *
+ * @param request - Incoming request.
+ * @returns The configuration summary.
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const user = await requireAuth(request);
-    const userId = user.userId;
+    const storeId = await resolveStoreId(user.userId);
 
-    // Get user's store ID
-    const storeResult = await db.query(
-      'SELECT id FROM stores WHERE owner_id = $1',
-      [userId]
-    );
-
-    if (storeResult.rows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Store not found' },
-        { status: 404 }
-      );
+    if (!storeId) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
-    const storeId = String(storeResult.rows[0].id);
-
-    // Get ShipStation integration config
-    const configResult = await db.query(
-      `SELECT 
-        id,
-        is_active,
-        configuration,
-        auto_sync_enabled,
-        auto_sync_interval,
-        api_key_encrypted,
-        api_secret_encrypted,
-        shipstation_username,
-        shipstation_password_hash,
-        shipstation_auth_enabled,
-        created_at,
-        updated_at
-      FROM store_integrations 
-      WHERE store_id = $1 AND integration_type = 'shipstation'`,
-      [storeId]
-    );
-
-    if (configResult.rows.length === 0) {
-      // Return default configuration if none exists
-      const defaultConfig: ShipStationConfig = {
-        isActive: false,
-        username: '',
-        password: '',
-        apiKey: '',
-        apiSecret: '',
-        endpointUrl: '',
-        storeId: storeId,
-        autoSyncEnabled: false,
-        autoSyncInterval: '1hour'
-      };
-
-      return NextResponse.json({
-        success: true,
-        data: defaultConfig
-      });
-    }
-
-    const config = configResult.rows[0] as unknown as StoreIntegrationRow;
-    const configData = config.configuration as Record<string, unknown>;
-
-    // Decrypt API credentials if they exist
-    let decryptedApiKey = '';
-    let decryptedApiSecret = '';
-    
-    if (config.api_key_encrypted) {
-      try {
-        decryptedApiKey = Buffer.from(config.api_key_encrypted as string, 'base64').toString('utf-8');
-        if (config.api_secret_encrypted) {
-          decryptedApiSecret = Buffer.from(config.api_secret_encrypted as string, 'base64').toString('utf-8');
-        }
-      } catch (error) {
-        console.error('Error decrypting API credentials:', error);
-      }
-    }
-
-    // Generate current credentials for display (they should match stored ones)
-    let displayUsername = config.shipstation_username || '';
-    let displayPassword = '';
-    
-    if (decryptedApiKey && storeId) {
-      try {
-        const credentialsResult = await db.query(
-          `SELECT 
-            generate_shipstation_username_deterministic($1, $2) as username,
-            generate_shipstation_password_deterministic($1, $2) as password`,
-          [storeId, decryptedApiKey]
-        );
-        
-        displayUsername = credentialsResult.rows[0].username as string;
-        displayPassword = credentialsResult.rows[0].password as string;
-      } catch (error) {
-        console.error('Error generating display credentials:', error);
-      }
-    }
-
-    const shipstationConfig: ShipStationConfig = {
-      id: String(config.id),
-      isActive: Boolean(config.is_active),
-      username: displayUsername, // Generated custom store username
-      password: displayPassword, // Generated custom store password
-      apiKey: decryptedApiKey,
-      apiSecret: decryptedApiSecret,
-      endpointUrl: (configData.endpointUrl as string) || '',
-      storeId: storeId,
-      autoSyncEnabled: Boolean(config.auto_sync_enabled),
-      autoSyncInterval: (config.auto_sync_interval as '1hour' | '10min' | '1day') || '1hour',
-      shipFromAddress: configData.shipFromAddress as ShipStationConfig['shipFromAddress']
-    };
+    const summary = await getIntegrationSummary(storeId, resolveBaseUrl(request));
 
     return NextResponse.json({
       success: true,
-      data: shipstationConfig
+      data: {
+        ...summary,
+        encryptionConfigured: isEncryptionConfigured()
+      }
     });
-
   } catch (error) {
-    console.error('Error fetching ShipStation config:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errorResponse(error, 'Failed to load ShipStation configuration');
   }
 }
 
 /**
- * POST - Create or update ShipStation configuration
+ * POST — save the merchant's ShipStation API key and settings.
+ *
+ * Optionally registers the webhook with ShipStation in the same call (`registerWebhook: true`),
+ * which is what finally makes tracking updates arrive instead of the endpoint sitting unsubscribed
+ * (P0-8). Registration failure does not fail the save: the credentials are still stored, and the
+ * merchant is told the subscription needs a retry.
+ *
+ * @param request - Incoming request.
+ * @returns The updated configuration summary.
  */
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const user = await requireAuth(request);
-    const userId = user.userId;
+    const storeId = await resolveStoreId(user.userId);
 
-    const body = await request.json();
-    const {
-      isActive,
-      apiKey,
-      apiSecret,
-      endpointUrl,
-      autoSyncEnabled,
-      autoSyncInterval,
-      shipFromAddress
-    } = body as ShipStationConfig;
-
-    // Validate required fields - only need API key now
-    if (!apiKey || !endpointUrl) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields: apiKey, endpointUrl' },
-        { status: 400 }
-      );
+    if (!storeId) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
-    // Validate endpoint URL
-    try {
-      new URL(endpointUrl);
-    } catch {
-      return NextResponse.json(
-        { success: false, error: 'Invalid endpoint URL' },
-        { status: 400 }
-      );
-    }
-
-    // Get user's store ID
-    const storeResult = await db.query(
-      'SELECT id FROM stores WHERE owner_id = $1',
-      [userId]
-    );
-
-    if (storeResult.rows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Store not found' },
-        { status: 404 }
-      );
-    }
-
-    const storeId = String(storeResult.rows[0].id);
-
-    // Generate deterministic custom store credentials
-    const credentialsResult = await db.query(
-      `SELECT 
-        generate_shipstation_username_deterministic($1, $2) as username,
-        generate_shipstation_password_deterministic($1, $2) as password`,
-      [storeId, apiKey]
-    );
-
-    const generatedUsername = credentialsResult.rows[0].username as string;
-    const generatedPassword = credentialsResult.rows[0].password as string;
-    const hashedPassword = Buffer.from(generatedPassword).toString('base64');
-
-    // Simple encryption for API credentials (base64 for now)
-    const encryptedApiKey = Buffer.from(apiKey).toString('base64');
-    const encryptedApiSecret = apiSecret ? Buffer.from(apiSecret).toString('base64') : '';
-
-    // Configuration object to store
-    const configuration = {
-      endpointUrl,
-      customStoreUsername: generatedUsername,
-      lastGenerated: new Date().toISOString(),
-      shipFromAddress: shipFromAddress || null
+    const body = (await request.json()) as {
+      apiKey?: string;
+      isActive?: boolean;
+      autoSyncEnabled?: boolean;
+      autoSyncInterval?: string;
+      registerWebhook?: boolean;
+      shipFromAddress?: Record<string, unknown> | null;
     };
 
-    // Check if configuration already exists
-    const existingResult = await db.query(
-      'SELECT id FROM store_integrations WHERE store_id = $1 AND integration_type = $2',
-      [storeId, 'shipstation']
-    );
+    const summaryBefore = await getIntegrationSummary(storeId, resolveBaseUrl(request));
 
-    let configId: string;
-
-    if (existingResult.rows.length > 0) {
-      // Update existing configuration
-      configId = String(existingResult.rows[0].id);
-      
-      await db.query(
-        `UPDATE store_integrations 
-         SET is_active = $1, 
-             configuration = $2, 
-             auto_sync_enabled = $3, 
-             auto_sync_interval = $4,
-             api_key_encrypted = $5,
-             api_secret_encrypted = $6,
-             shipstation_username = $7,
-             shipstation_password_hash = $8,
-             shipstation_auth_enabled = true,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $9`,
-        [
-          isActive,
-          JSON.stringify(configuration),
-          autoSyncEnabled,
-          autoSyncInterval,
-          encryptedApiKey,
-          encryptedApiSecret,
-          generatedUsername,
-          hashedPassword,
-          configId
-        ]
+    if (!body.apiKey && !summaryBefore.connected) {
+      return NextResponse.json(
+        { success: false, error: 'A ShipStation API key is required to connect.' },
+        { status: 400 }
       );
-    } else {
-      // Create new configuration
-      const insertResult = await db.query(
-        `INSERT INTO store_integrations (
-          store_id, 
-          integration_type, 
-          is_active, 
-          configuration, 
-          auto_sync_enabled, 
-          auto_sync_interval,
-          api_key_encrypted,
-          api_secret_encrypted,
-          shipstation_username,
-          shipstation_password_hash,
-          shipstation_auth_enabled,
-          created_at,
-          updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id`,
-        [
-          storeId,
-          'shipstation',
-          isActive,
-          JSON.stringify(configuration),
-          autoSyncEnabled,
-          autoSyncInterval,
-          encryptedApiKey,
-          encryptedApiSecret,
-          generatedUsername,
-          hashedPassword
-        ]
-      );
-      
-      configId = String(insertResult.rows[0].id);
     }
 
-    // Return the updated configuration with generated credentials
-    const updatedConfig: ShipStationConfig = {
-      id: configId,
-      isActive,
-      username: generatedUsername, // Generated custom store username
-      password: generatedPassword, // Generated custom store password (plain text for display)
-      apiKey,
-      apiSecret,
-      endpointUrl,
+    await saveCredentials({
       storeId,
-      autoSyncEnabled,
-      autoSyncInterval,
-      shipFromAddress
-    };
+      apiKey: body.apiKey,
+      isActive: body.isActive ?? true,
+      autoSyncEnabled: body.autoSyncEnabled,
+      autoSyncInterval: body.autoSyncInterval,
+      configuration: body.shipFromAddress ? { shipFromAddress: body.shipFromAddress } : undefined
+    });
+
+    // Provision the webhook secret eagerly so the merchant's URL is usable the moment it is shown.
+    await getOrCreateWebhookSecret(storeId);
+
+    let webhookRegistration: { ok: boolean; error?: string; reused?: boolean } | null = null;
+    if (body.registerWebhook) {
+      webhookRegistration = await registerStoreWebhook(storeId, resolveBaseUrl(request));
+    }
+
+    const summary = await getIntegrationSummary(storeId, resolveBaseUrl(request));
 
     return NextResponse.json({
       success: true,
-      data: updatedConfig,
-      message: 'ShipStation configuration saved successfully. Custom store credentials have been automatically generated.'
+      data: { ...summary, encryptionConfigured: true, webhookRegistration },
+      message: 'ShipStation settings saved.'
     });
-
   } catch (error) {
-    console.error('Error saving ShipStation config:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errorResponse(error, 'Failed to save ShipStation configuration');
   }
 }
 
 /**
- * DELETE - Remove ShipStation configuration
+ * DELETE — disconnect ShipStation.
+ *
+ * Best-effort unsubscribes the webhook first, so ShipStation stops delivering to an endpoint that
+ * will no longer authenticate it.
+ *
+ * @param request - Incoming request.
+ * @returns Confirmation.
  */
-export async function DELETE(request: NextRequest) {
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
   try {
     const user = await requireAuth(request);
-    const userId = user.userId;
+    const storeId = await resolveStoreId(user.userId);
 
-    // Get user's store ID
-    const storeResult = await db.query(
-      'SELECT id FROM stores WHERE owner_id = $1',
-      [userId]
-    );
-
-    if (storeResult.rows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Store not found' },
-        { status: 404 }
-      );
+    if (!storeId) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
-    const storeId = String(storeResult.rows[0].id);
+    try {
+      await unregisterStoreWebhook(storeId);
+    } catch (error) {
+      console.warn('Could not unregister ShipStation webhook during disconnect:', error);
+    }
 
-    // Delete ShipStation integration
-    await db.query(
-      'DELETE FROM store_integrations WHERE store_id = $1 AND integration_type = $2',
-      [storeId, 'shipstation']
-    );
+    await deleteIntegration(storeId);
 
-    return NextResponse.json({
-      success: true,
-      message: 'ShipStation integration removed successfully'
-    });
-
+    return NextResponse.json({ success: true, message: 'ShipStation integration removed.' });
   } catch (error) {
-    console.error('Error deleting ShipStation config:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    return errorResponse(error, 'Failed to remove ShipStation configuration');
   }
 }

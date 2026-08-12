@@ -21,7 +21,7 @@ import {
   IconInfoCircle
 } from '@tabler/icons-react';
 
-interface ExecutiveSummaryData {
+export interface ExecutiveSummaryData {
   period: string;
   totalSearches: number;
   uniqueVisitors: number;
@@ -48,7 +48,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
     return (
       <Card shadow="sm" padding="lg" radius="md" withBorder>
         <Group mb="md">
-          <ThemeIcon size="lg" variant="light" color="blue">
+          <ThemeIcon size="lg" variant="light" color="ink">
             <IconBriefcase size="1.2rem" />
           </ThemeIcon>
           <Title order={3}>Executive Summary</Title>
@@ -109,7 +109,14 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
       summaryText += ` Search activity ${searchTrendText} by ${Math.abs(data.searchTrend).toFixed(1)}%.`;
     }
     
-    if (hasVisitorData && Math.abs(data.visitorTrend) > 0) {
+    /*
+     * "Visitor traffic decreased by 12.9%, requiring immediate attention" —
+     * that was seven people on a 54-visitor store. Crying alarm over noise
+     * teaches a merchant to ignore the alert box, so a percentage swing is
+     * only worth a sentence once the sample is big enough for the percentage
+     * to mean anything, and the absolute change is stated alongside it.
+     */
+    if (hasVisitorData && Math.abs(data.visitorTrend) > 0 && data.uniqueVisitors >= 100) {
       summaryText += ` Visitor traffic ${visitorTrendText} by ${Math.abs(data.visitorTrend).toFixed(1)}%.`;
     }
     
@@ -117,9 +124,13 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
       summaryText += ` The most popular search term was "${data.topSearchTerm}" with ${data.topSearchCount} searches.`;
     }
     
-    if (hasVisitorData && data.bounceRate > 0) {
-      summaryText += ` Your current bounce rate is ${data.bounceRate.toFixed(1)}% with an average session duration of ${Math.floor(data.avgSessionDuration / 60)} minutes ${data.avgSessionDuration % 60} seconds, indicating ${data.bounceRate < 40 ? 'good' : data.bounceRate < 60 ? 'moderate' : 'poor'} user engagement levels.`;
-    }
+    /*
+     * The engagement sentence is gone. It asserted "bounce rate is 70.0%" and
+     * "average session duration of 2 minutes 0 seconds" from an estimate that
+     * had no data behind it, while the tiles 200px below said 32.1% and
+     * 4m 32s from two different literals. Neither number is measurable from
+     * this schema; the API now returns 0 for both and this branch never fires.
+     */
     
     return summaryText;
   };
@@ -127,7 +138,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
   return (
     <Card shadow="sm" padding="lg" radius="md" withBorder>
       <Group mb="md">
-        <ThemeIcon size="lg" variant="light" color="blue">
+        <ThemeIcon size="lg" variant="light" color="ink">
           <IconBriefcase size="1.2rem" />
         </ThemeIcon>
         <div>
@@ -138,13 +149,17 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
         </div>
         {data.overallScore !== undefined && (
           <div style={{ marginLeft: 'auto' }}>
-            <Text size="xs" c="dimmed" ta="center">Business Score</Text>
+            {/* Quoted to two decimals as `61.39/100`, which claims a precision
+                the inputs do not have — the score is a handful of ±10
+                adjustments off search and visitor counts. Rounded, and labelled
+                with what it is rather than presented as a measurement. */}
+            <Text size="xs" c="dimmed" ta="center">Activity score</Text>
             <Text size="xl" fw={700} ta="center" c={
               data.overallScore >= 80 ? 'green' : 
               data.overallScore >= 60 ? 'blue' : 
               data.overallScore >= 40 ? 'orange' : 'red'
             }>
-              {data.overallScore}/100
+              {Math.round(data.overallScore)}/100
             </Text>
           </div>
         )}
@@ -191,15 +206,8 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
           </Text>
         </div>
 
-        <div>
-          <Text size="sm" fw={500} mb="xs">Bounce Rate</Text>
-          <Text size="lg" fw={700} c={data.uniqueVisitors > 0 ? (data.bounceRate < 40 ? 'green' : data.bounceRate < 60 ? 'yellow' : 'red') : 'gray'}>
-            {data.uniqueVisitors > 0 ? `${data.bounceRate.toFixed(1)}%` : 'N/A'}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {data.uniqueVisitors > 0 ? (data.bounceRate < 40 ? 'excellent' : data.bounceRate < 60 ? 'good' : 'needs improvement') : 'no data yet'}
-          </Text>
-        </div>
+        {/* Bounce Rate was here, badged "excellent"/"needs improvement" off a
+            number with no data source. Removed rather than approximated. */}
       </Group>
 
       {/* Focus Areas */}
@@ -208,7 +216,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
           <Text size="sm" fw={500} mb="xs">Focus Areas</Text>
           <Group gap="xs">
             {data.focusAreas.map((area, index) => (
-              <Badge key={index} variant="light" color="blue">
+              <Badge key={index} variant="light" color="ink">
                 {area}
               </Badge>
             ))}
@@ -228,7 +236,7 @@ export default function ExecutiveSummary({ data, loading = false }: ExecutiveSum
         )}
 
         {data.keyInsights.length > 0 && (
-          <Alert icon={<IconInfoCircle size="1rem" />} color="blue" variant="light">
+          <Alert icon={<IconInfoCircle size="1rem" />} color="ink" variant="light">
             <Text fw={500} size="sm" mb="xs">💡 AI Insights</Text>
             {data.keyInsights.map((insight, index) => (
               <Text key={index} size="sm" style={{ lineHeight: 1.5 }}>• {insight}</Text>

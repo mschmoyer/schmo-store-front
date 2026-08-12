@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Stack, 
-  Title, 
   Text, 
   Card,
   Group,
@@ -15,14 +14,12 @@ import {
   Loader,
   ActionIcon,
   Code,
-  rem,
   Divider,
   Paper,
   List,
   ThemeIcon
 } from '@mantine/core';
 import { 
-  IconShip, 
   IconAlertCircle, 
   IconCheck, 
   IconCopy,
@@ -43,6 +40,7 @@ import {
   generateEndpointUrl,
   copyToClipboard as copyTextToClipboard
 } from '@/lib/shipstation/utils';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 
 interface ShipStationConfig {
   id?: string;
@@ -79,6 +77,11 @@ export default function ShipStationIntegrationPage() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasExistingConfig, setHasExistingConfig] = useState(false);
+  const [originalApiKey, setOriginalApiKey] = useState('');
+  const [originalApiSecret, setOriginalApiSecret] = useState('');
+  const [apiKeyModified, setApiKeyModified] = useState(false);
+  const [apiSecretModified, setApiSecretModified] = useState(false);
 
   const form = useForm<ShipStationConfig>({
     initialValues: config,
@@ -187,7 +190,6 @@ export default function ShipStationIntegrationPage() {
       notifications.show({
         title: 'Copied!',
         message: `${label} copied to clipboard`,
-        color: 'blue',
         icon: <IconCopy size="1rem" />
       });
     } catch {
@@ -342,17 +344,10 @@ export default function ShipStationIntegrationPage() {
 
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={1} mb="xs">
-          <Group gap="sm">
-            <IconShip style={{ width: rem(28), height: rem(28) }} />
-            ShipStation Integration
-          </Group>
-        </Title>
-        <Text c="dimmed">
-          Configure your ShipStation Custom Store integration for automated order fulfillment.
-        </Text>
-      </div>
+      <AdminPageHeader
+        title="ShipStation"
+        description="Credentials and sync settings for the Custom Store connection that feeds your catalog."
+      />
 
       {error && (
         <Alert
@@ -370,10 +365,10 @@ export default function ShipStationIntegrationPage() {
             e.preventDefault();
             // If we have existing config and API key is not modified, bypass validation
             if (hasExistingConfig && !apiKeyModified && form.values.apiKey === '••••••••••••••••') {
-              const validationErrors = form.validate();
+              const validationErrors = form.validate().errors;
               // Remove apiKey error if it exists since we're using the stored value
               delete validationErrors.apiKey;
-              
+
               if (Object.keys(validationErrors).length === 0) {
                 handleSubmit(form.values);
               }
@@ -457,7 +452,7 @@ export default function ShipStationIntegrationPage() {
             </Group>
 
             {hasExistingConfig && !apiKeyModified && (
-              <Alert icon={<IconInfoCircle size="1rem" />} color="blue" variant="light" mb="sm">
+              <Alert icon={<IconInfoCircle size="1rem" />} color="ink" variant="light" mb="sm">
                 <Text size="sm">
                   Your existing API key is securely stored. To update it, click on the field and enter a new value.
                 </Text>
@@ -679,8 +674,8 @@ export default function ShipStationIntegrationPage() {
             Save your configuration and enable the integration
           </List.Item>
         </List>
-        <Paper p="md" withBorder mt="md" bg="blue.0">
-          <Text size="sm" fw={500} c="blue.7" mb="xs">
+        <Paper p="md" withBorder mt="md" bg="var(--surface-2)">
+          <Text size="sm" fw={600} mb="xs">
             Important Notes:
           </Text>
           <List size="xs" spacing="xs">

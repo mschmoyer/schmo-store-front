@@ -5,18 +5,23 @@ import {
   Stack, 
   Title, 
   Text, 
-  Alert,
-  Loader,
-  Group,
-  rem
+  Alert
 } from '@mantine/core';
-import { IconPlug, IconAlertCircle } from '@tabler/icons-react';
-import { IntegrationSettings } from '@/components/admin/IntegrationSettings';
+import { IconAlertCircle } from '@tabler/icons-react';
+import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
 import { IntegrationConfiguration } from '@/types/database';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
 
-interface Integration {
+/**
+ * An integration row as returned by the API.
+ *
+ * `integrationType` is the raw column value, which may still hold legacy
+ * providers (e.g. `shipengine`) that the UI no longer supports.
+ */
+interface StoredIntegration {
   id?: string;
-  integrationType: 'shipstation' | 'stripe' | 'square' | 'paypal';
+  integrationType: string;
   isActive: boolean;
   hasApiKey: boolean;
   configuration: IntegrationConfiguration;
@@ -83,19 +88,19 @@ export default function IntegrationsPage() {
             ];
             
             // Update with existing data (skip any shipengine integrations)
-            existingIntegrations.forEach((existing: Integration) => {
+            existingIntegrations.forEach((existing: StoredIntegration) => {
               // Skip shipengine integrations since we no longer support them
               if (existing.integrationType === 'shipengine') {
                 return;
               }
-              
+
               const index = allIntegrations.findIndex(
                 int => int.integrationType === existing.integrationType
               );
               if (index >= 0) {
                 allIntegrations[index] = {
+                  ...allIntegrations[index],
                   id: existing.id,
-                  integrationType: existing.integrationType,
                   isActive: existing.isActive,
                   hasApiKey: existing.hasApiKey,
                   configuration: existing.configuration || {},
@@ -173,28 +178,20 @@ export default function IntegrationsPage() {
   
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem' }}>
-        <Loader size="lg" />
-        <Text mt="md" c="dimmed">
-          Loading integrations...
-        </Text>
-      </div>
+      <Stack gap="lg">
+        <AdminPageHeader title="Integrations" description="Connect the services that feed your store." />
+        <PanelSkeleton height={140} label="Loading integrations" />
+        <PanelSkeleton height={140} label="Loading integrations" />
+      </Stack>
     );
   }
   
   return (
     <Stack gap="lg">
-      <div>
-        <Title order={1} mb="xs">
-          <Group gap="sm">
-            <IconPlug style={{ width: rem(28), height: rem(28) }} />
-            Integrations
-          </Group>
-        </Title>
-        <Text c="dimmed">
-          Connect your store to external services for shipping, payments, and more.
-        </Text>
-      </div>
+      <AdminPageHeader
+        title="Integrations"
+        description="Connect your store to the services that handle shipping, payments and inventory."
+      />
       
       {error && (
         <Alert

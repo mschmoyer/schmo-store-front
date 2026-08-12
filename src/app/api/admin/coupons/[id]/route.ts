@@ -6,242 +6,212 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+/*
+ * Both handlers previously carried a `type: 'discount'` branch that read and
+ * wrote a `discounts` table which no migration in `database/migrations/` ever
+ * creates, and a `type: 'coupon'` branch that set `coupons.discount_id`, a
+ * column `coupons` does not have. Both were left over from an abandoned
+ * refactor. See `../route.ts` for the full account.
+ *
+ * `coupons` carries its discount inline and is written directly.
+ */
+
+/**
+ * GET /api/admin/coupons/[id]
+ *
+ * One coupon, with its redemption history. Added because the editor had no way
+ * to load a coupon it was about to edit.
+ *
+ * @param request - Next.js request; requires an authenticated admin session.
+ * @param context - Route params carrying the coupon id.
+ * @returns `{ success, data: { coupon, redemptions } }`.
+ */
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await requireAuth(request);
+    if (!user.storeId) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
+    }
+
+    const { id } = await params;
+
+    const result = await db.query('SELECT * FROM coupons WHERE id = $1 AND store_id = $2', [
+      id,
+      user.storeId,
+    ]);
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Coupon not found' }, { status: 404 });
+    }
+
+    const redemptions = await db.query(
+      `SELECT cu.customer_email, cu.discount_amount, cu.used_at, o.order_number
+         FROM coupon_usage cu
+         LEFT JOIN orders o ON o.id = cu.order_id
+        WHERE cu.coupon_id = $1
+        ORDER BY cu.used_at DESC
+        LIMIT 50`,
+      [id]
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: { coupon: result.rows[0], redemptions: redemptions.rows },
+    });
+  } catch (error) {
+    console.error('Admin coupon GET error:', error);
+
+    if (error instanceof Error && error.message === 'Authentication required') {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
 /**
  * PUT /api/admin/coupons/[id]
- * Update a coupon or discount
+ *
+ * Update a coupon. Only the fields present in the body are written, so a
+ * partial update (flipping `is_active` from the list, say) does not blank
+ * everything else.
+ *
+ * @param request - Next.js request; requires an authenticated admin session.
+ * @param context - Route params carrying the coupon id.
+ * @returns `{ success, data: { coupon } }`.
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
     const { id } = await params;
     const body = await request.json();
-    const { type, ...data } = body;
 
-    if (type === 'discount') {
-      // Update discount (no longer has targeting fields)
-      const {
-        name,
-        description,
-        discount_type,
-        discount_value,
-        minimum_order_amount = 0,
-        maximum_discount_amount,
-        start_date,
-        end_date,
-        max_uses,
-        max_uses_per_customer = 1
-      } = data;
+    const UPDATABLE = [
+      'code',
+      'name',
+      'description',
+      'discount_type',
+      'discount_value',
+      'minimum_order_amount',
+      'maximum_discount_amount',
+      'usage_limit',
+      'usage_limit_per_customer',
+      'valid_from',
+      'valid_until',
+      'is_active',
+      'applies_to',
+      'applicable_product_ids',
+      'applicable_category_ids',
+    ] as const;
 
-      const updateQuery = `
-        UPDATE discounts SET
-          name = $2,
-          description = $3,
-          discount_type = $4,
-          discount_value = $5,
-          minimum_order_amount = $6,
-          maximum_discount_amount = $7,
-          start_date = $8,
-          end_date = $9,
-          max_uses = $10,
-          max_uses_per_customer = $11,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND store_id = $12
-        RETURNING *
-      `;
+    const assignments: string[] = [];
+    const values: unknown[] = [id, user.storeId];
+    let i = 3;
 
-      const result = await db.query(updateQuery, [
-        id, name, description, discount_type, discount_value,
-        minimum_order_amount, maximum_discount_amount, start_date, end_date,
-        max_uses, max_uses_per_customer, user.storeId
-      ]);
-
-      if (result.rows.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Discount not found'
-        }, { status: 404 });
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: { discount: result.rows[0] }
-      });
-
-    } else if (type === 'coupon') {
-      // Update coupon (now with targeting)
-      const {
-        discount_id,
-        code,
-        description,
-        start_date,
-        end_date,
-        max_uses,
-        max_uses_per_customer = 1,
-        applies_to = 'entire_order',
-        applicable_product_ids,
-        applicable_category_ids
-      } = data;
-
-      // Check if coupon code already exists for this store (excluding current coupon)
-      const existingCoupon = await db.query(
-        'SELECT id FROM coupons WHERE store_id = $1 AND code = $2 AND id != $3',
-        [user.storeId, code, id]
-      );
-
-      if (existingCoupon.rows.length > 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Coupon code already exists'
-        }, { status: 409 });
-      }
-
-      const updateQuery = `
-        UPDATE coupons SET
-          discount_id = $2,
-          code = $3,
-          description = $4,
-          start_date = $5,
-          end_date = $6,
-          max_uses = $7,
-          max_uses_per_customer = $8,
-          applies_to = $9,
-          applicable_product_ids = $10,
-          applicable_category_ids = $11,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND store_id = $12
-        RETURNING *
-      `;
-
-      const result = await db.query(updateQuery, [
-        id, discount_id, code, description, start_date, end_date,
-        max_uses, max_uses_per_customer, applies_to, applicable_product_ids,
-        applicable_category_ids, user.storeId
-      ]);
-
-      if (result.rows.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Coupon not found'
-        }, { status: 404 });
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: { coupon: result.rows[0] }
-      });
+    for (const field of UPDATABLE) {
+      if (!(field in body)) continue;
+      assignments.push(`${field} = $${i}`);
+      values.push(field === 'code' ? String(body[field]).trim().toUpperCase() : body[field]);
+      i++;
     }
 
-    return NextResponse.json({
-      success: false,
-      error: 'Invalid type. Must be "discount" or "coupon"'
-    }, { status: 400 });
+    if (assignments.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No updatable fields supplied' },
+        { status: 400 }
+      );
+    }
 
+    if (typeof body.code === 'string') {
+      const clash = await db.query(
+        'SELECT id FROM coupons WHERE store_id = $1 AND code = $2 AND id <> $3',
+        [user.storeId, body.code.trim().toUpperCase(), id]
+      );
+      if (clash.rows.length > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Coupon code already exists' },
+          { status: 409 }
+        );
+      }
+    }
+
+    const result = await db.query(
+      `UPDATE coupons
+          SET ${assignments.join(', ')}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND store_id = $2
+        RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Coupon not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: { coupon: result.rows[0] } });
   } catch (error) {
-    console.error('Admin coupons PUT error:', error);
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    console.error('Admin coupon PUT error:', error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
   }
 }
 
 /**
  * DELETE /api/admin/coupons/[id]
- * Delete a coupon or discount by ID
+ *
+ * @param request - Next.js request; requires an authenticated admin session.
+ * @param context - Route params carrying the coupon id.
+ * @returns `{ success, message }`.
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
     const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type'); // 'coupon' or 'discount'
 
-    if (!type) {
-      return NextResponse.json({
-        success: false,
-        error: 'Type is required'
-      }, { status: 400 });
+    const result = await db.query(
+      'DELETE FROM coupons WHERE id = $1 AND store_id = $2 RETURNING id',
+      [id, user.storeId]
+    );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Coupon not found' }, { status: 404 });
     }
 
-    if (type === 'coupon') {
-      // Delete coupon
-      const result = await db.query(
-        'DELETE FROM coupons WHERE id = $1 AND store_id = $2 RETURNING *',
-        [id, user.storeId]
-      );
-
-      if (result.rows.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Coupon not found'
-        }, { status: 404 });
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Coupon deleted successfully'
-      });
-    } else if (type === 'discount') {
-      // Check if discount has associated coupons
-      const couponsCheck = await db.query(
-        'SELECT COUNT(*) as count FROM coupons WHERE discount_id = $1',
-        [id]
-      );
-
-      if (parseInt(couponsCheck.rows[0].count) > 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Cannot delete discount with associated coupons. Delete the coupons first.'
-        }, { status: 400 });
-      }
-
-      // Delete discount
-      const result = await db.query(
-        'DELETE FROM discounts WHERE id = $1 AND store_id = $2 RETURNING *',
-        [id, user.storeId]
-      );
-
-      if (result.rows.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Discount not found'
-        }, { status: 404 });
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Discount deleted successfully'
-      });
-    }
-
-    return NextResponse.json({
-      success: false,
-      error: 'Invalid type. Must be "coupon" or "discount"'
-    }, { status: 400 });
-
+    return NextResponse.json({ success: true, message: 'Coupon deleted successfully' });
   } catch (error) {
-    console.error('Admin coupons DELETE error:', error);
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    console.error('Admin coupon DELETE error:', error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
   }
 }

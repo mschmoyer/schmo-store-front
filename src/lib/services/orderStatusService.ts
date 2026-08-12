@@ -2,14 +2,18 @@ import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import {
   UUID,
-  Order,
   OrderStatusUpdateData,
   ShipmentData,
   ShipStationWebhookPayload,
-  ShipmentNotification,
-  IntegrationLog,
   InventoryAdjustment
 } from '@/lib/types/database';
+import {
+  IntegrationLogRow,
+  OrderItemRow,
+  OrderRow,
+  ProductRow,
+  ShipmentNotificationRow
+} from '@/lib/types/db-rows';
 
 /**
  * Order Status Service - Handle ShipStation order processing and integration
@@ -31,18 +35,34 @@ export class OrderStatusService {
   private readonly RETRY_DELAY_MS = 1000;
 
   /**
-   * Process incoming shipment notification from ShipStation
-   * @param payload - ShipStation webhook payload
-   * @returns Promise<boolean> - Success status
+   * Process an incoming shipment notification from ShipStation.
+   *
+   * `storeId` is required and is threaded into every lookup below. Before this, the order was
+   * resolved with `SELECT * FROM orders WHERE shipstation_order_id = $1` — no tenant predicate at
+   * all — so an unauthenticated caller could mark *any* store's order shipped with attacker-chosen
+   * tracking data (audit P0-7). The store now comes from the authenticated per-store webhook URL,
+   * never from the payload, which the sender controls.
+   *
+   * @param payload - ShipStation webhook payload.
+   * @param storeId - Store the authenticated webhook belongs to.
+   * @returns Success status.
    */
-  async processShipmentNotification(payload: ShipStationWebhookPayload): Promise<boolean> {
+  async processShipmentNotification(
+    payload: ShipStationWebhookPayload,
+    storeId: string
+  ): Promise<boolean> {
     const startTime = Date.now();
-    let integrationLog: IntegrationLog | null = null;
+    let integrationLog: IntegrationLogRow | null = null;
+
+    if (!storeId) {
+      console.error('Refusing to process a ShipStation webhook with no store scope');
+      return false;
+    }
 
     try {
       // Log the incoming webhook
       integrationLog = await this.logIntegration(
-        payload.order_id || 'unknown',
+        storeId,
         'shipstation',
         'webhook_processing',
         'success',
@@ -52,10 +72,10 @@ export class OrderStatusService {
       // Process based on resource type
       switch (payload.resource_type) {
         case 'ITEM_SHIP_NOTIFY':
-          await this.handleShipmentNotification(payload);
+          await this.handleShipmentNotification(payload, storeId);
           break;
         case 'ITEM_DELIVERED_NOTIFY':
-          await this.handleDeliveryNotification(payload);
+          await this.handleDeliveryNotification(payload, storeId);
           break;
         case 'ITEM_ORDER_NOTIFY':
           await this.handleOrderNotification(payload);
@@ -97,13 +117,16 @@ export class OrderStatusService {
    * Handle shipped notification
    * @param payload - ShipStation webhook payload
    */
-  private async handleShipmentNotification(payload: ShipStationWebhookPayload): Promise<void> {
+  private async handleShipmentNotification(
+    payload: ShipStationWebhookPayload,
+    storeId: string
+  ): Promise<void> {
     if (!payload.order_id) {
       throw new Error('Order ID is required for shipment notification');
     }
 
-    // Find the order by ShipStation order ID or order number
-    const order = await this.findOrderByShipStationId(payload.order_id);
+    // Find the order by ShipStation order ID or order number, scoped to the authenticated store.
+    const order = await this.findOrderByShipStationId(payload.order_id, storeId);
     if (!order) {
       throw new Error(`Order not found for ShipStation order ID: ${payload.order_id}`);
     }
@@ -136,7 +159,7 @@ export class OrderStatusService {
     }
 
     // Queue customer notification
-    await this.queueCustomerNotification(order.id, 'shipped', {
+    await this.queueCustomerNotification(order.id, 'shipped', storeId, {
       tracking_number: payload.tracking_number,
       carrier: payload.carrier_code,
       tracking_url: this.generateTrackingUrl(payload.tracking_number, payload.carrier_code),
@@ -148,12 +171,15 @@ export class OrderStatusService {
    * Handle delivered notification
    * @param payload - ShipStation webhook payload
    */
-  private async handleDeliveryNotification(payload: ShipStationWebhookPayload): Promise<void> {
+  private async handleDeliveryNotification(
+    payload: ShipStationWebhookPayload,
+    storeId: string
+  ): Promise<void> {
     if (!payload.order_id) {
       throw new Error('Order ID is required for delivery notification');
     }
 
-    const order = await this.findOrderByShipStationId(payload.order_id);
+    const order = await this.findOrderByShipStationId(payload.order_id, storeId);
     if (!order) {
       throw new Error(`Order not found for ShipStation order ID: ${payload.order_id}`);
     }
@@ -169,7 +195,7 @@ export class OrderStatusService {
     await this.updateOrderStatus(updateData);
 
     // Queue delivery confirmation notification
-    await this.queueCustomerNotification(order.id, 'delivered', {
+    await this.queueCustomerNotification(order.id, 'delivered', storeId, {
       delivered_date: payload.delivered_date,
       tracking_number: payload.tracking_number
     });
@@ -366,31 +392,29 @@ export class OrderStatusService {
   /**
    * Find order by ShipStation order ID
    * @param shipstationOrderId - ShipStation order ID
-   * @returns Promise<Order | null>
+   * @returns Promise<OrderRow | null>
    */
-  private async findOrderByShipStationId(shipstationOrderId: string): Promise<Order | null> {
+  private async findOrderByShipStationId(
+    shipstationOrderId: string,
+    storeId: string
+  ): Promise<OrderRow | null> {
+    if (!storeId) {
+      // Defence in depth: an unscoped lookup here is the cross-tenant hole from P0-7.
+      throw new Error('findOrderByShipStationId requires a store scope');
+    }
+
     try {
-      // First try to find by shipstation_order_id
-      let result = await db.query(`
-        SELECT * FROM orders 
-        WHERE shipstation_order_id = $1
-      `, [shipstationOrderId]);
+      // One query, both identifiers, always store-scoped.
+      const result = await db.query<OrderRow>(
+        `SELECT * FROM orders
+          WHERE store_id = $2
+            AND (shipstation_order_id = $1 OR shipstation_shipment_id = $1 OR order_number = $1)
+          ORDER BY (shipstation_order_id = $1) DESC
+          LIMIT 1`,
+        [shipstationOrderId, storeId]
+      );
 
-      if (result.rows.length > 0) {
-        return result.rows[0] as Order;
-      }
-
-      // If not found, try to find by order_number (ShipStation might use order number as ID)
-      result = await db.query(`
-        SELECT * FROM orders 
-        WHERE order_number = $1
-      `, [shipstationOrderId]);
-
-      if (result.rows.length > 0) {
-        return result.rows[0] as Order;
-      }
-
-      return null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error finding order by ShipStation ID:', error);
       return null;
@@ -428,7 +452,7 @@ export class OrderStatusService {
    */
   private async createShipmentNotification(
     orderId: UUID,
-    notification: Partial<ShipmentNotification>
+    notification: Partial<ShipmentNotificationRow>
   ): Promise<UUID> {
     const notificationId = uuidv4();
     
@@ -454,23 +478,37 @@ export class OrderStatusService {
   }
 
   /**
-   * Queue customer notification
-   * @param orderId - Order UUID
-   * @param notificationType - Type of notification
-   * @param data - Additional data for notification
-   * @returns Promise<void>
+   * Queue a customer notification.
+   *
+   * The job is tagged with `store_id` and a dedupe key, so a ShipStation redelivery of the same
+   * event does not email the customer twice — the partial unique index from migration 022 makes
+   * the second insert a no-op while the first is still outstanding.
+   *
+   * These jobs are now actually drained: `/api/jobs/process` on a cron reads the queue that,
+   * before this change, was written to and never read (audit P1-5).
+   *
+   * @param orderId - Order UUID.
+   * @param notificationType - Type of notification.
+   * @param storeId - Owning store.
+   * @param data - Additional data for the notification.
+   * @returns Nothing.
    */
   private async queueCustomerNotification(
     orderId: UUID,
     notificationType: 'shipped' | 'delivered' | 'exception',
+    storeId: string,
     data: Record<string, unknown>
   ): Promise<void> {
     const jobId = uuidv4();
-    
-    await db.query(`
+    const trackingNumber = typeof data.tracking_number === 'string' ? data.tracking_number : 'none';
+
+    const result = await db.query(`
       INSERT INTO job_queue (
-        id, job_type, payload, status, priority, attempts, max_attempts, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        id, job_type, payload, status, priority, attempts, max_attempts,
+        store_id, dedupe_key, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT DO NOTHING
+      RETURNING id
     `, [
       jobId,
       'order_notification',
@@ -483,9 +521,16 @@ export class OrderStatusService {
       'medium',
       0,
       3,
+      storeId,
+      `notify:${orderId}:${notificationType}:${trackingNumber}`,
       new Date(),
       new Date()
     ]);
+
+    if (result.rows.length === 0) {
+      console.log(`Duplicate ${notificationType} notification for order ${orderId} suppressed`);
+      return;
+    }
 
     console.log(`Queued ${notificationType} notification for order ${orderId}`);
   }
@@ -498,7 +543,9 @@ export class OrderStatusService {
    */
   private async processInventoryAdjustments(orderId: UUID, reason: string): Promise<void> {
     // Get order items
-    const orderItems = await db.query(`
+    const orderItems = await db.query<
+      Pick<OrderItemRow, 'product_id' | 'product_sku' | 'quantity'> & Pick<ProductRow, 'track_inventory'>
+    >(`
       SELECT oi.product_id, oi.product_sku, oi.quantity, p.track_inventory
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
@@ -590,13 +637,13 @@ export class OrderStatusService {
     integrationType: 'shipstation' | 'shipengine' | 'stripe' | 'other',
     operation: 'order_export' | 'shipment_import' | 'inventory_sync' | 'webhook_processing',
     status: 'success' | 'failure' | 'warning',
-    requestData?: Record<string, unknown>,
-    responseData?: Record<string, unknown>,
+    requestData?: Record<string, unknown> | null,
+    responseData?: Record<string, unknown> | null,
     errorMessage?: string
-  ): Promise<IntegrationLog> {
+  ): Promise<IntegrationLogRow> {
     const logId = uuidv4();
-    
-    const result = await db.query(`
+
+    const result = await db.query<IntegrationLogRow>(`
       INSERT INTO integration_logs (
         id, store_id, integration_type, operation, status, 
         request_data, response_data, error_message, created_at
@@ -614,7 +661,7 @@ export class OrderStatusService {
       new Date()
     ]);
 
-    return result.rows[0] as IntegrationLog;
+    return result.rows[0];
   }
 
   /**
@@ -629,7 +676,7 @@ export class OrderStatusService {
   private async updateIntegrationLog(
     logId: UUID,
     status: 'success' | 'failure' | 'warning',
-    responseData?: Record<string, unknown>,
+    responseData?: Record<string, unknown> | null,
     executionTimeMs?: number,
     errorMessage?: string
   ): Promise<void> {
@@ -653,15 +700,15 @@ export class OrderStatusService {
   /**
    * Get order tracking information
    * @param orderId - Order UUID
-   * @returns Promise<Order | null>
+   * @returns Promise<OrderRow | null>
    */
-  async getOrderTrackingInfo(orderId: UUID): Promise<Order | null> {
+  async getOrderTrackingInfo(orderId: UUID): Promise<OrderRow | null> {
     try {
-      const result = await db.query(`
+      const result = await db.query<OrderRow>(`
         SELECT * FROM orders WHERE id = $1
       `, [orderId]);
 
-      return result.rows.length > 0 ? result.rows[0] as Order : null;
+      return result.rows[0] ?? null;
     } catch (error) {
       console.error('Error getting order tracking info:', error);
       return null;
@@ -671,17 +718,17 @@ export class OrderStatusService {
   /**
    * Get shipment notifications for an order
    * @param orderId - Order UUID
-   * @returns Promise<ShipmentNotification[]>
+   * @returns Promise<ShipmentNotificationRow[]>
    */
-  async getShipmentNotifications(orderId: UUID): Promise<ShipmentNotification[]> {
+  async getShipmentNotifications(orderId: UUID): Promise<ShipmentNotificationRow[]> {
     try {
-      const result = await db.query(`
+      const result = await db.query<ShipmentNotificationRow>(`
         SELECT * FROM shipment_notifications 
         WHERE order_id = $1 
         ORDER BY created_at DESC
       `, [orderId]);
 
-      return result.rows as ShipmentNotification[];
+      return result.rows;
     } catch (error) {
       console.error('Error getting shipment notifications:', error);
       return [];

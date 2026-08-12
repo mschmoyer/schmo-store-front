@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/session';
 import { db } from '@/lib/database/connection';
+import { StoreIntegrationRow } from '@/lib/types/db-rows';
 
 interface SyncResult {
   totalCount: number;
@@ -17,8 +18,17 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request);
     const storeId = user.storeId;
 
+    if (!storeId) {
+      return NextResponse.json(
+        { success: false, error: 'Store not found' },
+        { status: 400 }
+      );
+    }
+
     // Get ShipStation integration
-    const integrationResult = await db.query(
+    const integrationResult = await db.query<
+      Pick<StoreIntegrationRow, 'api_key_encrypted' | 'configuration' | 'is_active'>
+    >(
       `SELECT 
         api_key_encrypted,
         configuration,
@@ -36,6 +46,14 @@ export async function POST(request: NextRequest) {
     }
 
     const integration = integrationResult.rows[0];
+
+    if (integration.api_key_encrypted === null) {
+      return NextResponse.json(
+        { success: false, error: 'ShipStation integration has no stored API key' },
+        { status: 400 }
+      );
+    }
+
     const apiKey = Buffer.from(integration.api_key_encrypted, 'base64').toString('utf-8');
 
     // Sync inventory warehouses

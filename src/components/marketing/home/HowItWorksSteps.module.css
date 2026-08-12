@@ -1,0 +1,310 @@
+/* No `.root`/`.inner` — the shared Section owns the ground, width and padding. */
+
+/* ---------------------------------------------------- the numbered rail */
+
+.steps {
+  list-style: none;
+  margin: var(--stack-md) 0 0;
+  padding: 0;
+}
+
+.stepsFlush {
+  margin-top: 0;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--space-5);
+  row-gap: var(--space-3);
+  padding-block: var(--space-6);
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+
+.step:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The rail: a hairline running through the number column. */
+.step::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.step:first-child::before {
+  top: var(--space-6);
+}
+
+.step:last-child::before {
+  bottom: var(--space-6);
+}
+
+.stepHead {
+  display: contents;
+}
+
+.stepNumber {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--text);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.stepTime {
+  justify-self: start;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+  white-space: nowrap;
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.stepCopy {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: var(--text-h3);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.stepBody {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  max-width: 52ch;
+}
+
+/* ------------------------------------------------------- step facsimile */
+
+.figure {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.figureRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  flex-wrap: wrap;
+}
+
+.figureNote {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.syncList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.syncItem {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.syncItem:last-child {
+  border-bottom: 0;
+}
+
+.syncDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  justify-self: center;
+}
+
+/* A completed sync is a success state — a permitted signal usage. */
+.syncItem[data-state='done'] .syncDot {
+  background: var(--signal);
+}
+
+/* In progress is not success. It is ink, not colour. */
+.syncItem[data-state='running'] .syncDot {
+  background: var(--text);
+}
+
+.syncLabel {
+  color: var(--text);
+}
+
+.syncCount {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.swatchActive {
+  box-shadow:
+    0 0 0 2px var(--surface-2),
+    0 0 0 4px var(--text);
+}
+
+/* ---------------------------------------------------------- closing row */
+
+/*
+ * Left-aligned stack, NOT `justify-content: space-between`. The old rule pushed
+ * "Start for $1" to the far right of a sentence it had no relationship to,
+ * which is how the page ended up with buttons at three different alignments.
+ * The button now sits directly under the line it follows from, on the shared
+ * left edge like everything else.
+ */
+.closing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-top: var(--stack-sm);
+}
+
+.closingLine {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.0625rem, 2.4vw, 1.25rem);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  max-width: 52ch;
+}
+
+/* Two columns from the tablet breakpoint up: copy left, facsimile right. */
+@media (min-width: 860px) {
+  .steps .step {
+    grid-template-columns: 40px minmax(0, 1fr) minmax(0, 0.92fr);
+    column-gap: var(--space-6);
+    align-items: start;
+  }
+
+  .steps .stepTime {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .steps .stepCopy {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: -32px;
+  }
+
+  .steps .figure {
+    grid-column: 3;
+    grid-row: 2;
+    margin-top: -32px;
+  }
+}
+
+/* ------------------------------------------------------------ compact --
+ * The homepage variant, laid out by `parts/Rail`: three cards in a horizontal
+ * snap rail below 760px, three bordered-off columns above it. Same three
+ * steps, same timings, same copy — the deep version with the screen facsimiles
+ * stays on /how-it-works.
+ */
+
+.compact {
+  margin-top: var(--stack-md);
+}
+
+.compactStep {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.compactHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
+.compact .stepNumber {
+  width: 32px;
+  height: 32px;
+  font-size: 0.9375rem;
+}
+
+@media (min-width: 860px) {
+  /*
+   * Above the rail breakpoint the cards lose their boxes and become columns
+   * divided by the site's hairline — the composition the desktop rebuild was
+   * approved at. `li` is the wrapper `parts/Rail` puts around each child.
+   */
+  .compactStep {
+    padding: 0 0 0 var(--space-6);
+    border: 0;
+    border-inline-start: 1px solid var(--border);
+    border-radius: 0;
+  }
+
+  .compact > li:first-child > .compactStep {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+}

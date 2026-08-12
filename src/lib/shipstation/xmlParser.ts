@@ -6,6 +6,16 @@
 import { parseString } from 'xml2js';
 import { parseShipStationDate, mapShipStationStatusToInternal } from './utils';
 import { Address, Order } from '@/lib/types/database';
+import {
+  XmlNode,
+  getXmlChild,
+  toXmlNodeArray,
+  safeGetString,
+  safeGetBoolean,
+} from './xmlTypes';
+
+/** A single line item on a parsed ShipStation order. */
+export type ParsedOrderItem = ParsedOrderData['items'][number];
 
 /**
  * Interface for ShipStation shipment notification data
@@ -141,9 +151,12 @@ export async function parseOrderXML(xmlData: string): Promise<ParsedOrderData[]>
  * @param parsedXML - Parsed XML object
  * @returns ShipmentNotificationData
  */
-function extractShipmentData(parsedXML: Record<string, unknown>): ShipmentNotificationData {
-  const shipment = parsedXML.ShipmentNotification || parsedXML.ShipmentUpdate || parsedXML.Shipment;
-  
+function extractShipmentData(parsedXML: XmlNode): ShipmentNotificationData {
+  const shipment =
+    getXmlChild(parsedXML, 'ShipmentNotification') ??
+    getXmlChild(parsedXML, 'ShipmentUpdate') ??
+    getXmlChild(parsedXML, 'Shipment');
+
   if (!shipment) {
     throw new Error('No shipment data found in XML');
   }
@@ -212,8 +225,8 @@ function extractShipmentData(parsedXML: Record<string, unknown>): ShipmentNotifi
   }
   
   // Parse dimensions
-  if (shipment.Dimensions) {
-    const dims = shipment.Dimensions;
+  const dims = getXmlChild(shipment, 'Dimensions');
+  if (dims) {
     notification.dimensions = {
       length: parseFloat(safeGetString(dims.Length)) || 0,
       width: parseFloat(safeGetString(dims.Width)) || 0,
@@ -223,8 +236,9 @@ function extractShipmentData(parsedXML: Record<string, unknown>): ShipmentNotifi
   }
   
   // Parse shipping address
-  if (shipment.ShipTo) {
-    notification.shipTo = parseAddress(shipment.ShipTo);
+  const shipTo = getXmlChild(shipment, 'ShipTo');
+  if (shipTo) {
+    notification.shipTo = parseAddress(shipTo);
   }
   
   return notification;
@@ -235,18 +249,16 @@ function extractShipmentData(parsedXML: Record<string, unknown>): ShipmentNotifi
  * @param parsedXML - Parsed XML object
  * @returns ParsedOrderData[]
  */
-function extractOrdersData(parsedXML: Record<string, unknown>): ParsedOrderData[] {
-  const ordersRoot = parsedXML.Orders || parsedXML.Order || parsedXML;
-  let orders: Record<string, unknown>[] = [];
-  
-  if (ordersRoot.Order) {
-    orders = Array.isArray(ordersRoot.Order) ? ordersRoot.Order : [ordersRoot.Order];
-  } else if (Array.isArray(ordersRoot)) {
-    orders = ordersRoot;
-  } else if (ordersRoot.OrderNumber) {
+function extractOrdersData(parsedXML: XmlNode): ParsedOrderData[] {
+  const ordersRoot = getXmlChild(parsedXML, 'Orders') ?? getXmlChild(parsedXML, 'Order') ?? parsedXML;
+  let orders: XmlNode[] = [];
+
+  if (ordersRoot.Order !== undefined) {
+    orders = toXmlNodeArray(ordersRoot.Order);
+  } else if (ordersRoot.OrderNumber !== undefined) {
     orders = [ordersRoot];
   }
-  
+
   return orders.map(order => extractOrderData(order));
 }
 
@@ -255,7 +267,7 @@ function extractOrdersData(parsedXML: Record<string, unknown>): ParsedOrderData[
  * @param orderXML - Single order XML object
  * @returns ParsedOrderData
  */
-function extractOrderData(orderXML: Record<string, unknown>): ParsedOrderData {
+function extractOrderData(orderXML: XmlNode): ParsedOrderData {
   const order: ParsedOrderData = {
     orderNumber: safeGetString(orderXML.OrderNumber),
     orderDate: parseShipStationDate(safeGetString(orderXML.OrderDate)),
@@ -275,24 +287,26 @@ function extractOrderData(orderXML: Record<string, unknown>): ParsedOrderData {
   };
   
   // Parse customer data
-  if (orderXML.Customer) {
-    const customer = orderXML.Customer;
+  const customer = getXmlChild(orderXML, 'Customer');
+  if (customer) {
     order.customerCode = safeGetString(customer.CustomerCode);
     order.customerEmail = safeGetString(customer.CustomerCode); // Usually the email
-    
-    if (customer.BillTo) {
-      order.billTo = parseAddress(customer.BillTo);
+
+    const billTo = getXmlChild(customer, 'BillTo');
+    if (billTo) {
+      order.billTo = parseAddress(billTo);
     }
-    
-    if (customer.ShipTo) {
-      order.shipTo = parseAddress(customer.ShipTo);
+
+    const shipTo = getXmlChild(customer, 'ShipTo');
+    if (shipTo) {
+      order.shipTo = parseAddress(shipTo);
     }
   }
   
   // Parse items
-  if (orderXML.Items && orderXML.Items.Item) {
-    const items = Array.isArray(orderXML.Items.Item) ? orderXML.Items.Item : [orderXML.Items.Item];
-    order.items = items.map(parseOrderItem);
+  const itemsNode = getXmlChild(orderXML, 'Items');
+  if (itemsNode && itemsNode.Item !== undefined) {
+    order.items = toXmlNodeArray(itemsNode.Item).map(parseOrderItem);
   }
   
   return order;
@@ -303,7 +317,7 @@ function extractOrderData(orderXML: Record<string, unknown>): ParsedOrderData {
  * @param itemXML - Item XML object
  * @returns Parsed item object
  */
-function parseOrderItem(itemXML: Record<string, unknown>): Record<string, unknown> {
+function parseOrderItem(itemXML: XmlNode): ParsedOrderItem {
   return {
     sku: safeGetString(itemXML.SKU),
     name: safeGetString(itemXML.Name),
@@ -326,7 +340,7 @@ function parseOrderItem(itemXML: Record<string, unknown>): Record<string, unknow
  * @param addressXML - Address XML object
  * @returns Address object
  */
-function parseAddress(addressXML: Record<string, unknown>): Address {
+function parseAddress(addressXML: XmlNode): Address {
   return {
     street: safeGetString(addressXML.Address1),
     city: safeGetString(addressXML.City),
@@ -336,37 +350,6 @@ function parseAddress(addressXML: Record<string, unknown>): Address {
     company: safeGetString(addressXML.Company),
     phone: safeGetString(addressXML.Phone)
   };
-}
-
-/**
- * Safely get string value from XML node
- * @param node - XML node
- * @returns String value or empty string
- */
-function safeGetString(node: unknown): string {
-  if (node === null || node === undefined) {
-    return '';
-  }
-  
-  if (typeof node === 'string') {
-    return node.trim();
-  }
-  
-  if (typeof node === 'object' && node._) {
-    return String(node._).trim();
-  }
-  
-  return String(node).trim();
-}
-
-/**
- * Safely get boolean value from XML node
- * @param node - XML node
- * @returns Boolean value or false
- */
-function safeGetBoolean(node: unknown): boolean {
-  const value = safeGetString(node).toLowerCase();
-  return value === 'true' || value === '1' || value === 'yes';
 }
 
 /**
@@ -392,11 +375,80 @@ export function validateShipmentNotification(notification: ShipmentNotificationD
 }
 
 /**
+ * Raw JSON body delivered by a ShipStation webhook.
+ *
+ * Every field is optional because ShipStation only sends the members relevant
+ * to the event that fired.
+ */
+export interface ShipStationWebhookPayload {
+  resource_url?: string;
+  resource_type?: string;
+  resource_id?: string;
+  order_id?: string;
+  shipment_id?: string;
+  tracking_number?: string;
+  carrier_code?: string;
+  service_code?: string;
+  package_code?: string;
+  ship_date?: string;
+  delivered_date?: string;
+  tracking_status?: string;
+  estimated_delivery_date?: string;
+  actual_delivery_date?: string;
+  shipment_cost?: string | number;
+  weight?: string | number;
+  dimensions?: ShipmentDimensions;
+  label_url?: string;
+  form_url?: string;
+  delivery_confirmation?: string;
+  signature_required?: boolean;
+  adult_signature?: boolean;
+  ship_to?: Address;
+  created_at?: string;
+}
+
+/** Physical dimensions reported for a shipment. */
+export interface ShipmentDimensions {
+  length: number;
+  width: number;
+  height: number;
+  units: string;
+}
+
+/** Normalized, camel-cased view of a ShipStation webhook payload. */
+export interface ParsedWebhookData {
+  resourceUrl?: string;
+  resourceType?: string;
+  resourceId?: string;
+  orderId?: string;
+  shipmentId?: string;
+  trackingNumber?: string;
+  carrierCode?: string;
+  serviceCode?: string;
+  packageCode?: string;
+  shipDate?: Date;
+  deliveredDate?: Date;
+  trackingStatus?: string;
+  estimatedDeliveryDate?: Date;
+  actualDeliveryDate?: Date;
+  shipmentCost?: number;
+  weight?: number;
+  dimensions?: ShipmentDimensions;
+  labelUrl?: string;
+  formUrl?: string;
+  deliveryConfirmation?: string;
+  signatureRequired?: boolean;
+  adultSignature?: boolean;
+  shipTo?: Address;
+  createdAt: Date;
+}
+
+/**
  * Parse ShipStation webhook payload
  * @param payload - JSON webhook payload
  * @returns Parsed webhook data
  */
-export function parseWebhookPayload(payload: Record<string, unknown>): Record<string, unknown> {
+export function parseWebhookPayload(payload: ShipStationWebhookPayload): ParsedWebhookData {
   return {
     resourceUrl: payload.resource_url,
     resourceType: payload.resource_type,
@@ -412,8 +464,8 @@ export function parseWebhookPayload(payload: Record<string, unknown>): Record<st
     trackingStatus: payload.tracking_status,
     estimatedDeliveryDate: payload.estimated_delivery_date ? new Date(payload.estimated_delivery_date) : undefined,
     actualDeliveryDate: payload.actual_delivery_date ? new Date(payload.actual_delivery_date) : undefined,
-    shipmentCost: payload.shipment_cost ? parseFloat(payload.shipment_cost) * 100 : undefined,
-    weight: payload.weight ? parseFloat(payload.weight) : undefined,
+    shipmentCost: payload.shipment_cost ? parseFloat(String(payload.shipment_cost)) * 100 : undefined,
+    weight: payload.weight ? parseFloat(String(payload.weight)) : undefined,
     dimensions: payload.dimensions,
     labelUrl: payload.label_url,
     formUrl: payload.form_url,

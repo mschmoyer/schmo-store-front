@@ -3,7 +3,14 @@
  * Converts orders to ShipStation XML format
  */
 
-import { Order, OrderItem, Address } from '@/lib/types/database';
+import {
+  AdvancedOptions,
+  Address,
+  CustomsItem,
+  InternationalOptions,
+  Order,
+  OrderItem
+} from '@/lib/types/database';
 import { 
   formatDateForShipStation, 
   mapOrderStatusToShipStation, 
@@ -192,7 +199,7 @@ export function buildAdvancedOrderXML(order: OrderWithItems): string {
   }
   
   if (order.confirmation_delivery) {
-    advancedFields += `    <Confirmation>${escapeXML(order.confirmation_delivery)}</Confirmation>\n`;
+    advancedFields += `    <Confirmation>${escapeXML(String(order.confirmation_delivery))}</Confirmation>\n`;
   }
   
   if (order.shipment_weight) {
@@ -227,7 +234,7 @@ export function buildAdvancedOrderXML(order: OrderWithItems): string {
  * @param options - International options
  * @returns International options XML string
  */
-function buildInternationalOptionsXML(options: Record<string, unknown>): string {
+function buildInternationalOptionsXML(options: InternationalOptions): string {
   let xml = '    <InternationalOptions>\n';
   
   if (options.contents) {
@@ -238,9 +245,9 @@ function buildInternationalOptionsXML(options: Record<string, unknown>): string 
     xml += `      <NonDelivery>${escapeXML(options.non_delivery)}</NonDelivery>\n`;
   }
   
-  if (options.customs_items && Array.isArray(options.customs_items) && options.customs_items.length > 0) {
+  if (options.customs_items && options.customs_items.length > 0) {
     xml += '      <CustomsItems>\n';
-    options.customs_items.forEach((item: Record<string, unknown>) => {
+    options.customs_items.forEach((item: CustomsItem) => {
       xml += '        <CustomsItem>\n';
       xml += `          <Description>${createCDATA(item.description)}</Description>\n`;
       xml += `          <Quantity>${item.quantity}</Quantity>\n`;
@@ -266,7 +273,7 @@ function buildInternationalOptionsXML(options: Record<string, unknown>): string 
  * @param options - Advanced options
  * @returns Advanced options XML string
  */
-function buildAdvancedOptionsXML(options: Record<string, unknown>): string {
+function buildAdvancedOptionsXML(options: AdvancedOptions): string {
   let xml = '    <AdvancedOptions>\n';
   
   Object.entries(options).forEach(([key, value]) => {

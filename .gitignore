@@ -35,6 +35,8 @@ dev.log
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the template of variable NAMES is documentation, not secrets, and must ship.
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -46,3 +48,4 @@ next-env.d.ts
 #playwright
 /playwright-report
 /test-results
+.scratch/
