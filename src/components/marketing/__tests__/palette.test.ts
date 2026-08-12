@@ -64,7 +64,13 @@ const SOLID_FILL_TOKENS = [
  * @returns The resolved `#rrggbb` value.
  */
 function resolveToken(token: string): string {
-  const root = GLOBALS.slice(0, GLOBALS.indexOf('@media (prefers-color-scheme: dark)'));
+  // The light `:root` block only — bounded so the dark overrides, which
+  // redefine the same names, cannot be picked up instead. `@custom-variant`
+  // near the top of the file also contains a `prefers-color-scheme` query, so
+  // the start anchor has to be the light block itself.
+  const from = GLOBALS.indexOf(':root {\n  color-scheme: light;');
+  const to = GLOBALS.indexOf('@media (prefers-color-scheme: dark)', from);
+  const root = GLOBALS.slice(from, to);
   let name = token;
   for (let hops = 0; hops < 10; hops += 1) {
     const match = new RegExp(`${name}:\\s*([^;]+);`).exec(root);
@@ -178,16 +184,28 @@ describe('palette — near-monochrome plus one signal', () => {
     }
   });
 
-  it('rejects a mid-tone saturated accent fill, which is how 3.42:1 happened', () => {
-    // A saturated colour light enough to look "vibrant" is almost never dark
-    // enough to carry white text. Rather than re-ban hexes one at a time, refuse
-    // the whole region: chroma above 0.25 combined with relative luminance in
-    // the 0.12–0.55 band is where mid-tone brand fills live.
+  it('demands headroom on solid fills, not bare compliance', () => {
+    /*
+     * The old vermilion primary was "fixed" by moving from `--ember-500`
+     * (3.42:1, failing) to `--ember-600` (4.51:1) — a pass by 0.01. A palette
+     * whose primary action needs that much care to stay legal is the wrong
+     * palette, and the next well-meaning tweak breaks it again. Solid fills
+     * carrying white must clear 5.0:1, so there is room to nudge a colour
+     * without silently crossing the line.
+     */
     for (const token of SOLID_FILL_TOKENS) {
       const hex = resolveToken(token);
-      const lum = luminance(hex);
-      const midToneSaturated = chroma(hex) > 0.25 && lum > 0.12 && lum < 0.55;
-      expect({ token, hex, midToneSaturated }).toEqual({ token, hex, midToneSaturated: false });
+      const ratio = Number(contrast(hex, '#FFFFFF').toFixed(2));
+      expect({ token, hex, hasHeadroom: ratio >= 5 }).toEqual({ token, hex, hasHeadroom: true });
+    }
+  });
+
+  it('keeps the primary action achromatic — that is the palette C decision', () => {
+    // Green may be a fill (success), but the PRIMARY action must stay ink:
+    // a chromatic primary is what the owner rejected.
+    for (const token of ['--accent', '--accent-solid', '--accent-solid-hover'] as const) {
+      const hex = resolveToken(token);
+      expect({ token, hex, chroma: chroma(hex) < 0.05 }).toEqual({ token, hex, chroma: true });
     }
   });
 });
