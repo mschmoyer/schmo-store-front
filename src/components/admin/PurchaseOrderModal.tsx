@@ -352,7 +352,7 @@ export default function PurchaseOrderModal({
       centered
     >
       <Stack gap="md">
-        <Stepper active={activeStep} onStepClick={setActiveStep} breakpoint="sm">
+        <Stepper active={activeStep} onStepClick={setActiveStep}>
           <Stepper.Step label="Supplier" description="Choose supplier">
             <Stack gap="md" mt="md">
               <Autocomplete

@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { HOMEPAGE_FAQ } from '@/components/marketing/data/faq';
 
 /**
  * Canonical site origin. Overridable per environment; falls back to the production domain.
@@ -46,7 +47,7 @@ export const generateLandingPageMeta = ({
   keywords =
     'shipstation storefront, shipstation ecommerce, sell from shipstation, '
     + 'online store for shipstation sellers, shopify alternative, direct to consumer storefront',
-  ogImage = '/landing/og-image.jpg',
+  ogImage = '/brand/og-image.png',
   canonicalUrl = SITE_URL,
 }: LandingPageMetaProps = {}): Metadata => {
   return {
@@ -71,7 +72,7 @@ export const generateLandingPageMeta = ({
           url: ogImage,
           width: 1200,
           height: 630,
-          alt: 'RebelShops — turn your ShipStation catalog into a storefront',
+          alt: 'A RebelShops storefront showing a product grid with live stock levels',
         },
       ],
       locale: 'en_US',
@@ -113,7 +114,7 @@ export const landingPageStructuredData = {
       url: SITE_URL,
       logo: {
         '@type': 'ImageObject',
-        url: `${SITE_URL}/logo.png`,
+        url: `${SITE_URL}/brand/icon-512.png`,
         width: 512,
         height: 512,
       },
@@ -128,13 +129,10 @@ export const landingPageStructuredData = {
         'Turn the products already in your ShipStation account into an online store, '
         + 'with Stripe checkout and orders that flow back into your existing shipping workflow.',
       url: SITE_URL,
-      offers: {
-        '@type': 'Offer',
-        price: '19.99',
-        priceCurrency: 'USD',
-        description: '$1 for the first 3 months, then $19.99 per month. No transaction fees.',
-        availability: 'https://schema.org/InStock',
-      },
+      // No `offers` block: docs/marketing-copy.md §6 gates Offer schema on live
+      // subscription billing, and there is no billing flow in the product yet.
+      // Publishing a price as structured data before we can charge it would be
+      // a claim we cannot honour.
     },
     {
       '@type': 'WebPage',
@@ -154,54 +152,21 @@ function title(): string {
 }
 
 /**
- * FAQ structured data. Every answer below describes behavior that exists today.
- * If a capability is still in progress, it does not get an entry here.
+ * FAQ structured data.
+ *
+ * §6 of the copy deck: `FAQPage` may only contain questions and answers that
+ * appear verbatim on the rendered page. This is generated from the same array
+ * the homepage FAQ renders, so the two can never drift.
  */
 export const faqStructuredData = {
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: [
-    {
-      '@type': 'Question',
-      name: 'What does RebelShops do?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text:
-          'RebelShops reads the product catalog and inventory in your existing ShipStation '
-          + 'account and gives you a public online store to sell them from, so you do not have '
-          + 'to re-enter your products anywhere or change how you ship.',
-      },
+  mainEntity: HOMEPAGE_FAQ.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: item.answer,
     },
-    {
-      '@type': 'Question',
-      name: 'What does RebelShops cost?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text:
-          '$1 for the first three months, then $19.99 per month. We do not take a percentage '
-          + 'of your sales. Payment processing fees are charged by Stripe directly and go to Stripe, '
-          + 'not to us.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'Do I need to use ShipStation?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text:
-          'ShipStation is the only shipping platform RebelShops integrates with today. The product '
-          + 'is built specifically for sellers who already use it.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: 'Do I need technical skills to set up a store?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text:
-          'No. Setup is connecting your ShipStation account, choosing how your store looks, and '
-          + 'publishing. There is nothing to install and no code to write.',
-      },
-    },
-  ],
+  })),
 };

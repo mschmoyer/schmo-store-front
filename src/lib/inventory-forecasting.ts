@@ -52,8 +52,7 @@ export async function calculateForecast(
   }
   
   // Use dynamic import to avoid client-side bundling issues
-  const { DatabaseService } = await import('./database')
-  const database = new DatabaseService()
+  const { query } = await import('./database')
   
   // Get sales data for the product
   const salesQuery = `
@@ -71,7 +70,7 @@ export async function calculateForecast(
       AND o.created_at >= NOW() - INTERVAL '365 days'
   `
   
-  const salesResult = await database.query(salesQuery, [productId])
+  const salesResult = await query<SalesData>(salesQuery, [productId])
   const salesData: SalesData = salesResult.rows[0] || {
     avg_monthly_sales: 0,
     sales_last_30_days: 0,

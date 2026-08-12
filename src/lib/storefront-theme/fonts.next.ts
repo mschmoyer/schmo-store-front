@@ -41,81 +41,108 @@ const LATIN = ['latin'] as const;
 const inter = Inter({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS.inter.cssVar,
+  variable: '--st-font-inter',
 });
 
 const spaceGrotesk = Space_Grotesk({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS['space-grotesk'].cssVar,
+  variable: '--st-font-space-grotesk',
 });
 
 const manrope = Manrope({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS.manrope.cssVar,
+  variable: '--st-font-manrope',
 });
 
 const dmSans = DM_Sans({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS['dm-sans'].cssVar,
+  variable: '--st-font-dm-sans',
 });
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS['plus-jakarta'].cssVar,
+  variable: '--st-font-plus-jakarta',
 });
 
 const outfit = Outfit({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS.outfit.cssVar,
+  variable: '--st-font-outfit',
 });
 
 const playfairDisplay = Playfair_Display({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS['playfair-display'].cssVar,
+  variable: '--st-font-playfair-display',
 });
 
 const fraunces = Fraunces({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS.fraunces.cssVar,
+  variable: '--st-font-fraunces',
 });
 
 const instrumentSerif = Instrument_Serif({
   subsets: [...LATIN],
   display: 'swap',
   weight: '400',
-  variable: FONTS['instrument-serif'].cssVar,
+  variable: '--st-font-instrument-serif',
 });
 
 const lora = Lora({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS.lora.cssVar,
+  variable: '--st-font-lora',
 });
 
 const bricolageGrotesque = Bricolage_Grotesque({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS['bricolage-grotesque'].cssVar,
+  variable: '--st-font-bricolage-grotesque',
 });
 
 const archivo = Archivo({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS.archivo.cssVar,
+  variable: '--st-font-archivo',
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: [...LATIN],
   display: 'swap',
-  variable: FONTS['jetbrains-mono'].cssVar,
+  variable: '--st-font-jetbrains-mono',
 });
+
+/**
+ * The `variable:` values above MUST be written as literals — `next/font/google`
+ * is a build-time macro and rejects any computed expression with "Font loader
+ * values must be explicitly written literals." Passing `FONTS[id].cssVar` there
+ * fails the whole app's compilation, not just this module.
+ *
+ * That means the literals are duplicated from the `FONTS` registry in
+ * `fonts.ts`, so this guard exists to make the duplication safe: if the two ever
+ * disagree, the test suite fails instead of the storefront silently rendering in
+ * a fallback face. Exported so `__tests__/fonts.test.ts` can assert on it.
+ */
+export const DECLARED_FONT_CSS_VARS: Record<FontId, string> = {
+  inter: '--st-font-inter',
+  'space-grotesk': '--st-font-space-grotesk',
+  manrope: '--st-font-manrope',
+  'dm-sans': '--st-font-dm-sans',
+  'plus-jakarta': '--st-font-plus-jakarta',
+  outfit: '--st-font-outfit',
+  'playfair-display': '--st-font-playfair-display',
+  fraunces: '--st-font-fraunces',
+  'instrument-serif': '--st-font-instrument-serif',
+  lora: '--st-font-lora',
+  'bricolage-grotesque': '--st-font-bricolage-grotesque',
+  archivo: '--st-font-archivo',
+  'jetbrains-mono': '--st-font-jetbrains-mono',
+};
 
 /** The class name that binds each curated font's custom property. */
 export const STOREFRONT_FONT_CLASSNAMES: Record<FontId, string> = {

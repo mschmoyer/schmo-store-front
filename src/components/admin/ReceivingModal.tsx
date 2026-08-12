@@ -107,15 +107,15 @@ export default function ReceivingModal({
       newItems[index] = { ...newItems[index], [field]: value };
       
       // Validate receiving quantity
-      if (field === 'receiving_quantity') {
+      if (field === 'receiving_quantity' && typeof value === 'number') {
         const maxQuantity = newItems[index].quantity_pending;
         if (value > maxQuantity) {
           newItems[index].receiving_quantity = maxQuantity;
         }
       }
-      
+
       // Validate damaged quantity
-      if (field === 'damaged_quantity') {
+      if (field === 'damaged_quantity' && typeof value === 'number') {
         const maxDamaged = newItems[index].receiving_quantity;
         if (value > maxDamaged) {
           newItems[index].damaged_quantity = maxDamaged;
@@ -137,6 +137,10 @@ export default function ReceivingModal({
   };
 
   const handleSubmit = async () => {
+    if (!purchaseOrder) {
+      return;
+    }
+
     // Validate at least one item is being received
     const receivingItems = items.filter(item => item.receiving_quantity > 0);
     if (receivingItems.length === 0) {

@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     startDate.setDate(startDate.getDate() - days);
 
     // Check if search_tracking table exists
-    const tableExistsResult = await db.query(`
+    const tableExistsResult = await db.query<{ exists: boolean }>(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
@@ -91,7 +91,11 @@ export async function GET(request: NextRequest) {
 
     if (searchTrackingExists) {
       // Total searches
-      const totalSearchesResult = await db.query(`
+      const totalSearchesResult = await db.query<{
+        total_searches: string;
+        unique_searches: string;
+        avg_results: string;
+      }>(`
         SELECT 
           COUNT(*) as total_searches,
           COUNT(DISTINCT search_query) as unique_searches,
@@ -106,7 +110,12 @@ export async function GET(request: NextRequest) {
       searchAnalytics.averageResultsPerSearch = parseFloat(String(searchStats?.avg_results || '0'));
 
       // Most popular searches
-      const popularSearchesResult = await db.query(`
+      const popularSearchesResult = await db.query<{
+        search_query: string;
+        search_count: string;
+        avg_results: string | null;
+        last_searched: Date;
+      }>(`
         SELECT 
           search_query,
           COUNT(*) as search_count,
@@ -123,11 +132,11 @@ export async function GET(request: NextRequest) {
         search_query: row.search_query,
         search_count: parseInt(String(row.search_count)),
         avg_results: parseFloat(String(row.avg_results || '0')),
-        last_searched: row.last_searched
+        last_searched: row.last_searched.toISOString()
       }));
 
       // Search trends by day
-      const searchTrendsResult = await db.query(`
+      const searchTrendsResult = await db.query<{ date: Date; search_count: string }>(`
         SELECT 
           DATE(created_at) as date,
           COUNT(*) as search_count
@@ -139,12 +148,16 @@ export async function GET(request: NextRequest) {
       `, [user.storeId, startDate]);
 
       searchAnalytics.searchTrends = searchTrendsResult.rows.map(row => ({
-        date: row.date,
+        date: row.date.toISOString(),
         search_count: parseInt(String(row.search_count))
       }));
 
       // Zero result searches
-      const zeroResultSearchesResult = await db.query(`
+      const zeroResultSearchesResult = await db.query<{
+        search_query: string;
+        search_count: string;
+        last_searched: Date;
+      }>(`
         SELECT 
           search_query,
           COUNT(*) as search_count,
@@ -159,7 +172,7 @@ export async function GET(request: NextRequest) {
       searchAnalytics.zeroResultSearches = zeroResultSearchesResult.rows.map(row => ({
         search_query: row.search_query,
         search_count: parseInt(String(row.search_count)),
-        last_searched: row.last_searched
+        last_searched: row.last_searched.toISOString()
       }));
     }
 
@@ -174,7 +187,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Check if visitors table exists
-    const visitorsTableExistsResult = await db.query(`
+    const visitorsTableExistsResult = await db.query<{ exists: boolean }>(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
@@ -201,7 +214,11 @@ export async function GET(request: NextRequest) {
       visitorAnalytics.totalPageViews = parseInt(String(visitorStats?.total_page_views || '0'));
 
       // Top pages
-      const topPagesResult = await db.query(`
+      const topPagesResult = await db.query<{
+        page_path: string;
+        view_count: string;
+        unique_visitors: string;
+      }>(`
         SELECT 
           page_path,
           COUNT(*) as view_count,
@@ -220,7 +237,11 @@ export async function GET(request: NextRequest) {
       }));
 
       // Visitor trends by day
-      const visitorTrendsResult = await db.query(`
+      const visitorTrendsResult = await db.query<{
+        date: Date;
+        visitor_count: string;
+        page_views: string;
+      }>(`
         SELECT 
           DATE(created_at) as date,
           COUNT(DISTINCT ip_address) as visitor_count,
@@ -233,7 +254,7 @@ export async function GET(request: NextRequest) {
       `, [user.storeId, startDate]);
 
       visitorAnalytics.visitorTrends = visitorTrendsResult.rows.map(row => ({
-        date: row.date,
+        date: row.date.toISOString(),
         visitor_count: parseInt(String(row.visitor_count)),
         page_views: parseInt(String(row.page_views))
       }));

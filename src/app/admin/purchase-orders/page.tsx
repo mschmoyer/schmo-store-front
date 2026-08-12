@@ -258,7 +258,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <Container size="xl" py="xl">
-      <Stack spacing="lg">
+      <Stack gap="lg">
         {/* Header */}
         <Group justify="space-between" align="center">
           <div>

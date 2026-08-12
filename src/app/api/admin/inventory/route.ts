@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
+import {
+  InventoryProductRow,
+  LastRestockRow,
+  ProductSalesVelocityRow
+} from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
 import { inventoryService } from '@/lib/services/inventoryService';
 import { 
@@ -96,7 +101,7 @@ export async function GET(request: NextRequest) {
       ORDER BY p.name
     `;
 
-    const inventoryResult = await db.query(inventoryQuery, [user.storeId]);
+    const inventoryResult = await db.query<InventoryProductRow>(inventoryQuery, [user.storeId]);
     const products = inventoryResult.rows;
 
     // Get sales data for forecasting with multiple time periods
@@ -122,26 +127,11 @@ export async function GET(request: NextRequest) {
       GROUP BY oi.product_id, oi.product_sku
     `;
 
-    const salesResult = await db.query(salesQuery, [user.storeId]);
-    const salesData = salesResult.rows.reduce((acc, row) => {
+    const salesResult = await db.query<ProductSalesVelocityRow>(salesQuery, [user.storeId]);
+    const salesData = salesResult.rows.reduce<Record<string, ProductSalesVelocityRow>>((acc, row) => {
       acc[row.product_id] = row;
       return acc;
-    }, {} as Record<string, {
-      product_id: string;
-      product_sku: string;
-      total_sales: number;
-      total_orders: number;
-      avg_order_quantity: number;
-      last_sale_date: string;
-      sales_last_7_days: number;
-      sales_last_14_days: number;
-      sales_last_30_days: number;
-      sales_last_60_days: number;
-      sales_last_90_days: number;
-      sales_last_180_days: number;
-      sales_last_365_days: number;
-      avg_monthly_sales: number;
-    }>);
+    }, {});
 
     // Get recent inventory changes for last restocked dates
     const inventoryLogsQuery = `
@@ -155,20 +145,15 @@ export async function GET(request: NextRequest) {
       ORDER BY product_id, created_at DESC
     `;
 
-    const inventoryLogsResult = await db.query(inventoryLogsQuery, [user.storeId]);
-    const inventoryLogs = inventoryLogsResult.rows.reduce((acc, row) => {
+    const inventoryLogsResult = await db.query<LastRestockRow>(inventoryLogsQuery, [user.storeId]);
+    const inventoryLogs = inventoryLogsResult.rows.reduce<Record<string, LastRestockRow>>((acc, row) => {
       acc[row.product_id] = row;
       return acc;
-    }, {} as Record<string, {
-      product_id: string;
-      last_restocked: string;
-      change_type: string;
-      quantity_change: number;
-    }>);
+    }, {});
 
     // Transform data into inventory items
     const inventoryItems: InventoryItem[] = products.map(product => {
-      const sales = salesData[product.product_id] || {};
+      const sales: Partial<ProductSalesVelocityRow> = salesData[product.product_id] ?? {};
       const lastRestock = inventoryLogs[product.product_id];
       
       // Calculate stock status
@@ -211,7 +196,7 @@ export async function GET(request: NextRequest) {
         featured_image_url: product.featured_image_url,
         category: product.category || 'Uncategorized',
         supplier: 'ShipStation', // Default supplier
-        last_restocked: lastRestock?.last_restocked || null,
+        last_restocked: lastRestock?.last_restocked?.toISOString() ?? null,
         forecast_30_days: forecast30Days,
         forecast_90_days: forecast90Days,
         avg_monthly_sales: avgMonthlySales,
@@ -225,7 +210,7 @@ export async function GET(request: NextRequest) {
           total_sales: Number(sales.total_sales) || 0,
           total_orders: Number(sales.total_orders) || 0,
           avg_order_quantity: Number(sales.avg_order_quantity) || 0,
-          last_sale_date: sales.last_sale_date || null,
+          last_sale_date: sales.last_sale_date?.toISOString() ?? null,
           sales_last_7_days: Number(sales.sales_last_7_days) || 0,
           sales_last_14_days: Number(sales.sales_last_14_days) || 0,
           sales_last_30_days: Number(sales.sales_last_30_days) || 0,

@@ -451,8 +451,8 @@
   width: 15px;
   height: 15px;
   border-radius: var(--radius-full);
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--ember-600);
+  color: #ffffff;
   display: grid;
   place-items: center;
   flex: none;

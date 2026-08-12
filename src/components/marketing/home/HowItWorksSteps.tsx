@@ -7,8 +7,10 @@ import { SectionIntro } from '../parts/SectionIntro';
 import styles from './HowItWorksSteps.module.css';
 
 export interface HowItWorksStepsProps {
-  /** Hides the trailing CTA when the section is embedded in /how-it-works. */
+  /** Hides the trailing CTA when another CTA already sits nearby. */
   hideCta?: boolean;
+  /** Heading level. Pass `h1` when this section opens a page. @default 'h2' */
+  headingAs?: 'h1' | 'h2';
 }
 
 /**
@@ -25,11 +27,15 @@ export interface HowItWorksStepsProps {
  * @param props - {@link HowItWorksStepsProps}
  * @returns The setup section.
  */
-export function HowItWorksSteps({ hideCta = false }: HowItWorksStepsProps): React.JSX.Element {
+export function HowItWorksSteps({
+  hideCta = false,
+  headingAs = 'h2',
+}: HowItWorksStepsProps): React.JSX.Element {
   return (
     <section className={styles.root} id="how-it-works">
       <div className={styles.inner}>
         <SectionIntro
+          as={headingAs}
           eyebrow="Setup"
           heading="Three steps. One sitting."
           subhead="Times below are real, measured on a catalog of a few hundred SKUs. A very large catalog takes longer to sync — you don't have to sit and watch it."
@@ -50,9 +56,8 @@ export function HowItWorksSteps({ hideCta = false }: HowItWorksStepsProps): Reac
                 readOnly
                 tabIndex={-1}
                 size="sm"
-                value="a4f9c1e0b7d2438e9c15"
+                defaultValue="a4f9c1e0b7d2438e9c15"
                 hint="Settings → Account → API Settings"
-                onChange={() => undefined}
               />
               <div className={styles.figureRow}>
                 <Badge tone="mint" dot size="sm">
@@ -101,9 +106,8 @@ export function HowItWorksSteps({ hideCta = false }: HowItWorksStepsProps): Reac
                 readOnly
                 tabIndex={-1}
                 size="sm"
-                value="Northgate Supply"
+                defaultValue="Northgate Supply"
                 hint="Shown in your store header and page titles"
-                onChange={() => undefined}
               />
               <div className={styles.swatches}>
                 {['#0E1014', '#D98A00', '#0FA871', '#2563EB', '#F94E1B', '#5A626F'].map(

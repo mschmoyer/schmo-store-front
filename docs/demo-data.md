@@ -54,23 +54,51 @@ public/demo/
 ```
 
 Composition rules baked into every product image (see `generate-art.js` header comment for the
-exact numbers): a warm paper background wash tinted per store, a blurred ground-contact shadow at
-a fixed baseline, a top-left key light on every gradient, one constant stroke weight, and exactly
-one recurring "signal" accent dot per product (an LED, a wax seal, a stitched tab) in the store's
-accent color — the thread that ties a 36-item catalog together visually.
+exact numbers):
+
+- **Uniform optical sizing.** Every product declares a `bbox` (its true drawn extent in native
+  coordinates) alongside `draw()`. `fitToStage()` normalizes that box so the product's longest
+  dimension is a constant ~61% of the canvas, bottom-anchored on a shared ground line — this is
+  what keeps a keyboard and a candle at the same visual weight instead of one filling the frame
+  and the other floating tiny in it. Get a new product's `bbox` roughly right, then check it on
+  the contact sheet; it doesn't need to be pixel-exact.
+- **Bold, store-specific grounds**, not a pale universal wash — `bgBase` is a genuinely distinct
+  color per store (cool slate for Basecamp Audio, warm clay for Fernwood Goods, cool steel-teal
+  for Ironline Fitness), so the three catalogs are sortable by background alone at grid scale, with
+  a soft paper-toned `bgGlow` behind the product itself.
+- A blurred ground-contact shadow at a fixed baseline, a top-left key light on every gradient, one
+  constant stroke weight.
+- The signal-dot accent (`shapes.signalDot`) is used on exactly four products, all in Basecamp
+  Audio, all products with a real indicator light in life: the smart speaker, the smartwatch, the
+  charging dock, and the power bank (whose charge-level LEDs are drawn directly, not via
+  `signalDot`). Nowhere else — on a wool throw or a cutting board it reads as a dead pixel, not a
+  motif. Craft and fitness carry no signal-dot accent at all.
+- Every silhouette was checked against **every other product in the same store** for shape
+  collisions (two products that are "a dark circle with a highlight" and nothing else) before
+  being finalized — see `anchor-kettlebell` (ball + handle + flat base), `glide-wireless-mouse`
+  (notched teardrop), and `bud-ceramic-vase` (bottle taper) for the result of that pass.
 
 **To regenerate the art** (e.g. after editing `catalog.js`):
 
 ```bash
 node public/demo/build.js
+node public/demo/build.js --qa   # also writes solid-black silhouette renders to
+                                  # .scratch/qa-silhouette/<slug>.svg for a naming-test review pass
 ```
 
-This is idempotent and deterministic — no `Math.random()`, no network access, same input always
-produces byte-identical SVGs. It overwrites everything in `public/demo/{products,hero,logo}/`.
+Both are idempotent and deterministic — no `Math.random()`, no network access, same input always
+produces byte-identical SVGs. `build.js` (without `--qa`) overwrites everything in
+`public/demo/{products,hero,logo}/`, which is the only output that ships.
 
 To sanity-check a change visually before reseeding the DB, build a quick HTML contact sheet that
-`<img src>`s the files in `public/demo/products/` and screenshot it — there is no automated visual
-test for the art itself.
+`<img src>`s the files in `public/demo/products/` **at real display size** (~260px cards in a
+6-column grid, matching a product grid — not the full 800px source) and screenshot it, plus a
+120px row for the mobile grid. Run `--qa` and view the silhouette renders alongside it: if a
+product isn't nameable from its solid black shape alone in about a second, it needs another pass.
+There is no automated visual test for the art itself — this manual pass is the check, and it caught
+real defects (`mix()` silently producing an invalid color — and a black fallback — whenever a
+3-digit hex shorthand like `'#000'` was passed as one of its two inputs; `mix()` now expands
+3-digit hex and throws instead of silently emitting `NaN` into a color channel).
 
 ## Reseeding the database
 

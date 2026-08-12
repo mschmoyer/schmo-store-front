@@ -1,13 +1,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { getProductMark } from '@/components/ui';
 import { productHref, stockState } from '@/app/store/_lib/present';
 import type { ProductRecord } from '@/app/store/_lib/types';
 import type { ResolvedTheme } from '@/lib/storefront-theme';
 
 import { Pill, StockIndicator, StorePrice, cx } from '../ui';
 import { AddToCartButton } from './AddToCartButton';
+import { ProductMark } from './ProductMark';
 import styles from './ProductCard.module.css';
 
 export interface ProductCardProps {
@@ -51,7 +51,6 @@ export function ProductCard({
   const href = productHref(storeSlug, product);
   const state = stockState(product);
   const soldOut = state === 'out-of-stock';
-  const mark = getProductMark({ sku: product.sku, name: product.name });
 
   // `swap` needs a genuine second photograph; without one the effect is a
   // cross-fade to nothing, so it simply does not apply.
@@ -78,28 +77,12 @@ export function ProductCard({
               fill
               sizes="(max-width: 640px) 90vw, (max-width: 1100px) 45vw, 300px"
               priority={priority}
-              placeholder="blur"
-              blurDataURL={mark.blurDataURL}
               className={styles.image}
             />
           ) : (
-            // No photograph: the shared generated mark, never a grey box.
-            <span
-              className={styles.image}
-              role="img"
-              aria-label={`${product.name} — no product image`}
-              style={{
-                display: 'grid',
-                placeItems: 'center',
-                backgroundImage: mark.gradient,
-                color: mark.foreground,
-                fontFamily: 'var(--st-font-heading)',
-                fontSize: 'var(--st-h2)',
-                fontWeight: 700,
-              }}
-            >
-              {mark.initials}
-            </span>
+            // No photograph: a mark generated from the merchant's own palette,
+            // never a grey "no image" box.
+            <ProductMark name={product.name} sku={product.sku} />
           )}
 
           {swapSrc ? (

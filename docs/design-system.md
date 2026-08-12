@@ -77,9 +77,22 @@ default of the category. Money-green is reserved for value and success, never fo
 
 - Body text on `--paper` uses `--ink-900`. Secondary text uses `--ink-500` (7.0:1). Never `--ink-400`
   for anything a user must read.
-- `--ember-500` on white is **3.4:1** — it is a *fill* color, not a text color. Ember text on light
-  backgrounds must be `--ember-700` or darker. White text on `--ember-500` fill is fine at ≥16px semibold.
-- Every interactive element has a visible `:focus-visible` ring: `0 0 0 2px var(--paper), 0 0 0 4px var(--ember-500)`.
+- **Corrected 2026-08-12.** An earlier version of this document claimed white text on an
+  `--ember-500` fill was acceptable at ≥16px semibold. That was wrong and it shipped a real defect:
+  white on `#F94E1B` measures **3.42:1**, which fails AA for normal text (4.5:1) and only clears the
+  large-text bar (3:1) at ≥24px, or ≥18.66px bold. Primary buttons are 16px semibold, so every
+  primary button in the product failed. Measured ratios of white on each shade:
+  `400` 2.77 · `500` 3.42 · `600` **4.51** · `700` 6.37 · `800` 9.03.
+- **Therefore:** `--ember-600` (`#DC3A0C`) is the *solid-fill* token wherever white text sits on it —
+  primary buttons, filled badges, any ember surface carrying a label. Hover goes to `--ember-700`
+  (6.37:1), which also makes hover a contrast *increase* rather than a decrease. `--ember-500`
+  remains the brand identity color for logo, illustration, focus rings, borders, thin rules and
+  large display type ≥24px, where it is legal and looks better.
+- Ember *text* on a light background must be `--ember-700` or darker.
+- Every interactive element has a visible `:focus-visible` ring. The ring must contrast against the
+  element it surrounds, not just against the page: an ember ring around an ember button measures
+  1.00:1 and is invisible. Use the two-layer construction `0 0 0 2px var(--surface), 0 0 0 4px <ring>`
+  where `<ring>` is `--ember-500` on neutral surfaces and `--ink-900` on ember-filled controls.
 
 ## 3. Typography
 

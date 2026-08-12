@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/database/connection';
+import { CountRow } from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
 
 export async function GET(
@@ -165,12 +166,12 @@ export async function DELETE(
     }
 
     // Check if supplier has any purchase orders
-    const poCheck = await query(
+    const poCheck = await query<CountRow>(
       'SELECT COUNT(*) as count FROM purchase_orders WHERE supplier_id = $1',
       [params.id]
     );
 
-    if (parseInt(poCheck.rows[0].count) > 0) {
+    if (parseInt(poCheck.rows[0].count, 10) > 0) {
       // Don't delete, just deactivate
       await query(
         'UPDATE suppliers SET is_active = false WHERE id = $1 AND store_id = $2',

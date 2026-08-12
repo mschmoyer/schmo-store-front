@@ -5,29 +5,49 @@
    Source of truth: /docs/design-system.md
 
    Layering:
-     1. @theme            — static design decisions (radius, shadow, type, motion)
-     2. :root             — raw palette + semantic aliases (light)
-     3. dark overrides    — semantic aliases only, twice (media + [data-theme])
-     4. @theme inline     — bridges the CSS variables into Tailwind utilities
-     5. base layer        — resets, typography, focus, selection
-     6. keyframes         — used by the primitives in src/components/ui
+     1. @custom-variant  — dark variant, keyed off both theme attributes
+     2. @theme           — static decisions (space, radius, shadow, type, motion)
+     3. :root            — raw palette + semantic aliases (light)
+     4. dark overrides   — semantic aliases only, twice (media + [data-theme])
+     5. @theme inline    — bridges the CSS variables into Tailwind utilities
+     6. base layer       — resets, typography, focus, selection
+     7. utilities / keyframes / reduced motion
+     8. legacy shim
 
    Components consume SEMANTIC tokens (--surface, --text-primary, --border, ...).
    Raw scale tokens (--ink-700, --ember-500) exist for the semantic layer and for
    deliberate one-off accents — never reach for them in a component by default.
+
+   CONTRAST CONTRACT (all values measured, see docs/design-system.md §2):
+     - White labels sit on --accent-solid (ember-600, 4.51:1), never on
+       --ember-500 (3.42:1, fails AA). --ember-500 is identity only: rings,
+       borders, thin rules, display type >= 24px.
+     - Focus rings contrast with the ELEMENT, not only the page. Ember-on-ember
+       measures 1.00:1, so filled controls switch to --focus-ring-on-accent.
+     - Control boundaries use --border-control, which clears 3:1 in both themes
+       (WCAG 1.4.11). Decorative hairlines use --border / --border-subtle.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Dark variant — respects the OS preference unless an explicit data-theme
-      is stamped on <html>. Mirrors the cascade used by the :root blocks below.
+   1. Dark variant. Keyed off `data-theme` (which AppProviders mirrors from
+      Mantine's computed scheme) AND `data-mantine-color-scheme`, so the two
+      can never disagree the way they did before.
    -------------------------------------------------------------------------- */
 @custom-variant dark {
   @media (prefers-color-scheme: dark) {
-    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+    &:where(
+        :root:not([data-theme="light"]):not([data-mantine-color-scheme="light"]),
+        :root:not([data-theme="light"]):not([data-mantine-color-scheme="light"]) *
+      ) {
       @slot;
     }
   }
-  &:where([data-theme="dark"], [data-theme="dark"] *) {
+  &:where(
+      [data-theme="dark"],
+      [data-theme="dark"] *,
+      [data-mantine-color-scheme="dark"],
+      [data-mantine-color-scheme="dark"] *
+    ) {
     @slot;
   }
 }
@@ -44,11 +64,38 @@
    * option stops Tailwind emitting the custom property at all (it only inlines
    * the value into utilities), which would leave every `font-family:
    * var(--font-sans)` in our CSS Modules resolving to nothing. The source
-   * variables are injected onto <body> by next/font in `layout.tsx`.
+   * variables are injected onto <html> by next/font in `layout.tsx`.
    */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: var(--font-space-grotesk), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", "Menlo", monospace;
+
+  /*
+   * -- Space (§4) --------------------------------------------------------
+   * The 4px ramp, finally as tokens. Every padding/margin/gap in
+   * src/components/ui consumes these — nothing hand-rolls a px value.
+   * The half-steps are the four off-grid values that were already in use and
+   * genuinely read better than their neighbours (a 6px label gap, a 10px
+   * choice-row gutter); they are named here rather than left as strays.
+   */
+  --space-0: 0px;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+  --space-11: 80px;
+  --space-12: 96px;
+  --space-13: 128px;
 
   /* -- Radius (§4) ------------------------------------------------------- */
   --radius-xs: 6px;
@@ -56,17 +103,22 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
-  --radius-2xl: 32px;
   --radius-full: 999px;
 
-  /* -- Elevation (§4). Layered and warm-tinted, never a single flat blur. -- */
-  --shadow-xs: 0 1px 2px rgba(16, 18, 22, 0.06);
-  --shadow-sm: 0 1px 2px rgba(16, 18, 22, 0.06), 0 2px 6px rgba(16, 18, 22, 0.05);
-  --shadow-md: 0 2px 4px rgba(16, 18, 22, 0.05), 0 8px 20px -4px rgba(16, 18, 22, 0.1);
-  --shadow-lg: 0 4px 8px rgba(16, 18, 22, 0.04), 0 20px 44px -8px rgba(16, 18, 22, 0.14);
-  --shadow-xl: 0 8px 16px rgba(16, 18, 22, 0.05), 0 36px 80px -16px rgba(16, 18, 22, 0.2);
-  --shadow-ember: 0 2px 6px rgba(249, 78, 27, 0.24), 0 10px 28px -6px rgba(249, 78, 27, 0.32);
-  --shadow-ember-sm: 0 1px 2px rgba(249, 78, 27, 0.2), 0 3px 10px -2px rgba(249, 78, 27, 0.24);
+  /*
+   * -- Elevation (§4) ----------------------------------------------------
+   * Warm-tinted: rgba(38,26,20) has R > G > B. The previous rgba(16,18,22)
+   * had B > G > R, i.e. a blue-grey cast — cooler than neutral, on a warm
+   * paper ground. Every step is layered, including `xs`: the doc forbids a
+   * single flat blur and `xs` is the most-used shadow in the product.
+   */
+  --shadow-xs: 0 1px 2px rgba(38, 26, 20, 0.06), 0 1px 3px rgba(38, 26, 20, 0.03);
+  --shadow-sm: 0 1px 2px rgba(38, 26, 20, 0.07), 0 2px 6px rgba(38, 26, 20, 0.05);
+  --shadow-md: 0 2px 4px rgba(38, 26, 20, 0.05), 0 8px 20px -4px rgba(38, 26, 20, 0.11);
+  --shadow-lg: 0 4px 8px rgba(38, 26, 20, 0.05), 0 20px 44px -8px rgba(38, 26, 20, 0.15);
+  --shadow-xl: 0 8px 16px rgba(38, 26, 20, 0.06), 0 36px 80px -16px rgba(38, 26, 20, 0.2);
+  --shadow-ember: 0 2px 6px rgba(220, 58, 12, 0.24), 0 10px 28px -6px rgba(220, 58, 12, 0.32);
+  --shadow-ember-sm: 0 1px 2px rgba(220, 58, 12, 0.2), 0 3px 10px -2px rgba(220, 58, 12, 0.24);
   --shadow-rose: 0 2px 6px rgba(217, 45, 32, 0.22), 0 10px 28px -6px rgba(217, 45, 32, 0.28);
   --shadow-none: 0 0 #0000;
 
@@ -112,7 +164,7 @@
   --text-eyebrow--letter-spacing: 0.14em;
   --text-eyebrow--font-weight: 600;
 
-  /* -- Motion (§4) ------------------------------------------------------- */
+  /* -- Motion (§4) — two easings, three durations. Nothing else. --------- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -120,6 +172,11 @@
   --duration-micro: 120ms;
   --duration-standard: 220ms;
   --duration-entrance: 420ms;
+
+  /* Unitless twins, for JS APIs (Mantine transitionProps) that want numbers. */
+  --duration-micro-ms: 120;
+  --duration-standard-ms: 220;
+  --duration-entrance-ms: 420;
 
   /* -- Layout (§6) ------------------------------------------------------- */
   --container-content: 1200px;
@@ -132,7 +189,7 @@
   --animate-scale-in: scale-in var(--duration-standard) var(--ease-out) both;
   --animate-marquee: marquee 32s linear infinite;
   --animate-pulse-ring: pulse-ring 2s var(--ease-out) infinite;
-  --animate-spin-slow: spin 900ms linear infinite;
+  --animate-spinner: spin 720ms linear infinite;
 }
 
 /* --------------------------------------------------------------------------
@@ -160,7 +217,7 @@
   --paper-raised: #ffffff;
   --paper-sunken: #f2f1ed;
 
-  /* -- Ember (§2) — primary action / brand signal ------------------------ */
+  /* -- Ember (§2) — brand signal ----------------------------------------- */
   --ember-50: #fff3ee;
   --ember-100: #ffe1d5;
   --ember-200: #ffc0a8;
@@ -196,8 +253,9 @@
   --azure-600: #1d4ed8;
   --azure-700: #1e40af;
 
-  /* -- Ember channels, for alpha compositing in components --------------- */
+  /* -- Channels, for alpha compositing ----------------------------------- */
   --ember-500-rgb: 249 78 27;
+  --ember-600-rgb: 220 58 12;
   --mint-500-rgb: 15 168 113;
   --rose-500-rgb: 217 45 32;
   --amber-500-rgb: 217 138 0;
@@ -212,45 +270,62 @@
   --surface-raised: var(--paper-raised);
   --surface-sunken: var(--paper-sunken);
   --surface-inset: var(--ink-50);
+  /* Hover wash for ghost/menu rows. Distinct from --surface-inset so a ghost
+     button inside an inset panel still has visible hover feedback. */
+  --surface-hover: var(--ink-100);
   --surface-overlay: var(--paper-raised);
   --surface-inverse: var(--ink-900);
-  --surface-scrim: rgb(var(--ink-900-rgb) / 0.48);
+  --surface-scrim: rgb(var(--ink-900-rgb) / 0.5);
 
-  /* Text */
-  --text-primary: var(--ink-900);
-  --text-secondary: var(--ink-500);
-  --text-tertiary: var(--ink-400);
-  --text-disabled: var(--ink-300);
+  /* Text — measured on --paper */
+  --text-primary: var(--ink-900); /* 18.25:1 */
+  --text-secondary: var(--ink-500); /* 5.90:1 */
+  --text-tertiary: var(--ink-500); /* was ink-400 (3.21:1); §2 bans ink-400 for read text */
+  --text-quaternary: var(--ink-400); /* decorative marks only — never a sentence */
+  --text-disabled: var(--ink-400);
   --text-inverse: var(--paper);
   --text-on-accent: #ffffff;
 
-  /* Borders */
-  --border: var(--ink-200);
-  --border-subtle: var(--ink-100);
-  --border-strong: var(--ink-300);
+  /* Borders. --border-control is the only one that must clear 3:1 (WCAG
+     1.4.11): it is the boundary that says "you may type here". */
+  --border: #cdd3dc; /* 1.44:1 on paper — decorative hairline, paired with shadow */
+  --border-subtle: #e4e8ee;
+  --border-strong: #a6adb9; /* 2.26:1 */
+  --border-control: var(--ink-400); /* 3.35:1 on white, 3.21:1 on paper */
   --border-inverse: var(--ink-700);
 
-  /* Accent — ember */
+  /* Accent.
+     --accent        = brand identity. Rings, borders, rules, display >= 24px.
+     --accent-solid  = any fill that carries a white label. 4.51:1.
+     Hover DARKENS, so hover is a contrast increase (6.37:1), not a decrease. */
   --accent: var(--ember-500);
+  --accent-solid: var(--ember-600);
+  --accent-solid-hover: var(--ember-700);
+  --accent-solid-active: var(--ember-800);
   --accent-hover: var(--ember-600);
   --accent-active: var(--ember-700);
   --accent-subtle: var(--ember-50);
   --accent-subtle-border: var(--ember-200);
-  --accent-text: var(--ember-700);
+  --accent-text: var(--ember-700); /* 6.11:1 on paper */
   --accent-fg: #ffffff;
 
-  /* Status — the wash / border / text triplet each tone needs */
+  /* Status. `-solid` shades are the ones that carry white labels. */
   --success: var(--mint-500);
+  --success-solid: var(--mint-700); /* 6.45:1 */
   --success-subtle: var(--mint-50);
   --success-border: var(--mint-100);
   --success-text: var(--mint-700);
 
   --warning: var(--amber-500);
+  --warning-solid: var(--amber-700); /* 5.78:1 */
   --warning-subtle: var(--amber-50);
   --warning-border: var(--amber-100);
   --warning-text: var(--amber-700);
 
-  --danger: var(--rose-500);
+  --danger: var(--rose-500); /* 4.83:1 with white — already passes */
+  --danger-solid: var(--rose-500);
+  --danger-solid-hover: var(--rose-600);
+  --danger-solid-active: var(--rose-700);
   --danger-subtle: var(--rose-50);
   --danger-border: var(--rose-100);
   --danger-text: var(--rose-700);
@@ -260,9 +335,21 @@
   --info-border: #d5e2ff;
   --info-text: var(--azure-700);
 
-  /* Focus (§2) — two-stop ring so it reads on any ground */
-  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--ember-500);
-  --focus-ring-danger: 0 0 0 2px var(--surface), 0 0 0 4px var(--rose-500);
+  /*
+   * Focus (§2). Two stops: a gap in the colour of the element's real ground,
+   * then the ring. `--focus-ring-gap` is deliberately inheritable — Card,
+   * CardFooter and Modal reset it so a button in a sunken footer gets a sunken
+   * gap instead of a page-coloured one.
+   *
+   * `--focus-ring-on-accent` exists because an ember ring on an ember button
+   * measures 1.00:1. ink-900 measures 4.22:1 against ember-600 and 3.94:1
+   * against rose-500, so it works on both filled variants.
+   */
+  --focus-ring-gap: var(--surface);
+  --focus-ring-color: var(--ember-500);
+  --focus-ring-on-accent: var(--ink-900);
+  --focus-ring: 0 0 0 2px var(--focus-ring-gap), 0 0 0 4px var(--focus-ring-color);
+  --focus-ring-accent: 0 0 0 2px var(--focus-ring-gap), 0 0 0 4px var(--focus-ring-on-accent);
 
   /* Hairline highlight used on dark grounds instead of shadow (§4) */
   --ring-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -274,141 +361,161 @@
 
   /* Section rhythm (§4) */
   --section-y: clamp(5rem, 10vw, 8rem);
-  --gutter: 24px;
-  --app-pad: 24px;
+  --gutter: var(--space-6);
+  --app-pad: var(--space-6);
 }
 
-/* Dark — OS preference, unless the page explicitly opted into light. */
+/*
+ * Dark. Every one of the eight surface/border tokens resolves to a DIFFERENT
+ * value — the previous version collapsed four of them onto #171A20, which made
+ * card dividers 1.00:1 and left ghost buttons with no hover state.
+ * Elevation is built from surface lightness steps plus a strengthening top
+ * hairline, not from black blurs that are invisible against near-black.
+ */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"]):not([data-mantine-color-scheme="light"]) {
     color-scheme: dark;
 
-    --surface: var(--ink-900);
-    --surface-raised: var(--ink-800);
-    --surface-sunken: var(--ink-950);
-    --surface-inset: var(--ink-800);
-    --surface-overlay: var(--ink-800);
-    --surface-inverse: var(--paper);
-    --surface-scrim: rgba(4, 5, 7, 0.66);
+    --surface: #0e1014;
+    --surface-raised: #171a20;
+    --surface-sunken: #08090b;
+    --surface-inset: #1e222a;
+    --surface-hover: #262c36;
+    --surface-overlay: #1c2027;
+    --surface-inverse: var(--ink-100);
+    --surface-scrim: rgba(4, 5, 7, 0.68);
 
     --text-primary: var(--ink-100);
     --text-secondary: var(--ink-300);
-    --text-tertiary: var(--ink-400);
-    --text-disabled: var(--ink-600);
+    --text-tertiary: #9aa2af;
+    --text-quaternary: var(--ink-400);
+    --text-disabled: #666e7c;
     --text-inverse: var(--ink-900);
     --text-on-accent: #ffffff;
 
-    --border: var(--ink-700);
-    --border-subtle: var(--ink-800);
-    --border-strong: var(--ink-600);
+    --border: #3a414d;
+    --border-subtle: #333b47;
+    --border-strong: #4e5666;
+    --border-control: #646c7a;
     --border-inverse: var(--ink-200);
 
     --accent: var(--ember-500);
+    --accent-solid: var(--ember-600);
+    --accent-solid-hover: var(--ember-700);
+    --accent-solid-active: var(--ember-800);
     --accent-hover: var(--ember-400);
     --accent-active: var(--ember-600);
-    --accent-subtle: rgb(var(--ember-500-rgb) / 0.14);
-    --accent-subtle-border: rgb(var(--ember-500-rgb) / 0.3);
+    --accent-subtle: rgb(var(--ember-500-rgb) / 0.16);
+    --accent-subtle-border: rgb(var(--ember-500-rgb) / 0.34);
     --accent-text: var(--ember-300);
 
-    --success-subtle: rgb(var(--mint-500-rgb) / 0.14);
-    --success-border: rgb(var(--mint-500-rgb) / 0.28);
+    --success-subtle: rgb(var(--mint-500-rgb) / 0.16);
+    --success-border: rgb(var(--mint-500-rgb) / 0.32);
     --success-text: #5fd7ab;
 
-    --warning-subtle: rgb(var(--amber-500-rgb) / 0.15);
-    --warning-border: rgb(var(--amber-500-rgb) / 0.3);
+    --warning-subtle: rgb(var(--amber-500-rgb) / 0.17);
+    --warning-border: rgb(var(--amber-500-rgb) / 0.34);
     --warning-text: #f0b64a;
 
-    --danger-subtle: rgb(var(--rose-500-rgb) / 0.15);
-    --danger-border: rgb(var(--rose-500-rgb) / 0.3);
+    --danger-subtle: rgb(var(--rose-500-rgb) / 0.17);
+    --danger-border: rgb(var(--rose-500-rgb) / 0.34);
     --danger-text: #ff8b81;
 
-    --info-subtle: rgba(37, 99, 235, 0.16);
-    --info-border: rgba(37, 99, 235, 0.32);
+    --info-subtle: rgba(37, 99, 235, 0.18);
+    --info-border: rgba(37, 99, 235, 0.36);
     --info-text: #9dbaff;
 
-    /* On dark, drop the diffuse blurs and lean on hairline rings (§4). */
-    --shadow-xs: var(--ring-top);
-    --shadow-sm: var(--ring-top), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: var(--ring-top), 0 6px 18px -4px rgba(0, 0, 0, 0.55);
-    --shadow-lg: var(--ring-top), 0 18px 40px -10px rgba(0, 0, 0, 0.65);
-    --shadow-xl: var(--ring-top), 0 32px 72px -16px rgba(0, 0, 0, 0.72);
+    /* ink-900 would vanish against a near-black page, so the on-accent ring
+       flips to ink-100: 3.88:1 vs ember-600, 16.39:1 vs the page. */
+    --focus-ring-on-accent: var(--ink-100);
 
-    --skeleton-base: var(--ink-700);
+    /* Elevation ladder: a strengthening top hairline over the surface steps. */
+    --shadow-xs: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --shadow-sm: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 18px -4px rgba(0, 0, 0, 0.55);
+    --shadow-lg: inset 0 1px 0 rgba(255, 255, 255, 0.085), 0 18px 40px -10px rgba(0, 0, 0, 0.66);
+    --shadow-xl: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 32px 72px -16px rgba(0, 0, 0, 0.74);
+
+    --skeleton-base: #262c36;
     --skeleton-sheen: rgba(255, 255, 255, 0.07);
   }
 }
 
-/* Dark — explicit opt-in, wins in both directions. */
-:root[data-theme="dark"] {
+/* Explicit opt-in. Mirrors the block above; wins in both directions. */
+:root[data-theme="dark"],
+:root[data-mantine-color-scheme="dark"] {
   color-scheme: dark;
 
-  --surface: var(--ink-900);
-  --surface-raised: var(--ink-800);
-  --surface-sunken: var(--ink-950);
-  --surface-inset: var(--ink-800);
-  --surface-overlay: var(--ink-800);
-  --surface-inverse: var(--paper);
-  --surface-scrim: rgba(4, 5, 7, 0.66);
+  --surface: #0e1014;
+  --surface-raised: #171a20;
+  --surface-sunken: #08090b;
+  --surface-inset: #1e222a;
+  --surface-hover: #262c36;
+  --surface-overlay: #1c2027;
+  --surface-inverse: var(--ink-100);
+  --surface-scrim: rgba(4, 5, 7, 0.68);
 
   --text-primary: var(--ink-100);
   --text-secondary: var(--ink-300);
-  --text-tertiary: var(--ink-400);
-  --text-disabled: var(--ink-600);
+  --text-tertiary: #9aa2af;
+  --text-quaternary: var(--ink-400);
+  --text-disabled: #666e7c;
   --text-inverse: var(--ink-900);
   --text-on-accent: #ffffff;
 
-  --border: var(--ink-700);
-  --border-subtle: var(--ink-800);
-  --border-strong: var(--ink-600);
+  --border: #3a414d;
+  --border-subtle: #333b47;
+  --border-strong: #4e5666;
+  --border-control: #646c7a;
   --border-inverse: var(--ink-200);
 
   --accent: var(--ember-500);
+  --accent-solid: var(--ember-600);
+  --accent-solid-hover: var(--ember-700);
+  --accent-solid-active: var(--ember-800);
   --accent-hover: var(--ember-400);
   --accent-active: var(--ember-600);
-  --accent-subtle: rgb(var(--ember-500-rgb) / 0.14);
-  --accent-subtle-border: rgb(var(--ember-500-rgb) / 0.3);
+  --accent-subtle: rgb(var(--ember-500-rgb) / 0.16);
+  --accent-subtle-border: rgb(var(--ember-500-rgb) / 0.34);
   --accent-text: var(--ember-300);
 
-  --success-subtle: rgb(var(--mint-500-rgb) / 0.14);
-  --success-border: rgb(var(--mint-500-rgb) / 0.28);
+  --success-subtle: rgb(var(--mint-500-rgb) / 0.16);
+  --success-border: rgb(var(--mint-500-rgb) / 0.32);
   --success-text: #5fd7ab;
 
-  --warning-subtle: rgb(var(--amber-500-rgb) / 0.15);
-  --warning-border: rgb(var(--amber-500-rgb) / 0.3);
+  --warning-subtle: rgb(var(--amber-500-rgb) / 0.17);
+  --warning-border: rgb(var(--amber-500-rgb) / 0.34);
   --warning-text: #f0b64a;
 
-  --danger-subtle: rgb(var(--rose-500-rgb) / 0.15);
-  --danger-border: rgb(var(--rose-500-rgb) / 0.3);
+  --danger-subtle: rgb(var(--rose-500-rgb) / 0.17);
+  --danger-border: rgb(var(--rose-500-rgb) / 0.34);
   --danger-text: #ff8b81;
 
-  --info-subtle: rgba(37, 99, 235, 0.16);
-  --info-border: rgba(37, 99, 235, 0.32);
+  --info-subtle: rgba(37, 99, 235, 0.18);
+  --info-border: rgba(37, 99, 235, 0.36);
   --info-text: #9dbaff;
 
-  --shadow-xs: var(--ring-top);
-  --shadow-sm: var(--ring-top), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: var(--ring-top), 0 6px 18px -4px rgba(0, 0, 0, 0.55);
-  --shadow-lg: var(--ring-top), 0 18px 40px -10px rgba(0, 0, 0, 0.65);
-  --shadow-xl: var(--ring-top), 0 32px 72px -16px rgba(0, 0, 0, 0.72);
+  --focus-ring-on-accent: var(--ink-100);
 
-  --skeleton-base: var(--ink-700);
+  --shadow-xs: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --shadow-sm: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 18px -4px rgba(0, 0, 0, 0.55);
+  --shadow-lg: inset 0 1px 0 rgba(255, 255, 255, 0.085), 0 18px 40px -10px rgba(0, 0, 0, 0.66);
+  --shadow-xl: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 32px 72px -16px rgba(0, 0, 0, 0.74);
+
+  --skeleton-base: #262c36;
   --skeleton-sheen: rgba(255, 255, 255, 0.07);
 }
 
 /* --------------------------------------------------------------------------
-   4. Tailwind bridge. Every token above is reachable as a utility so page
-      authors never have to hand-write var() in class soup.
+   4. Tailwind bridge.
+      `inline` here is deliberate: it makes `bg-surface` compile to
+      `background-color: var(--surface)`, so the utility follows the dark
+      override instead of freezing the light value. Nothing in this block is
+      emitted as a custom property — anything a CSS Module reads by name must
+      be declared in the plain @theme or :root blocks above.
    -------------------------------------------------------------------------- */
 @theme inline {
-  /*
-   * `inline` here is deliberate: it makes `bg-surface` compile to
-   * `background-color: var(--surface)`, so the utility follows the dark-mode
-   * override instead of freezing the light value. Nothing in this block is
-   * emitted as a custom property — anything a CSS Module needs to read by name
-   * must be declared in the plain `@theme` or `:root` blocks above.
-   */
-
-  /* Raw scale → color utilities */
   --color-ink-950: var(--ink-950);
   --color-ink-900: var(--ink-900);
   --color-ink-800: var(--ink-800);
@@ -459,17 +566,19 @@
   --color-azure-600: var(--azure-600);
   --color-azure-700: var(--azure-700);
 
-  /* Semantic → color utilities (these are the ones to reach for) */
+  /* Semantic → colour utilities (these are the ones to reach for) */
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
   --color-surface-sunken: var(--surface-sunken);
   --color-surface-inset: var(--surface-inset);
+  --color-surface-hover: var(--surface-hover);
   --color-surface-overlay: var(--surface-overlay);
   --color-surface-inverse: var(--surface-inverse);
 
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
+  --color-text-quaternary: var(--text-quaternary);
   --color-text-disabled: var(--text-disabled);
   --color-text-inverse: var(--text-inverse);
   --color-text-on-accent: var(--text-on-accent);
@@ -477,21 +586,25 @@
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
+  --color-border-control: var(--border-control);
 
   --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-active: var(--accent-active);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-solid-hover: var(--accent-solid-hover);
   --color-accent-subtle: var(--accent-subtle);
   --color-accent-text: var(--accent-text);
   --color-accent-fg: var(--accent-fg);
 
   --color-success: var(--success);
+  --color-success-solid: var(--success-solid);
   --color-success-subtle: var(--success-subtle);
   --color-success-text: var(--success-text);
   --color-warning: var(--warning);
+  --color-warning-solid: var(--warning-solid);
   --color-warning-subtle: var(--warning-subtle);
   --color-warning-text: var(--warning-text);
   --color-danger: var(--danger);
+  --color-danger-solid: var(--danger-solid);
   --color-danger-subtle: var(--danger-subtle);
   --color-danger-text: var(--danger-text);
   --color-info: var(--info);
@@ -584,14 +697,17 @@
     color: var(--text-primary);
   }
 
-  /* §2: every interactive element gets a visible ring. Never the UA default. */
+  /*
+   * §2: every interactive element gets a visible ring, never the UA default.
+   * This rule deliberately does NOT set border-radius — forcing a radius from
+   * inside a focus rule silently reshapes any element that does not carry its
+   * own (a bare <a>, a pill, a third-party widget) the instant it is focused.
+   */
   :focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
-    border-radius: var(--radius-xs);
   }
 
-  /* Keyboard users get the ring; pointer users do not. */
   :focus:not(:focus-visible) {
     outline: none;
   }
@@ -622,16 +738,10 @@
   font-feature-settings: "tnum";
 }
 
-@utility text-balance-pretty {
-  text-wrap: pretty;
-}
-
-/* Hairline rule that survives on both grounds. */
 @utility hairline {
   box-shadow: var(--ring-inset);
 }
 
-/* Visually hidden but reachable by assistive tech. */
 @utility sr-only-focusable {
   position: absolute;
   width: 1px;
@@ -705,7 +815,13 @@
 }
 
 /* --------------------------------------------------------------------------
-   8. Reduced motion (§4) — collapse everything to opacity-only.
+   8. Reduced motion (§4).
+      Zeroing the duration is NOT enough: it converts a 120ms 1px lift into an
+      instant 1px snap, which for a vestibular-sensitive user is the same
+      displacement delivered with infinite acceleration. Each primitive wraps
+      its own transforms in `@media (prefers-reduced-motion: no-preference)`
+      so the resting geometry is the only geometry; the rules below are the
+      backstop for anything outside src/components/ui.
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -715,6 +831,13 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Kill hover/active displacement outright — opacity and colour only. */
+  *:hover,
+  *:active,
+  *:focus-visible {
+    transform: none !important;
   }
 
   :root {
@@ -729,9 +852,9 @@
 
 /* --------------------------------------------------------------------------
    9. Legacy compatibility shim.
-      Pre-design-system components (landing/, store/, admin/) still read the
-      old variable names. Rather than leave them unstyled while those areas are
-      migrated by their owning agents, remap the old names onto the new tokens.
+      Pre-design-system components still read the old variable names. Rather
+      than leave them unstyled while those areas are migrated by their owning
+      agents, remap the old names onto the new tokens.
       DO NOT use any name in this block in new code — it will be deleted.
    -------------------------------------------------------------------------- */
 :root {
@@ -779,7 +902,7 @@
   --transition-default: all var(--duration-standard) var(--ease-out);
   --transition-slow: all var(--duration-entrance) var(--ease-out);
 
-  --gradient-primary: linear-gradient(135deg, var(--ember-400) 0%, var(--ember-600) 100%);
+  --gradient-primary: linear-gradient(135deg, var(--ember-500) 0%, var(--ember-700) 100%);
   --gradient-surface: linear-gradient(145deg, var(--surface-raised) 0%, var(--surface-sunken) 100%);
   --gradient-hero: linear-gradient(135deg, var(--ember-50) 0%, var(--paper) 55%, var(--mint-50) 100%);
   --gradient-text: linear-gradient(135deg, var(--ink-900) 0%, var(--ink-600) 100%);

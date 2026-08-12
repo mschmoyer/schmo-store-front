@@ -19,8 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type Stripe from 'stripe';
 import { getCheckoutSnapshot, markCheckoutSessionStatus } from '@/lib/billing/checkout-sessions';
-import { createPaidOrder } from '@/lib/billing/orders';
-import { recordRefund } from '@/lib/billing/orders';
+import { createPaidOrder, recordRefund } from '@/lib/billing/orders';
 import { savePaymentAccountStatus } from '@/lib/billing/payment-accounts';
 import {
   markSubscriptionCanceled,
@@ -125,7 +124,7 @@ async function syncSubscriptionFromCheckout(session: Stripe.Checkout.Session): P
 
   const stripe = getStripe('webhook subscription sync');
   const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ['discounts', 'items.data.price'],
+    expand: ['discounts'],
   });
 
   await upsertSubscriptionFromStripe(subscription, {
@@ -223,7 +222,7 @@ async function handleInvoicePaid(event: Stripe.Event): Promise<void> {
   // Renewals move the period forward; re-read the subscription so current_period_end is accurate.
   const stripe = getStripe('webhook invoice.paid');
   const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ['discounts', 'items.data.price'],
+    expand: ['discounts'],
   });
   await upsertSubscriptionFromStripe(subscription);
 }

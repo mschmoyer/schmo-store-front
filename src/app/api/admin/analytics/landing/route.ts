@@ -89,7 +89,12 @@ export async function GET(request: NextRequest) {
       landingAnalytics.uniqueLandingPageVisitors = parseInt(String(landingStats?.unique_landing_visitors || '0'));
 
       // Top landing pages
-      const topLandingPagesResult = await db.query(`
+      const topLandingPagesResult = await db.query<{
+        page_path: string;
+        view_count: string;
+        unique_visitors: string;
+        bounce_rate: string | null;
+      }>(`
         WITH first_visits AS (
           SELECT DISTINCT ON (ip_address, DATE(created_at))
             ip_address, 
@@ -125,7 +130,11 @@ export async function GET(request: NextRequest) {
       }));
 
       // Traffic sources (based on referrer)
-      const trafficSourcesResult = await db.query(`
+      const trafficSourcesResult = await db.query<{
+        source: string;
+        visitor_count: string;
+        percentage: string | null;
+      }>(`
         WITH first_visits AS (
           SELECT DISTINCT ON (ip_address, DATE(created_at))
             ip_address, 

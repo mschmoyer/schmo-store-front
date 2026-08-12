@@ -65,8 +65,10 @@
   width: 30px;
   height: 30px;
   border-radius: var(--radius-xs);
-  background: var(--accent);
-  color: var(--accent-fg);
+  /* Solid ember carrying white text must be --ember-600 (4.51:1); --ember-500
+     is 3.42:1 and fails AA. See design-system.md §2, correction 2026-08-12. */
+  background: var(--ember-600);
+  color: #ffffff;
   font-family: var(--font-display, inherit);
   font-weight: 700;
   font-size: 15px;
@@ -245,9 +247,9 @@
 }
 
 .stepItem[data-state='done'] .stepMarker {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-fg);
+  background: var(--ember-600);
+  border-color: var(--ember-600);
+  color: #ffffff;
 }
 
 .stepItem[data-state='current'] .stepMarker {

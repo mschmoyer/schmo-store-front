@@ -94,7 +94,14 @@ export async function POST(request: NextRequest) {
       // untouched — a failed test must never disconnect a working store.
       return NextResponse.json(
         { check: result, message: result.message },
-        { status: result.status === 'network_error' || result.status === 'timeout' ? 502 : 400 }
+        {
+          status:
+            result.status === 'network_error' ||
+            result.status === 'timeout' ||
+            result.status === 'blocked_upstream'
+              ? 502
+              : 400,
+        }
       );
     }
 

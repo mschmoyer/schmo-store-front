@@ -18,7 +18,6 @@
  *    testable without touching the network.
  */
 
-import { db } from '@/lib/database/connection';
 import type { ImportProgress } from '@/components/onboarding/lib/types';
 import type { FetchLike } from './shipstation';
 
@@ -36,7 +35,7 @@ const PRODUCTS_URL = 'https://api.shipstation.com/v2/products';
 const INVENTORY_URL = 'https://api.shipstation.com/v2/inventory';
 const WAREHOUSES_URL = 'https://api.shipstation.com/v2/warehouses';
 
-interface ShipStationProduct {
+export interface ShipStationProduct {
   product_id?: string;
   sku?: string;
   name?: string;
@@ -48,12 +47,25 @@ interface ShipStationProduct {
   category?: string;
 }
 
+/**
+ * How a product gets written. The real implementation lives in
+ * `./import-writer.ts`; tests supply a stub so the slicing logic below runs for
+ * real without a database.
+ */
+export type ProductWriter = (
+  product: ShipStationProduct,
+  storeId: string,
+  stock: number
+) => Promise<boolean>;
+
 export interface ImportSliceOptions {
   storeId: string;
   apiKey: string;
   /** Progress carried over from the previous slice. */
   progress: ImportProgress;
   fetchImpl?: FetchLike;
+  /** Injected by the route (real writer) and by tests (stub). */
+  writeProduct: ProductWriter;
   /** Injected in tests so a slice can be forced to end after one page. */
   maxPages?: number;
   budgetMs?: number;
@@ -126,117 +138,6 @@ export function failProgress(
     errorAction: action,
     finishedAt: new Date().toISOString(),
   };
-}
-
-/**
- * Find or create a category for the store.
- *
- * @param name - Category name from ShipStation
- * @param storeId - Owning store
- * @returns The category id
- */
-async function categoryId(name: string, storeId: string): Promise<string> {
-  const clean = name.trim() || 'Other';
-  const existing = await db.query<{ id: string }>(
-    'SELECT id FROM categories WHERE name = $1 AND store_id = $2',
-    [clean, storeId]
-  );
-  if (existing.rows.length > 0) return String(existing.rows[0].id);
-
-  const slug = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'other';
-  const created = await db.query<{ id: string }>(
-    `INSERT INTO categories (id, store_id, name, slug, created_at, updated_at)
-     VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW())
-     RETURNING id`,
-    [storeId, clean, slug]
-  );
-  return String(created.rows[0].id);
-}
-
-/**
- * Write one ShipStation product into `products`, updating when we have seen it
- * before. Match on the ShipStation id first, then on SKU, so a catalog that was
- * previously imported by SKU alone does not duplicate.
- *
- * @param product - The product from ShipStation
- * @param storeId - Owning store
- * @param stock - Stock level for the SKU, if we have one
- * @returns Whether a row was written
- */
-export async function upsertProduct(
-  product: ShipStationProduct,
-  storeId: string,
-  stock: number
-): Promise<boolean> {
-  const sku = (product.sku ?? '').trim();
-  const name = (product.name ?? '').trim() || sku;
-  if (!sku || !name) return false;
-
-  const shipstationId = product.product_id ? String(product.product_id) : null;
-  const price = Number(product.customs_value?.amount ?? 0) || 0;
-  const active = product.active !== false;
-  const category = await categoryId(
-    product.product_category?.name || product.category || 'Other',
-    storeId
-  );
-  const slug = sku.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || sku;
-
-  const existing = await db.query<{ id: string }>(
-    `SELECT id FROM products
-      WHERE store_id = $1
-        AND ((($2::text IS NOT NULL) AND shipstation_product_id = $2) OR sku = $3)
-      ORDER BY (shipstation_product_id = $2) DESC NULLS LAST
-      LIMIT 1`,
-    [storeId, shipstationId, sku]
-  );
-
-  if (existing.rows.length > 0) {
-    await db.query(
-      `UPDATE products
-          SET shipstation_product_id = COALESCE($2, shipstation_product_id),
-              sku = $3, name = $4, short_description = $5, base_price = $6,
-              featured_image_url = $7, is_active = $8, stock_quantity = $9,
-              category_id = $10, updated_at = NOW()
-        WHERE id = $1`,
-      [
-        existing.rows[0].id,
-        shipstationId,
-        sku,
-        name,
-        product.description ?? null,
-        price,
-        product.thumbnail_url ?? null,
-        active,
-        stock,
-        category,
-      ]
-    );
-    return true;
-  }
-
-  await db.query(
-    `INSERT INTO products (
-        id, store_id, shipstation_product_id, sku, name, slug, short_description,
-        base_price, featured_image_url, is_active, stock_quantity, category_id,
-        created_at, updated_at
-     ) VALUES (
-        gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
-     )`,
-    [
-      storeId,
-      shipstationId,
-      sku,
-      name,
-      slug,
-      product.description ?? null,
-      price,
-      product.thumbnail_url ?? null,
-      active,
-      stock,
-      category,
-    ]
-  );
-  return true;
 }
 
 /**
@@ -321,6 +222,7 @@ export async function runImportSlice(options: ImportSliceOptions): Promise<Impor
     storeId,
     apiKey,
     fetchImpl = globalThis.fetch as unknown as FetchLike,
+    writeProduct,
     maxPages = MAX_PAGES_PER_SLICE,
     budgetMs = SLICE_BUDGET_MS,
     now = Date.now,
@@ -362,7 +264,11 @@ export async function runImportSlice(options: ImportSliceOptions): Promise<Impor
       let failed = progress.failed;
       for (const product of products) {
         try {
-          const written = await upsertProduct(product, storeId, stockBySku.get(product.sku ?? '') ?? 0);
+          const written = await writeProduct(
+            product,
+            storeId,
+            stockBySku.get(product.sku ?? '') ?? 0
+          );
           if (written) imported += 1;
           else failed += 1;
         } catch {

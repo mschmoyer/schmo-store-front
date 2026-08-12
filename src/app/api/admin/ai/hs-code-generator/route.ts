@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
         WHERE store_id = $1 AND is_active = true
         ORDER BY created_at ASC
       `;
-      const allProductsResult = await db.query(allProductsQuery, [user.storeId]);
+      const allProductsResult = await db.query<{ id: string }>(allProductsQuery, [user.storeId]);
       targetProductIds = allProductsResult.rows.map(row => row.id);
       
       if (targetProductIds.length === 0) {

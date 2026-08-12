@@ -61,15 +61,24 @@ const T = {
   rose50: '#FEECEB', rose500: '#D92D20',
 };
 
+/** Expand 3-digit hex shorthand ("#000") to 6-digit ("#000000"). No-op on 6-digit input. */
+function expandHex(hex) {
+  const h = hex.replace('#', '');
+  return h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+}
+
 /** Blend two hex tokens from the design system to derive an in-palette mid-tone. */
 function mix(hexA, hexB, t) {
-  const a = hexA.replace('#', '');
-  const b = hexB.replace('#', '');
+  const a = expandHex(hexA);
+  const b = expandHex(hexB);
   const ar = parseInt(a.slice(0, 2), 16), ag = parseInt(a.slice(2, 4), 16), ab = parseInt(a.slice(4, 6), 16);
   const br = parseInt(b.slice(0, 2), 16), bg = parseInt(b.slice(2, 4), 16), bb = parseInt(b.slice(4, 6), 16);
   const r = Math.round(ar + (br - ar) * t);
   const g = Math.round(ag + (bg - ag) * t);
   const bl = Math.round(ab + (bb - ab) * t);
+  if ([r, g, bl].some((v) => Number.isNaN(v))) {
+    throw new Error(`mix(): bad hex input "${hexA}" / "${hexB}" produced NaN -- check for a malformed hex literal`);
+  }
   return '#' + [r, g, bl].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 

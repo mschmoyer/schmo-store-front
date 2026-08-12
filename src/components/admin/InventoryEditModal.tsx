@@ -345,7 +345,7 @@ export default function InventoryEditModal({
               <NumberInput
                 label="Unit Cost ($)"
                 min={0}
-                precision={2}
+                decimalScale={2}
                 {...form.getInputProps('unit_cost')}
                 style={{ flex: 1 }}
               />
@@ -371,12 +371,6 @@ export default function InventoryEditModal({
               data={suppliers}
               {...form.getInputProps('supplier')}
               searchable
-              creatable
-              getCreateLabel={(query) => `+ Create "${query}"`}
-              onCreate={(query) => {
-                const newSupplier = { value: query, label: query };
-                return newSupplier;
-              }}
               leftSection={<IconTruckDelivery size="1rem" />}
             />
 

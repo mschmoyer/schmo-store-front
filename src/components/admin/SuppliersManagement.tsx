@@ -221,7 +221,7 @@ export default function SuppliersManagement() {
               <Table.Th>Status</Table.Th>
               <Table.Th>Performance</Table.Th>
               <Table.Th>Created</Table.Th>
-              <Table.Th width={50}></Table.Th>
+              <Table.Th w={50}></Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>

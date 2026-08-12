@@ -208,8 +208,9 @@ export function generateTwitterCardTags(product: EnhancedProduct, baseUrl: strin
  */
 export function trackSocialShare(platform: SocialPlatform, product: EnhancedProduct) {
   // Send analytics event
-  if (typeof window !== 'undefined' && (window as Window & { gtag?: (...args: unknown[]) => void }).gtag) {
-    (window as Window & { gtag: (...args: unknown[]) => void }).gtag('event', 'share', {
+  const gtag = typeof window === 'undefined' ? undefined : window.gtag;
+  if (gtag) {
+    gtag('event', 'share', {
       method: platform,
       content_type: 'product',
       item_id: product.product_id,

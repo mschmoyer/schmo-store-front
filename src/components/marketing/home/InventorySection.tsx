@@ -68,15 +68,23 @@ const DEAD_STOCK: readonly DeadStockRow[] = [
   },
 ];
 
+export interface InventorySectionProps {
+  /** Where "See what's included" points. @default the features page */
+  includedHref?: string;
+}
+
 /**
  * Copy deck §3.6 — inventory intelligence and purchase orders.
  *
  * The table leads and the copy sits beside it, reversing the previous section's
  * asymmetry so two dense sections do not read as one repeated layout.
  *
+ * @param props - {@link InventorySectionProps}
  * @returns The inventory section.
  */
-export function InventorySection(): React.JSX.Element {
+export function InventorySection({
+  includedHref = ROUTES.features,
+}: InventorySectionProps = {}): React.JSX.Element {
   return (
     <section className={styles.root}>
       <div className={styles.inner}>
@@ -156,7 +164,7 @@ export function InventorySection(): React.JSX.Element {
 
           <Reveal delay={0.14}>
             <div className={styles.actions}>
-              <Button as={Link} href={ROUTES.features} variant="secondary" size="lg">
+              <Button as={Link} href={includedHref} variant="secondary" size="lg">
                 See what&rsquo;s included
               </Button>
               <p className={styles.microcopy}>Export any inventory view to CSV.</p>

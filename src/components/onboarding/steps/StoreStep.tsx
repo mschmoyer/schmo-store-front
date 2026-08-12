@@ -93,8 +93,12 @@ export default function StoreStep({ api }: { api: OnboardingApi }): React.ReactE
   };
 
   const handleSlug = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSlugEdited(true);
-    setSlug(slugifyLive(event.target.value));
+    const next = slugifyLive(event.target.value);
+    // Clearing the address hands control back to the store name. Without this,
+    // a merchant who edits the address and then wipes it is stuck with an empty
+    // field that retyping the name never refills.
+    setSlugEdited(next !== '');
+    setSlug(next);
     setFormError(null);
   };
 

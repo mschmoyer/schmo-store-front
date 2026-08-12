@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       WHERE store_id = $1
     `;
     
-    const params = [user.storeId];
+    const params: Array<string | number> = [user.storeId];
     
     if (search) {
       query += ` AND (name ILIKE $2 OR sku ILIKE $2)`;

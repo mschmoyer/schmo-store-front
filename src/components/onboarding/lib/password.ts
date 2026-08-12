@@ -104,15 +104,17 @@ export function scorePassword(password: string): PasswordStrength {
   const classes = characterClasses(password);
   const distinct = new Set(password).size;
 
+  // Length leads, because length is what actually buys entropy. A long
+  // all-lowercase passphrase beats a short one with a symbol bolted on, and the
+  // scoring says so.
   let score = 1;
   if (password.length >= 12) score = 2;
   if (password.length >= 16) score = 3;
   if (password.length >= 20) score = 4;
 
-  // Variety pulls a merely-long password up; a narrow alphabet pulls it down.
+  // Variety is a bonus, repetition is a penalty.
   if (classes >= 3 && score < 4) score += 1;
   if (distinct <= 5 && score > 1) score -= 1;
-  if (classes === 1 && score > 2) score -= 1;
 
   const clamped = Math.max(0, Math.min(4, score)) as PasswordScore;
 

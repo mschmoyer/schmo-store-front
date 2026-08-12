@@ -112,9 +112,10 @@ interface InventoryTurnoverReportProps {
  */
 export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProps) {
   const { session } = useAdmin();
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
-    startOfDay(subDays(new Date(), 30)),
-    endOfDay(new Date())
+  // Mantine v8 date inputs work with 'yyyy-MM-dd' strings rather than Date objects.
+  const [dateRange, setDateRange] = useState<[string | null, string | null]>([
+    format(startOfDay(subDays(new Date(), 30)), 'yyyy-MM-dd'),
+    format(endOfDay(new Date()), 'yyyy-MM-dd')
   ]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,8 +140,8 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
 
     try {
       const params = new URLSearchParams({
-        startDate: format(dateRange[0], 'yyyy-MM-dd'),
-        endDate: format(dateRange[1], 'yyyy-MM-dd')
+        startDate: dateRange[0],
+        endDate: dateRange[1]
       });
 
       const response = await fetch(`/api/admin/inventory/reports/turnover?${params}`, {

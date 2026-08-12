@@ -160,13 +160,13 @@ export async function savePaymentAccountStatus(
         SET charges_enabled = $2,
             payouts_enabled = $3,
             details_submitted = $4,
-            onboarding_status = $5,
+            onboarding_status = $5::varchar,
             requirements_currently_due = $6,
             requirements_disabled_reason = $7,
             country = $8,
             default_currency = $9,
             onboarding_completed_at = CASE
-              WHEN $5 = 'complete' THEN COALESCE(onboarding_completed_at, NOW())
+              WHEN $5::varchar = 'complete' THEN COALESCE(onboarding_completed_at, NOW())
               ELSE onboarding_completed_at
             END,
             last_synced_at = NOW(),

@@ -30,7 +30,8 @@ export function Wordmark({
   className,
 }: WordmarkProps): React.JSX.Element {
   const [assetFailed, setAssetFailed] = React.useState(false);
-  const assetSrc = markOnly ? '/brand/mark.svg' : '/brand/logo-horizontal.svg';
+  const suffix = onDark ? '-inverse' : '';
+  const assetSrc = markOnly ? `/brand/mark${suffix}.svg` : `/brand/logo-horizontal${suffix}.svg`;
 
   return (
     <span

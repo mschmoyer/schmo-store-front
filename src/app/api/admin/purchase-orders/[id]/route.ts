@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
+import { PurchaseOrderRow } from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
+
+/** A line item as produced by the `json_agg(json_build_object(...))` projection. */
+type PurchaseOrderAggregatedItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  quantity: number;
+  unit_cost: string;
+  total_cost: string;
+  received_quantity: number | null;
+};
+
+/** A purchase order row with its aggregated line items. */
+type PurchaseOrderWithItemsRow = PurchaseOrderRow & {
+  items: Array<PurchaseOrderAggregatedItem | null> | null;
+};
+
+/** Current product details attached to each purchase order line. */
+type CurrentProductRow = {
+  id: string;
+  name: string;
+  sku: string;
+  stock_quantity: number | null;
+  base_price: string;
+};
 
 // Purchase Order Status Types
 export type PurchaseOrderStatus = 'pending' | 'approved' | 'shipped' | 'delivered' | 'cancelled';
@@ -43,7 +70,7 @@ export async function GET(
     const purchaseOrderId = params.id;
 
     // Get purchase order with items
-    const purchaseOrderResult = await db.query(`
+    const purchaseOrderResult = await db.query<PurchaseOrderWithItemsRow>(`
       SELECT 
         po.*,
         json_agg(
@@ -55,7 +82,7 @@ export async function GET(
             'quantity', poi.quantity,
             'unit_cost', poi.unit_cost,
             'total_cost', poi.total_cost,
-            'received_quantity', poi.received_quantity
+            'received_quantity', poi.quantity_received
           )
         ) as items
       FROM purchase_orders po
@@ -74,33 +101,31 @@ export async function GET(
     const purchaseOrder = purchaseOrderResult.rows[0];
 
     // Get product details for items (for current product info)
-    const productIds = purchaseOrder.items.map((item: { product_id?: string }) => item.product_id).filter(Boolean);
-    let productDetails = {};
+    // `json_agg` over a LEFT JOIN yields `[null]` when the order has no items.
+    const orderItems = (purchaseOrder.items ?? []).filter(
+      (item): item is PurchaseOrderAggregatedItem => item !== null
+    );
+    const productIds = orderItems.map(item => item.product_id).filter(Boolean);
+    let productDetails: Record<string, CurrentProductRow> = {};
     
     if (productIds.length > 0) {
-      const productsResult = await db.query(`
+      const productsResult = await db.query<CurrentProductRow>(`
         SELECT id, name, sku, stock_quantity, base_price
         FROM products 
         WHERE id = ANY($1::uuid[]) AND store_id = $2
       `, [productIds, user.storeId]);
 
-      productDetails = productsResult.rows.reduce((acc, product) => {
-        acc[product.id] = product;
-        return acc;
-      }, {});
+      productDetails = productsResult.rows.reduce<Record<string, CurrentProductRow>>(
+        (acc, product) => {
+          acc[product.id] = product;
+          return acc;
+        },
+        {}
+      );
     }
 
     // Enrich items with current product info
-    const enrichedItems = purchaseOrder.items.map((item: {
-      id: string;
-      product_id: string;
-      product_name: string;
-      product_sku: string;
-      quantity: number;
-      unit_cost: number;
-      total_cost: number;
-      received_quantity: number;
-    }) => {
+    const enrichedItems = orderItems.map(item => {
       const currentProduct = productDetails[item.product_id];
       return {
         ...item,

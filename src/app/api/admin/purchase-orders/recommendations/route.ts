@@ -1,5 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/database/connection';
+import { ProductSalesVelocityRow } from '@/lib/types/db-rows';
+
+/** Product projection driving the reorder recommendations. */
+type RecommendationProductRow = {
+  product_id: string;
+  name: string;
+  sku: string;
+  stock_quantity: number | null;
+  low_stock_threshold: number | null;
+  unit_cost: string | null;
+  base_price: string;
+  is_active: boolean | null;
+  category: string | null;
+};
+
+/** Active supplier projection used to attribute a recommendation. */
+type RecommendationSupplierRow = {
+  id: string;
+  name: string;
+  is_active: boolean | null;
+};
 import { requireAuth } from '@/lib/auth/session';
 
 interface RecommendationItem {
@@ -67,7 +88,7 @@ export async function GET(request: NextRequest) {
       ORDER BY p.name
     `;
 
-    const inventoryResult = await query(inventoryQuery, [user.storeId]);
+    const inventoryResult = await query<RecommendationProductRow>(inventoryQuery, [user.storeId]);
     const products = inventoryResult.rows;
 
     // Get sales data for forecasting
@@ -93,11 +114,24 @@ export async function GET(request: NextRequest) {
       GROUP BY oi.product_id, oi.product_sku
     `;
 
-    const salesResult = await query(salesQuery, [user.storeId]);
-    const salesData = salesResult.rows.reduce((acc, row) => {
-      acc[row.product_id] = row;
+    const salesResult = await query<ProductSalesVelocityRow>(salesQuery, [user.storeId]);
+    const salesData = salesResult.rows.reduce<Record<string, SalesVelocity>>((acc, row) => {
+      acc[row.product_id] = {
+        total_sales: Number(row.total_sales) || 0,
+        total_orders: Number(row.total_orders) || 0,
+        avg_order_quantity: Number(row.avg_order_quantity) || 0,
+        last_sale_date: row.last_sale_date?.toISOString() ?? null,
+        sales_last_7_days: Number(row.sales_last_7_days) || 0,
+        sales_last_14_days: Number(row.sales_last_14_days) || 0,
+        sales_last_30_days: Number(row.sales_last_30_days) || 0,
+        sales_last_60_days: Number(row.sales_last_60_days) || 0,
+        sales_last_90_days: Number(row.sales_last_90_days) || 0,
+        sales_last_180_days: Number(row.sales_last_180_days) || 0,
+        sales_last_365_days: Number(row.sales_last_365_days) || 0,
+        avg_monthly_sales: Number(row.avg_monthly_sales) || 0
+      };
       return acc;
-    }, {} as Record<string, SalesVelocity>);
+    }, {});
 
     // Get suppliers
     const suppliersQuery = `
@@ -107,7 +141,7 @@ export async function GET(request: NextRequest) {
       ORDER BY name
     `;
 
-    const suppliersResult = await query(suppliersQuery, [user.storeId]);
+    const suppliersResult = await query<RecommendationSupplierRow>(suppliersQuery, [user.storeId]);
     const suppliers = suppliersResult.rows;
 
     // Generate recommendations

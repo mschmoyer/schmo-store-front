@@ -84,8 +84,9 @@ export default function PurchaseOrderAnalytics({ purchaseOrders }: PurchaseOrder
     const averageOrderValue = totalPOs > 0 ? totalSpend / totalPOs : 0;
 
     // Calculate on-time delivery rate
-    const deliveredPOs = filteredPOs.filter(po => 
-      po.status === 'delivered' && po.expected_delivery && po.actual_delivery
+    const deliveredPOs = filteredPOs.filter(
+      (po): po is typeof po & { expected_delivery: string; actual_delivery: string } =>
+        po.status === 'delivered' && Boolean(po.expected_delivery) && Boolean(po.actual_delivery)
     );
     const onTimePOs = deliveredPOs.filter(po => 
       new Date(po.actual_delivery) <= new Date(po.expected_delivery)

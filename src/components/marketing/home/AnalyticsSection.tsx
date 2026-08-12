@@ -9,6 +9,8 @@ import styles from './AnalyticsSection.module.css';
 export interface AnalyticsSectionProps {
   /** Real zero-result searches from the demo storefronts. */
   searches: ZeroResultSearch[];
+  /** Where "See what's included" points. @default the features page */
+  includedHref?: string;
 }
 
 /**
@@ -37,7 +39,10 @@ function shortDate(iso: string): string {
  * @param props - {@link AnalyticsSectionProps}
  * @returns The analytics section.
  */
-export function AnalyticsSection({ searches }: AnalyticsSectionProps): React.JSX.Element {
+export function AnalyticsSection({
+  searches,
+  includedHref = ROUTES.features,
+}: AnalyticsSectionProps): React.JSX.Element {
   return (
     <section className={styles.root}>
       <div className={styles.inner}>
@@ -59,7 +64,7 @@ export function AnalyticsSection({ searches }: AnalyticsSectionProps): React.JSX
           </Reveal>
           <Reveal delay={0.11}>
             <div className={styles.actions}>
-              <Button as={Link} href={ROUTES.features} variant="secondary" size="md">
+              <Button as={Link} href={includedHref} variant="secondary" size="md">
                 See what&rsquo;s included
               </Button>
               <p className={styles.microcopy}>

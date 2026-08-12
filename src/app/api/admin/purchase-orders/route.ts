@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { v4 as uuidv4 } from 'uuid';
-import { PurchaseOrder, CreatePurchaseOrderInput, PaginatedResponse } from '@/lib/types/database';
+import { CreatePurchaseOrderInput, PaginatedResponse } from '@/lib/types/database';
+import { CountRow, PurchaseOrderRow } from '@/lib/types/db-rows';
+
+/** A purchase order row joined with its supplier and line-item count. */
+type PurchaseOrderListRow = PurchaseOrderRow & {
+  supplier_name: string;
+  supplier_contact: string | null;
+  items_count: string;
+};
 
 /**
  * GET /api/admin/purchase-orders
@@ -45,13 +53,13 @@ export async function GET(request: NextRequest) {
 
     // Get total count
     const countQuery = `
-      SELECT COUNT(*) as total
+      SELECT COUNT(*) as count
       FROM purchase_orders po
       ${whereClause}
     `;
     
-    const countResult = await db.query(countQuery, params);
-    const total = parseInt(countResult.rows[0].total);
+    const countResult = await db.query<CountRow>(countQuery, params);
+    const total = parseInt(countResult.rows[0].count, 10);
 
     // Get purchase orders with supplier info
     const query = `
@@ -72,11 +80,11 @@ export async function GET(request: NextRequest) {
     `;
 
     params.push(limit, offset);
-    const result = await db.query(query, params);
+    const result = await db.query<PurchaseOrderListRow>(query, params);
 
     const totalPages = Math.ceil(total / limit);
 
-    const response: PaginatedResponse<PurchaseOrder> = {
+    const response: PaginatedResponse<PurchaseOrderListRow> = {
       data: result.rows,
       pagination: {
         page,
@@ -224,7 +232,7 @@ export async function POST(request: NextRequest) {
  * @returns Promise<string> - Next purchase order number
  */
 async function generatePurchaseOrderNumber(storeId: string): Promise<string> {
-  const result = await db.query(
+  const result = await db.query<{ purchase_order_number: string | null }>(
     `SELECT purchase_order_number 
      FROM purchase_orders 
      WHERE store_id = $1 
@@ -238,7 +246,7 @@ async function generatePurchaseOrderNumber(storeId: string): Promise<string> {
   }
 
   const lastNumber = result.rows[0].purchase_order_number;
-  const match = lastNumber.match(/PO-(\d+)/);
+  const match = lastNumber === null ? null : lastNumber.match(/PO-(\d+)/);
   
   if (match) {
     const nextNumber = parseInt(match[1]) + 1;

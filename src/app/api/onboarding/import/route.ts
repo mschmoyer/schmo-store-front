@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { buildState, originOf, persist, readImportProgress, requireOnboarding } from '../_lib/state';
 import { runImportSlice, startedProgress } from '../_lib/import';
+import { upsertProduct } from '../_lib/import-writer';
 import type { FetchLike } from '../_lib/shipstation';
 
 /** Test seam, mirroring the ShipStation route. */
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
       storeId: context.row.store_id,
       apiKey,
       progress,
+      writeProduct: upsertProduct,
       fetchImpl: __testHooks.fetchImpl,
     });
 

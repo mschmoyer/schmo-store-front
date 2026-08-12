@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
+import { CountRow } from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
 
 interface Discount {
@@ -316,12 +317,12 @@ export async function DELETE(request: NextRequest) {
       });
     } else if (type === 'discount') {
       // Check if discount has associated coupons
-      const couponsCheck = await db.query(
+      const couponsCheck = await db.query<CountRow>(
         'SELECT COUNT(*) as count FROM coupons WHERE discount_id = $1',
         [id]
       );
 
-      if (parseInt(couponsCheck.rows[0].count) > 0) {
+      if (parseInt(couponsCheck.rows[0].count, 10) > 0) {
         return NextResponse.json({
           success: false,
           error: 'Cannot delete discount with associated coupons. Delete the coupons first.'

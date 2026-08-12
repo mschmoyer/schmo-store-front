@@ -1,0 +1,184 @@
+/*
+ * Designed empty, unavailable and loading states.
+ *
+ * The "shop unavailable" pages render *outside* a resolved storefront theme —
+ * there is no merchant theme to apply when we are refusing to show the shop —
+ * so they are the one place in the storefront that legitimately uses the
+ * RebelShops chrome tokens from `globals.css` rather than `--st-*`.
+ */
+
+.standalone {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+  background-color: var(--surface);
+  color: var(--text-primary);
+}
+
+.card {
+  max-width: 520px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  inline-size: 64px;
+  block-size: 64px;
+  border-radius: var(--radius-xl);
+  background-color: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.body {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* -- In-storefront empty states (these DO get the merchant's theme) -------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--st-space-4);
+  padding: var(--st-space-10) var(--st-space-5);
+  border: 1px dashed var(--st-border-strong);
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-sunken);
+}
+
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: var(--st-radius-card);
+  background-color: var(--st-surface-raised);
+  border: 1px solid var(--st-border);
+  color: var(--st-text-muted);
+}
+
+.emptyTitle {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-h4);
+  font-weight: var(--st-heading-weight);
+  letter-spacing: var(--st-heading-tracking);
+  color: var(--st-text);
+}
+
+.emptyBody {
+  color: var(--st-text-muted);
+  max-width: 52ch;
+  line-height: 1.6;
+}
+
+/* The merchant-facing instructions inside an empty catalogue. */
+.steps {
+  text-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  margin: 0;
+  padding-inline-start: var(--st-space-6);
+  color: var(--st-text-muted);
+  font-size: var(--st-small);
+  line-height: 1.6;
+}
+
+.steps li {
+  list-style: decimal;
+}
+
+/* -- Skeletons ------------------------------------------------------------ */
+
+/*
+ * Skeleton geometry mirrors the real components exactly — same aspect ratio,
+ * same gaps, same text-line heights — so the page does not jump when content
+ * arrives. A skeleton that is the wrong shape is worse than a spinner.
+ */
+.skeletonGrid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+}
+
+.skelCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+}
+
+.skelImage {
+  aspect-ratio: var(--st-ratio-product, 1 / 1);
+  border-radius: var(--st-radius-image, 12px);
+}
+
+.skelLine {
+  block-size: 0.9em;
+  border-radius: 4px;
+}
+
+.skelLineShort {
+  inline-size: 45%;
+}
+
+.skelLineMedium {
+  inline-size: 70%;
+}
+
+.shimmer {
+  background-color: var(--st-surface-sunken, var(--surface-sunken));
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--st-surface-raised, var(--surface-raised)) 50%,
+    transparent 100%
+  );
+  opacity: 0.55;
+  animation: storefrontShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes storefrontShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skelHero {
+  block-size: 340px;
+  border-radius: var(--st-radius-image, 12px);
+}

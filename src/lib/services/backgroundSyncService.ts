@@ -13,6 +13,24 @@ interface SyncResult {
   error?: string;
 }
 
+/** Row of `public.sync_logs`. `results` is a jsonb column, already parsed by pg. */
+type SyncLogRow = {
+  id: string;
+  timestamp: Date;
+  total_operations: number;
+  successful_operations: number;
+  failed_operations: number;
+  total_duration: number;
+  results: SyncResult[];
+  created_at: Date;
+};
+
+/** Store with an active ShipStation integration. */
+type ActiveStoreRow = {
+  id: string;
+  name: string;
+};
+
 interface SyncSummary {
   totalOperations: number;
   successfulOperations: number;
@@ -197,16 +215,16 @@ export class BackgroundSyncService {
   async getActiveStores(): Promise<Array<{ id: string; name: string }>> {
     try {
       const query = `
-        SELECT DISTINCT s.id, s.name
+        SELECT DISTINCT s.id, s.store_name AS name
         FROM stores s
-        JOIN integrations i ON s.id = i.store_id
+        JOIN store_integrations i ON s.id = i.store_id
         WHERE i.integration_type = 'shipstation'
         AND i.is_active = true
-        AND i.settings IS NOT NULL
-        AND i.settings != '{}'
+        AND i.configuration IS NOT NULL
+        AND i.configuration::text != '{}'
       `;
-      
-      const result = await db.query(query);
+
+      const result = await db.query<ActiveStoreRow>(query);
       return result.rows;
       
     } catch (error) {
@@ -278,15 +296,15 @@ export class BackgroundSyncService {
         LIMIT $1
       `;
       
-      const result = await db.query(query, [limit]);
-      
+      const result = await db.query<SyncLogRow>(query, [limit]);
+
       return result.rows.map(row => ({
         totalOperations: row.total_operations,
         successfulOperations: row.successful_operations,
         failedOperations: row.failed_operations,
         totalDuration: row.total_duration,
-        results: JSON.parse(row.results),
-        timestamp: row.timestamp
+        results: row.results,
+        timestamp: row.timestamp.toISOString()
       }));
       
     } catch (error) {

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { ROUTES, storeUrl } from '../data/routes';
+import { Wordmark } from './Wordmark';
 import styles from './SiteFooter.module.css';
 
 interface FooterColumn {
@@ -52,7 +53,7 @@ export function SiteFooter(): React.JSX.Element {
     <footer className={styles.root}>
       <div className={styles.inner}>
         <div className={styles.lede}>
-          <p className={styles.wordmark}>RebelShops</p>
+          <Wordmark size={28} onDark className={styles.wordmark} />
           <p className={styles.blurb}>
             A direct-to-consumer storefront for sellers who already run their catalog, stock and
             shipping through ShipStation. $1 for 3 months, then $19.99/mo. We never take a

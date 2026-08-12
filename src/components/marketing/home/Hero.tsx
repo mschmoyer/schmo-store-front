@@ -34,40 +34,44 @@ export function Hero({ store, rows, focus }: HeroProps): React.JSX.Element {
     <section className={`${styles.root} ${hasVisual ? '' : styles.textOnly}`}>
       <div className={styles.inner}>
         <div className={styles.copy}>
-          <Reveal>
-            <Eyebrow rule className={styles.eyebrow}>
-              For ShipStation sellers
-            </Eyebrow>
-          </Reveal>
+          <div className={styles.lead}>
+            <Reveal>
+              <Eyebrow rule className={styles.eyebrow}>
+                For ShipStation sellers
+              </Eyebrow>
+            </Reveal>
 
-          <Reveal delay={0.05}>
-            <h1 className={styles.headline}>Your ShipStation catalog, now a storefront.</h1>
-          </Reveal>
+            <Reveal delay={0.05}>
+              <h1 className={styles.headline}>Your ShipStation catalog, now a storefront.</h1>
+            </Reveal>
+          </div>
 
-          <Reveal delay={0.1}>
-            <p className={styles.subhead}>
-              Connect your ShipStation account and RebelShops builds a real online store from the
-              products, SKUs and stock levels already in it. Payments through your Stripe account.
-              Orders come back to ShipStation.
-            </p>
-          </Reveal>
+          <div className={styles.support}>
+            <Reveal delay={0.1}>
+              <p className={styles.subhead}>
+                Connect your ShipStation account and RebelShops builds a real online store from the
+                products, SKUs and stock levels already in it. Payments through your Stripe account.
+                Orders come back to ShipStation.
+              </p>
+            </Reveal>
 
-          <Reveal delay={0.15}>
-            <div className={styles.actions}>
-              <Button as={Link} href={ROUTES.signUp} size="lg">
-                Start for $1
-              </Button>
-              <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
-                See a live store
-              </Button>
-            </div>
-          </Reveal>
+            <Reveal delay={0.15}>
+              <div className={styles.actions}>
+                <Button as={Link} href={ROUTES.signUp} size="lg">
+                  Start for $1
+                </Button>
+                <Button as={Link} href={ROUTES.demoStores} variant="secondary" size="lg">
+                  See a live store
+                </Button>
+              </div>
+            </Reveal>
 
-          <Reveal delay={0.2}>
-            <p className={styles.microcopy}>
-              $1 for 3 months, then $19.99/mo. No transaction fees. Cancel anytime.
-            </p>
-          </Reveal>
+            <Reveal delay={0.2}>
+              <p className={styles.microcopy}>
+                $1 for 3 months, then $19.99/mo. No transaction fees. Cancel anytime.
+              </p>
+            </Reveal>
+          </div>
         </div>
 
         {hasVisual && store && focus ? (

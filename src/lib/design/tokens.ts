@@ -174,29 +174,31 @@ export const chartSeries = [
 ] as const;
 
 /**
- * Hue pairs used by the deterministic ProductImage fallback. Each entry is a
- * [from, to] gradient stop plus the ink color that stays legible on top of it.
+ * The hue arc the generated product marks are allowed to occupy, in degrees.
+ * 8°–54° runs from just below ember (14°) to just above amber (38°). Nothing
+ * outside this arc is permitted: §1's anti-goal is explicit that the product
+ * must not look like a generic purple/blue SaaS template, and §2 reserves
+ * azure for informational use only.
  */
-export const fallbackGradients = [
-  { from: ember[400], to: ember[700], on: '#FFFFFF' },
-  { from: mint[400], to: mint[700], on: '#FFFFFF' },
-  { from: azure[500], to: '#4C1D95', on: '#FFFFFF' },
-  { from: amber[400], to: ember[600], on: '#FFFFFF' },
-  { from: ink[600], to: ink[900], on: '#FFFFFF' },
-  { from: rose[400], to: rose[700], on: '#FFFFFF' },
-  { from: '#14B8A6', to: azure[700], on: '#FFFFFF' },
-  { from: ember[300], to: rose[600], on: '#FFFFFF' },
-  { from: mint[500], to: ink[800], on: '#FFFFFF' },
-  { from: '#7C3AED', to: ember[600], on: '#FFFFFF' },
-  { from: amber[500], to: ink[800], on: '#FFFFFF' },
-  { from: ink[400], to: ink[700], on: '#FFFFFF' },
-] as const;
+export const MARK_HUE_ARC = { min: 8, max: 54 } as const;
+
+/** Every 7th seed drops out of the hue arc onto graphite, for visual rhythm. */
+export const MARK_INK_RAMP = { from: ink[600], to: ink[900] } as const;
+
+/** Minimum contrast white must keep against the lighter gradient stop. */
+export const MARK_MIN_CONTRAST = 4.5;
 
 export type InkShade = keyof typeof ink;
 export type EmberShade = keyof typeof ember;
 export type RadiusToken = keyof typeof radius;
 export type ShadowToken = keyof typeof shadow;
-export type FallbackGradient = (typeof fallbackGradients)[number];
+
+/** A generated gradient: two stops plus the foreground that stays legible. */
+export interface MarkGradient {
+  from: string;
+  to: string;
+  on: string;
+}
 
 /**
  * A stable 32-bit FNV-1a hash. Used wherever a visual needs to be derived
@@ -216,11 +218,86 @@ export function hashString(value: string): number {
 }
 
 /**
- * Picks the gradient a given product should use for its generated fallback mark.
+ * Converts HSL to a `#rrggbb` string.
+ *
+ * @param h - Hue in degrees.
+ * @param s - Saturation, 0–100.
+ * @param l - Lightness, 0–100.
+ * @returns An uppercase hex color.
+ */
+export function hslToHex(h: number, s: number, l: number): string {
+  const sat = s / 100;
+  const light = l / 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = sat * Math.min(light, 1 - light);
+  const f = (n: number) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (v: number) =>
+    Math.round(v * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`.toUpperCase();
+}
+
+/** Relative luminance per WCAG 2.x. */
+function relativeLuminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+/**
+ * Contrast ratio between a hex color and white.
+ *
+ * @param hex - `#rrggbb` color.
+ * @returns The WCAG contrast ratio against `#FFFFFF`.
+ */
+export function contrastWithWhite(hex: string): number {
+  return 1.05 / (relativeLuminance(hex) + 0.05);
+}
+
+/**
+ * Picks the gradient a product should use for its generated fallback mark.
+ *
+ * Hue is confined to the brand arc (8°–54°); per-SKU distinctiveness comes from
+ * saturation and lightness instead, so no tile can drift into the purple/teal
+ * territory §1 rules out. The `to` stop is the same hue family, darker — a
+ * shade, not a hue shift. Lightness is then walked down until white clears
+ * {@link MARK_MIN_CONTRAST} against the lighter stop, which keeps the initials
+ * readable on every tile including the yellow end of the arc.
+ *
+ * Every 7th seed uses the ink ramp instead, which gives the grid a handful of
+ * deliberate graphite tiles without inventing a third brand color.
  *
  * @param seed - SKU if available, otherwise the product name.
- * @returns The gradient stops and the foreground color that stays legible on it.
+ * @returns The gradient stops and the foreground color that stays legible on them.
  */
-export function gradientForSeed(seed: string): FallbackGradient {
-  return fallbackGradients[hashString(seed) % fallbackGradients.length];
+export function gradientForSeed(seed: string): MarkGradient {
+  const hash = hashString(seed);
+
+  if (hash % 7 === 0) {
+    return { from: MARK_INK_RAMP.from, to: MARK_INK_RAMP.to, on: '#FFFFFF' };
+  }
+
+  const span = MARK_HUE_ARC.max - MARK_HUE_ARC.min;
+  const hue = MARK_HUE_ARC.min + ((hash % 3600) / 3600) * span;
+  const saturation = 62 + ((hash >>> 8) % 26);
+  let lightness = 34 + ((hash >>> 14) % 18);
+
+  let from = hslToHex(hue, saturation, lightness);
+  // Deterministic: the same seed always walks the same number of steps.
+  while (contrastWithWhite(from) < MARK_MIN_CONTRAST && lightness > 18) {
+    lightness -= 2;
+    from = hslToHex(hue, saturation, lightness);
+  }
+
+  const to = hslToHex(
+    Math.max(MARK_HUE_ARC.min, hue - 10),
+    Math.max(0, saturation - 6),
+    Math.max(10, lightness - 20)
+  );
+
+  return { from, to, on: '#FFFFFF' };
 }

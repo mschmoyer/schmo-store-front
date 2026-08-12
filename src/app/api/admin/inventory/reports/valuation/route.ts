@@ -3,6 +3,23 @@ import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 
+/** Aggregate inventory valuation figures for a store. */
+type InventoryValuationRow = {
+  total_products: string;
+  total_quantity: string;
+  total_cost_value: string;
+  total_retail_value: string;
+};
+
+/** A point on the historical valuation trend, from `inventory_snapshots`. */
+type ValuationSnapshotRow = {
+  date: Date;
+  total_cost_value: string | null;
+  total_retail_value: string | null;
+  total_quantity: number | null;
+  product_count: number | null;
+};
+
 // These interfaces are used in the response structure
 // They are typed explicitly for clarity and documentation
 
@@ -70,7 +87,7 @@ export async function GET(request: NextRequest) {
         AND p.stock_quantity > 0
     `;
 
-    const currentValueResult = await db.query(currentValueQuery, [user.storeId]);
+    const currentValueResult = await db.query<InventoryValuationRow>(currentValueQuery, [user.storeId]);
     const currentValue = currentValueResult.rows[0];
 
     // Get value by category
@@ -194,7 +211,7 @@ export async function GET(request: NextRequest) {
       ORDER BY snapshot_date ASC
     `;
 
-    const historicalResult = await db.query(historicalQuery, [user.storeId, startDate, endDate]);
+    const historicalResult = await db.query<ValuationSnapshotRow>(historicalQuery, [user.storeId, startDate, endDate]);
 
     // If no historical data, create a single point with current values
     const historicalData: HistoricalValuePoint[] = historicalResult.rows.length > 0
@@ -219,7 +236,7 @@ export async function GET(request: NextRequest) {
       total_retail_value: Number(currentValue.total_retail_value) || 0,
       total_quantity: Number(currentValue.total_quantity) || 0,
       total_products: Number(currentValue.total_products) || 0,
-      average_margin_percentage: currentValue.total_cost_value > 0
+      average_margin_percentage: Number(currentValue.total_cost_value) > 0
         ? ((Number(currentValue.total_retail_value) - Number(currentValue.total_cost_value)) / Number(currentValue.total_cost_value)) * 100
         : 0,
       total_potential_profit: Number(currentValue.total_retail_value) - Number(currentValue.total_cost_value)
@@ -244,7 +261,7 @@ export async function GET(request: NextRequest) {
         LIMIT 1
       `;
 
-      const previousResult = await db.query(previousQuery, [user.storeId, previousEndDate]);
+      const previousResult = await db.query<InventoryValuationRow & { total_products: string }>(previousQuery, [user.storeId, previousEndDate]);
       
       if (previousResult.rows.length > 0) {
         const previous = previousResult.rows[0];
@@ -253,7 +270,7 @@ export async function GET(request: NextRequest) {
           total_retail_value: Number(previous.total_retail_value) || 0,
           total_quantity: Number(previous.total_quantity) || 0,
           total_products: Number(previous.total_products) || 0,
-          average_margin_percentage: previous.total_cost_value > 0
+          average_margin_percentage: Number(previous.total_cost_value) > 0
             ? ((Number(previous.total_retail_value) - Number(previous.total_cost_value)) / Number(previous.total_cost_value)) * 100
             : 0,
           total_potential_profit: Number(previous.total_retail_value) - Number(previous.total_cost_value)

@@ -1,0 +1,240 @@
+.root {
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink-200);
+  padding-block: var(--section-y);
+}
+
+.inner {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.tableWrap {
+  margin-top: clamp(32px, 5vw, 44px);
+  background: var(--paper-raised);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+
+.caption {
+  padding: 13px 18px;
+  background: var(--paper-sunken);
+  border-bottom: 1px solid var(--ink-200);
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+  text-align: left;
+}
+
+.table thead th {
+  padding: 13px 18px;
+  background: var(--paper-sunken);
+  border-bottom: 1px solid var(--ink-200);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink-950);
+  white-space: nowrap;
+}
+
+.table tbody th,
+.table tbody td {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--ink-100);
+  vertical-align: top;
+  color: var(--ink-700);
+  font-weight: 400;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rowHead {
+  color: var(--ink-900);
+  font-weight: 500;
+  min-width: 15ch;
+}
+
+.usCol {
+  background: rgb(var(--mint-500-rgb) / 0.05);
+  border-inline: 1px solid rgb(var(--mint-500-rgb) / 0.14);
+}
+
+.totalRow th,
+.totalRow td {
+  background: var(--paper-sunken);
+  border-top: 1px solid var(--ink-200);
+  border-bottom: 1px solid var(--ink-200);
+}
+
+.totalRow .usCol {
+  background: rgb(var(--mint-500-rgb) / 0.1);
+}
+
+.totalRow .rowHead {
+  font-weight: 700;
+  color: var(--ink-950);
+}
+
+.totalUs,
+.totalThem {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.totalUs {
+  color: var(--mint-700);
+}
+
+.totalThem {
+  color: var(--ink-900);
+}
+
+/* ------------------------------------------------------------- verdict */
+
+.verdict {
+  margin: 20px 0 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--ink-700);
+}
+
+.verdict strong {
+  color: var(--ink-950);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------ fairness block */
+
+.fairness {
+  margin-top: 28px;
+  padding: 22px 24px;
+  background: transparent;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-lg);
+}
+
+.fairPara {
+  margin: 0 0 14px;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--ink-500);
+}
+
+.fairPara:last-of-type {
+  margin-bottom: 0;
+}
+
+.fairLead {
+  color: var(--ink-900);
+  font-weight: 700;
+}
+
+.sources {
+  margin: 16px 0 0;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.sources a {
+  color: var(--ember-700);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --------------------------------------------- stacked layout on mobile */
+
+@media (max-width: 759px) {
+  .table,
+  .table tbody,
+  .table tr,
+  .table th,
+  .table td {
+    display: block;
+  }
+
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .table tbody tr {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--ink-100);
+  }
+
+  .table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .table tbody th,
+  .table tbody td {
+    padding: 0;
+    border: 0;
+  }
+
+  .rowHead {
+    margin-bottom: 8px;
+    font-weight: 700;
+    color: var(--ink-950);
+  }
+
+  .table tbody td {
+    display: grid;
+    grid-template-columns: 11ch minmax(0, 1fr);
+    gap: 10px;
+    padding: 6px 0;
+    background: none;
+    border: 0;
+  }
+
+  .table tbody td::before {
+    content: attr(data-label);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+    padding-top: 3px;
+  }
+
+  .usCol::before {
+    color: var(--mint-700);
+  }
+
+  .totalRow {
+    background: var(--paper-sunken);
+  }
+
+  .totalUs,
+  .totalThem {
+    font-size: 1.375rem;
+  }
+}

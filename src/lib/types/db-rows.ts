@@ -331,3 +331,134 @@ export type CouponRow = {
 export type CountRow = {
   count: string;
 };
+
+/**
+ * Joined product + ShipStation inventory projection used by the admin
+ * inventory listing and CSV export routes.
+ */
+export type InventoryProductRow = {
+  product_id: string;
+  name: string;
+  sku: string;
+  stock_quantity: number | null;
+  low_stock_threshold: number | null;
+  unit_cost: string | null;
+  base_price: string;
+  featured_image_url: string | null;
+  category: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  is_active: boolean | null;
+  shipstation_available: number | null;
+  shipstation_on_hand: number | null;
+  shipstation_allocated: number | null;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  inventory_updated_at: Date | null;
+};
+
+/** Per-product sales velocity aggregate over `order_items`. */
+export type ProductSalesVelocityRow = {
+  product_id: string;
+  product_sku: string;
+  total_sales: string;
+  total_orders: string;
+  avg_order_quantity: string;
+  last_sale_date: Date | null;
+  sales_last_7_days: string;
+  sales_last_14_days: string;
+  sales_last_30_days: string;
+  sales_last_60_days: string;
+  sales_last_90_days: string;
+  sales_last_180_days: string;
+  sales_last_365_days: string;
+  avg_monthly_sales: string | null;
+};
+
+/** Most recent restock entry per product from `inventory_logs`. */
+export type LastRestockRow = {
+  product_id: string;
+  last_restocked: Date | null;
+  change_type: string;
+  quantity_change: number;
+};
+
+/** Row of `public.purchase_orders`. */
+export type PurchaseOrderRow = {
+  id: string;
+  store_id: string;
+  po_number: string;
+  supplier_name: string;
+  supplier_email: string | null;
+  supplier_phone: string | null;
+  supplier_address: string | null;
+  order_date: string;
+  expected_delivery: string | null;
+  actual_delivery: string | null;
+  status: string;
+  approval_date: string | null;
+  approved_by: string | null;
+  subtotal: string;
+  tax_amount: string | null;
+  shipping_amount: string | null;
+  total_cost: string;
+  notes: string | null;
+  internal_notes: string | null;
+  payment_terms: string | null;
+  shipping_method: string | null;
+  pdf_generated_at: Date | null;
+  pdf_url: string | null;
+  pdf_version: number | null;
+  external_po_id: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  created_by: string | null;
+  updated_by: string | null;
+  supplier_id: string | null;
+};
+
+/** Row of `public.purchase_order_items`. */
+export type PurchaseOrderItemRow = {
+  id: string;
+  purchase_order_id: string;
+  product_id: string | null;
+  product_sku: string;
+  product_name: string;
+  product_description: string | null;
+  quantity: number;
+  unit_cost: string;
+  total_cost: string;
+  quantity_received: number | null;
+  quantity_pending: number | null;
+  product_category: string | null;
+  product_weight: string | null;
+  product_dimensions: string | null;
+  notes: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+};
+
+/** Row of `public.suppliers`. */
+export type SupplierRow = {
+  id: string;
+  store_id: string;
+  name: string;
+  contact_person: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+  tax_id: string | null;
+  payment_terms: string | null;
+  notes: string | null;
+  is_active: boolean | null;
+  performance_rating: string | null;
+  total_orders: number | null;
+  on_time_delivery_rate: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+};
+

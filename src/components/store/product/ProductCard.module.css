@@ -97,6 +97,48 @@
   transition: opacity 220ms ease;
 }
 
+/* -- Generated mark (no photograph) --------------------------------------- */
+
+.mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: var(--st-space-2);
+  align-content: center;
+  overflow: hidden;
+  /* Built entirely from the merchant's own two colours, so a shop with no
+     product photography still looks like that shop rather than like a gap. */
+  background-image:
+    radial-gradient(
+      circle at var(--_mark-glow-x) var(--_mark-glow-y),
+      color-mix(in oklab, var(--st-brand) calc(var(--_mark-tint) + 10%), transparent),
+      transparent 62%
+    ),
+    linear-gradient(
+      var(--_mark-angle),
+      color-mix(in oklab, var(--st-brand) var(--_mark-tint), var(--st-surface-sunken)),
+      var(--st-surface-sunken)
+    );
+}
+
+.markInitials {
+  font-family: var(--st-font-heading);
+  font-size: var(--_mark-size);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--st-text);
+  opacity: 0.72;
+}
+
+.markSku {
+  font-size: var(--st-small);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--st-text-muted);
+}
+
 /* -- Hover effects, chosen by the theme ----------------------------------- */
 
 :global(.storefront[data-hover='lift']) .card:hover {

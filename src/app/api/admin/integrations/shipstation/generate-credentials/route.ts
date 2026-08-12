@@ -43,12 +43,12 @@ export async function POST(request: NextRequest) {
     const integration = integrationResult.rows[0];
 
     // Generate new credentials
-    const generateUsernameResult = await db.query(
+    const generateUsernameResult = await db.query<{ username: string }>(
       'SELECT generate_shipstation_username($1) as username',
       [storeId]
     );
     
-    const generatePasswordResult = await db.query(
+    const generatePasswordResult = await db.query<{ password: string }>(
       'SELECT generate_shipstation_password() as password'
     );
 

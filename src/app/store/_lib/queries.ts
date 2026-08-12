@@ -48,7 +48,7 @@ function assertServerOnly(context: string): void {
  * @param params - Bound parameters. Never interpolate shopper input into `text`
  * @returns The driver's rows
  */
-async function query<T extends Record<string, unknown>>(
+async function runQuery<T extends Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ): Promise<{ rows: T[] }> {
@@ -150,7 +150,7 @@ export async function getStoreBySlug(
     return { ok: false, reason: 'not-found' };
   }
 
-  const result = await query<StoreRow>(
+  const result = await runQuery<StoreRow>(
     `SELECT ${STORE_COLUMNS} FROM stores WHERE store_slug = $1 LIMIT 1`,
     [slug],
   );
@@ -171,7 +171,7 @@ export async function getStoreBySlug(
  * @returns Public, active stores, newest first
  */
 export async function listPublicStores(): Promise<StoreRecord[]> {
-  const result = await query<StoreRow>(
+  const result = await runQuery<StoreRow>(
     `SELECT ${STORE_COLUMNS}
        FROM stores
       WHERE is_active = true AND is_public = true
@@ -375,7 +375,7 @@ export async function queryProducts(
 
   const where = `WHERE ${conditions.join(' AND ')}`;
 
-  const countResult = await query<{ total: string }>(
+  const countResult = await runQuery<{ total: string }>(
     `SELECT COUNT(*)::text AS total ${PRODUCT_FROM} ${where}`,
     params,
   );
@@ -384,7 +384,7 @@ export async function queryProducts(
   const page = Math.min(query.page, totalPages);
   const offset = (page - 1) * query.pageSize;
 
-  const result = await query<ProductRow>(
+  const result = await runQuery<ProductRow>(
     `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM} ${where}
       ORDER BY ${SORT_SQL[query.sort]}, p.id
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -421,7 +421,7 @@ export async function getSectionProducts(
   );
 
   if (ids.length > 0) {
-    const result = await query<ProductRow>(
+    const result = await runQuery<ProductRow>(
       `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
         WHERE p.store_id = $1 AND p.is_active = true AND p.id = ANY($2::uuid[])
         LIMIT $3`,
@@ -433,7 +433,7 @@ export async function getSectionProducts(
   }
 
   if (options.collection) {
-    const result = await query<ProductRow>(
+    const result = await runQuery<ProductRow>(
       `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
         WHERE p.store_id = $1 AND p.is_active = true AND c.slug = $2
         ORDER BY p.is_featured DESC, p.created_at DESC
@@ -443,7 +443,7 @@ export async function getSectionProducts(
     if (result.rows.length > 0) return result.rows.map(toProduct);
   }
 
-  const result = await query<ProductRow>(
+  const result = await runQuery<ProductRow>(
     `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
       WHERE p.store_id = $1 AND p.is_active = true
       ORDER BY p.is_featured DESC, p.created_at DESC
@@ -474,7 +474,7 @@ export async function getProduct(
     idOrSlug,
   );
 
-  const result = await query<ProductRow>(
+  const result = await runQuery<ProductRow>(
     `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
       WHERE p.store_id = $1 AND p.is_active = true
         AND ${isUuid ? 'p.id = $2::uuid' : 'p.slug = $2'}
@@ -500,7 +500,7 @@ export async function getRelatedProducts(
   product: ProductRecord,
   limit = 4,
 ): Promise<ProductRecord[]> {
-  const result = await query<ProductRow>(
+  const result = await runQuery<ProductRow>(
     `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
       WHERE p.store_id = $1 AND p.is_active = true AND p.id <> $2::uuid
       ORDER BY (p.category_id IS NOT DISTINCT FROM $3::uuid) DESC,
@@ -531,7 +531,7 @@ export async function getProductsForCart(
   );
   if (ids.length === 0) return [];
 
-  const result = await query<ProductRow>(
+  const result = await runQuery<ProductRow>(
     `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
       WHERE p.store_id = $1 AND p.is_active = true AND p.id = ANY($2::uuid[])
       LIMIT 100`,
@@ -566,7 +566,7 @@ interface CategoryRow extends Record<string, unknown> {
  * @returns Non-empty categories in sort order
  */
 export async function getCategories(storeId: string, limit = 12): Promise<CategoryRecord[]> {
-  const result = await query<CategoryRow>(
+  const result = await runQuery<CategoryRow>(
     `SELECT c.id, c.name, c.slug, c.description, c.image_url,
             COUNT(p.id)::text AS product_count,
             (ARRAY_REMOVE(ARRAY_AGG(p.featured_image_url ORDER BY p.is_featured DESC, p.created_at DESC), NULL))[1] AS sample_image_url
@@ -591,6 +591,61 @@ export async function getCategories(storeId: string, limit = 12): Promise<Catego
   }));
 }
 
+/* ------------------------------------------------------------------ *
+ * Blog
+ * ------------------------------------------------------------------ */
+
+/** A published post, as the home page's blog band shows it. */
+export interface BlogPostRecord {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  featuredImageUrl: string | null;
+  publishedAt: Date | null;
+}
+
+interface BlogRow extends Record<string, unknown> {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  featured_image_url: string | null;
+  published_at: Date | null;
+}
+
+/**
+ * Recent published posts for a store.
+ *
+ * Scheduled and draft posts are excluded, and a post whose `published_at` is in
+ * the future is not published yet however its status column reads.
+ *
+ * @param storeId - The store being rendered
+ * @param limit - How many posts to return
+ * @returns Published posts, newest first
+ */
+export async function getBlogPosts(storeId: string, limit = 3): Promise<BlogPostRecord[]> {
+  const result = await runQuery<BlogRow>(
+    `SELECT id, title, slug, excerpt, featured_image_url, published_at
+       FROM blog_posts
+      WHERE store_id = $1
+        AND status = 'published'
+        AND (published_at IS NULL OR published_at <= NOW())
+      ORDER BY published_at DESC NULLS LAST, created_at DESC
+      LIMIT $2`,
+    [storeId, Math.min(Math.max(limit, 1), 9)],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    slug: row.slug,
+    excerpt: row.excerpt,
+    featuredImageUrl: row.featured_image_url,
+    publishedAt: row.published_at,
+  }));
+}
+
 /**
  * Count a store's purchasable products.
  * Used to decide between the catalogue and the "your shop is empty" state.
@@ -598,7 +653,7 @@ export async function getCategories(storeId: string, limit = 12): Promise<Catego
  * @returns The number of active products
  */
 export async function countActiveProducts(storeId: string): Promise<number> {
-  const result = await query<{ total: string }>(
+  const result = await runQuery<{ total: string }>(
     `SELECT COUNT(*)::text AS total FROM products WHERE store_id = $1 AND is_active = true`,
     [storeId],
   );

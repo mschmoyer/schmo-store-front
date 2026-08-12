@@ -41,6 +41,7 @@ const FAILURE_TITLES: Record<string, string> = {
   forbidden: 'That key can’t read your catalog',
   rate_limited: 'ShipStation is rate-limiting us',
   network_error: 'We couldn’t reach ShipStation',
+  blocked_upstream: 'Something blocked the connection',
   timeout: 'ShipStation didn’t answer in time',
   unexpected: 'ShipStation returned something unexpected',
   malformed: 'That doesn’t look like a ShipStation key',
@@ -119,7 +120,13 @@ export default function ShipStationStep({ api }: { api: OnboardingApi }): React.
       banner={
         failure ? (
           <Banner
-            tone={failure.status === 'network_error' || failure.status === 'timeout' ? 'warning' : 'danger'}
+            tone={
+              failure.status === 'network_error' ||
+              failure.status === 'timeout' ||
+              failure.status === 'blocked_upstream'
+                ? 'warning'
+                : 'danger'
+            }
             title={FAILURE_TITLES[failure.status] ?? 'That didn’t work'}
           >
             {failure.message}
@@ -186,7 +193,9 @@ export default function ShipStationStep({ api }: { api: OnboardingApi }): React.
             </p>
           ) : null}
 
-          {failure?.status === 'network_error' || failure?.status === 'timeout' ? (
+          {failure?.status === 'network_error' ||
+          failure?.status === 'timeout' ||
+          failure?.status === 'blocked_upstream' ? (
             <p className={styles.inlineNote}>
               Nothing was saved and nothing was changed in ShipStation. You can retry, or skip this
               and connect later from Settings — your store will still be created.

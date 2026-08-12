@@ -94,11 +94,11 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
     return (
       <StepPanel
         step={STEPS.import}
-        onSubmit={advance}
+        onSubmit={skip}
         footer={
           <StepNavigation
             primaryLabel="Continue"
-            onPrimary={advance}
+            onPrimary={skip}
             primaryLoading={api.busy}
             onBack={back}
           />

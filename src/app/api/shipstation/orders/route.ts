@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
     
     const { storeId } = authResult;
-    authenticatedStoreId = storeId;
+    authenticatedStoreId = storeId ?? null;
     if (!storeId) {
       return new NextResponse(
         formatShipStationError('Store not found'),

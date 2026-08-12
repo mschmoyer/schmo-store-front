@@ -52,6 +52,8 @@ export type ShipStationCheckStatus =
   | 'rate_limited'
   /** ShipStation answered, but with something we do not understand. */
   | 'unexpected'
+  /** Something between us and ShipStation answered instead of ShipStation. */
+  | 'blocked_upstream'
   /** We never reached ShipStation. DNS, TLS, offline, blocked egress. */
   | 'network_error'
   /** We reached out and nothing came back in time. */
@@ -91,7 +93,26 @@ export interface ValidateOptions {
 
 interface ShipStationErrorBody {
   errors?: Array<{ message?: string; error_code?: string }>;
+  request_id?: string;
   message?: string;
+}
+
+/**
+ * Whether a response body actually came from ShipStation.
+ *
+ * A proxy, WAF or corporate firewall that blocks the request answers with its
+ * own 401/403 and a plain-text body. Reporting that to the merchant as "your
+ * key is invalid" sends them off to regenerate a key that was never the problem
+ * — which is precisely the class of mistake the audit is about. ShipStation's
+ * own error responses always carry an `errors` array or a `request_id`.
+ *
+ * @param body - Parsed body, or null when it was not JSON at all
+ * @returns Whether the answer is recognisably ShipStation's
+ */
+export function looksLikeShipStation(body: ShipStationErrorBody | null): boolean {
+  if (!body) return false;
+  if (Array.isArray(body.errors)) return true;
+  return typeof body.request_id === 'string';
 }
 
 /**
@@ -139,6 +160,18 @@ export function classifyResponse(
       action: 'Continue',
       httpStatus,
       warehouseCount,
+    };
+  }
+
+  // An auth-shaped rejection that did not come from ShipStation is an
+  // intermediary, not a bad key.
+  if ((httpStatus === 401 || httpStatus === 403) && !looksLikeShipStation(body)) {
+    return {
+      status: 'blocked_upstream',
+      ok: false,
+      message: `Something between us and ShipStation blocked the request (HTTP ${httpStatus}). That's a network or firewall problem, not your key.`,
+      action: 'Retry',
+      httpStatus,
     };
   }
 

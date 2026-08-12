@@ -91,6 +91,7 @@
 .name {
   color: var(--ink-900);
   min-width: 0;
+  font-weight: 500;
 }
 
 .qty {
@@ -190,24 +191,41 @@
 
 /* ------------------------------------------------------------ wide-up */
 
-@media (min-width: 1080px) {
+@media (min-width: 900px) {
   .root {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.82fr);
-    align-items: center;
+    grid-template-columns: minmax(0, 1.3fr) auto minmax(0, 0.72fr);
+    align-items: stretch;
     gap: 0;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tableWrap {
+    flex: 1;
+  }
+
+  .table {
+    height: 100%;
   }
 
   .connector {
     flex-direction: row;
     padding-block: 0;
-    padding-inline: 14px;
+    padding-inline: 16px;
   }
 
   .connectorLine {
-    width: 20px;
+    width: 34px;
     height: 1px;
     background: linear-gradient(to right, var(--ember-200), var(--ember-500));
+  }
+
+  .connectorLine:last-child {
+    background: linear-gradient(to right, var(--ember-500), var(--ember-200));
   }
 
   .card {

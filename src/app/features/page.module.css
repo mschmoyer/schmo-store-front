@@ -1,0 +1,74 @@
+.head {
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink-200);
+  padding-block: clamp(3rem, 7vw, 5rem);
+}
+
+.headInner {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.eyebrow {
+  color: var(--ember-700);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-h1);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  max-width: 16ch;
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--ink-500);
+  max-width: 62ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 4px;
+}
+
+.microcopy {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+
+.list {
+  background: var(--paper-sunken);
+  padding-block: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.listInner {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: var(--container-content);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.empty {
+  margin: 0;
+  padding: 32px;
+  text-align: center;
+  color: var(--ink-500);
+  background: var(--paper-raised);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-lg);
+}

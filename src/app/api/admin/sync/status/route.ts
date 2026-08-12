@@ -8,6 +8,30 @@ import { requireAuth } from '@/lib/auth/session';
 import BackgroundSyncService from '@/lib/services/backgroundSyncService';
 import { db } from '@/lib/database/connection';
 
+/** Aggregate figures computed over recent `sync_logs` entries. */
+type SyncStatisticsRow = {
+  total_syncs: string;
+  successful_syncs: string | null;
+  avg_duration: string | null;
+  last_sync: Date | null;
+  total_operations: string | null;
+  total_successful_operations: string | null;
+  total_failed_operations: string | null;
+  success_rate: string;
+  operation_success_rate: string;
+};
+
+/** A `sync_logs` entry that recorded at least one failed operation. */
+type RecentErrorRow = {
+  timestamp: Date;
+  results: Array<{
+    operation: string;
+    success: boolean;
+    error?: string;
+    duration: number;
+  }>;
+};
+
 export async function GET(request: NextRequest) {
   try {
     // Verify admin authentication
@@ -95,8 +119,8 @@ async function getSyncStatistics() {
       FROM success_stats
     `;
     
-    const result = await db.query(query);
-    
+    const result = await db.query<SyncStatisticsRow>(query);
+
     if (result.rows.length === 0) {
       return {
         total_syncs: 0,
@@ -111,8 +135,19 @@ async function getSyncStatistics() {
       };
     }
     
-    return result.rows[0];
-    
+    const row = result.rows[0];
+    return {
+      total_syncs: Number(row.total_syncs) || 0,
+      successful_syncs: Number(row.successful_syncs) || 0,
+      success_rate: Number(row.success_rate) || 0,
+      avg_duration: Number(row.avg_duration) || 0,
+      last_sync: row.last_sync ? row.last_sync.toISOString() : null,
+      total_operations: Number(row.total_operations) || 0,
+      total_successful_operations: Number(row.total_successful_operations) || 0,
+      total_failed_operations: Number(row.total_failed_operations) || 0,
+      operation_success_rate: Number(row.operation_success_rate) || 0
+    };
+
   } catch (error) {
     console.error('Failed to get sync statistics:', error);
     return {
@@ -141,19 +176,14 @@ async function getRecentErrors() {
       LIMIT 5
     `;
     
-    const result = await db.query(query);
-    
+    const result = await db.query<RecentErrorRow>(query);
+
     return result.rows.map(row => {
-      const results = JSON.parse(row.results) as Array<{
-        operation: string;
-        success: boolean;
-        error?: string;
-        duration: number;
-      }>;
-      const failedOperations = results.filter(r => !r.success);
-      
+      // `results` is a jsonb column, so pg already returns it parsed.
+      const failedOperations = row.results.filter(r => !r.success);
+
       return {
-        timestamp: row.timestamp,
+        timestamp: row.timestamp.toISOString(),
         failedOperations: failedOperations.map(op => ({
           operation: op.operation,
           error: op.error,

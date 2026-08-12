@@ -102,8 +102,14 @@ export async function GET(request: NextRequest) {
         ORDER BY DATE(created_at)
       `;
       
-      const searchTrendsResult = await db.query(searchTrendsQuery, dateParams);
-      searchTrends = searchTrendsResult.rows;
+      const searchTrendsResult = await db.query<{ date: Date; search_count: string }>(
+        searchTrendsQuery,
+        dateParams
+      );
+      searchTrends = searchTrendsResult.rows.map(row => ({
+        date: row.date.toISOString(),
+        search_count: Number(row.search_count) || 0
+      }));
     } else {
       // Use sample data
       searchTrends = generateSampleData(days);
@@ -122,8 +128,16 @@ export async function GET(request: NextRequest) {
         ORDER BY DATE(created_at)
       `;
       
-      const visitorTrendsResult = await db.query(visitorTrendsQuery, dateParams);
-      visitorTrends = visitorTrendsResult.rows;
+      const visitorTrendsResult = await db.query<{
+        date: Date;
+        visitor_count: string;
+        page_views: string;
+      }>(visitorTrendsQuery, dateParams);
+      visitorTrends = visitorTrendsResult.rows.map(row => ({
+        date: row.date.toISOString(),
+        visitor_count: Number(row.visitor_count) || 0,
+        page_views: Number(row.page_views) || 0
+      }));
     } else {
       // Use sample data
       visitorTrends = generateSampleData(days);

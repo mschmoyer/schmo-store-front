@@ -53,8 +53,9 @@
   width: 30px;
   height: 30px;
   border-radius: var(--radius-xs);
-  background: var(--accent);
-  color: var(--accent-fg);
+  /* See design-system.md §2 correction: white on --ember-500 is 3.42:1. */
+  background: var(--ember-600);
+  color: #ffffff;
   font-family: var(--font-display, inherit);
   font-weight: 700;
   font-size: 15px;
