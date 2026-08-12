@@ -1191,3 +1191,57 @@ Open, and owned elsewhere:
       being the registrar (`ns-cloud-e1..e4.googledomains.com`). `www` still points at the old Heroku
       app and the apex at Squarespace hosting. There are no MX records; only a `v=spf1 -all` TXT
       record needs recreating when nameservers move to Vercel
+
+## 2026-08-12
+
+### ShipStation live integration probe
+
+**User Request**: "Can you now hit the ShipStation API? ... Can you test all of our integration
+points to ensure the routes all work okay?"
+
+**Result: the live test did not run.** The cloud environment's egress proxy refuses
+`api.shipstation.com` with `403 Host not in allowlist`. That is the environment's **Network access**
+level, not a ShipStation or credential problem — no request in this session ever reached ShipStation,
+so nothing is yet known about whether the key works or which endpoints the account exposes. Raising
+the level to **Full** does not affect a session already running; the probe has to be re-run from a
+session started afterwards.
+
+- [x] Added `scripts/shipstation-probe.mjs` (`npm run shipstation:probe`), covering the seven
+      read-only V2 endpoints the app calls: `/v2/warehouses`, `/v2/carriers`, `/v2/inventory`,
+      `/v2/inventory_warehouses`, `/v2/inventory_locations`, `/v2/products`,
+      `/v2/environment/webhooks`
+- [x] The probe asserts **response shape**, not just status. Each endpoint declares the collection
+      key the calling code destructures and the record fields its writer reads, both taken from the
+      call sites. A `200` whose collection is missing, or whose records lack a required field, is a
+      failure: that combination syncs zero rows and raises nothing. The suite cannot catch it because
+      every ShipStation test injects a mock `fetchImpl`, so field names are only ever asserted against
+      our own fixtures
+- [x] Probes run sequentially — a parallel fan-out trips ShipStation's rate limiter and reports a
+      healthy account as a wall of 429s
+- [x] The probe distinguishes an intermediary's rejection from ShipStation's. The first draft
+      reported this session's proxy 403 as "credential rejected, or the endpoint needs a higher
+      plan" — the failure mode that sends you off rotating a key that was never tested. ShipStation
+      errors are JSON and a proxy's are plain text, so a non-JSON error body is treated as an
+      interception, and the summary ends in `INCONCLUSIVE` rather than a verdict on the account
+- [x] The key is read from `SHIPSTATION_API_KEY` only. It is never written to disk and never printed,
+      not even masked
+- [x] **Version bumped** to 2.2.1
+
+Deliberately not probed:
+- `POST /v2/shipments` (`src/lib/shipstation/orderPush.ts`, `src/lib/shipstation/v2Api.ts`) and the
+  webhook create/delete calls (`src/lib/shipstation/webhookRegistration.ts`). All three mutate the
+  merchant's ShipStation account — a probe run would leave real shipments and real subscriptions
+  behind. The read probes exercise the same credential and the same `shipStationFetch` path
+
+Open:
+- [ ] **No ShipStation endpoint has been verified against a live account.** Re-run
+      `SHIPSTATION_API_KEY=<key> npm run shipstation:probe` from a session whose environment has
+      network access set to **Full**, or **Custom** including `api.shipstation.com`
+- [ ] **`src/lib/shipstation/v2Api.ts` logs API key material** — `first_6_chars` / `last_4_chars` at
+      two call sites, plus the full shipment payload including customer names and addresses. This
+      contradicts the "never logs the API key, not even a prefix" guarantee that
+      `src/lib/shipstation/client.ts` was written to hold (audit P1-7). `v2Api.ts` also bypasses
+      `shipStationFetch` entirely, so its calls get no retry, no backoff and no rate-limit handling
+- [ ] **`api_key_encrypted` is base64, not encryption.** `v2Api.ts` and `src/app/api/warehouses/route.ts`
+      both recover the key with `Buffer.from(value, 'base64').toString('utf-8')`. The column name
+      claims a protection the storage does not provide
