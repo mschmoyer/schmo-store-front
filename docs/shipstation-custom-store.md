@@ -352,6 +352,16 @@ and other factors — it is not a fixed interval you can rely on.
 
 ## 6. XML schema for validating order information
 
+> **The XSD below is incomplete — do not treat it as the sole authority.** Verified 2026-08-19:
+> ShipStation's own example order XML in §2 fails validation against it, because the schema omits
+> `CurrencyCode` entirely while both the example and the field table in §5 include it
+> (`xmllint --schema` reports *"Element 'CurrencyCode': This element is not expected"*).
+>
+> Where the three sources disagree, precedence is **field table (§5) > example (§2) > this XSD**.
+> Use the schema to catch structural mistakes — wrong nesting, misspelled elements, bad ordering —
+> not as a gate that must pass cleanly. `scripts/verify-custom-store.mjs` encodes that judgement,
+> with the known gaps allowlisted rather than silently ignored.
+
 Order XML is validated against this schema:
 
 ```xml

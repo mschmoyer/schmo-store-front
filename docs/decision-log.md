@@ -1506,3 +1506,54 @@ Open — found while writing the map, not fixed here:
 - [ ] Export errors return JSON (`formatShipStationError`) while successes return
       `application/xml`. ShipStation expects XML from the export endpoint — check whether it
       surfaces these errors usefully or just reports a parse failure
+
+## Custom Store: verification loop before implementation (2026-08-19)
+
+**User request**: "Let's stop all the reviewers. First, we need to focus on a full verification
+loop."
+
+An orchestrated build was started and stopped after its first stage. The reasoning for stopping is
+sound and worth recording: the failure modes this integration keeps producing are ones where every
+unit test passes and the feed still returns nothing ShipStation can use — a 200 whose body is JSON,
+an element the schema does not accept, credentials the server will not honour. Reviewers reading a
+diff cannot catch those. Something has to speak to the endpoint the way ShipStation does.
+
+- [x] **`scripts/verify-custom-store.mjs`** (`npm run verify:custom-store`) — impersonates
+      ShipStation against a running instance: same Basic auth, same query parameters, same
+      `MM/dd/yyyy HH:mm` UTC dates. Checks authentication (including that a failure does not reveal
+      whether a username exists), the export contract, XML well-formedness, the `pages` attribute,
+      CDATA wrapping, date format, that cancelled orders appear in the feed, action routing, and
+      that a bare POST is not treated as a ship notice. `--base-url` points it at any environment,
+      so the same script verifies production after deploy
+- [x] Credentials come from the real admin path, never written to the database by the script
+      itself. A credential the verifier minted would prove nothing about the path a merchant takes,
+      which is exactly the gap that produced P0-1
+- [x] **Baseline recorded** against a local instance: 3/5 checks pass. `AUTH-2` fails — errors are
+      `application/json` where the spec requires XML. `AUTH-5` fails — no credential path exists
+      yet, so nothing past authentication can be exercised at all
+- [x] **`database/migrations/024_custom_store_credentials.sql`** — verified applied against a real
+      Postgres 16: `custom_store_password_encrypted`, `custom_store_enabled`, and a **unique**
+      partial index on `shipstation_username`. Re-running is a clean no-op, as CI requires
+- [x] The unique index matters more than it looks. 022 and 007 both indexed that column without
+      constraining uniqueness, so two stores could hold the same username and the single-row auth
+      lookup would silently return whichever row the planner picked first — a cross-tenant order
+      leak. The migration nulls any pre-existing duplicate before creating the constraint
+
+**The published XSD is not authoritative.** Verified with `xmllint`: ShipStation's own example
+order XML in §2 of `docs/shipstation-custom-store.md` fails validation against the XSD in §6,
+because the schema omits `CurrencyCode` while both the example and the field table in §5 include
+it. Precedence is now documented as field table > example > XSD, and the verifier treats schema
+validation as advisory with the known gaps allowlisted rather than silently stripped. Treating the
+XSD as a hard gate would have meant deleting valid, documented fields to satisfy a stale document —
+which is what the stopped workflow had been instructed to do.
+
+Open:
+- [ ] `database/migrate.js` does not read `.env.local` — only `scripts/dev-local.js` does. So the
+      README's "Doing it by hand" path (`cp .env.example .env.local` then `npm run db:migrate`)
+      fails with "No database connection string configured". Either load the file in the migration
+      runner or correct the README
+- [ ] Credential model, auth rewrite, spec conformance and the save-path collapse are still to
+      build. The verifier defines done: every required check green
+- [ ] End-to-end against a real ShipStation account still requires production — Vercel's
+      `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect rather
+      than our XML
