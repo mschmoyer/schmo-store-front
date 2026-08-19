@@ -1557,3 +1557,84 @@ Open:
 - [ ] End-to-end against a real ShipStation account still requires production — Vercel's
       `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect rather
       than our XML
+## ShipStation Custom Store: implemented to the spec (2026-08-19)
+
+**User request**: "write the implementation to your plan first. AFTER you are finished, do a
+thorough review of the solution."
+
+The plan was `docs/shipstation-custom-store.md`. Reading the existing endpoint against it turned up
+that **neither direction worked at all**, so this is a repair to conformance, not a new feature.
+
+What was broken:
+
+- [x] **The export returned zero orders, always.** `xmlBuilder` and `validateOrderForExport` read
+      `order.shipping_address.street` — a nested `Address` that exists on the `Order` *domain type*
+      but not on the `orders` *table*, which stores flat columns (`shipping_address_line1`, …).
+      `SELECT o.*` therefore produced `undefined` for every address, every order failed validation,
+      and the endpoint emitted a well-formed `<Orders>` document containing nothing. The input type
+      is now `CustomStoreOrderRow`, which mirrors the table
+- [x] **The shipnotify handler rejected every real notification.** The parser looked for a
+      `<ShipmentNotification>` / `<ShipmentUpdate>` / `<Shipment>` root; the spec's root is
+      `<ShipNotice>`. Its field names were wrong too — `OrderId` vs `OrderID`, `CarrierCode` vs
+      `Carrier`, `ServiceCode` vs `Service`, `ShipmentCost` vs `ShippingCost`, `ShipTo` vs
+      `Recipient`. Spec names are read first, legacy names kept as fallbacks
+- [x] **Money was off by 100× in both directions.** `orders`/`order_items` are `DECIMAL(10,2)`
+      *dollars*, but the builder used `formatMoney`, which divides integer cents by 100 — every
+      total would have exported at a hundredth of its value. Inbound, `ShippingCost` was multiplied
+      *to* cents before being written to the dollars column `orders.shipment_cost`, storing $4.95 as
+      495.00. New `formatDecimalMoney` handles the dollar columns; the parser no longer rescales
+- [x] **Dates ignored the spec's UTC rule.** Formatting used local getters and parsing built
+      local-time Dates, so the export window and the emitted dates both shifted by the host offset.
+      Because `created_at`/`updated_at` are `TIMESTAMP` (no zone) — which node-postgres reads as
+      *local* — the fix is to keep JS out of it: `to_char` renders the dates and `$n::timestamp`
+      literals bound the window, so neither the Node host's zone nor the DB session's zone can move
+      them. `parseShipStationDate` now parses as UTC, validates, and rejects days like 02/31
+- [x] **The spec's "regardless of status" rule was violated.** The export filtered
+      `AND o.status NOT IN ('cancelled', 'refunded')`, so a cancellation after import never reached
+      ShipStation. Removed — status mapping is the merchant's job in the connection form
+- [x] **A non-UUID `OrderID` 500'd the shipnotify handler.** `id = $2` against a `uuid` column
+      raises `invalid input syntax for type uuid`. The id is now only compared when it looks like one
+- [x] **`?page=abc` 500'd the export.** `Math.max(1, NaN)` is `NaN`, which reached the query as
+      `LIMIT NaN OFFSET NaN`. `createPaginationParams` now falls back to defaults
+- [x] Paging was non-deterministic (`ORDER BY updated_at DESC` alone); added the `id` tiebreaker so
+      the pages ShipStation walks form a stable sequence
+- [x] Errors were JSON on an endpoint ShipStation parses as XML, so failures reached merchants as
+      opaque parse errors. Export errors are now `<Error>` documents; 401s carry a
+      `WWW-Authenticate` challenge. `PUT` is not part of the contract and stays JSON
+- [x] The export logged the **entire XML payload** — customer names, addresses, emails, phones — to
+      both the server log and `integration_logs.response_data`. Now only counts and timing
+- [x] Dropped invented elements ShipStation does not define (`<Notes>`, `<TotalPrice>`,
+      `<ProductId>`, `<FulfillmentSku>`, `<WarehouseLocation>`, the `page` attribute) and added the
+      missing ones (`OrderID`, `CurrencyCode`, `LineItemID`, `ImageUrl`, `Address2`). Order
+      discounts now render as the negative `<Adjustment>` line the spec defines
+- [x] Store scoping added to the `UPDATE`s in `POST` and `PUT` (rule 4), a 512 KB body cap matching
+      the webhook receiver, and `validateShipmentNotification` no longer requires a tracking number —
+      "Mark as Shipped" sends none, and rejecting it made ShipStation retry forever
+- [x] Removed dead code that modelled the nonexistent nested shape: `buildAdvancedOrderXML`,
+      `buildMinimalOrderXML`, `parseOrderXML`, and `formatDateForShipStation`
+- [x] **33 unit tests** in `src/lib/shipstation/__tests__/customStore.test.ts`, asserting against
+      XML parsed back with xml2js rather than by substring. Suite: 829/829. Lint 0 errors
+      (99 pre-existing warnings), `npx tsc --noEmit` clean
+- [x] **Version bumped** to 2.4.3
+
+Rebased onto the Custom Store channel work already on this branch, which reframes the feed as the
+chosen order channel rather than legacy — that framing supersedes the "legacy, do not extend" note
+this change originally carried, and conforming the feed serves it. `scripts/verify-custom-store.mjs`
+from that commit is the acceptance harness for this implementation; `POST` was tightened to
+**require** `action=shipnotify` to satisfy its `ACTION-3` check, since an unlabelled POST marking
+orders shipped is a request that never claimed to be a ship notice. Its `KNOWN_XSD_GAPS` independently
+reaches the same conclusion this work did about `CurrencyCode`.
+
+Open:
+- [ ] **Not exercised against a live ShipStation account.** Everything above is verified by unit
+      tests and typecheck; no request has been made through a real connection. The local run and
+      end-to-end test are being set up separately
+- [ ] `<CurrencyCode>` appears in ShipStation's own GET example and field table but **not** in the
+      XSD they publish for validation. Emitted on the strength of their example; if a strict
+      validator ever rejects a document, this is the first element to suspect
+- [ ] `mapOrderStatusToShipStation` emits ShipStation's own vocabulary (`awaiting_payment`,
+      `awaiting_fulfillment`, `shipped`, `cancelled`) rather than our internal status names. The
+      spec expects *your* status, which the merchant maps in the connection form. Kept as-is because
+      changing it would silently break any existing merchant mapping, but it collapses
+      `confirmed`/`processing` and `delivered`/`shipped`, and offers nothing for On-Hold
+- [ ] A shipnotify for an order already `cancelled` still forces it to `shipped`

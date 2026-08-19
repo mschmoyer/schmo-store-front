@@ -575,39 +575,59 @@ its own ShipNotice example; they carry back the custom field values sent on expo
 
 ## How this maps to our implementation
 
-We already have a Custom Store endpoint. This section is the map from spec to code.
+`/api/shipstation/orders` implements this spec. This section is the map from spec to code.
 
-> **This surface is the chosen order channel.** The deviations listed below are a live backlog,
-> not trivia: each one is a place our implementation contradicts the spec above, and the spec wins.
+> **This surface is the chosen order channel.** The deviations that used to sit here as a backlog
+> are closed: the endpoint now implements the contract above rather than contradicting it. What
+> remains is recorded under "Things to know" — the constraints that make it correct, which are easy
+> to undo by accident. Where implementation and this page disagree, the spec still wins.
 
 | Spec concept | Where it lives |
 |---|---|
 | The web endpoint (both `action=export` and shipnotify) | `src/app/api/shipstation/orders/route.ts` — exports `GET` and `POST` |
 | Basic auth validation | `src/lib/shipstation/auth.ts` — `authenticateShipStationMulti()`, `logAuthAttempt()` |
-| Order XML generation | `src/lib/shipstation/xmlBuilder.ts` — `exportOrdersToXML(orders, page, totalPages)` |
+| Order XML generation | `src/lib/shipstation/xmlBuilder.ts` — `exportOrdersToXML(orders, totalPages)` |
 | ShipNotice XML parsing | `src/lib/shipstation/xmlParser.ts` — `parseShipmentNotification()`, `validateShipmentNotification()` |
 | XML element typings | `src/lib/shipstation/xmlTypes.ts` |
-| Date formatting, CDATA, money/weight, status mapping | `src/lib/shipstation/utils.ts` |
+| Date parsing, CDATA, money, status mapping | `src/lib/shipstation/utils.ts` |
 | Per-store credential storage | `store_integrations` table (`shipstation_username`, `shipstation_password_hash`, `shipstation_auth_enabled`) |
 | Admin connection UI | `src/app/admin/integrations/shipstation/page.tsx` |
+| Tests | `src/lib/shipstation/__tests__/customStore.test.ts` |
 
-Implementation details worth knowing before changing anything:
+### Things to know before changing it
 
-- **Multi-tenant.** Auth resolves an incoming Basic auth credential to a `store_id`, so one URL
-  serves every merchant's store. A `404` comes back when credentials authenticate but map to no
-  store.
-- **Paging.** The route accepts a non-standard `page_size` parameter (default `50`) alongside
-  ShipStation's `page`, and reports `Math.ceil(total / pageSize)` in the `pages` attribute.
-- **Export window filters on `orders.updated_at`**, which is the correct "last modified" semantic
-  from §2.
-- **Export excludes cancelled and refunded orders** (`AND o.status NOT IN ('cancelled',
-  'refunded')`). The spec says to return orders modified in the window *regardless of status*, so
-  an order cancelled after import will not appear in a later export and ShipStation will not learn
-  about the cancellation from us. Deliberate or not, it is a deviation from the spec — do not rely
-  on cancellation propagating through this feed.
-- **Errors are returned as JSON**, not XML (`formatShipStationError` with
-  `Content-Type: application/json`). Successful exports return
-  `Content-Type: application/xml; charset=utf-8`.
+- **Multi-tenant.** Auth resolves an incoming Basic credential to a `store_id`, so one URL serves
+  every merchant. Every query carries that `store_id`; a `404` comes back when credentials
+  authenticate but map to no store.
+- **The row shape is flat, not nested.** `orders` stores the customer and both addresses as
+  columns (`shipping_first_name`, `shipping_address_line1`, …). The `Order` domain type in
+  `src/lib/types/database.ts` describes a nested `shipping_address: Address` that the table does
+  **not** have. `CustomStoreOrderRow` mirrors the table. Reading the domain type here is what
+  silently emptied the export.
+- **Money is decimal dollars.** `orders` and `order_items` use `DECIMAL(10,2)`, which
+  node-postgres returns as strings. Use `formatDecimalMoney`. `formatMoney` divides integer cents
+  by 100 and does not belong on this path — that is the one place the repo-wide "integer cents"
+  rule does not apply.
+- **Dates are formatted in SQL.** `created_at` / `updated_at` are `TIMESTAMP` (no time zone), and
+  node-postgres parses those as *local* time. The query renders them with
+  `to_char(..., 'MM/DD/YYYY HH24:MI')` and compares against `$n::timestamp` literals, so neither
+  the Node host's zone nor the database session's zone can shift the window or the output.
+- **The window carries every status.** The export returns any order whose `updated_at` falls in
+  the window regardless of status, as §2 requires. This is how a cancellation reaches ShipStation:
+  the merchant maps our `cancelled` status in the connection form.
+- **Paging is deterministic.** `ORDER BY updated_at DESC, id` — the `id` tiebreaker keeps the
+  sequence stable across the pages ShipStation walks. A non-standard `page_size` (default 50) is
+  accepted for operator testing; ShipStation itself only sends `page`.
+- **Errors are XML.** ShipStation parses the response as XML, so a JSON error body surfaces to the
+  merchant as an opaque parse failure. `PUT` is not part of the contract — ShipStation never calls
+  it — and stays on JSON for its existing callers.
+- **`action` is required on both verbs.** `GET` needs `action=export` and `POST` needs
+  `action=shipnotify`. An unlabelled POST is rejected rather than assumed: this handler marks
+  orders shipped, so it must not act on a request that never claimed to be a ship notice
+  (`scripts/verify-custom-store.mjs`, check `ACTION-3`).
+- **Orders that cannot be rendered are skipped and logged.** An order missing a required field is
+  left out of the page rather than failing the whole document, and the count and reasons go to the
+  log. `pages` is still computed from the full match count.
 
 Related: `src/lib/shipstation/CLAUDE.md` for the rules governing that directory,
 `docs/audits/shipstation-audit.md` for a review of the integration, and `docs/payments.md` for the

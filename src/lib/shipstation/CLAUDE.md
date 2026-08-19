@@ -107,7 +107,7 @@ Shipments in ──────────────────────�
 | `webhookRegistration.ts` | `POST`/`DELETE /v2/environment/webhooks`. Idempotent by URL. | Register without the secret header. |
 | `webhookPayload.ts` | Parsing/validating the inbound notification body. | Assume fields exist. |
 | `v2Api.ts` | Legacy shipment creation + credential read. **Deprecated**, see Known gaps. | Add call sites. |
-| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | **Custom Store** order export and ship-notice XML. | Diverge from `docs/shipstation-custom-store.md` §5. Its XSD (§6) is *incomplete* — field table wins over schema; see the note there. |
+| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | **Custom Store** order export and ship-notice XML. | Diverge from `docs/shipstation-custom-store.md` §5. Its XSD (§6) is *incomplete* — field table wins over schema; see the note there. Use `formatMoney` here — these tables are **decimal dollars**, so it is `formatDecimalMoney`. Format dates in JS — `created_at`/`updated_at` are `TIMESTAMP` without zone and are rendered by SQL `to_char`. Read `Order.shipping_address` — the table is flat. |
 | `customStoreAuth.ts` | **Custom Store** Basic auth: username resolves the store, secret compared in constant time. | Scan every tenant's row looking for a match. Accept an auth scheme the spec does not define. |
 | `utils.ts` | Date, status-map, money and validation helpers. | Put network or DB code here. |
 

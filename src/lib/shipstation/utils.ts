@@ -4,38 +4,66 @@
 
 import { Order } from '@/lib/types/database';
 
-/**
- * Convert Date to ShipStation format (MM/dd/yyyy HH:mm)
- * @param date - JavaScript Date object
- * @returns Formatted date string
- */
-export function formatDateForShipStation(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  
-  return `${month}/${day}/${year} ${hours}:${minutes}`;
-}
+/** `MM/dd/yyyy` with an optional `HH:mm[:ss]` and an optional AM/PM marker. */
+const SHIPSTATION_DATE_PATTERN =
+  /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?\s*$/;
 
 /**
- * Parse ShipStation date format (MM/dd/yyyy HH:mm) to JavaScript Date
+ * Parse a ShipStation date (`MM/dd/yyyy HH:mm`) into a Date.
+ *
+ * ShipStation sends `start_date` / `end_date` in UTC, so the components are
+ * assembled with `Date.UTC`. Building a local-time Date instead shifted the
+ * export window by the host's offset, which silently returned the wrong set of
+ * orders anywhere the server was not on UTC.
+ *
+ * The XSD also permits 12-hour notation and an optional seconds component, so
+ * both are accepted. Malformed input throws rather than yielding an Invalid
+ * Date that would later widen the query to everything.
+ *
  * @param dateString - Date string in ShipStation format
- * @returns JavaScript Date object
+ * @returns Date at the parsed UTC instant
+ * @throws {Error} If the string is malformed or names a day that does not exist
  */
 export function parseShipStationDate(dateString: string): Date {
-  const [datePart, timePart] = dateString.split(' ');
-  const [month, day, year] = datePart.split('/');
-  const [hours, minutes] = timePart.split(':');
-  
-  return new Date(
-    parseInt(year),
-    parseInt(month) - 1, // JavaScript months are 0-indexed
-    parseInt(day),
-    parseInt(hours),
-    parseInt(minutes)
-  );
+  const match = SHIPSTATION_DATE_PATTERN.exec(dateString ?? '');
+
+  if (!match) {
+    throw new Error(
+      `Invalid ShipStation date "${dateString}". Expected MM/dd/yyyy HH:mm in UTC.`
+    );
+  }
+
+  const [, rawMonth, rawDay, rawYear, rawHours = '0', rawMinutes = '0', rawSeconds = '0', meridiem] =
+    match;
+
+  const month = parseInt(rawMonth, 10);
+  const day = parseInt(rawDay, 10);
+  const year = parseInt(rawYear, 10);
+  const minutes = parseInt(rawMinutes, 10);
+  const seconds = parseInt(rawSeconds, 10);
+  let hours = parseInt(rawHours, 10);
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) {
+      throw new Error(`Invalid ShipStation date "${dateString}". Hour must be 1-12 with AM/PM.`);
+    }
+    const isAfternoon = meridiem.toLowerCase() === 'pm';
+    hours = isAfternoon ? (hours === 12 ? 12 : hours + 12) : hours === 12 ? 0 : hours;
+  }
+
+  if (hours > 23 || minutes > 59 || seconds > 59) {
+    throw new Error(`Invalid ShipStation date "${dateString}". Time component out of range.`);
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+
+  // Date.UTC rolls overflow forward (02/31 becomes 03/03), so reject anything
+  // that did not survive the round trip rather than querying a different day.
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) {
+    throw new Error(`Invalid ShipStation date "${dateString}". That calendar day does not exist.`);
+  }
+
+  return parsed;
 }
 
 /**
@@ -111,6 +139,46 @@ export function escapeXML(text: string): string {
  * @param code - Optional error code
  * @returns Formatted error response
  */
+/**
+ * Format a money value that is already in decimal dollars.
+ *
+ * The `orders` and `order_items` tables store money as `DECIMAL(10,2)` dollars,
+ * and node-postgres hands numerics back as strings to preserve precision. That
+ * makes them the one place `formatMoney` (which divides integer cents by 100)
+ * must not be used — doing so reported every total at a hundredth of its value.
+ *
+ * @param amount - Decimal dollars as a string, number, null or undefined
+ * @returns Amount with exactly two decimal places, `"0.00"` when absent
+ */
+export function formatDecimalMoney(amount: string | number | null | undefined): string {
+  if (amount === null || amount === undefined || amount === '') {
+    return '0.00';
+  }
+
+  const value = typeof amount === 'number' ? amount : Number(amount);
+
+  if (!Number.isFinite(value)) {
+    return '0.00';
+  }
+
+  return value.toFixed(2);
+}
+
+/**
+ * Build an XML error document for the Custom Store endpoint.
+ *
+ * ShipStation parses the export response as XML, so a JSON error body is
+ * reported to the merchant only as an opaque parse failure. Returning XML makes
+ * the reason visible in ShipStation's own error surface.
+ *
+ * @param message - Human-readable explanation, emitted inside a CDATA section
+ * @returns XML document with a root `<Error>` element
+ */
+export function formatShipStationXmlError(message: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<Error>${createCDATA(message)}</Error>`;
+}
+
 export function formatShipStationError(error: string, code?: string): string {
   return JSON.stringify({
     error: {
@@ -133,39 +201,6 @@ export function generateOrderNumber(storeId: string, orderId: string): string {
   const shortOrderId = orderId.substring(0, 8);
   
   return `${shortStoreId}-${shortOrderId}-${timestamp}`.toUpperCase();
-}
-
-/**
- * Validate required fields for order export
- * @param order - Order object to validate
- * @returns Validation result
- */
-export function validateOrderForExport(order: Order): { isValid: boolean; errors: string[] } {
-  const errors: string[] = [];
-  
-  if (!order.customer_email) {
-    errors.push('Customer email is required');
-  }
-  
-  if (!order.shipping_address) {
-    errors.push('Shipping address is required');
-  } else {
-    const addr = order.shipping_address;
-    if (!addr.street) errors.push('Shipping address street is required');
-    if (!addr.city) errors.push('Shipping address city is required');
-    if (!addr.state) errors.push('Shipping address state is required');
-    if (!addr.postal_code) errors.push('Shipping address postal code is required');
-    if (!addr.country) errors.push('Shipping address country is required');
-  }
-  
-  if (!order.order_number) {
-    errors.push('Order number is required');
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
 }
 
 /**
@@ -208,9 +243,15 @@ export function formatMoney(amount: number): string {
  * @returns Pagination parameters
  */
 export function createPaginationParams(page: number = 1, pageSize: number = 50): { page: number; pageSize: number } {
+  // `Math.max(1, NaN)` is NaN, so an unparseable `?page=` used to reach the
+  // query as `LIMIT NaN OFFSET NaN` and fail the request with a 500 rather than
+  // a 400. Anything not a usable number falls back to the default.
+  const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+  const safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.floor(pageSize)) : 50;
+
   return {
-    page: Math.max(1, page),
-    pageSize: Math.min(500, Math.max(1, pageSize)) // ShipStation max is 500
+    page: safePage,
+    pageSize: Math.min(500, safePageSize) // ShipStation max is 500
   };
 }
 
