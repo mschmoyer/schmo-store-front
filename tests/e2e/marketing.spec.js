@@ -180,7 +180,10 @@ test.describe('Marketing — the primary call to action', () => {
       await expect(cta).toHaveAttribute('href', '/create-store');
 
       await cta.click();
-      await expect(page).toHaveURL(/\/create-store$/, { timeout: COLD_COMPILE });
+      // The link points at a bare `/create-store`; the page then puts the
+      // resumable step in the query string (`?step=account`), so anchoring the
+      // pattern to the end of the path fails as soon as that lands.
+      await expect(page).toHaveURL(/\/create-store(\?.*)?$/, { timeout: COLD_COMPILE });
     });
   }
 });

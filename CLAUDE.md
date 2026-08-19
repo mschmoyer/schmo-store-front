@@ -67,7 +67,7 @@ npx tsc --noEmit           # typecheck — `next build` does NOT enforce types (
 npm run test               # Jest unit tests
 npm run test:watch
 npm run test:ci            # with coverage, as CI runs it
-npm run test:e2e           # Playwright; needs a dev server on :3000
+npm run test:e2e           # Playwright; starts (or reuses) a dev server on :3000 itself
 npm run test:e2e -- --project=chromium   # note the `--`
 
 npm run db:migrate         # apply migrations
@@ -84,6 +84,32 @@ errors. `npx tsc --noEmit` is the only thing that enforces them, and CI runs it 
 Do not treat a green build as a green typecheck.
 
 Sign-in for seeded data: `demo@schmostore.com` / `rebeldev`. Every seeded user shares that password.
+
+Playwright starts the dev server itself (`webServer` in `playwright.config.js`) and reuses one that
+is already running, so `npm run test:e2e` no longer depends on remembering to start it. The
+database does have to exist first.
+
+## Running the site in a Claude session
+
+The whole stack — Postgres included — runs inside the session container. No Docker, no hosted
+database.
+
+```bash
+npm run setup:local     # Postgres + migrations + demo data + .env.local (idempotent, ~5s warm)
+npm run dev             # http://localhost:3000
+npm run test:e2e -- --project=chromium
+```
+
+`.claude/hooks/session-start.sh` runs `setup:local` at session start, so this is usually already
+done. Only Chromium exists in a session container — Firefox and WebKit projects cannot run.
+
+If Postgres is not listening, the cluster is simply stopped: `pg_ctlcluster 16 main start`, or just
+re-run `npm run setup:local`. Node scripts outside Next.js (`database/migrate.js`, `psql`) do not
+read `.env.local`; export `DATABASE_URL` for those.
+
+Where ShipStation credentials go, the egress policy that currently blocks reaching ShipStation from
+a session, and the troubleshooting table are in `/docs/claude-session-setup.md`. Read it before
+wiring up ShipStation work.
 
 ## Environment
 
