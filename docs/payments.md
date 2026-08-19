@@ -16,6 +16,10 @@ document.
 Both flows share one webhook endpoint (`POST /api/webhooks/stripe`) and one idempotency ledger
 (`webhook_events`).
 
+> **Working in this code?** `src/lib/stripe/CLAUDE.md` is the operational companion to this
+> document: the rules, the module map, and the complete Stripe SDK and route surface. This file is
+> the *why*; that one is the *what not to break*.
+
 ---
 
 ## 1. Flow A — the intro offer
@@ -331,7 +335,8 @@ writes `inventory_logs`. `createPaidOrder()` therefore does **not** touch `produ
 
 ## 8. What is NOT implemented yet
 
-Being honest about the edges:
+Being honest about the edges. Struck-through entries have since been fixed and are kept so the
+list reads as a history rather than a moving target.
 
 * **Tax is always zero.** `computeTaxCents()` returns `0`. Nothing computes, collects or remits tax.
   A merchant selling into a jurisdiction where they have nexus is under-collecting.
@@ -340,15 +345,20 @@ Being honest about the edges:
 * **US-only checkout.** The shipping form is US states + 5-digit ZIP, and Connect accounts default to
   `country: 'US'`.
 * **No fulfilment hand-off.** A paid order is written with `status = 'processing'` and
-  `fulfillment_status = 'unfulfilled'`. It is **not** pushed to ShipStation; that integration exists
-  elsewhere in the codebase and was not wired into this flow.
+  `fulfillment_status = 'unfulfilled'`. It is **not** pushed to ShipStation. The machinery now
+  exists on the other side — `enqueueOrderPush` / `processOrderPushJob` in
+  `src/lib/shipstation/orderPush.ts`, and a `shipstation_order_push` case in the job queue — but
+  **nothing calls `enqueueOrderPush`**, so no order is ever queued. Wiring it into `createPaidOrder`
+  is the missing link. See `src/lib/shipstation/CLAUDE.md`.
 * **No refund UI.** `charge.refunded` is recorded when a refund is issued from the Stripe dashboard,
   but there is no in-app way to issue one, and a refund does not restock inventory.
 * **No customer-facing receipt email from us.** Stripe's own receipt is the only email sent.
 * **No entitlement enforcement.** `subscriptions.status` is recorded and displayed, but nothing yet
   disables a storefront whose merchant stopped paying.
-* **Free orders are rejected.** A cart whose total falls below Stripe's $0.50 minimum returns
-  `AMOUNT_TOO_SMALL` rather than completing as a zero-dollar order.
+* ~~Free orders are rejected.~~ **Fixed (2026-08-12).** A cart that prices to exactly zero skips
+  Stripe entirely: the order is written synchronously in `POST /api/checkout/session` and the
+  shopper goes straight to confirmation, regardless of whether the store has connected a payment
+  account. A non-zero total below Stripe's $0.50 minimum still returns `AMOUNT_TOO_SMALL`.
 * **Asynchronous payment methods are not handled.** Only card-style immediate payment is modelled;
   `checkout.session.async_payment_succeeded` / `_failed` have no handler, so a delayed method would
   complete checkout without producing an order.
@@ -357,9 +367,8 @@ Being honest about the edges:
   shoppers can race for the last unit; the loser's payment succeeds and the order write fails loudly
   (the webhook returns 500, Stripe retries, and the event ends up `failed` in `webhook_events` for an
   operator to refund). There is no automatic refund.
-* **The storefront coupon validate route is still broken.** `POST /api/store/[storeId]/coupons/validate`
-  joins a `discounts` table that no longer exists. Checkout does not use it, but the route itself is
-  owned by another agent and still needs fixing.
+* ~~The storefront coupon validate route joins a dropped `discounts` table.~~ **Fixed.**
+  `POST /api/store/[storeId]/coupons/validate` no longer references it.
 * **Single subscription per owner.** The model assumes one store per merchant, matching the current
   login flow. Multi-store owners are not modelled.
 * **No proration or plan changes.** There is one plan; upgrades, downgrades and seat changes do not

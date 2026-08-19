@@ -14,8 +14,8 @@
  * Note on semantics, carried over from the audit: `create_sales_order: true` means this call
  * creates a *shipment* that also creates the underlying sales order. There is no separate
  * order-creation resource in the V2 contract, so "push an order for the merchant to process later"
- * is not something the API offers. That limitation is documented in `docs/shipstation.md`; nothing
- * here buys a label.
+ * is not something the API offers. That limitation is documented in `./CLAUDE.md`; nothing here
+ * buys a label.
  */
 
 import { db } from '@/lib/database/connection';

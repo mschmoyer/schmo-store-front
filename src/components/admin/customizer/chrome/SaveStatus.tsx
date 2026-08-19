@@ -50,18 +50,25 @@ const COPY: Record<SaveState, { label: string; className: string; pulse: boolean
  * @returns A live-updating status indicator
  */
 export function SaveStatus({ state, lastSavedAt }: SaveStatusProps): React.ReactElement {
-  const [, forceTick] = React.useState(0);
+  /*
+   * The clock is held in state rather than read with `Date.now()` while
+   * rendering. Reading it during render makes the output depend on *when*
+   * React happens to re-render, so an unrelated parent update would silently
+   * change the label; the interval below is now the only thing that advances
+   * it, which is also the granularity this indicator was always designed for.
+   */
+  const [now, setNow] = React.useState(() => Date.now());
   const copy = COPY[state];
 
   // Keep "saved 2m ago" honest without a per-second re-render of the tree.
   React.useEffect(() => {
     if (state !== 'saved' || lastSavedAt === null) return undefined;
-    const timer = window.setInterval(() => forceTick((n) => n + 1), 20_000);
+    const timer = window.setInterval(() => setNow(Date.now()), 20_000);
     return () => window.clearInterval(timer);
   }, [state, lastSavedAt]);
 
   const suffix =
-    state === 'saved' && lastSavedAt !== null ? ` · ${formatSavedAt(lastSavedAt, Date.now())}` : '';
+    state === 'saved' && lastSavedAt !== null ? ` · ${formatSavedAt(lastSavedAt, now)}` : '';
 
   return (
     <span className={`${styles.status} ${copy.className}`} role="status" aria-live="polite">

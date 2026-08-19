@@ -9,6 +9,7 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
+import { CustomStoreCard } from '@/components/admin/CustomStoreCard';
 import { IntegrationConfiguration } from '@/types/database';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
@@ -34,11 +35,15 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+  // Held in state so child cards receive it as a prop rather than each reaching into
+  // localStorage during render, which is not available on the server pass.
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchIntegrations = async () => {
       try {
         const token = localStorage.getItem('admin_token');
+        setAuthToken(token);
         if (!token) return;
         
         const response = await fetch('/api/admin/integrations', {
@@ -222,6 +227,9 @@ export default function IntegrationsPage() {
                 loading={saving}
               />
             ))}
+          {/* Orders travel the other way: ShipStation pulls them from us over the Custom Store
+              feed, so it needs its own credentials rather than the API key above. */}
+          <CustomStoreCard token={authToken} />
         </Stack>
       </div>
       

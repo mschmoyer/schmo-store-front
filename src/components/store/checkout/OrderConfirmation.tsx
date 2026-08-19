@@ -113,7 +113,13 @@ export function OrderConfirmation({ storeSlug, storeName, sessionId }: OrderConf
   const [error, setError] = React.useState<string | null>(null);
   const [showConfetti, setShowConfetti] = React.useState(false);
 
-  const startedAt = React.useRef<number>(Date.now());
+  /*
+   * A ref's initial value is re-evaluated on every render even though only the
+   * first one is kept, so `useRef(Date.now())` reads the clock during render.
+   * A lazily-initialised state slot reads it exactly once, which is what this
+   * poll deadline always meant; the value is never written again.
+   */
+  const [startedAt] = React.useState<number>(() => Date.now());
   const base = `/store/${storeSlug}`;
 
   const confirm = React.useCallback(async (): Promise<ConfirmationStatus> => {
@@ -163,7 +169,7 @@ export function OrderConfirmation({ storeSlug, storeName, sessionId }: OrderConf
 
       const keepPolling =
         (result === 'processing' || result === 'open') &&
-        Date.now() - startedAt.current < POLL_WINDOW_MS;
+        Date.now() - startedAt < POLL_WINDOW_MS;
 
       if (keepPolling) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
     };
@@ -174,7 +180,8 @@ export function OrderConfirmation({ storeSlug, storeName, sessionId }: OrderConf
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [confirm]);
+    // `startedAt` is fixed at first render, so listing it never re-runs the poll.
+  }, [confirm, startedAt]);
 
   React.useEffect(() => {
     if (!showConfetti) return;

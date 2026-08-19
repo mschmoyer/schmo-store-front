@@ -1,6 +1,16 @@
 const { test, expect } = require('@playwright/test');
 
 /**
+ * Assertion budget for the first hit on a route the dev server has not compiled
+ * yet. Turbopack compiles on demand, so with several workers warming different
+ * routes at once the first paint of `/store/[slug]/product/[handle]` can land
+ * well past the 5s default `expect` timeout — which shows up as a missing
+ * "Add to cart" button rather than as a slow page. `marketing.spec.js` carries
+ * the same constant for the same reason.
+ */
+const COLD_COMPILE = 60000;
+
+/**
  * End-to-end coverage for the shopper-facing storefront.
  *
  * `tests/e2e/` carried four admin suites and a marketing suite and nothing at
@@ -71,45 +81,6 @@ function contrast(a, b) {
   return (high + 0.05) / (low + 0.05);
 }
 
-/**
- * Resolve a control's rendered ink and ground to opaque sRGB.
- *
- * Runs in the page and composites through a 1x1 canvas rather than parsing the
- * computed string, because a themed button's fill can be a `color-mix()` or an
- * `oklab()` and its ground can be three transparent ancestors deep. This is the
- * colour a shopper's eye receives, which is the only one worth asserting on.
- *
- * @param {import('@playwright/test').Locator} locator - The control
- * @returns {Promise<{fg: number[], bg: number[], fgCss: string}>} Composited colours
- */
-async function inkAndGround(locator) {
-  return locator.evaluate((el) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const paint = (color, backdrop) => {
-      ctx.clearRect(0, 0, 1, 1);
-      ctx.fillStyle = backdrop;
-      ctx.fillRect(0, 0, 1, 1);
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, 1, 1);
-      const data = ctx.getImageData(0, 0, 1, 1).data;
-      return [data[0], data[1], data[2]];
-    };
-
-    const chain = [];
-    for (let node = el; node; node = node.parentElement) {
-      chain.unshift(getComputedStyle(node).backgroundColor);
-    }
-    let bg = [255, 255, 255];
-    for (const layer of chain) bg = paint(layer, `rgb(${bg.join(',')})`);
-
-    const style = getComputedStyle(el);
-    return { fg: paint(style.color, `rgb(${bg.join(',')})`), bg, fgCss: style.color };
-  });
-}
-
 /* ------------------------------------------------------------------ *
  * The purchase journey
  * ------------------------------------------------------------------ */
@@ -125,16 +96,25 @@ test.describe('the purchase journey stays inside the merchant\'s shop', () => {
       await expect(page.locator('div.storefront[data-store-id]')).toHaveCount(1);
       await expect(page.locator('h1')).toBeVisible();
 
-      // Listing.
+      // Listing. Take the first card that is actually purchasable: the demo
+      // catalogue deliberately carries a sold-out product, and every product
+      // is seeded in one statement, so they share a `created_at` and Postgres
+      // is free to order the ties differently on each seed. Taking `.first()`
+      // unconditionally therefore lands on the sold-out card — which renders
+      // no "Add to cart" button — on some seeds and not others.
       await page.goto(`${base}/products`);
-      const firstProduct = page.locator('a[href*="/product/"]').first();
-      await expect(firstProduct).toBeVisible();
+      const purchasable = page
+        .locator('article')
+        .filter({ hasNotText: /out of stock/i })
+        .first();
+      const firstProduct = purchasable.locator('a[href*="/product/"]').first();
+      await expect(firstProduct).toBeVisible({ timeout: COLD_COMPILE });
       const productHref = await firstProduct.getAttribute('href');
 
       // Product detail, then add to cart.
       await page.goto(productHref);
       const addToCart = page.getByRole('button', { name: /add to cart/i });
-      await expect(addToCart).toBeVisible();
+      await expect(addToCart).toBeVisible({ timeout: COLD_COMPILE });
       await addToCart.click();
       await expect(
         page.getByRole('status').filter({ hasText: /added to your cart/i }),

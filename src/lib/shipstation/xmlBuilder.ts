@@ -1,332 +1,376 @@
 /**
- * XML Builder service for ShipStation integration
- * Converts orders to ShipStation XML format
+ * XML builder for the ShipStation Custom Store order export.
+ *
+ * The wire format is specified in `docs/shipstation-custom-store.md`; this file
+ * is the only place that produces it. Two things about it are easy to get wrong
+ * and were wrong before:
+ *
+ * 1. **The row shape.** `orders` stores the customer and both addresses as flat
+ *    columns (`shipping_first_name`, `shipping_address_line1`, …), not as the
+ *    nested `Address` object the `Order` domain type describes. The builder
+ *    previously read `order.shipping_address.street`, which is `undefined` for
+ *    every row `SELECT o.* FROM orders` returns, so the export validated every
+ *    order as unshippable and emitted an empty `<Orders>` document. The input
+ *    type here mirrors the table instead of the domain type.
+ *
+ * 2. **Money units.** `orders` and `order_items` hold `DECIMAL(10,2)` dollars,
+ *    which node-postgres returns as strings. They must go through
+ *    `formatDecimalMoney`, never `formatMoney` (which divides integer cents by
+ *    100 and would report every amount at a hundredth of its value).
+ *
+ * Free text is emitted inside CDATA sections as the spec requires, and optional
+ * elements are omitted entirely rather than emitted empty — an empty element is
+ * a claim that the field is blank, which is not the same as not knowing it.
  */
 
-import {
-  AdvancedOptions,
-  Address,
-  CustomsItem,
-  InternationalOptions,
-  Order,
-  OrderItem
-} from '@/lib/types/database';
-import { 
-  formatDateForShipStation, 
-  mapOrderStatusToShipStation, 
-  createCDATA, 
-  escapeXML, 
-  formatMoney,
-  convertWeightToOunces
-} from './utils';
+import { createCDATA, formatDecimalMoney, mapOrderStatusToShipStation } from './utils';
+import { Order } from '@/lib/types/database';
 
-interface OrderWithItems extends Order {
-  items: OrderItem[];
+/** Money as it comes back from a `DECIMAL(10,2)` column. */
+type DecimalMoney = string | number | null | undefined;
+
+/**
+ * One `order_items` row, as selected by the Custom Store export.
+ *
+ * Field names match the table, not the `OrderItem` domain type, so no aliasing
+ * happens between the query and the XML.
+ */
+export interface CustomStoreItemRow {
+  id: string;
+  product_sku: string | null;
+  product_name: string;
+  product_image_url: string | null;
+  unit_price: DecimalMoney;
+  quantity: number;
+  total_price: DecimalMoney;
 }
 
 /**
- * Export orders to ShipStation XML format
- * @param orders - Array of orders with items
- * @param page - Current page number
- * @param totalPages - Total number of pages
- * @returns XML string
+ * One `orders` row joined to its store's currency, as selected by the export.
  */
-export function exportOrdersToXML(orders: OrderWithItems[], page: number = 1, totalPages: number = 1): string {
-  const xmlHeader = '<?xml version="1.0" encoding="utf-8"?>';
-  
-  const ordersXML = orders.map(order => buildOrderXML(order)).join('\n');
-  
-  return `${xmlHeader}
-<Orders pages="${totalPages}" page="${page}">
-${ordersXML}
-</Orders>`;
+export interface CustomStoreOrderRow {
+  id: string;
+  order_number: string;
+  status: Order['status'];
+
+  /**
+   * `MM/dd/yyyy HH:mm`, rendered by Postgres `to_char`.
+   *
+   * These arrive pre-formatted rather than as Dates because `orders.created_at`
+   * and `updated_at` are `TIMESTAMP` (no time zone): node-postgres reads them
+   * as *local* time, so formatting them in JS shifts every exported date by the
+   * host's offset. Formatting in SQL keeps them in the column's own wall-clock.
+   */
+  order_date: string;
+  last_modified: string;
+
+  customer_email: string;
+  customer_first_name: string | null;
+  customer_last_name: string | null;
+  customer_phone: string | null;
+
+  shipping_first_name: string | null;
+  shipping_last_name: string | null;
+  shipping_address_line1: string | null;
+  shipping_address_line2: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  shipping_postal_code: string | null;
+  shipping_country: string | null;
+
+  billing_first_name: string | null;
+  billing_last_name: string | null;
+  billing_address_line1: string | null;
+  billing_address_line2: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  billing_postal_code: string | null;
+  billing_country: string | null;
+
+  tax_amount: DecimalMoney;
+  shipping_amount: DecimalMoney;
+  discount_amount: DecimalMoney;
+  total_amount: DecimalMoney;
+
+  payment_method: string | null;
+  shipping_method: string | null;
+  notes: string | null;
+
+  /** From `stores.currency`; ISO 4217. */
+  currency: string | null;
+
+  items: CustomStoreItemRow[];
+}
+
+/** Currency used when a store has none set, matching the column default. */
+const DEFAULT_CURRENCY = 'USD';
+
+/**
+ * Render one element containing free text, wrapped in CDATA.
+ *
+ * @param name - Element name
+ * @param value - Text content; the element is omitted when this is empty
+ * @param indent - Leading whitespace for the line
+ * @returns The element line, or an empty string when there is nothing to say
+ */
+function textElement(name: string, value: string | null | undefined, indent: string): string {
+  const text = (value ?? '').trim();
+  return text === '' ? '' : `${indent}<${name}>${createCDATA(text)}</${name}>\n`;
 }
 
 /**
- * Build XML for a single order
- * @param order - Order with items
- * @returns XML string for the order
+ * Render one element containing a value that needs no escaping (dates, decimals,
+ * enumerations we generate ourselves).
+ *
+ * @param name - Element name
+ * @param value - Literal content; the element is omitted when this is empty
+ * @param indent - Leading whitespace for the line
+ * @returns The element line, or an empty string
  */
-function buildOrderXML(order: OrderWithItems): string {
-  const orderDate = formatDateForShipStation(order.created_at);
-  const status = mapOrderStatusToShipStation(order.status);
-  
-  const customerXML = buildCustomerXML(order);
-  const itemsXML = buildItemsXML(order.items);
-  
-  return `  <Order>
-    <OrderNumber>${escapeXML(order.order_number)}</OrderNumber>
-    <OrderDate>${orderDate}</OrderDate>
-    <OrderStatus>${status}</OrderStatus>
-    <LastModified>${formatDateForShipStation(order.updated_at)}</LastModified>
-    <ShippingMethod>${escapeXML(order.shipping_method || 'Standard')}</ShippingMethod>
-    <PaymentMethod>${escapeXML(order.payment_method || 'Credit Card')}</PaymentMethod>
-    <OrderTotal>${formatMoney(order.total_amount)}</OrderTotal>
-    <TaxAmount>${formatMoney(order.tax_amount || 0)}</TaxAmount>
-    <ShippingAmount>${formatMoney(order.shipping_amount || 0)}</ShippingAmount>
-    <CustomField1>${escapeXML(order.id)}</CustomField1>
-    <CustomField2>${escapeXML(order.store_id)}</CustomField2>
-    <CustomField3>${escapeXML(order.currency)}</CustomField3>
-    <Source>Store</Source>
-    ${customerXML}
-    ${itemsXML}
-    <Notes>${createCDATA(order.notes || '')}</Notes>
-  </Order>`;
+function literalElement(name: string, value: string | null | undefined, indent: string): string {
+  const text = (value ?? '').trim();
+  return text === '' ? '' : `${indent}<${name}>${text}</${name}>\n`;
 }
 
 /**
- * Build customer and address XML
- * @param order - Order object
- * @returns Customer XML string
+ * Join a first and last name into the single `Name` field the spec defines.
+ *
+ * @param first - First name column
+ * @param last - Last name column
+ * @returns Trimmed full name, empty when neither part is present
  */
-export function buildCustomerXML(order: Order): string {
-  const billingAddress = order.billing_address || order.shipping_address;
-  const shippingAddress = order.shipping_address;
-  
-  if (!shippingAddress) {
-    throw new Error('Shipping address is required for ShipStation export');
-  }
-  
-  const customerName = extractCustomerName(order.customer_email, shippingAddress);
-  
-  return `    <Customer>
-      <CustomerCode>${escapeXML(order.customer_email)}</CustomerCode>
-      <BillTo>
-        <Name>${escapeXML(customerName)}</Name>
-        <Company>${escapeXML(billingAddress?.company || '')}</Company>
-        <Phone>${escapeXML(billingAddress?.phone || order.customer_phone || '')}</Phone>
-        <Email>${escapeXML(order.customer_email)}</Email>
-      </BillTo>
-      <ShipTo>
-        <Name>${escapeXML(customerName)}</Name>
-        <Company>${escapeXML(shippingAddress.company || '')}</Company>
-        <Address1>${escapeXML(shippingAddress.street)}</Address1>
-        <Address2></Address2>
-        <City>${escapeXML(shippingAddress.city)}</City>
-        <State>${escapeXML(shippingAddress.state)}</State>
-        <PostalCode>${escapeXML(shippingAddress.postal_code)}</PostalCode>
-        <Country>${escapeXML(shippingAddress.country)}</Country>
-        <Phone>${escapeXML(shippingAddress.phone || order.customer_phone || '')}</Phone>
-      </ShipTo>
-    </Customer>`;
+function joinName(first: string | null | undefined, last: string | null | undefined): string {
+  return [first ?? '', last ?? ''].map(part => part.trim()).filter(Boolean).join(' ');
 }
 
 /**
- * Build items XML
- * @param items - Array of order items
- * @returns Items XML string
+ * Read a decimal-dollar column as a number for comparisons.
+ *
+ * @param amount - Value from a `DECIMAL` column
+ * @returns The numeric value, or 0 when absent or unparseable
  */
-export function buildItemsXML(items: OrderItem[]): string {
-  const itemsXML = items.map(item => buildItemXML(item)).join('\n');
-  
-  return `    <Items>
-${itemsXML}
-    </Items>`;
+function toNumber(amount: DecimalMoney): number {
+  if (amount === null || amount === undefined || amount === '') {
+    return 0;
+  }
+  const value = typeof amount === 'number' ? amount : Number(amount);
+  return Number.isFinite(value) ? value : 0;
 }
 
 /**
- * Build XML for a single item
- * @param item - Order item
- * @returns Item XML string
+ * Reduce a stored currency to a bare ISO 4217 code.
+ *
+ * The value comes from `stores.currency`, which merchants can set. Stripping to
+ * letters means it is emitted without escaping without risking a malformed
+ * document, and anything unusable falls back to the column's own default.
+ *
+ * @param currency - Raw column value
+ * @returns Three-letter uppercase code
  */
-function buildItemXML(item: OrderItem): string {
-  const unitPrice = formatMoney(item.price);
-  const totalPrice = formatMoney(item.total);
-  
-  return `      <Item>
-        <SKU>${escapeXML(item.product_sku || item.product_id)}</SKU>
-        <Name>${createCDATA(item.product_name)}</Name>
-        <ImageUrl></ImageUrl>
-        <Weight>0</Weight>
-        <WeightUnits>Ounces</WeightUnits>
-        <Quantity>${item.quantity}</Quantity>
-        <UnitPrice>${unitPrice}</UnitPrice>
-        <TotalPrice>${totalPrice}</TotalPrice>
-        <Location></Location>
-        <WarehouseLocation></WarehouseLocation>
-        <Options></Options>
-        <ProductId>${escapeXML(item.product_id)}</ProductId>
-        <FulfillmentSku>${escapeXML(item.product_sku || item.product_id)}</FulfillmentSku>
-      </Item>`;
+function normaliseCurrency(currency: string | null | undefined): string {
+  const code = (currency ?? '').replace(/[^A-Za-z]/g, '').toUpperCase();
+  return code.length === 3 ? code : DEFAULT_CURRENCY;
 }
 
 /**
- * Extract customer name from email and address
- * @param email - Customer email
- * @param address - Shipping address
- * @returns Customer name
+ * Build the `<Customer>` element, including both addresses.
+ *
+ * `BillTo` falls back to the shipping name and the order's contact details when
+ * no separate billing address was captured, because `BillTo/Name` is required.
+ *
+ * @param order - Order row
+ * @returns Customer XML block
  */
-function extractCustomerName(email: string, address: Address): string {
-  // Try to use company name if available
-  if (address.company) {
-    return address.company;
-  }
-  
-  // Otherwise, use email username as fallback
-  const emailUsername = email.split('@')[0];
-  return emailUsername.replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-}
+export function buildCustomerXML(order: CustomStoreOrderRow): string {
+  const shipName = joinName(order.shipping_first_name, order.shipping_last_name);
+  const billName = joinName(order.billing_first_name, order.billing_last_name);
+  const contactName = joinName(order.customer_first_name, order.customer_last_name);
 
-/**
- * Build advanced order XML with additional ShipStation fields
- * @param order - Order with items
- * @returns Advanced XML string
- */
-export function buildAdvancedOrderXML(order: OrderWithItems): string {
-  const basicXML = buildOrderXML(order);
-  
-  // Add advanced fields if available
-  let advancedFields = '';
-  
-  if (order.shipstation_order_id) {
-    advancedFields += `    <ShipStationOrderId>${escapeXML(order.shipstation_order_id)}</ShipStationOrderId>\n`;
-  }
-  
-  if (order.tracking_number) {
-    advancedFields += `    <TrackingNumber>${escapeXML(order.tracking_number)}</TrackingNumber>\n`;
-  }
-  
-  if (order.carrier) {
-    advancedFields += `    <Carrier>${escapeXML(order.carrier)}</Carrier>\n`;
-  }
-  
-  if (order.service_code) {
-    advancedFields += `    <ServiceCode>${escapeXML(order.service_code)}</ServiceCode>\n`;
-  }
-  
-  if (order.package_code) {
-    advancedFields += `    <PackageCode>${escapeXML(order.package_code)}</PackageCode>\n`;
-  }
-  
-  if (order.confirmation_delivery) {
-    advancedFields += `    <Confirmation>${escapeXML(String(order.confirmation_delivery))}</Confirmation>\n`;
-  }
-  
-  if (order.shipment_weight) {
-    advancedFields += `    <Weight>${convertWeightToOunces(order.shipment_weight)}</Weight>\n`;
-    advancedFields += `    <WeightUnits>Ounces</WeightUnits>\n`;
-  }
-  
-  if (order.shipment_dimensions) {
-    const dims = order.shipment_dimensions;
-    advancedFields += `    <Dimensions>\n`;
-    advancedFields += `      <Length>${dims.length}</Length>\n`;
-    advancedFields += `      <Width>${dims.width}</Width>\n`;
-    advancedFields += `      <Height>${dims.height}</Height>\n`;
-    advancedFields += `      <Units>${escapeXML(dims.units)}</Units>\n`;
-    advancedFields += `    </Dimensions>\n`;
-  }
-  
-  if (order.international_options) {
-    advancedFields += buildInternationalOptionsXML(order.international_options);
-  }
-  
-  if (order.advanced_options) {
-    advancedFields += buildAdvancedOptionsXML(order.advanced_options);
-  }
-  
-  // Insert advanced fields before the closing </Order> tag
-  return basicXML.replace('  </Order>', `${advancedFields}  </Order>`);
-}
+  let xml = '    <Customer>\n';
+  xml += textElement('CustomerCode', order.customer_email, '      ');
 
-/**
- * Build international options XML
- * @param options - International options
- * @returns International options XML string
- */
-function buildInternationalOptionsXML(options: InternationalOptions): string {
-  let xml = '    <InternationalOptions>\n';
-  
-  if (options.contents) {
-    xml += `      <Contents>${escapeXML(options.contents)}</Contents>\n`;
-  }
-  
-  if (options.non_delivery) {
-    xml += `      <NonDelivery>${escapeXML(options.non_delivery)}</NonDelivery>\n`;
-  }
-  
-  if (options.customs_items && options.customs_items.length > 0) {
-    xml += '      <CustomsItems>\n';
-    options.customs_items.forEach((item: CustomsItem) => {
-      xml += '        <CustomsItem>\n';
-      xml += `          <Description>${createCDATA(item.description)}</Description>\n`;
-      xml += `          <Quantity>${item.quantity}</Quantity>\n`;
-      xml += `          <Value>${formatMoney(item.value)}</Value>\n`;
-      if (item.harmonized_tariff_code) {
-        xml += `          <HarmonizedTariffCode>${escapeXML(item.harmonized_tariff_code)}</HarmonizedTariffCode>\n`;
-      }
-      if (item.country_of_origin) {
-        xml += `          <CountryOfOrigin>${escapeXML(item.country_of_origin)}</CountryOfOrigin>\n`;
-      }
-      xml += '        </CustomsItem>\n';
-    });
-    xml += '      </CustomsItems>\n';
-  }
-  
-  xml += '    </InternationalOptions>\n';
-  
+  xml += '      <BillTo>\n';
+  xml += textElement('Name', billName || contactName || shipName, '        ');
+  xml += textElement('Phone', order.customer_phone, '        ');
+  xml += textElement('Email', order.customer_email, '        ');
+  xml += textElement('Address1', order.billing_address_line1, '        ');
+  xml += textElement('Address2', order.billing_address_line2, '        ');
+  xml += textElement('City', order.billing_city, '        ');
+  xml += textElement('State', order.billing_state, '        ');
+  xml += textElement('PostalCode', order.billing_postal_code, '        ');
+  xml += textElement('Country', order.billing_country, '        ');
+  xml += '      </BillTo>\n';
+
+  xml += '      <ShipTo>\n';
+  xml += textElement('Name', shipName || contactName, '        ');
+  xml += textElement('Address1', order.shipping_address_line1, '        ');
+  xml += textElement('Address2', order.shipping_address_line2, '        ');
+  xml += textElement('City', order.shipping_city, '        ');
+  xml += textElement('State', order.shipping_state, '        ');
+  xml += textElement('PostalCode', order.shipping_postal_code, '        ');
+  xml += textElement('Country', order.shipping_country, '        ');
+  xml += textElement('Phone', order.customer_phone, '        ');
+  xml += '      </ShipTo>\n';
+
+  xml += '    </Customer>';
+
   return xml;
 }
 
 /**
- * Build advanced options XML
- * @param options - Advanced options
- * @returns Advanced options XML string
+ * Build one `<Item>` element.
+ *
+ * @param item - Order item row
+ * @returns Item XML block
  */
-function buildAdvancedOptionsXML(options: AdvancedOptions): string {
-  let xml = '    <AdvancedOptions>\n';
-  
-  Object.entries(options).forEach(([key, value]) => {
-    if (value !== null && value !== undefined) {
-      const xmlKey = key.replace(/_/g, '').replace(/([A-Z])/g, (match, letter) => letter.toUpperCase());
-      xml += `      <${xmlKey}>${escapeXML(String(value))}</${xmlKey}>\n`;
-    }
-  });
-  
-  xml += '    </AdvancedOptions>\n';
-  
+function buildItemXML(item: CustomStoreItemRow): string {
+  let xml = '      <Item>\n';
+  xml += textElement('LineItemID', item.id, '        ');
+  xml += textElement('SKU', item.product_sku, '        ');
+  xml += textElement('Name', item.product_name, '        ');
+  xml += textElement('ImageUrl', item.product_image_url, '        ');
+  xml += literalElement('Quantity', String(item.quantity), '        ');
+  xml += literalElement('UnitPrice', formatDecimalMoney(item.unit_price), '        ');
+  xml += '      </Item>';
+
   return xml;
 }
 
 /**
- * Build minimal order XML for testing
- * @param order - Order with items
- * @returns Minimal XML string
+ * Build the order-level discount as an adjustment line item.
+ *
+ * The spec models discounts as a line item carrying a negative `UnitPrice` and
+ * `<Adjustment>true</Adjustment>`. Without it the item lines sum to more than
+ * `OrderTotal` and the order looks mispriced in ShipStation.
+ *
+ * @param discount - Positive discount amount in decimal dollars
+ * @returns Adjustment item XML block
  */
-export function buildMinimalOrderXML(order: OrderWithItems): string {
-  const orderDate = formatDateForShipStation(order.created_at);
-  const status = mapOrderStatusToShipStation(order.status);
-  const shippingAddress = order.shipping_address;
-  
-  if (!shippingAddress) {
-    throw new Error('Shipping address is required');
+function buildDiscountItemXML(discount: number): string {
+  let xml = '      <Item>\n';
+  xml += textElement('SKU', 'DISCOUNT', '        ');
+  xml += textElement('Name', 'Order discount', '        ');
+  xml += literalElement('Quantity', '1', '        ');
+  xml += literalElement('UnitPrice', (-Math.abs(discount)).toFixed(2), '        ');
+  xml += literalElement('Adjustment', 'true', '        ');
+  xml += '      </Item>';
+
+  return xml;
+}
+
+/**
+ * Build the `<Items>` element for an order.
+ *
+ * @param order - Order row whose items to render
+ * @returns Items XML block
+ */
+export function buildItemsXML(order: CustomStoreOrderRow): string {
+  const lines = order.items.map(buildItemXML);
+  const discount = toNumber(order.discount_amount);
+
+  if (discount > 0) {
+    lines.push(buildDiscountItemXML(discount));
   }
-  
-  const customerName = extractCustomerName(order.customer_email, shippingAddress);
-  
-  return `  <Order>
-    <OrderNumber>${escapeXML(order.order_number)}</OrderNumber>
-    <OrderDate>${orderDate}</OrderDate>
-    <OrderStatus>${status}</OrderStatus>
-    <OrderTotal>${formatMoney(order.total_amount)}</OrderTotal>
-    <Customer>
-      <CustomerCode>${escapeXML(order.customer_email)}</CustomerCode>
-      <ShipTo>
-        <Name>${escapeXML(customerName)}</Name>
-        <Address1>${escapeXML(shippingAddress.street)}</Address1>
-        <City>${escapeXML(shippingAddress.city)}</City>
-        <State>${escapeXML(shippingAddress.state)}</State>
-        <PostalCode>${escapeXML(shippingAddress.postal_code)}</PostalCode>
-        <Country>${escapeXML(shippingAddress.country)}</Country>
-      </ShipTo>
-    </Customer>
-    <Items>
-      ${order.items.map(item => `<Item>
-        <SKU>${escapeXML(item.product_sku || item.product_id)}</SKU>
-        <Name>${createCDATA(item.product_name)}</Name>
-        <Quantity>${item.quantity}</Quantity>
-        <UnitPrice>${formatMoney(item.price)}</UnitPrice>
-      </Item>`).join('\n      ')}
-    </Items>
-  </Order>`;
+
+  if (lines.length === 0) {
+    return '    <Items></Items>';
+  }
+
+  return `    <Items>\n${lines.join('\n')}\n    </Items>`;
+}
+
+/**
+ * Build a single `<Order>` element.
+ *
+ * @param order - Order row with its items
+ * @returns Order XML block
+ */
+function buildOrderXML(order: CustomStoreOrderRow): string {
+  let xml = '  <Order>\n';
+
+  xml += textElement('OrderID', order.id, '    ');
+  xml += textElement('OrderNumber', order.order_number, '    ');
+  xml += literalElement('OrderDate', order.order_date, '    ');
+  xml += textElement('OrderStatus', mapOrderStatusToShipStation(order.status), '    ');
+  xml += literalElement('LastModified', order.last_modified, '    ');
+  xml += textElement('ShippingMethod', order.shipping_method, '    ');
+  xml += textElement('PaymentMethod', order.payment_method, '    ');
+  xml += literalElement('CurrencyCode', normaliseCurrency(order.currency), '    ');
+  xml += literalElement('OrderTotal', formatDecimalMoney(order.total_amount), '    ');
+  xml += literalElement('TaxAmount', formatDecimalMoney(order.tax_amount), '    ');
+  xml += literalElement('ShippingAmount', formatDecimalMoney(order.shipping_amount), '    ');
+  xml += textElement('InternalNotes', order.notes, '    ');
+  xml += `${buildCustomerXML(order)}\n`;
+  xml += `${buildItemsXML(order)}\n`;
+  xml += '  </Order>';
+
+  return xml;
+}
+
+/**
+ * Render the Custom Store export document.
+ *
+ * The root carries only the `pages` attribute the spec defines — ShipStation
+ * walks pages by re-requesting with `&page=N`, and a non-standard `page`
+ * attribute is not part of the contract.
+ *
+ * @param orders - Orders to include on this page, with their items
+ * @param totalPages - Total number of pages available for the requested window
+ * @returns Complete XML document
+ */
+export function exportOrdersToXML(orders: CustomStoreOrderRow[], totalPages: number = 1): string {
+  const pages = Math.max(1, Math.floor(totalPages));
+  const body = orders.map(buildOrderXML).join('\n');
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<Orders pages="${pages}">
+${body}${body === '' ? '' : '\n'}</Orders>`;
+}
+
+/**
+ * Check that an order carries everything the spec marks required.
+ *
+ * ShipStation rejects the whole document if one order is malformed, so the
+ * export skips individual offenders rather than failing the page. The caller is
+ * responsible for reporting what was skipped — silently dropping orders is how
+ * a store ends up permanently missing shipments with nothing in the logs.
+ *
+ * @param order - Order row to check
+ * @returns Whether the order can be exported, and why not when it cannot
+ */
+export function validateOrderForExport(
+  order: CustomStoreOrderRow
+): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!order.order_number) {
+    errors.push('OrderNumber is required');
+  }
+
+  if (!order.customer_email) {
+    errors.push('CustomerCode (customer email) is required');
+  }
+
+  if (!joinName(order.shipping_first_name, order.shipping_last_name) &&
+      !joinName(order.customer_first_name, order.customer_last_name)) {
+    errors.push('ShipTo/Name is required');
+  }
+
+  if (!order.shipping_address_line1) {
+    errors.push('ShipTo/Address1 is required');
+  }
+
+  if (!order.shipping_city) {
+    errors.push('ShipTo/City is required');
+  }
+
+  if (!order.shipping_postal_code) {
+    errors.push('ShipTo/PostalCode is required');
+  }
+
+  if (!order.shipping_country) {
+    errors.push('ShipTo/Country is required');
+  }
+
+  return { isValid: errors.length === 0, errors };
 }

@@ -152,22 +152,31 @@ export async function parseOrderXML(xmlData: string): Promise<ParsedOrderData[]>
  * @returns ShipmentNotificationData
  */
 function extractShipmentData(parsedXML: XmlNode): ShipmentNotificationData {
+  // `<ShipNotice>` is the root the Custom Store spec defines and the one real
+  // ShipStation shipnotify calls send. The others are shapes this parser has
+  // accepted historically and are kept so nothing that already worked breaks.
   const shipment =
+    getXmlChild(parsedXML, 'ShipNotice') ??
     getXmlChild(parsedXML, 'ShipmentNotification') ??
     getXmlChild(parsedXML, 'ShipmentUpdate') ??
     getXmlChild(parsedXML, 'Shipment');
 
   if (!shipment) {
-    throw new Error('No shipment data found in XML');
+    throw new Error('No shipment data found in XML. Expected a <ShipNotice> root element.');
   }
-  
+
+  // The spec spells these `OrderID`, `Carrier` and `Service`; the legacy names
+  // are read as fallbacks so both payload dialects parse.
   const notification: ShipmentNotificationData = {
-    orderId: safeGetString(shipment.OrderId) || safeGetString(shipment.OrderNumber),
+    orderId:
+      safeGetString(shipment.OrderID) ||
+      safeGetString(shipment.OrderId) ||
+      safeGetString(shipment.OrderNumber),
     orderNumber: safeGetString(shipment.OrderNumber),
     shipmentId: safeGetString(shipment.ShipmentId),
     trackingNumber: safeGetString(shipment.TrackingNumber),
-    carrierCode: safeGetString(shipment.CarrierCode),
-    serviceCode: safeGetString(shipment.ServiceCode),
+    carrierCode: safeGetString(shipment.Carrier) || safeGetString(shipment.CarrierCode),
+    serviceCode: safeGetString(shipment.Service) || safeGetString(shipment.ServiceCode),
     packageCode: safeGetString(shipment.PackageCode),
     labelUrl: safeGetString(shipment.LabelUrl),
     formUrl: safeGetString(shipment.FormUrl),
@@ -191,7 +200,10 @@ function extractShipmentData(parsedXML: XmlNode): ShipmentNotificationData {
     notification.shipDate = parseShipStationDate(safeGetString(shipment.ShipDate));
   }
   
-  if (shipment.CreateDate) {
+  // The spec calls this `LabelCreateDate`; `CreateDate` is the legacy spelling.
+  if (shipment.LabelCreateDate) {
+    notification.createDate = parseShipStationDate(safeGetString(shipment.LabelCreateDate));
+  } else if (shipment.CreateDate) {
     notification.createDate = parseShipStationDate(safeGetString(shipment.CreateDate));
   }
   
@@ -212,12 +224,22 @@ function extractShipmentData(parsedXML: XmlNode): ShipmentNotificationData {
   }
   
   // Parse numeric values
-  if (shipment.ShipmentCost) {
-    notification.shipmentCost = parseFloat(safeGetString(shipment.ShipmentCost)) * 100; // Convert to cents
+  // `<ShippingCost>` is the spec's name; `<ShipmentCost>` is the legacy one.
+  // These stay in decimal dollars: they are written to `orders.shipment_cost`,
+  // a DECIMAL(10,2) dollars column, so scaling to cents stored 4.95 as 495.00.
+  const shippingCost = shipment.ShippingCost ?? shipment.ShipmentCost;
+  if (shippingCost !== undefined) {
+    const parsed = parseFloat(safeGetString(shippingCost));
+    if (Number.isFinite(parsed)) {
+      notification.shipmentCost = parsed;
+    }
   }
-  
+
   if (shipment.InsuranceCost) {
-    notification.insuranceCost = parseFloat(safeGetString(shipment.InsuranceCost)) * 100; // Convert to cents
+    const parsed = parseFloat(safeGetString(shipment.InsuranceCost));
+    if (Number.isFinite(parsed)) {
+      notification.insuranceCost = parsed;
+    }
   }
   
   if (shipment.Weight) {
@@ -236,7 +258,8 @@ function extractShipmentData(parsedXML: XmlNode): ShipmentNotificationData {
   }
   
   // Parse shipping address
-  const shipTo = getXmlChild(shipment, 'ShipTo');
+  // The spec names the destination `<Recipient>`; `<ShipTo>` is the legacy name.
+  const shipTo = getXmlChild(shipment, 'Recipient') ?? getXmlChild(shipment, 'ShipTo');
   if (shipTo) {
     notification.shipTo = parseAddress(shipTo);
   }
@@ -363,10 +386,12 @@ export function validateShipmentNotification(notification: ShipmentNotificationD
   if (!notification.orderId && !notification.orderNumber) {
     errors.push('Order ID or Order Number is required');
   }
-  
-  if (!notification.trackingNumber && !notification.shipmentId) {
-    errors.push('Tracking Number or Shipment ID is required');
-  }
+
+  // A tracking number is deliberately NOT required. "Mark as Shipped" in
+  // ShipStation, and carriers that supply no tracking, both send a ShipNotice
+  // without one. Rejecting those returned a non-2xx, which ShipStation reads as
+  // a delivery failure and retries indefinitely for a notice that will never
+  // change. Identifying the order is the only thing this handler truly needs.
   
   return {
     isValid: errors.length === 0,

@@ -106,7 +106,15 @@ adminAuthFixture.describe('Admin coupons — failure is visible', () => {
 
     // The server's own message is shown, so the cause is diagnosable from the
     // screen rather than only from a log.
-    await expect(adminPage.getByText(/relation "discounts" does not exist/)).toBeVisible();
+    //
+    // Scoped to the alert on purpose: `next dev` renders the same text a second
+    // time in its error overlay, so an unscoped locator is a strict-mode
+    // violation against a dev server and passes only against `next start`.
+    // The assertion that matters is that *the page* says it, not the overlay.
+    await expect(
+      adminPage.getByLabel('Could not load your coupons')
+        .getByText(/relation "discounts" does not exist/)
+    ).toBeVisible();
   });
 });
 

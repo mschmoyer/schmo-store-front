@@ -124,12 +124,9 @@ test.describe('Admin Login (without fixture)', () => {
     // Should stay on the login page
     await expect(page).toHaveURL(/\/login/);
     
-    // Check for error message (might need to adjust selector based on actual implementation)
-    const hasErrorIndicator = await page.locator('text=Invalid').isVisible().catch(() => false) ||
-                             await page.locator('[data-testid="error"]').isVisible().catch(() => false) ||
-                             await page.locator('.error').isVisible().catch(() => false);
-    
-    // Don't assert error message since we don't know exact implementation
+    // No assertion on the error message itself: the login page's error markup is not pinned
+    // down by a contract, so probing for it would be a guess. Staying on /login is the
+    // behaviour that actually matters and is asserted above.
     console.log('✓ Invalid credentials handled appropriately');
   });
 });

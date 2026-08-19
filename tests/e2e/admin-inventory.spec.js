@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { expect } = require('@playwright/test');
 const { adminAuthFixture } = require('../fixtures/admin-auth');
 
 /**
@@ -166,7 +166,6 @@ adminAuthFixture.describe('Admin Inventory Page - Core Functionality', () => {
       const firstRow = tableRows.first();
       const quickReorderBtn = firstRow.locator('button[title="Quick Reorder"]');
       const addToPOBtn = firstRow.locator('button[title="Add to Purchase Order"]');
-      const editBtn = firstRow.locator('button').filter({ hasText: 'edit' }).first();
       
       if (await quickReorderBtn.isVisible()) {
         await quickReorderBtn.click();

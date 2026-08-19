@@ -6,7 +6,6 @@ import {
   ProductSalesVelocityRow
 } from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
-import { inventoryService } from '@/lib/services/inventoryService';
 import { collectErrors, runManualSync, toCounts } from '@/lib/shipstation/manualSync';
 import { statusForResult } from '../sync/_lib/respond';
 import {

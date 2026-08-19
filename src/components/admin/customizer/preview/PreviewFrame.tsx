@@ -109,16 +109,23 @@ export function PreviewFrame({
   const [ready, setReady] = React.useState(false);
   const [handshakeTimedOut, setHandshakeTimedOut] = React.useState(false);
 
-  // Pinned so a re-render can never swap the iframe's document.
-  const initialSrc = React.useRef(src);
+  // Pinned so a re-render can never swap the iframe's document. State rather
+  // than a ref because this one *is* read while rendering, to fill `src` on the
+  // iframe below; a ref read during render is exactly what React forbids.
+  const [initialSrc] = React.useState(src);
 
   // Read by the message listener without making it a dependency, so the
   // listener is installed once per mount rather than once per keystroke.
   const latest = React.useRef({ theme, sections });
-  latest.current = { theme, sections };
-
   const onSectionClickRef = React.useRef(onSectionClick);
-  onSectionClickRef.current = onSectionClick;
+
+  // Written after commit, not during render: a render React throws away must
+  // not be allowed to leave its values behind in a ref. Everything that reads
+  // these does so from the `message` handler, which only ever runs after paint.
+  React.useEffect(() => {
+    latest.current = { theme, sections };
+    onSectionClickRef.current = onSectionClick;
+  });
 
   /**
    * Send a message to the preview, addressed to our own origin.
@@ -160,8 +167,9 @@ export function PreviewFrame({
     if (reloadToken === 0) return;
     setReady(false);
     const frame = frameRef.current;
-    if (frame) frame.src = initialSrc.current;
-  }, [reloadToken]);
+    if (frame) frame.src = initialSrc;
+    // `initialSrc` is pinned at first render, so listing it never re-runs this.
+  }, [reloadToken, initialSrc]);
 
   // If the renderer never answers, say so rather than showing a dead spinner.
   React.useEffect(() => {
@@ -233,7 +241,7 @@ export function PreviewFrame({
             <iframe
               ref={frameRef}
               className={styles.frame}
-              src={initialSrc.current}
+              src={initialSrc}
               title="Storefront preview"
               // The preview must run same-origin: the protocol is postMessage
               // between two windows of this app, and the token in the URL is what

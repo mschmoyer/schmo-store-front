@@ -1390,3 +1390,443 @@ Open:
 - [ ] `destroySession()` is a no-op, so a stolen token stays valid until it expires. Logout is now
       correct for the browser, but there is still no server-side revocation (jti blacklist, or
       short-lived tokens plus refresh)
+
+## Agent instruction documentation: two integration guides, plus an audit (2026-08-19)
+
+**User request**: "Let's make two CLAUDE instruction documents using claude best practices that
+detail the ShipStation integration and all the API points, and one more for Stripe the same way.
+After that, let's audit our README.md and all other claude instruction documentation and bring it
+all up to best practices."
+
+Placed as nested `CLAUDE.md` files rather than `docs/*.md`, so Claude Code loads each one on demand
+when work touches that directory instead of carrying both in every session's context. The root
+`CLAUDE.md` names them and the surfaces they govern, so an agent editing a route outside `src/lib`
+still finds them.
+
+- [x] **`src/lib/shipstation/CLAUDE.md`** — eight rules, each tied to the audit finding it closes;
+      module map with an explicit "do not" column; the complete outbound V2 endpoint table (10
+      endpoints, which are probed and which deliberately are not); the complete inbound route table
+      with auth mode per route; credentials and the `ssenc:v1:` / `b64v0:` formats; the three
+      webhook checks; sync ordering; order-push semantics; data model; env; known gaps
+- [x] **`src/lib/stripe/CLAUDE.md`** — the two-flow table as the organising idea; ten rules; module
+      map; the complete Stripe SDK call-site list (verified exhaustive by grep, not by memory); the
+      inbound route table; the handled-event matrix; Connect and fees; the $0 path; known gaps.
+      `docs/payments.md` stays the narrative *why*; this is the operational *what not to break*
+- [x] Fixed two dangling references: `orderPush.ts` and `webhookRegistration.ts` both pointed at
+      `docs/shipstation.md`, which has never existed. They now point at the new file
+
+Root `CLAUDE.md` rewritten. What was wrong with it:
+
+- [x] Claimed **Next.js 15**; the project is on 16.3.0
+- [x] Said components live in `src/app/`; they live in `src/components/`
+- [x] Listed `npm run sync:test`, which is not in `package.json`
+- [x] Gave `npm run test:e2e --project=chromium`, which passes the flag to npm, not Playwright.
+      Needs `--`
+- [x] Said "Run tsc" without saying `npx tsc --noEmit`, and did not mention that
+      `next.config.ts` sets `typescript.ignoreBuildErrors` — so a green build is not a green
+      typecheck, and CI's separate typecheck job is the only enforcement
+- [x] Omitted **Stripe entirely**, along with multi-tenancy, the database, and `dev-local`
+- [x] Added the working rules that were previously only discoverable by reading file headers:
+      store scoping, integer cents, never logging key fragments, server-side price truth, honest
+      success values, graceful degradation when an integration is unconfigured
+
+`README.md` audit:
+
+- [x] Env block advertised `SHIPENGINE_SELLER_ID`, `SHIPENGINE_WAREHOUSE_ID` and `ADMIN_PASSWORD`.
+      None appears anywhere in the codebase
+- [x] Env block omitted **`SHIPSTATION_ENCRYPTION_KEY`**, the one integration variable that fails
+      closed rather than degrading — the exact omission that made production sync write nothing on
+      2026-08-12. Now in the README, in the optional-integrations table with its failure mode
+      spelled out, and in `.env.example`, where it was also missing
+- [x] Claimed "612 unit tests"; the suite is 799 across 48 suites
+- [x] "Node.js 20+" in the tech stack, "Node 22" in the prerequisites. `.nvmrc` says 22
+- [x] Listed ShipEngine as an API in use (it is not) and node-cron as the scheduler (the mechanism
+      is `job_queue` drained over HTTP, scheduled by Vercel Cron)
+- [x] Project structure pointed at `docs/design/` and `docs/implementation-plans/`, neither of which
+      exists; replaced with the actual `docs/` contents and the `src/lib/` breakdown
+- [x] API route list had no Stripe, checkout, Connect, webhook, cron or job-queue entries at all
+- [x] No mention of CI, which has existed since the workflow was added
+- [x] Stripe was absent from the integrations list despite being half the product
+
+`docs/payments.md` §8: two bullets had gone stale and were struck through rather than deleted, so
+the section reads as history. `docs/decision-log.md` records the free-order fix; the coupon-validate
+route no longer joins the dropped `discounts` table. The "no fulfilment hand-off" bullet was
+sharpened — see the open item below.
+
+`tests/e2e/README.md` described itself as the E2E suite but documented only `admin-products.spec.js`,
+one of nine specs. Added a suite index and corrected the run commands, which used bare
+`npx playwright test`.
+
+Verified with `npm run lint` (0 errors, 99 pre-existing warnings), `npx tsc --noEmit` (clean) and
+`npm test` (799/799).
+
+Open — found while writing the docs, not fixed here:
+- [ ] **`enqueueOrderPush` has no callers.** `jobQueueService` handles `shipstation_order_push` and
+      `processOrderPushJob` is complete, but nothing ever enqueues a job, so no paid order is
+      pushed to ShipStation. The hook belongs in `billing/orders.ts::createPaidOrder`. This is the
+      same "well-built dead code" shape as audit P0-8
+- [ ] `vercel.json` sets `functions` config for `src/app/api/shipstation/webhook/route.ts` — the
+      **retired** 410 endpoint — and not for the live `[storeToken]` receiver. It also sets no
+      limit for `/api/jobs/process`, whose header comment assumes a 60 s budget
+- [ ] `src/app/api/admin/integrations/test/route.ts:85` calls `fetch` directly rather than
+      `shipStationFetch`, so the generic connection test has no retry or rate-limit handling
+- [ ] `src/app/api/warehouses/route.ts:25` still reads the API key with raw
+      `Buffer.from(..., 'base64')`, bypassing `credentials.ts` (same defect class as P0-9)
+- [ ] `scripts/sync-{products,inventory,inventory-warehouses,inventory-locations}.ts` have no npm
+      script and no caller. Either wire them up or delete them
+
+## ShipStation Custom Store spec, transcribed (2026-08-19)
+
+**User request**: "Can you write up this shipstation custom store implementation guide as a
+markdown file and tuck it in our docs folder? We might need this to build against later."
+
+- [x] **`docs/shipstation-custom-store.md`** — the ShipStation Custom Store Development Guide
+      transcribed as a reference doc: the GET export contract (URL params, the last-modified
+      window, CDATA rules, paging via the `pages` attribute), the shipnotify POST contract, the
+      connection form fields and their case-sensitive status mapping, the full order and
+      ShipNotice field tables with XPath/type/length, and the validation XSD
+- [x] Where the published article contradicts its own XSD — `Option` max occurrence (10 vs 100),
+      `SKU` length (50 vs 100), whether `OrderID` is required — the doc records the disagreement
+      instead of silently picking one
+- [x] Mapped the spec to the code that already implements it, rather than letting it read as
+      greenfield: `src/app/api/shipstation/orders/route.ts` and
+      `src/lib/shipstation/{auth,xmlBuilder,xmlParser,xmlTypes,utils}.ts`. Cross-referenced from
+      `src/lib/shipstation/CLAUDE.md`, which governs that directory
+
+Kept as a faithful transcription with our code map appended rather than rewritten into a how-to.
+The value is having the exact field constraints and XSD to hand when changing the export or
+shipnotify path. Docs-only, no version bump.
+
+Open — found while writing the map, not fixed here:
+- [ ] **The order export drops cancelled and refunded orders.**
+      `src/app/api/shipstation/orders/route.ts` filters `AND o.status NOT IN ('cancelled',
+      'refunded')`, but the spec says to return every order modified in the window *regardless of
+      status*. An order cancelled after import never reappears in an export, so ShipStation never
+      learns it was cancelled. Confirm whether that is intentional
+- [ ] Export errors return JSON (`formatShipStationError`) while successes return
+      `application/xml`. ShipStation expects XML from the export endpoint — check whether it
+      surfaces these errors usefully or just reports a parse failure
+
+## Custom Store: verification loop before implementation (2026-08-19)
+
+**User request**: "Let's stop all the reviewers. First, we need to focus on a full verification
+loop."
+
+An orchestrated build was started and stopped after its first stage. The reasoning for stopping is
+sound and worth recording: the failure modes this integration keeps producing are ones where every
+unit test passes and the feed still returns nothing ShipStation can use — a 200 whose body is JSON,
+an element the schema does not accept, credentials the server will not honour. Reviewers reading a
+diff cannot catch those. Something has to speak to the endpoint the way ShipStation does.
+
+- [x] **`scripts/verify-custom-store.mjs`** (`npm run verify:custom-store`) — impersonates
+      ShipStation against a running instance: same Basic auth, same query parameters, same
+      `MM/dd/yyyy HH:mm` UTC dates. Checks authentication (including that a failure does not reveal
+      whether a username exists), the export contract, XML well-formedness, the `pages` attribute,
+      CDATA wrapping, date format, that cancelled orders appear in the feed, action routing, and
+      that a bare POST is not treated as a ship notice. `--base-url` points it at any environment,
+      so the same script verifies production after deploy
+- [x] Credentials come from the real admin path, never written to the database by the script
+      itself. A credential the verifier minted would prove nothing about the path a merchant takes,
+      which is exactly the gap that produced P0-1
+- [x] **Baseline recorded** against a local instance: 3/5 checks pass. `AUTH-2` fails — errors are
+      `application/json` where the spec requires XML. `AUTH-5` fails — no credential path exists
+      yet, so nothing past authentication can be exercised at all
+- [x] **`database/migrations/024_custom_store_credentials.sql`** — verified applied against a real
+      Postgres 16: `custom_store_password_encrypted`, `custom_store_enabled`, and a **unique**
+      partial index on `shipstation_username`. Re-running is a clean no-op, as CI requires
+- [x] The unique index matters more than it looks. 022 and 007 both indexed that column without
+      constraining uniqueness, so two stores could hold the same username and the single-row auth
+      lookup would silently return whichever row the planner picked first — a cross-tenant order
+      leak. The migration nulls any pre-existing duplicate before creating the constraint
+
+**The published XSD is not authoritative.** Verified with `xmllint`: ShipStation's own example
+order XML in §2 of `docs/shipstation-custom-store.md` fails validation against the XSD in §6,
+because the schema omits `CurrencyCode` while both the example and the field table in §5 include
+it. Precedence is now documented as field table > example > XSD, and the verifier treats schema
+validation as advisory with the known gaps allowlisted rather than silently stripped. Treating the
+XSD as a hard gate would have meant deleting valid, documented fields to satisfy a stale document —
+which is what the stopped workflow had been instructed to do.
+
+Open:
+- [ ] `database/migrate.js` does not read `.env.local` — only `scripts/dev-local.js` does. So the
+      README's "Doing it by hand" path (`cp .env.example .env.local` then `npm run db:migrate`)
+      fails with "No database connection string configured". Either load the file in the migration
+      runner or correct the README
+- [ ] Credential model, auth rewrite, spec conformance and the save-path collapse are still to
+      build. The verifier defines done: every required check green
+- [ ] End-to-end against a real ShipStation account still requires production — Vercel's
+      `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect rather
+      than our XML
+## ShipStation Custom Store: implemented to the spec (2026-08-19)
+
+**User request**: "write the implementation to your plan first. AFTER you are finished, do a
+thorough review of the solution."
+
+The plan was `docs/shipstation-custom-store.md`. Reading the existing endpoint against it turned up
+that **neither direction worked at all**, so this is a repair to conformance, not a new feature.
+
+What was broken:
+
+- [x] **The export returned zero orders, always.** `xmlBuilder` and `validateOrderForExport` read
+      `order.shipping_address.street` — a nested `Address` that exists on the `Order` *domain type*
+      but not on the `orders` *table*, which stores flat columns (`shipping_address_line1`, …).
+      `SELECT o.*` therefore produced `undefined` for every address, every order failed validation,
+      and the endpoint emitted a well-formed `<Orders>` document containing nothing. The input type
+      is now `CustomStoreOrderRow`, which mirrors the table
+- [x] **The shipnotify handler rejected every real notification.** The parser looked for a
+      `<ShipmentNotification>` / `<ShipmentUpdate>` / `<Shipment>` root; the spec's root is
+      `<ShipNotice>`. Its field names were wrong too — `OrderId` vs `OrderID`, `CarrierCode` vs
+      `Carrier`, `ServiceCode` vs `Service`, `ShipmentCost` vs `ShippingCost`, `ShipTo` vs
+      `Recipient`. Spec names are read first, legacy names kept as fallbacks
+- [x] **Money was off by 100× in both directions.** `orders`/`order_items` are `DECIMAL(10,2)`
+      *dollars*, but the builder used `formatMoney`, which divides integer cents by 100 — every
+      total would have exported at a hundredth of its value. Inbound, `ShippingCost` was multiplied
+      *to* cents before being written to the dollars column `orders.shipment_cost`, storing $4.95 as
+      495.00. New `formatDecimalMoney` handles the dollar columns; the parser no longer rescales
+- [x] **Dates ignored the spec's UTC rule.** Formatting used local getters and parsing built
+      local-time Dates, so the export window and the emitted dates both shifted by the host offset.
+      Because `created_at`/`updated_at` are `TIMESTAMP` (no zone) — which node-postgres reads as
+      *local* — the fix is to keep JS out of it: `to_char` renders the dates and `$n::timestamp`
+      literals bound the window, so neither the Node host's zone nor the DB session's zone can move
+      them. `parseShipStationDate` now parses as UTC, validates, and rejects days like 02/31
+- [x] **The spec's "regardless of status" rule was violated.** The export filtered
+      `AND o.status NOT IN ('cancelled', 'refunded')`, so a cancellation after import never reached
+      ShipStation. Removed — status mapping is the merchant's job in the connection form
+- [x] **A non-UUID `OrderID` 500'd the shipnotify handler.** `id = $2` against a `uuid` column
+      raises `invalid input syntax for type uuid`. The id is now only compared when it looks like one
+- [x] **`?page=abc` 500'd the export.** `Math.max(1, NaN)` is `NaN`, which reached the query as
+      `LIMIT NaN OFFSET NaN`. `createPaginationParams` now falls back to defaults
+- [x] Paging was non-deterministic (`ORDER BY updated_at DESC` alone); added the `id` tiebreaker so
+      the pages ShipStation walks form a stable sequence
+- [x] Errors were JSON on an endpoint ShipStation parses as XML, so failures reached merchants as
+      opaque parse errors. Export errors are now `<Error>` documents; 401s carry a
+      `WWW-Authenticate` challenge. `PUT` is not part of the contract and stays JSON
+- [x] The export logged the **entire XML payload** — customer names, addresses, emails, phones — to
+      both the server log and `integration_logs.response_data`. Now only counts and timing
+- [x] Dropped invented elements ShipStation does not define (`<Notes>`, `<TotalPrice>`,
+      `<ProductId>`, `<FulfillmentSku>`, `<WarehouseLocation>`, the `page` attribute) and added the
+      missing ones (`OrderID`, `CurrencyCode`, `LineItemID`, `ImageUrl`, `Address2`). Order
+      discounts now render as the negative `<Adjustment>` line the spec defines
+- [x] Store scoping added to the `UPDATE`s in `POST` and `PUT` (rule 4), a 512 KB body cap matching
+      the webhook receiver, and `validateShipmentNotification` no longer requires a tracking number —
+      "Mark as Shipped" sends none, and rejecting it made ShipStation retry forever
+- [x] Removed dead code that modelled the nonexistent nested shape: `buildAdvancedOrderXML`,
+      `buildMinimalOrderXML`, `parseOrderXML`, and `formatDateForShipStation`
+- [x] **33 unit tests** in `src/lib/shipstation/__tests__/customStore.test.ts`, asserting against
+      XML parsed back with xml2js rather than by substring. Suite: 829/829. Lint 0 errors
+      (99 pre-existing warnings), `npx tsc --noEmit` clean
+- [x] **Version bumped** to 2.4.3
+
+Rebased onto the Custom Store channel work already on this branch, which reframes the feed as the
+chosen order channel rather than legacy — that framing supersedes the "legacy, do not extend" note
+this change originally carried, and conforming the feed serves it. `scripts/verify-custom-store.mjs`
+from that commit is the acceptance harness for this implementation; `POST` was tightened to
+**require** `action=shipnotify` to satisfy its `ACTION-3` check, since an unlabelled POST marking
+orders shipped is a request that never claimed to be a ship notice. Its `KNOWN_XSD_GAPS` independently
+reaches the same conclusion this work did about `CurrencyCode`.
+
+Open:
+- [ ] **Not exercised against a live ShipStation account.** Everything above is verified by unit
+      tests and typecheck; no request has been made through a real connection. The local run and
+      end-to-end test are being set up separately
+- [ ] `<CurrencyCode>` appears in ShipStation's own GET example and field table but **not** in the
+      XSD they publish for validation. Emitted on the strength of their example; if a strict
+      validator ever rejects a document, this is the first element to suspect
+- [ ] `mapOrderStatusToShipStation` emits ShipStation's own vocabulary (`awaiting_payment`,
+      `awaiting_fulfillment`, `shipped`, `cancelled`) rather than our internal status names. The
+      spec expects *your* status, which the merchant maps in the connection form. Kept as-is because
+      changing it would silently break any existing merchant mapping, but it collapses
+      `confirmed`/`processing` and `delivered`/`shipped`, and offers nothing for On-Hold
+- [ ] A shipnotify for an order already `cancelled` still forces it to `shipped`
+
+## Custom Store credentials and Basic auth (2026-08-19)
+
+The verification loop reported `AUTH-5` — nothing could authenticate — which was accurate: the
+credential layer did not exist. A parallel session had meanwhile made the export and shipnotify
+handlers conform to the spec (`428c82c`), and left `auth.ts` untouched, so the two halves met here.
+
+- [x] **`src/lib/shipstation/customStoreAuth.ts`** replaces `auth.ts`, which is deleted. One
+      indexed lookup by username, then a constant-time comparison. The old module looped every
+      active integration row across every tenant and returned the first credential that matched
+      (P1-8); compared `shipstation_password_hash` against `Buffer.from(password).toString('base64')`,
+      which is an encoding and not a hash; and offered an `x-api-key` / `x-api-secret` scheme that
+      appears nowhere in ShipStation's contract. All three are gone
+- [x] The secret is **encrypted, not hashed** — 24 bytes from `crypto.randomBytes`, so the offline
+      brute-force attack bcrypt exists to slow does not apply, and encryption lets a merchant who
+      lost the value read it back instead of rotating and silently breaking a live connection
+- [x] **`GET`/`POST /api/admin/integrations/shipstation/custom-store`** issues and reads the
+      credentials, and returns the case-sensitive status strings ShipStation's connection form
+      needs (`awaiting_payment`, `awaiting_fulfillment`, `shipped`, `cancelled`, and a deliberate
+      blank for On-Hold, which we never emit). Derived from `mapOrderStatusToShipStation` rather
+      than hardcoded, so the screen cannot drift from the feed
+- [x] Toggling the feed is not rotating it. A merchant pausing imports keeps the credential they
+      already pasted into ShipStation
+- [x] `verify-custom-store.mjs` now provisions through that route, asserts the read-back matches
+      what was issued, and covers tenant isolation
+
+**A cross-tenant bug, caught by the loop within minutes of being written.**
+`buildCustomStoreUsername` truncated the store UUID to 16 hex characters. UUIDs minted in a batch
+commonly share a long prefix and differ only at the end, so seeded stores `...440001` and
+`...440002` both derived `store_650e8400e29b41d4`. Whichever store issued credentials second would
+have claimed the first store's username and then served its orders. The unique index added in
+migration 024 caught it as a constraint violation rather than a silent overwrite — which is exactly
+what that index is for, and is the second time on this branch that constraint has earned its place.
+The derivation now uses the whole id, with a regression test naming those two UUIDs.
+
+Verified locally against Postgres 16 and a running instance: **20/20 required checks**, XSD advisory
+passing with only the 27 documented `CurrencyCode` gaps tolerated. Store A sees 27 orders, store B
+sees 23, overlap 0; store A's secret against store B's username is 401. Suite 842/842 across 50
+suites, lint 0 errors, tsc clean.
+
+Open:
+- [ ] **Shipnotify is not yet covered end to end.** The verifier exercises action routing and
+      rejection, but does not POST a real `<ShipNotice>` and assert the order flips to shipped with
+      tracking recorded, because that mutates seeded data. It is the largest remaining hole in the
+      loop
+- [ ] The integrations UI card and the onboarding panel are still to build. The connection-form
+      recon — whether ShipStation takes username and password as separate fields or expects them in
+      the URL — is still open and gates the card's layout
+- [ ] `PUT /api/shipstation/orders` is not in the spec. It is now behind the same Basic auth rather
+      than the deleted module, but it is unreachable surface that mutates orders and should
+      probably be deleted
+- [ ] No end-to-end run against a real ShipStation account. That needs production: Vercel's
+      `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect
+
+## 2026-08-19
+
+### The whole stack, including Postgres, runs inside a Claude session container
+
+- [x] `scripts/setup-local-stack.sh` — starts the image's existing `postgresql-16` cluster,
+      creates the role password and database, then hands off to `dev-local --setup`. No Docker
+      (it is not available in the sandbox, and would be slower than the ~2s `pg_ctlcluster` start
+      even where it is)
+- [x] `.claude/hooks/session-start.sh` + `.claude/settings.json` run that script at session start,
+      synchronously — the e2e suite needs a seeded database, so a session that starts before the
+      seed lands just fails its first run
+- [x] `playwright.config.js` `webServer` uncommented, with `reuseExistingServer`. Every spec
+      navigates to localhost:3000 and the whole suite died with `ERR_CONNECTION_REFUSED` whenever
+      nobody had started `npm run dev` by hand — the single most common way to lose a run
+- [x] `dev-local.js` now writes `SHIPSTATION_ENCRYPTION_KEY` alongside `JWT_SECRET`. Credential
+      encryption fails closed, so without it every ShipStation path threw `ShipStationKeyError`
+      on a freshly set-up machine
+- [x] `scripts/connect-shipstation.js` (`npm run shipstation:connect`) — verifies a V2 key against
+      `GET /v2/warehouses`, then writes it AES-256-GCM-encrypted into `store_integrations`. The app
+      never reads a merchant key from the environment, so a key in `.env.local` connected nothing;
+      this is the headless equivalent of onboarding step 3
+- [x] The script carries its own copy of the `ssenc:v1:` construction because it is CommonJS and
+      `crypto.ts` is app TypeScript. `scriptCiphertext.test.ts` decrypts a script-written value
+      through `decryptSecret`, so the copies cannot drift silently
+- [x] Three e2e defects fixed, none of them environmental: the marketing CTA lands on
+      `/create-store?step=account` so anchoring the pattern to the path failed; the coupons error
+      text matched twice under `next dev` because the dev overlay repeats it; and the purchase
+      journey took the first product card, which is the deliberately sold-out one whenever
+      Postgres happens to order the seed's identical `created_at` values that way, and asserted
+      against a first-visit route on the 5s default timeout instead of the `COLD_COMPILE` budget
+      `marketing.spec.js` already had
+- [x] Chromium suite verified 134/134 from a genuinely cold start — no `.next`, no dev server,
+      Playwright starting everything — in 5.3min
+- [x] `docs/claude-session-setup.md` — runbook, measured timings, where ShipStation credentials go,
+      troubleshooting table
+- [x] **Version bumped** to 2.5.0
+
+**User Request**: "investigate how you can run this entire site end-to-end including database in your
+session/environment as efficiently as possible ... where would I place [ShipStation credentials]"
+
+Open:
+- [ ] **Egress policy blocks ShipStation.** The session proxy answers `403` to
+      `CONNECT api.shipstation.com:443` (and `ship.`/`www.shipstation.com`), so no credential can
+      reach ShipStation from a session until the environment's network policy allows those hosts.
+      `--no-verify` stores a key unproven; live syncs fail at the network layer, not at auth
+- [ ] `src/app/api/admin/integrations/route.ts:34` still writes credentials with a local
+      `encryptApiKey` that is bare base64, bypassing `saveCredentials` and AES-256-GCM entirely.
+      `decryptSecret` still reads those rows, so nothing is broken — but the admin page is writing
+      plaintext-equivalent credentials while every other path encrypts them. Route it through
+      `saveCredentials`
+- [ ] E2e specs share the dev server's database and leave rows behind. Fine today; a per-run
+      template database (`CREATE DATABASE ... TEMPLATE`) is the fix when it stops being fine
+## Custom Store setup card (2026-08-19)
+
+Confirmed with the live ShipStation form: username and password are **separate fields**, so the
+merchant copies three values plus five status strings — nine fields, any one of which fails
+silently if mistyped. The card is built around that, not around looking configured.
+
+- [x] **`src/components/admin/CustomStoreCard.tsx`**, rendered in the Shipping & Fulfillment
+      section of `/admin/integrations`. Every value has a copy button, including the five status
+      strings, which are case-sensitive and which nobody guesses
+- [x] The status strings come from the server, derived from `mapOrderStatusToShipStation` rather
+      than hardcoded in the component, so the screen cannot drift from what the feed emits.
+      On-Hold renders "Leave this field empty" — we never emit that status, and filling it would
+      leave ShipStation waiting for a value it never sees
+- [x] **The password is shown in full, not masked.** It exists to be pasted into another system.
+      Masking would force a merchant who lost it to rotate, and rotating silently breaks a live
+      connection until they notice imports stopped. Rotation is behind a confirmation that says so
+- [x] **Status is a timestamp, not a badge claim.** `lastPollAt` reads the most recent successful
+      authentication from `integration_logs`. ShipStation's polling cadence is not a fixed interval
+      (spec §4), so "connected" asserts something we cannot know; "Last request received 16 minutes
+      ago" is a fact. Before the first poll the card says so plainly and calls it normal
+- [x] An alert states that this connection carries orders and tracking **only**, and that products
+      and inventory need the separate API key — the two-channel split, in the one place a merchant
+      would otherwise be misled by a screen that looks complete
+
+Verified in a real browser (Playwright against the running app), not just in tests: card renders,
+credentials and status strings display, endpoint URL correct.
+
+Two defects found and fixed during that check, both invisible to the unit tests:
+- The six-step instruction list rendered **without numbers** — Tailwind's preflight resets `ol`
+  list-style, and an unnumbered procedure is worse than no list. Needs `listStyleType` explicitly
+- `color="blue"` on the informational alert violated `admin-palette.test.ts`, which permits only
+  green, orange/yellow and red as semantic hues and neutral otherwise. Now `ink`
+
+Open:
+- [ ] Shipnotify is still not covered end to end by the verifier — it tests action routing and
+      rejection but never POSTs a real `<ShipNotice>` and asserts the order flips to shipped
+- [ ] The onboarding panel is still to build
+- [ ] Nothing has been exercised against a real ShipStation account. That needs production:
+      Vercel's `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth
+      redirect rather than our XML
+
+## Lint warning cleanup — unused bindings, hard navigations, render purity (2026-08-19)
+
+A scoped pass over three warning categories only. Everything else the linter reports was left
+alone deliberately. **99 warnings → 75, 0 errors, typecheck clean, 843 tests still passing.**
+
+- [x] **`@typescript-eslint/no-unused-vars` (14 → 2).** Dropped an unused `inventoryService`
+      import from `src/app/api/admin/inventory/route.ts` (referenced only in a comment explaining
+      why the route stopped using it), the unused `test` binding and dead locators/helpers from the
+      Playwright specs, and the six `{ adminPage }` fixture params in `admin-products.spec.js` that
+      no test body reads. Those params are *removed*, not renamed `_adminPage`: Playwright resolves
+      fixtures by destructured name, so `_adminPage` would ask for a fixture that does not exist
+      and fail the test. The `beforeEach` still requests `adminPage`, so the sign-in still runs
+- [x] **`@next/next/no-location-assign-relative-destination` (5 → 0)**, all in
+      `src/app/admin/products/page.tsx`. Five `window.location.href = '/admin/…'` assignments in
+      click handlers — Add Product twice, and view/edit/edit-from-menu per row. None was a
+      deliberate hard reload (no sign-out, no session change), so every one was a full document
+      reload and bundle re-download in place of a client transition. Now `useRouter().push()`
+- [x] **`react-hooks/refs` (4 → 0).** `PreviewFrame` wrote its two latest-value refs during render;
+      they are written in a post-commit effect now, since everything that reads them does so from
+      the `postMessage` handler. Its `initialSrc` is read *during* render to fill the iframe `src`,
+      so it became lazily-pinned state rather than a ref. `ImageZoom` gated a static hover rule on
+      `containerRef.current`, which is null on first render — the zoom icon's hover reveal worked
+      or not depending on whether anything re-rendered the component after mount. Rule is now
+      always emitted and the ref, which existed only for that gate, is gone
+- [x] **`react-hooks/purity` (6 → 3).** `SaveStatus` and `DateControl` read `Date.now()` while
+      rendering; both now hold the clock in state, advanced by the existing 20s interval and by the
+      change handler respectively. `OrderConfirmation` used `useRef(Date.now())`, whose initial
+      expression is re-evaluated on every render — now a lazily-initialised state slot
+
+Left deliberately, with reasons:
+- [ ] `react-hooks/purity` in `src/components/store/sections/Countdown.tsx:31`. It is a Server
+      Component (the only consumer, `src/app/store/[storeSlug]/page.tsx`, is a server page using
+      `cookies()`), so the `Date.now()` runs once per server render. That is the documented design
+      — "dropped server-side when the merchant asked for it to hide". Silencing it would need the
+      instant threaded in from the caller
+- [ ] `react-hooks/purity` in `src/components/admin/ProductAdvancedSettings.tsx:184`. The
+      `Date.now()` is inside `addCustomField`, which is only ever reached from an `onClick`; the
+      rule fires because the function is declared in the component body and passed through a
+      conditional, not because it runs during render. No local fix that is not a lie
+- [ ] `react-hooks/purity` in `src/hooks/useAuth.tsx:332`. `useSession` has **no consumers
+      anywhere in the repo** — it is dead code. Making `timeUntilExpiry` pure means either changing
+      it from a value to a getter (a contract change) or adding a ticker nobody asked for. Deleting
+      the hook is probably the right answer and is a separate decision
+- [ ] `@typescript-eslint/no-unused-vars` in `scripts/dev-local.js:48` and `scripts/seed-demo.js:802`
+      — `scripts/` was out of scope for this pass

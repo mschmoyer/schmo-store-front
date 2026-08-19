@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { expect } = require('@playwright/test');
 const { adminAuthFixture } = require('../fixtures/admin-auth');
 const { AdminProductsPage } = require('../pages/admin/products-page');
 const { AdminProductEditPage } = require('../pages/admin/product-edit-page');
@@ -66,7 +66,7 @@ adminAuthFixture.describe('Admin Products Page - Core Functionality', () => {
     console.log('✓ Filter functionality works');
   });
 
-  adminAuthFixture('should handle sorting functionality', async ({ adminPage }) => {
+  adminAuthFixture('should handle sorting functionality', async () => {
     // Test sorting
     await productsPage.sortBy('Name');
     await productsPage.toggleSortOrder();
@@ -135,7 +135,7 @@ adminAuthFixture.describe('Admin Products Page - Core Functionality', () => {
     }
   });
 
-  adminAuthFixture('should handle pagination', async ({ adminPage }) => {
+  adminAuthFixture('should handle pagination', async () => {
     const hasPagination = await productsPage.hasPagination();
     
     if (hasPagination) {
@@ -169,7 +169,7 @@ adminAuthFixture.describe('Admin Products Page - Core Functionality', () => {
     }
   });
 
-  adminAuthFixture('should test all interactive elements', async ({ adminPage }) => {
+  adminAuthFixture('should test all interactive elements', async () => {
     const stats = await productsPage.testInteractiveElements();
     console.log(`✓ Interactive elements test - ${stats.accessible}/${stats.total} accessible`);
     
@@ -189,7 +189,7 @@ adminAuthFixture.describe('Admin Products Page - Product Edit Workflow', () => {
     await productsPage.waitForPageLoad();
   });
 
-  adminAuthFixture('should navigate to product edit page and test tabs', async ({ adminPage }) => {
+  adminAuthFixture('should navigate to product edit page and test tabs', async () => {
     const productCount = await productsPage.getProductCount();
     
     if (productCount > 0) {
@@ -234,7 +234,7 @@ adminAuthFixture.describe('Admin Products Page - Product Edit Workflow', () => {
     }
   });
 
-  adminAuthFixture('should test product analytics tab', async ({ adminPage }) => {
+  adminAuthFixture('should test product analytics tab', async () => {
     const productCount = await productsPage.getProductCount();
     
     if (productCount > 0) {
@@ -251,7 +251,7 @@ adminAuthFixture.describe('Admin Products Page - Product Edit Workflow', () => {
     }
   });
 
-  adminAuthFixture('should test product advanced settings tab', async ({ adminPage }) => {
+  adminAuthFixture('should test product advanced settings tab', async () => {
     const productCount = await productsPage.getProductCount();
     
     if (productCount > 0) {

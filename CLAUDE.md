@@ -1,115 +1,182 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) working in this repository.
 
-## Project Overview
+## Project overview
 
-This is a Next.js 15 storefront application using TypeScript, TailwindCSS, and Mantine UI components. The project follows the App Router pattern with components in `src/app/`.
+**RebelShops** (`rebel-shops`, production domain **rebelshops.com**) is a multi-tenant e-commerce
+platform: merchants create a storefront, connect their own ShipStation account for catalogue and
+fulfilment, and take payments through Stripe Connect. Next.js 16 App Router, TypeScript, PostgreSQL,
+Mantine v8, TailwindCSS v4. Deployed on Vercel.
 
-## Development Commands
+**Multi-tenant is the load-bearing fact.** Almost every table has a `store_id` and almost every
+query needs it in the `WHERE` clause. Merchant credentials live in the database per store, never in
+environment variables. A missing `store_id` predicate is a cross-tenant data leak, not a style nit.
 
-- `npm run dev` - Start development server with Turbopack
-- `npm run dev:log` - Start dev server with logging to `dev.log` file (run in separate terminal)
-- `npm run build` - Build production application
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
+## Where things are
 
-### Development Server Monitoring
+| Path | What |
+|---|---|
+| `src/app/` | App Router pages and `src/app/api/**/route.ts` handlers |
+| `src/components/` | React components, grouped by area with `index.ts` exports |
+| `src/lib/` | Domain logic: `shipstation/`, `stripe/`, `billing/`, `services/`, `auth/`, `database/` |
+| `database/migrations/` | Numbered SQL migrations, applied by `database/migrate.js` |
+| `scripts/` | `dev-local.js`, `seed-demo.js`, `shipstation-probe.mjs`, background sync |
+| `tests/e2e/` | Playwright specs; unit tests live in `__tests__/` beside their source |
+| `docs/` | Reference documentation (see index below) |
 
-When using `npm run dev:log` in a separate terminal, the server output is logged to `dev.log`. You can:
-- Read `dev.log` to check for errors and server status after each task completion
-- Monitor real-time output with the terminal running `dev:log`
-- Use `tail -f dev.log` in another terminal for live monitoring
+## Integration documentation
 
-**Important**: Always check `dev.log` after completing tasks to verify the server is running without errors.
+Two integrations carry most of the platform's risk and have their own instruction files. **Read the
+relevant one before touching that surface** — both encode defects that already reached production.
 
-## Architecture
+- **`src/lib/shipstation/CLAUDE.md`** — ShipStation V2 API, credentials and encryption, webhooks,
+  paged sync, order push, the full endpoint map, known gaps.
+  Applies to `src/lib/shipstation/**`, `src/app/api/shipstation/**`, `src/app/api/admin/sync/**`,
+  `src/app/api/cron/sync`, `src/app/api/jobs/process`, `src/app/api/onboarding/shipstation`.
+- **`src/lib/stripe/CLAUDE.md`** — the two money flows, Connect, webhooks and idempotency, the
+  intro offer, the full SDK and route map, known gaps.
+  Applies to `src/lib/stripe/**`, `src/lib/billing/**`, `src/app/api/checkout/**`,
+  `src/app/api/billing/**`, `src/app/api/connect/**`, `src/app/api/webhooks/stripe`.
 
-- **Framework**: Next.js 15 with App Router
-- **UI Components**: Mantine v8 with MantineProvider configured in layout
-- **Styling**: TailwindCSS v4 with custom CSS variables + Mantine CSS
-- **Icons**: @tabler/icons-react (use IconBuildingStore not IconStore)
-- **Typography**: Geist font family (sans and mono variants)
-- **Structure**: Standard App Router layout with `layout.tsx` and `page.tsx`
-- **Images**: Next.js Image component with SVG assets in `/public`
+Other reference docs:
 
-## Key Configuration
+| Doc | Covers |
+|---|---|
+| `docs/decision-log.md` | Development history, decisions, and the live TODO list. Update it as you work. |
+| `docs/payments.md` | Narrative companion to the Stripe instructions: offer design, cent arithmetic, Stripe CLI walkthrough |
+| `docs/deployment-vercel.md` | Vercel runbook |
+| `docs/design-system.md` | UI primitives and tokens |
+| `docs/storefront-theme-spec.md` | Theme engine and presets |
+| `docs/brand.md`, `docs/marketing-copy.md` | Voice and approved copy |
+| `docs/demo-data.md` | What `seed-demo.js` creates |
+| `docs/audits/` | Point-in-time critiques; the ShipStation audit is referenced by ID throughout that library |
+| `docs/shipstation-api-openapi.yaml` | The upstream V2 contract |
 
-- TypeScript configuration in `tsconfig.json`
-- ESLint with Next.js config
-- TailwindCSS with PostCSS processing
-- Next.js config supports standard options
+## Commands
 
-## Development Best Practices
+```bash
+npm run dev-local          # probe Postgres, write .env.local, migrate, seed, start. Idempotent.
+npm run dev-local -- --fresh   # also re-seed demo data
+npm run dev                # dev server (Turbopack)
+npm run dev:log            # dev server, tee'd to dev.log
+npm run build              # production build
+npm run lint               # ESLint
+npx tsc --noEmit           # typecheck — `next build` does NOT enforce types (see below)
 
-- **Components**: Create small, single-responsibility components
-- **Styling**: Separate CSS into dedicated `.module.css` files or use Tailwind classes
-- **Documentation**: Include JSDoc comments on all components with `@param` and `@returns`
-- **TypeScript**: Use strict typing, avoid `any` types
-- **File Organization**: Group related components in folders with index.ts exports
-- **Props**: Use interfaces for component props, destructure with defaults
-- **Hooks**: Extract custom logic into reusable hooks
-- **Testing**: Write unit tests for all components and utilities
-- **Performance**: Use React.memo, useMemo, useCallback for expensive operations
-- **Accessibility**: Include ARIA labels and semantic HTML
-- **Mocks**: Avoid using mocks unless explicitly requested; prefer real data where possible
+npm run test               # Jest unit tests
+npm run test:watch
+npm run test:ci            # with coverage, as CI runs it
+npm run test:e2e           # Playwright; starts (or reuses) a dev server on :3000 itself
+npm run test:e2e -- --project=chromium   # note the `--`
 
-## Testing
+npm run db:migrate         # apply migrations
+npm run db:status          # what is pending
+npm run db:seed-demo       # demo stores and users (idempotent)
 
-### Unit Tests
-- `npm run test` - Run Jest unit tests
-- `npm run test:watch` - Run Jest in watch mode
-- `npm run test:ci` - Run Jest with coverage for CI
+npm run shipstation:probe  # SHIPSTATION_API_KEY=<key> — live endpoint + response-shape check
+npm run sync:background    # ShipStation sync CLI entry point
+npm run snapshot:inventory # inventory snapshot CLI entry point
+```
 
-### End-to-End Tests
-- `npm run test:e2e` - Run Playwright e2e tests (headless)
-- `npm run test:e2e:headed` - Run Playwright tests with visible browser
-- `npm run test:e2e:debug` - Run Playwright tests in debug mode
-- `npm run test:e2e:ui` - Run Playwright tests with interactive UI
+**`next.config.ts` sets `typescript.ignoreBuildErrors`**, so `npm run build` will happily ship type
+errors. `npx tsc --noEmit` is the only thing that enforces them, and CI runs it as a separate job.
+Do not treat a green build as a green typecheck.
 
-**Important**: Playwright tests require the development server to be running (`npm run dev`) on localhost:3000.
+Sign-in for seeded data: `demo@schmostore.com` / `rebeldev`. Every seeded user shares that password.
 
-## Background Sync System
+Playwright starts the dev server itself (`webServer` in `playwright.config.js`) and reuses one that
+is already running, so `npm run test:e2e` no longer depends on remembering to start it. The
+database does have to exist first.
 
-The application includes an automated background sync system for ShipStation integration:
+## Running the site in a Claude session
 
-### Available Scripts
-- `npm run sync:background` - Run background sync (used by Heroku Scheduler)
-- `npm run sync:test` - Test sync manually
+The whole stack — Postgres included — runs inside the session container. No Docker, no hosted
+database.
 
-### Sync Operations
-The system automatically syncs the following data from ShipStation:
-1. **Warehouses** - Shipping locations and addresses
-2. **Inventory Warehouses** - Warehouse mappings
-3. **Inventory Locations** - Location mappings
-4. **Products** - Product information, SKUs, prices, images
-5. **Inventory** - Stock levels and quantities
+```bash
+npm run setup:local     # Postgres + migrations + demo data + .env.local (idempotent, ~5s warm)
+npm run dev             # http://localhost:3000
+npm run test:e2e -- --project=chromium
+```
 
-### Deployment (Vercel)
-1. Set `CRON_SECRET` and `SYNC_AUTH_TOKEN` in the Vercel project
-2. Migrations run from the Vercel build command (`node database/migrate.js`)
-3. Schedules are declared in `vercel.json` under `crons`
-4. See `/docs/deployment-vercel.md` for the full runbook
-5. Production domain: rebelshops.com
+`.claude/hooks/session-start.sh` runs `setup:local` at session start, so this is usually already
+done. Only Chromium exists in a session container — Firefox and WebKit projects cannot run.
 
-### Monitoring
-- API endpoint: `/api/admin/sync/status` - View sync history and statistics
-- Database table: `sync_logs` - Detailed sync results
-- Scheduled trigger: Vercel Cron calls `GET /api/cron/sync` with `Authorization: Bearer $CRON_SECRET`
-  (the old `/api/admin/sync/background` route was removed — it accepted an unauthenticated
-  `x-heroku-scheduler: true` header as proof of identity)
+If Postgres is not listening, the cluster is simply stopped: `pg_ctlcluster 16 main start`, or just
+re-run `npm run setup:local`. Node scripts outside Next.js (`database/migrate.js`, `psql`) do not
+read `.env.local`; export `DATABASE_URL` for those.
 
-## Completing a Task
-When completing a task, follow these steps:
-- Run lint: `npm run lint`
-- Run tsc
-- Run unit tests: `npm run test`
-- Run Playwright e2e tests: `npm run test:e2e --project=chromium` on related code
-- Check `dev.log` for server status and errors
-- Update `/docs/decision-log.md` with any TODO items, marking them off when completed`
-- Check if the root `README.md` file needs updates and include relevant changes
-- Increment the version number in `package.json` using semantic versioning (major.minor.patch) if the task affects application functionality. For small fixes, increment patch. For medium feature adds, increment minor. Do not change major unless specified. 
+Where ShipStation credentials go, the egress policy that currently blocks reaching ShipStation from
+a session, and the troubleshooting table are in `/docs/claude-session-setup.md`. Read it before
+wiring up ShipStation work.
 
+## Environment
+
+The app reads **`.env.local`**, not `.env`. `.env.example` documents every variable with a
+`[required]` / `[optional]` tag — keep it in sync when you add one.
+
+`DATABASE_URL` is the only variable with no working fallback. Everything else degrades: each
+integration that is unconfigured must render a labelled "not configured" state rather than crash,
+and CI's build job runs with no Stripe or ShipStation keys precisely to keep that true.
+
+One variable fails closed rather than degrading: **`SHIPSTATION_ENCRYPTION_KEY`**. Without it every
+ShipStation credential read throws. If an environment's ShipStation integration is silently doing
+nothing, check this first.
+
+## Working rules
+
+- **Store scope.** Every query touching tenant data carries `store_id`. No exceptions.
+- **Money.** Integer cents everywhere in application code; convert at the boundary with
+  `src/lib/billing/money.ts`. Never float arithmetic on money. (ShipStation V2 is the exception —
+  its money fields are decimal dollars, and that conversion belongs in the ShipStation library.)
+- **Secrets.** Never log an API key, webhook secret, or a fragment of one — not a prefix, not the
+  last four characters. Mask for display.
+- **Server truth.** Prices, totals and entitlements are computed server-side from the database. A
+  value a client sent is input to validate, never a fact.
+- **Honest results.** Never return `success: true` for work that wrote nothing, and never claim a
+  connection test passed without a live call. Both have shipped here before.
+- **Graceful degradation.** A route whose integration is unconfigured returns a labelled state; it
+  does not throw at import time or 500.
+- **TypeScript.** Strict. No `any`.
+- **Components.** Small and single-responsibility. Props as interfaces, destructured with defaults.
+  Extract reusable logic into hooks. `React.memo` / `useMemo` / `useCallback` for genuinely
+  expensive work, not reflexively.
+- **Styling.** Tailwind classes or a dedicated `.module.css`. Not inline style objects.
+- **Icons.** `@tabler/icons-react`. Use `IconBuildingStore`, not `IconStore`.
+- **Documentation.** JSDoc on every exported function and component, with `@param` and `@returns`.
+  This codebase's file-header comments explain *why* a design is the way it is; match that.
+- **Accessibility.** Semantic HTML and ARIA labels.
+- **Mocks.** Avoid unless asked. Prefer real data. Where a network boundary is injectable
+  (`fetchImpl`, `sleepImpl`, …), inject it and test the real logic rather than mocking the module.
+
+## Development server monitoring
+
+`npm run dev:log` tees output to `dev.log`. Read it after a task to confirm the server is running
+clean; `tail -f dev.log` for live monitoring.
+
+## Deployment
+
+Vercel, region `iad1`. Migrations run from the build command in `vercel.json`
+(`node database/migrate.js && npm run build`), so a broken migration is a failed deploy rather than
+a broken production. Cron schedules are declared in `vercel.json` under `crons`; per-route
+`maxDuration` and memory live in the same file. `docs/deployment-vercel.md` is the full runbook.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit tests, a migrations job that proves
+re-running is a no-op and the seed is idempotent, and a production build with no integration keys.
+
+## Completing a task
+
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm run test`
+- `npm run test:e2e -- --project=chromium` for specs related to what you changed
+- Check `dev.log` for errors
+- Update `docs/decision-log.md`: add TODO items, tick off what you finished
+- Update `README.md` if anything user-facing changed
+- Update `.env.example` if you added or changed a variable
+- Bump `version` in `package.json` (semver) when the change affects application behaviour — patch
+  for a fix, minor for a feature. Never major unless asked.
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

@@ -252,6 +252,11 @@ function ensureEnvFile(databaseUrl) {
   const defaults = {
     DATABASE_URL: databaseUrl,
     JWT_SECRET: require('crypto').randomBytes(32).toString('hex'),
+    // Credential encryption fails closed: without this key every ShipStation
+    // connect, read and sync path throws ShipStationKeyError. A local-only
+    // random value is correct — it protects a database nobody else can reach,
+    // and rotating it only invalidates locally stored demo credentials.
+    SHIPSTATION_ENCRYPTION_KEY: require('crypto').randomBytes(32).toString('hex'),
     NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
   };
 
