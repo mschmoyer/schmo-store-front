@@ -1784,3 +1784,49 @@ Open:
 - [ ] Nothing has been exercised against a real ShipStation account. That needs production:
       Vercel's `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth
       redirect rather than our XML
+
+## Lint warning cleanup — unused bindings, hard navigations, render purity (2026-08-19)
+
+A scoped pass over three warning categories only. Everything else the linter reports was left
+alone deliberately. **99 warnings → 75, 0 errors, typecheck clean, 843 tests still passing.**
+
+- [x] **`@typescript-eslint/no-unused-vars` (14 → 2).** Dropped an unused `inventoryService`
+      import from `src/app/api/admin/inventory/route.ts` (referenced only in a comment explaining
+      why the route stopped using it), the unused `test` binding and dead locators/helpers from the
+      Playwright specs, and the six `{ adminPage }` fixture params in `admin-products.spec.js` that
+      no test body reads. Those params are *removed*, not renamed `_adminPage`: Playwright resolves
+      fixtures by destructured name, so `_adminPage` would ask for a fixture that does not exist
+      and fail the test. The `beforeEach` still requests `adminPage`, so the sign-in still runs
+- [x] **`@next/next/no-location-assign-relative-destination` (5 → 0)**, all in
+      `src/app/admin/products/page.tsx`. Five `window.location.href = '/admin/…'` assignments in
+      click handlers — Add Product twice, and view/edit/edit-from-menu per row. None was a
+      deliberate hard reload (no sign-out, no session change), so every one was a full document
+      reload and bundle re-download in place of a client transition. Now `useRouter().push()`
+- [x] **`react-hooks/refs` (4 → 0).** `PreviewFrame` wrote its two latest-value refs during render;
+      they are written in a post-commit effect now, since everything that reads them does so from
+      the `postMessage` handler. Its `initialSrc` is read *during* render to fill the iframe `src`,
+      so it became lazily-pinned state rather than a ref. `ImageZoom` gated a static hover rule on
+      `containerRef.current`, which is null on first render — the zoom icon's hover reveal worked
+      or not depending on whether anything re-rendered the component after mount. Rule is now
+      always emitted and the ref, which existed only for that gate, is gone
+- [x] **`react-hooks/purity` (6 → 3).** `SaveStatus` and `DateControl` read `Date.now()` while
+      rendering; both now hold the clock in state, advanced by the existing 20s interval and by the
+      change handler respectively. `OrderConfirmation` used `useRef(Date.now())`, whose initial
+      expression is re-evaluated on every render — now a lazily-initialised state slot
+
+Left deliberately, with reasons:
+- [ ] `react-hooks/purity` in `src/components/store/sections/Countdown.tsx:31`. It is a Server
+      Component (the only consumer, `src/app/store/[storeSlug]/page.tsx`, is a server page using
+      `cookies()`), so the `Date.now()` runs once per server render. That is the documented design
+      — "dropped server-side when the merchant asked for it to hide". Silencing it would need the
+      instant threaded in from the caller
+- [ ] `react-hooks/purity` in `src/components/admin/ProductAdvancedSettings.tsx:184`. The
+      `Date.now()` is inside `addCustomField`, which is only ever reached from an `onClick`; the
+      rule fires because the function is declared in the component body and passed through a
+      conditional, not because it runs during render. No local fix that is not a lie
+- [ ] `react-hooks/purity` in `src/hooks/useAuth.tsx:332`. `useSession` has **no consumers
+      anywhere in the repo** — it is dead code. Making `timeUntilExpiry` pure means either changing
+      it from a value to a getter (a contract change) or adding a ticker nobody asked for. Deleting
+      the hook is probably the right answer and is a separate decision
+- [ ] `@typescript-eslint/no-unused-vars` in `scripts/dev-local.js:48` and `scripts/seed-demo.js:802`
+      — `scripts/` was out of scope for this pass

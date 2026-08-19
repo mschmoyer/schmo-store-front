@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Box, Image, Modal, CloseButton, ActionIcon } from '@mantine/core';
 import { IconZoomIn, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { useIntersection } from '@mantine/hooks';
@@ -32,7 +32,6 @@ export function ImageZoom({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [zoomOrigin, setZoomOrigin] = useState({ x: 50, y: 50 });
-  const containerRef = useRef<HTMLDivElement>(null);
   const { ref: intersectionRef, entry } = useIntersection({
     threshold: 0.1,
   });
@@ -86,10 +85,7 @@ export function ImageZoom({
   return (
     <>
       <Box
-        ref={(node) => {
-          containerRef.current = node;
-          intersectionRef(node);
-        }}
+        ref={intersectionRef}
         style={{
           position: 'relative',
           cursor: 'zoom-in',
@@ -141,16 +137,21 @@ export function ImageZoom({
           </Box>
         )}
         
+        {/* The hover rule used to be gated on the container ref's `current`,
+            which is null on the first render and only non-null afterwards — so
+            whether the zoom icon revealed itself on hover depended on whether
+            anything happened to re-render this component after mount. Reading a
+            ref while rendering is what made that unpredictable; the rule is
+            static CSS and is now simply always emitted. The ref existed only to
+            feed that gate, so it is gone with it. */}
         <style jsx>{`
           .zoom-icon {
             opacity: 0;
           }
-          
-          ${containerRef.current ? `
-            div:hover .zoom-icon {
-              opacity: 1;
-            }
-          ` : ''}
+
+          div:hover .zoom-icon {
+            opacity: 1;
+          }
         `}</style>
       </Box>
       

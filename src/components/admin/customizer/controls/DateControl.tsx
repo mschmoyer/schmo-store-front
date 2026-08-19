@@ -67,9 +67,18 @@ export function DateControl({
   notice,
   disabled,
 }: SettingControlProps): React.ReactElement {
+  /*
+   * The clock is held in state instead of being read with `Date.now()` during
+   * render: a render-time read makes the "already passed" notice depend on
+   * which unrelated re-render happened to run it. It is re-read in the change
+   * handler below, so the notice is still resolved against the current time
+   * every time the merchant touches the value — the only moment it can flip
+   * as a result of something they did.
+   */
+  const [now, setNow] = React.useState(() => Date.now());
   const local = isoToLocalInput(value);
   const instant = local ? new Date(local) : null;
-  const past = instant !== null && instant.getTime() <= Date.now();
+  const past = instant !== null && instant.getTime() <= now;
 
   return (
     <div className={styles.field}>
@@ -81,7 +90,10 @@ export function DateControl({
         value={local}
         disabled={disabled}
         size="sm"
-        onChange={(event) => onChange(localInputToIso(event.currentTarget.value))}
+        onChange={(event) => {
+          setNow(Date.now());
+          onChange(localInputToIso(event.currentTarget.value));
+        }}
       />
       <span className={styles.help} data-testid={`${controlId}-resolved`}>
         {local === ''

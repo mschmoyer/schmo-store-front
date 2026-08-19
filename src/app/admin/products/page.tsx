@@ -47,6 +47,7 @@ import {
   IconShoppingCart,
   IconTicket
 } from '@tabler/icons-react';
+import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Product, ProductFilters } from '@/types/database';
 import { EmptyState, Price } from '@/components/ui';
@@ -117,6 +118,7 @@ const STOCK_STATUS_LABELS = {
  * @returns JSX.Element
  */
 export default function ProductsAdminPage() {
+  const router = useRouter();
   const { session, isAuthenticated } = useAdmin();
   
   // State management
@@ -651,10 +653,7 @@ export default function ProductsAdminPage() {
           
           <Button 
             leftSection={<IconPlus size={16} />}
-            onClick={() => {
-              // Navigate to add product page
-              window.location.href = '/admin/products/add';
-            }}
+            onClick={() => router.push('/admin/products/add')}
           >
             Add Product
           </Button>
@@ -933,9 +932,7 @@ export default function ProductsAdminPage() {
                         variant="light"
                         size="md"
                         aria-label={`View ${product.name}`}
-                        onClick={() => {
-                          window.location.href = `/admin/products/${product.id}`;
-                        }}
+                        onClick={() => router.push(`/admin/products/${product.id}`)}
                       >
                         <IconEye size={18} />
                       </ActionIcon>
@@ -946,9 +943,7 @@ export default function ProductsAdminPage() {
                         variant="light"
                         size="md"
                         aria-label={`Edit ${product.name}`}
-                        onClick={() => {
-                          window.location.href = `/admin/products/${product.id}`;
-                        }}
+                        onClick={() => router.push(`/admin/products/${product.id}`)}
                       >
                         <IconEdit size={18} />
                       </ActionIcon>
@@ -970,9 +965,7 @@ export default function ProductsAdminPage() {
                         </Menu.Item>
                         <Menu.Item
                           leftSection={<IconEdit size={16} />}
-                          onClick={() => {
-                            window.location.href = `/admin/products/${product.id}`;
-                          }}
+                          onClick={() => router.push(`/admin/products/${product.id}`)}
                         >
                           Edit Product
                         </Menu.Item>
@@ -1026,9 +1019,7 @@ export default function ProductsAdminPage() {
                 ) : (
                   <Button
                     leftSection={<IconPlus size={16} />}
-                    onClick={() => {
-                      window.location.href = '/admin/products/add';
-                    }}
+                    onClick={() => router.push('/admin/products/add')}
                   >
                     Add your first product
                   </Button>

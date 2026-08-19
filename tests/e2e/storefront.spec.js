@@ -81,45 +81,6 @@ function contrast(a, b) {
   return (high + 0.05) / (low + 0.05);
 }
 
-/**
- * Resolve a control's rendered ink and ground to opaque sRGB.
- *
- * Runs in the page and composites through a 1x1 canvas rather than parsing the
- * computed string, because a themed button's fill can be a `color-mix()` or an
- * `oklab()` and its ground can be three transparent ancestors deep. This is the
- * colour a shopper's eye receives, which is the only one worth asserting on.
- *
- * @param {import('@playwright/test').Locator} locator - The control
- * @returns {Promise<{fg: number[], bg: number[], fgCss: string}>} Composited colours
- */
-async function inkAndGround(locator) {
-  return locator.evaluate((el) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const paint = (color, backdrop) => {
-      ctx.clearRect(0, 0, 1, 1);
-      ctx.fillStyle = backdrop;
-      ctx.fillRect(0, 0, 1, 1);
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, 1, 1);
-      const data = ctx.getImageData(0, 0, 1, 1).data;
-      return [data[0], data[1], data[2]];
-    };
-
-    const chain = [];
-    for (let node = el; node; node = node.parentElement) {
-      chain.unshift(getComputedStyle(node).backgroundColor);
-    }
-    let bg = [255, 255, 255];
-    for (const layer of chain) bg = paint(layer, `rgb(${bg.join(',')})`);
-
-    const style = getComputedStyle(el);
-    return { fg: paint(style.color, `rgb(${bg.join(',')})`), bg, fgCss: style.color };
-  });
-}
-
 /* ------------------------------------------------------------------ *
  * The purchase journey
  * ------------------------------------------------------------------ */
