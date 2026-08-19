@@ -334,8 +334,8 @@ CTA: `Read the build log`
 — do not link to a stub.]`
 
 **3. Nothing to lose**
-Month to month. No contract. Cancel in the admin. Your ShipStation account is untouched, because
-it's the source of truth and we only ever read from it.
+Month to month. No contract. Cancel in the admin. ShipStation stays the source of truth for your
+catalogue — we read it, never rewrite it. The only thing we send is the orders you sell.
 CTA: `See pricing`
 
 **4. Who we're not for**
@@ -773,7 +773,7 @@ exclamation mark.
 | Where | Copy |
 |---|---|
 | Step 3, above the key field | Generate a key in ShipStation under Settings → Account → API Settings. |
-| Step 3, under the key field | We only ever read your catalog. We don't change anything in ShipStation. `[GATED: revise once the order write-back path is live — at that point say exactly what we write.]` |
+| Step 3, under the key field | Setup only reads. Products, SKUs, prices, images and stock levels come in, and nothing in ShipStation changes while you set up. Once your store is live, this same key sends each paid order over for fulfilment. `[Gate lifted 2026-08-19: the write-back path is live — paid orders are pushed as `POST /v2/shipments`. Say what we write, not that we never write.]` |
 | Step 3, while testing | Testing your connection… |
 | Step 3, on success | Connected. We can see your ShipStation account. |
 | Step 4, while syncing | Syncing your catalog. {n} products so far. |
