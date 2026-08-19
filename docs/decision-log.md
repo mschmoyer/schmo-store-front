@@ -1390,3 +1390,30 @@ Open:
 - [ ] `destroySession()` is a no-op, so a stolen token stays valid until it expires. Logout is now
       correct for the browser, but there is still no server-side revocation (jti blacklist, or
       short-lived tokens plus refresh)
+
+## 2026-08-19
+
+### Documented the ShipStation Custom Store spec
+
+- [x] Add `docs/shipstation-custom-store.md` — the ShipStation Custom Store Development Guide
+      transcribed as a reference doc (GET export contract, shipnotify POST contract, connection
+      form fields, full order + ShipNotice field tables, validation XSD) - 2026-08-19
+- [x] Map the spec to our existing implementation (`/api/shipstation/orders` route,
+      `src/lib/shipstation/{auth,xmlBuilder,xmlParser,utils}.ts`) so the doc points at code rather
+      than reading as greenfield - 2026-08-19
+
+**User Request**: "Can you write up this shipstation custom store implementation guide as a
+markdown file and tuck it in our docs folder? We might need this to build against later."
+
+**Decision**: Kept it as a faithful transcription with our code map appended, rather than
+rewriting it into a how-to. The value is having the exact field constraints and XSD available
+offline when changing the export/shipnotify code. Docs-only, so no version bump.
+
+Open:
+- [ ] The order export filters out cancelled and refunded orders
+      (`AND o.status NOT IN ('cancelled', 'refunded')` in `src/app/api/shipstation/orders/route.ts`),
+      but the spec says to return every order modified in the window regardless of status. An order
+      cancelled after import never reappears in an export, so ShipStation never learns it was
+      cancelled. Confirm whether that is intentional
+- [ ] Export errors return JSON (`formatShipStationError`) while successes return XML. ShipStation
+      expects XML from the export endpoint — check whether it surfaces these errors usefully
