@@ -6,9 +6,27 @@ Scope: `src/lib/shipstation/**`, `src/app/api/shipstation/**`, `src/app/api/admi
 
 Read this before changing anything in that surface. Most of what looks like an obvious improvement
 here was already tried and reverted — see `docs/audits/shipstation-audit.md` for the findings each
-rule below closes, and `docs/decision-log.md` for what changed after. For the legacy Custom Store
-XML feed, `docs/shipstation-custom-store.md` holds the wire format ShipStation validates against —
-consult it before touching the XML, but note the module map still says do not extend that feed.
+rule below closes, and `docs/decision-log.md` for what changed after.
+
+## Two channels, split by capability
+
+There are two ShipStation integrations in this directory. They are **not** competing
+implementations of the same thing, and neither is being removed. Every exported function belongs to
+exactly one, marked with a `@channel` tag in its JSDoc.
+
+| Channel | Owns | Direction | Tag |
+|---|---|---|---|
+| **Custom Store** | Orders out, shipment notifications in | ShipStation pulls from us over XML and posts ship notices back | `@channel custom-store` |
+| **API v2** | Products, inventory, warehouses | We pull from ShipStation's REST API | `@channel api-v2` |
+
+Custom Store has no catalogue capability, and V2 has no real order-creation resource, so a merchant
+who wants catalogue import *and* fulfilment needs **both** sets of credentials. Saying that plainly
+in the UI is a product requirement, not a nicety.
+
+**Orders are Custom Store.** `docs/shipstation-custom-store.md` is the contract — export and
+shipnotify shapes, field tables, and the XSD ShipStation validates against. Read it before touching
+`/api/shipstation/orders`, `xmlBuilder.ts`, `xmlParser.ts` or Custom Store auth. The V2 order-push
+path (`orderPush.ts`) stays in the tree for now, unwired and tagged, rather than being deleted.
 
 ## Rules
 
@@ -84,13 +102,13 @@ Shipments in ──────────────────────�
 | `sync.ts` | One page of one operation, written in one transaction. `SYNC_OPERATIONS` dependency order. | Loop pages here. Reorder operations (`products` must precede `inventory`). |
 | `syncOrchestrator.ts` | Turning "sync this store" into chained `job_queue` rows; `sync_runs` cursor. | Build a second queue. `jobQueueService` already is one. |
 | `manualSync.ts` | Operator-triggered sync that finishes in its own request. `PAGE_CAP`, `DEFAULT_BUDGET_MS`. | Remove the bounds. Fork the writers — it must call `runSyncPage`. |
-| `orderPush.ts` | Queued push of a paid order to `/v2/shipments`. `fulfillment_sync_status`. | Push inline from a checkout path. |
+| `orderPush.ts` | **API v2** queued order push. Retained but unwired — orders go out through Custom Store. | Wire this up. Orders are Custom Store now. |
 | `webhookSecurity.ts` | Inbound auth: path token → store, shared-secret header, optional body HMAC. | Trust anything in the payload to identify the tenant. |
 | `webhookRegistration.ts` | `POST`/`DELETE /v2/environment/webhooks`. Idempotent by URL. | Register without the secret header. |
 | `webhookPayload.ts` | Parsing/validating the inbound notification body. | Assume fields exist. |
 | `v2Api.ts` | Legacy shipment creation + credential read. **Deprecated**, see Known gaps. | Add call sites. |
-| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | Legacy Custom Store XML feed (`/api/shipstation/orders`). Wire format: `docs/shipstation-custom-store.md`. | Extend. This is the old integration model. |
-| `auth.ts` | Basic-auth / API-key auth for the legacy Custom Store feed. | Use for V2 work. |
+| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | **Custom Store** order export and ship-notice XML. | Diverge from `docs/shipstation-custom-store.md`. Its XSD is the contract. |
+| `customStoreAuth.ts` | **Custom Store** Basic auth: username resolves the store, secret compared in constant time. | Scan every tenant's row looking for a match. Accept an auth scheme the spec does not define. |
 | `utils.ts` | Date, status-map, money and validation helpers. | Put network or DB code here. |
 
 ## Outbound API surface (ShipStation V2)
@@ -136,9 +154,17 @@ cannot catch.
 
 ## Credentials
 
-One credential: the **V2 API key** the merchant pastes in from ShipStation. It is what sync, order
-push and webhook registration all use. The legacy Custom-Store Basic-Auth pair is no longer
-generated or displayed — two credential systems is what produced P0-1.
+**Two credentials, one per channel.** They are not interchangeable and a merchant generally needs
+both:
+
+| Channel | Credential | Who issues it | Stored as |
+|---|---|---|---|
+| API v2 | API key the merchant pastes in from ShipStation | ShipStation | `store_integrations.api_key_encrypted` |
+| Custom Store | Username + secret that **ShipStation sends to us** as Basic auth | We generate them | `shipstation_username` + `custom_store_password_encrypted` |
+
+The rule P0-1 established still holds and applies to both: **never show a merchant a credential the
+server will not accept.** The old screen generated a pair client-side with `Math.random()` that the
+server never stored. Whatever the UI displays must be exactly what was persisted.
 
 Storage is `store_integrations.api_key_encrypted`, AES-256-GCM under `SHIPSTATION_ENCRYPTION_KEY`:
 

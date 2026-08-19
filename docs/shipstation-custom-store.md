@@ -9,12 +9,12 @@ shipment/tracking updates back to it.
 > Advanced Integration Methods). Transcribed here for offline reference; verify against the live
 > article before shipping an implementation.
 
-**Status in this repo:** we already have a Custom Store endpoint, and it is **legacy**.
-`src/lib/shipstation/CLAUDE.md` marks the XML feed as the old integration model and says not to
-extend it — new work goes through the ShipStation V2 API. Treat this doc as the reference for
-understanding and maintaining `/api/shipstation/orders`, not as a green light to build features on
-it. See [How this maps to our implementation](#how-this-maps-to-our-implementation) at the bottom
-for the spec-to-code map.
+**Status in this repo:** the Custom Store is **the order channel we are building on**. As of
+2026-08-19 orders go out and shipment notices come back through this feed; the ShipStation V2 API
+keeps catalogue, inventory and warehouses. See `src/lib/shipstation/CLAUDE.md` § "Two channels" for
+the split, and [How this maps to our implementation](#how-this-maps-to-our-implementation) at the
+bottom for the spec-to-code map. **This document is the contract** — where our implementation and
+this spec disagree, the spec wins.
 
 ---
 
@@ -567,11 +567,8 @@ its own ShipNotice example; they carry back the custom field values sent on expo
 
 We already have a Custom Store endpoint. This section is the map from spec to code.
 
-> **This surface is legacy.** `src/lib/shipstation/CLAUDE.md` lists
-> `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` under "do not: extend — this is the old
-> integration model", and `auth.ts` under "do not use for V2 work". The observations below are
-> recorded so the existing behaviour is understood, not as a backlog. Before acting on any of
-> them, settle the prior question of whether the feed is being kept at all.
+> **This surface is the chosen order channel.** The deviations listed below are a live backlog,
+> not trivia: each one is a place our implementation contradicts the spec above, and the spec wins.
 
 | Spec concept | Where it lives |
 |---|---|
