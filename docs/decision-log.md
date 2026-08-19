@@ -1474,3 +1474,35 @@ Open — found while writing the docs, not fixed here:
       `Buffer.from(..., 'base64')`, bypassing `credentials.ts` (same defect class as P0-9)
 - [ ] `scripts/sync-{products,inventory,inventory-warehouses,inventory-locations}.ts` have no npm
       script and no caller. Either wire them up or delete them
+
+## ShipStation Custom Store spec, transcribed (2026-08-19)
+
+**User request**: "Can you write up this shipstation custom store implementation guide as a
+markdown file and tuck it in our docs folder? We might need this to build against later."
+
+- [x] **`docs/shipstation-custom-store.md`** — the ShipStation Custom Store Development Guide
+      transcribed as a reference doc: the GET export contract (URL params, the last-modified
+      window, CDATA rules, paging via the `pages` attribute), the shipnotify POST contract, the
+      connection form fields and their case-sensitive status mapping, the full order and
+      ShipNotice field tables with XPath/type/length, and the validation XSD
+- [x] Where the published article contradicts its own XSD — `Option` max occurrence (10 vs 100),
+      `SKU` length (50 vs 100), whether `OrderID` is required — the doc records the disagreement
+      instead of silently picking one
+- [x] Mapped the spec to the code that already implements it, rather than letting it read as
+      greenfield: `src/app/api/shipstation/orders/route.ts` and
+      `src/lib/shipstation/{auth,xmlBuilder,xmlParser,xmlTypes,utils}.ts`. Cross-referenced from
+      `src/lib/shipstation/CLAUDE.md`, which governs that directory
+
+Kept as a faithful transcription with our code map appended rather than rewritten into a how-to.
+The value is having the exact field constraints and XSD to hand when changing the export or
+shipnotify path. Docs-only, no version bump.
+
+Open — found while writing the map, not fixed here:
+- [ ] **The order export drops cancelled and refunded orders.**
+      `src/app/api/shipstation/orders/route.ts` filters `AND o.status NOT IN ('cancelled',
+      'refunded')`, but the spec says to return every order modified in the window *regardless of
+      status*. An order cancelled after import never reappears in an export, so ShipStation never
+      learns it was cancelled. Confirm whether that is intentional
+- [ ] Export errors return JSON (`formatShipStationError`) while successes return
+      `application/xml`. ShipStation expects XML from the export endpoint — check whether it
+      surfaces these errors usefully or just reports a parse failure

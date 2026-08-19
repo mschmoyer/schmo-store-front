@@ -6,7 +6,9 @@ Scope: `src/lib/shipstation/**`, `src/app/api/shipstation/**`, `src/app/api/admi
 
 Read this before changing anything in that surface. Most of what looks like an obvious improvement
 here was already tried and reverted — see `docs/audits/shipstation-audit.md` for the findings each
-rule below closes, and `docs/decision-log.md` for what changed after.
+rule below closes, and `docs/decision-log.md` for what changed after. For the legacy Custom Store
+XML feed, `docs/shipstation-custom-store.md` holds the wire format ShipStation validates against —
+consult it before touching the XML, but note the module map still says do not extend that feed.
 
 ## Rules
 
@@ -87,7 +89,7 @@ Shipments in ──────────────────────�
 | `webhookRegistration.ts` | `POST`/`DELETE /v2/environment/webhooks`. Idempotent by URL. | Register without the secret header. |
 | `webhookPayload.ts` | Parsing/validating the inbound notification body. | Assume fields exist. |
 | `v2Api.ts` | Legacy shipment creation + credential read. **Deprecated**, see Known gaps. | Add call sites. |
-| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | Legacy Custom Store XML feed (`/api/shipstation/orders`). | Extend. This is the old integration model. |
+| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | Legacy Custom Store XML feed (`/api/shipstation/orders`). Wire format: `docs/shipstation-custom-store.md`. | Extend. This is the old integration model. |
 | `auth.ts` | Basic-auth / API-key auth for the legacy Custom Store feed. | Use for V2 work. |
 | `utils.ts` | Date, status-map, money and validation helpers. | Put network or DB code here. |
 
@@ -120,7 +122,7 @@ cannot catch.
 |---|---|---|---|
 | POST | `/api/shipstation/webhook/[storeToken]` | Path token + `x-rebelshops-webhook-secret`, optional `x-shipstation-signature` HMAC | The live webhook receiver. 401 before the body is parsed. Body capped at 512 KB. |
 | POST/GET | `/api/shipstation/webhook` | none | **Retired.** Returns 410 with an explanation. Do not revive; it could not identify a tenant (P0-7). |
-| GET/POST/PUT | `/api/shipstation/orders` | `auth.authenticateShipStationMulti` (Basic or API key) | Legacy Custom Store XML feed: order export and shipment notification. |
+| GET/POST/PUT | `/api/shipstation/orders` | `auth.authenticateShipStationMulti` (Basic or API key) | Legacy Custom Store XML feed: order export and shipment notification. Wire format is specified in `docs/shipstation-custom-store.md`. |
 | GET/POST/DELETE | `/api/admin/integrations/shipstation` | merchant session | Read masked config / save key + register webhook / disconnect. Returns only what the server will honour — never a credential it invented (P0-1). |
 | POST | `/api/admin/integrations/shipstation/test` | merchant session | Live `GET /v2/warehouses` against the submitted key, else the stored one. Routed through `shipStationFetch`. |
 | POST | `/api/admin/integrations/test` | merchant session | Generic tester (`{ integrationType: 'shipstation' \| 'stripe' }`). Also hits `/v2/warehouses`, but with a raw `fetch` — see Known gaps. |

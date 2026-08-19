@@ -271,6 +271,7 @@ docs/
 ├── brand.md, marketing-copy.md  # Voice and approved copy
 ├── demo-data.md                 # What the demo seed creates
 ├── shipstation-api-openapi.yaml # Upstream V2 contract
+├── shipstation-custom-store.md  # Legacy Custom Store XML wire format
 └── audits/                      # Point-in-time critiques
 ```
 
