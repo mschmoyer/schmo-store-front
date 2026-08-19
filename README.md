@@ -1,6 +1,12 @@
 # Schmo Store Front
 
-A modern e-commerce storefront built with Next.js 16, TypeScript, and Mantine UI, integrated with ShipStation APIs for real-time product and inventory management.
+**RebelShops** — a multi-tenant e-commerce platform built with Next.js 16, TypeScript and Mantine UI.
+Merchants create a storefront, connect their own ShipStation account for catalogue and inventory,
+and take payments through Stripe Connect. Production runs at **rebelshops.com**.
+
+Working on this repo with an AI agent? Start at [`CLAUDE.md`](CLAUDE.md); the two integrations have
+their own instruction files at [`src/lib/shipstation/CLAUDE.md`](src/lib/shipstation/CLAUDE.md) and
+[`src/lib/stripe/CLAUDE.md`](src/lib/stripe/CLAUDE.md).
 
 ## Tech Stack
 
@@ -16,8 +22,8 @@ A modern e-commerce storefront built with Next.js 16, TypeScript, and Mantine UI
 ### Backend & APIs
 - **Database**: PostgreSQL with structured migrations
 - **Authentication**: JWT tokens, bcrypt hashing
-- **APIs**: ShipStation v2 API, ShipEngine API
-- **Background Jobs**: Node-cron scheduler
+- **External APIs**: ShipStation V2 (`api.shipstation.com`), Stripe (pinned API version), OpenAI
+- **Background Jobs**: `job_queue` table drained over HTTP, scheduled by Vercel Cron
 - **File Processing**: Sharp for image optimization
 - **PDF Generation**: @react-pdf/renderer
 
@@ -25,7 +31,7 @@ A modern e-commerce storefront built with Next.js 16, TypeScript, and Mantine UI
 - **Language**: TypeScript with strict configuration
 - **Testing**: Jest (unit tests), Playwright (e2e), React Testing Library
 - **Linting**: ESLint with Next.js configuration
-- **Package Management**: npm with Node.js 20+
+- **Package Management**: npm with Node 22 (`.nvmrc`)
 - **Development**: Hot reload with Turbopack
 
 ### UI Components & Features
@@ -37,7 +43,10 @@ A modern e-commerce storefront built with Next.js 16, TypeScript, and Mantine UI
 - **Accessibility**: ARIA labels and semantic HTML
 
 ### Integrations
-- **ShipStation**: Product sync, inventory management, order processing
+- **ShipStation**: Per-store V2 API key, catalogue and inventory sync, webhooks, order push —
+  see [`src/lib/shipstation/CLAUDE.md`](src/lib/shipstation/CLAUDE.md)
+- **Stripe**: Platform subscription billing and storefront checkout via Connect —
+  see [`src/lib/stripe/CLAUDE.md`](src/lib/stripe/CLAUDE.md) and [`docs/payments.md`](docs/payments.md)
 - **AI**: OpenAI integration for content generation
 - **Social**: React Share for social media integration
 - **Security**: Input sanitization with DOMPurify and sanitize-html
@@ -152,19 +161,31 @@ working fallback.
 | `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Paid checkout and subscription billing | Checkout shows "payments not configured" — except for $0 orders, which are placed without Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Order creation on payment | Webhooks rejected |
 | `OPENAI_API_KEY` | AI blog and HS-code generators | Those screens report unavailable |
-| `CRON_SECRET` | Vercel Cron endpoints | Cron routes return 401 |
+| `CRON_SECRET` | Vercel Cron endpoints and the job-queue drain | Those routes return 401 |
+| `SHIPSTATION_ENCRYPTION_KEY` | Reading any stored ShipStation credential | **Fails closed** — every credential read throws, so ShipStation silently does nothing |
 
 ShipStation credentials are entered **per store in the admin UI**, not via env — the
-platform is multi-tenant and each merchant supplies their own key.
+platform is multi-tenant and each merchant supplies their own key. `SHIPSTATION_ENCRYPTION_KEY`
+is the 32-byte AES-256-GCM key those per-store credentials are encrypted with; unlike everything
+else in this table it does not degrade gracefully. If ShipStation appears connected but nothing
+syncs, check it first.
 
 ### Checks
 
 ```bash
 npm run lint
 npx tsc --noEmit
-npm test               # 612 unit tests
+npm test               # 799 unit tests across 48 suites
 npm run test:e2e       # Playwright; needs the dev server running
 ```
+
+`next.config.ts` sets `typescript.ignoreBuildErrors`, so `npm run build` does **not** enforce
+types — `npx tsc --noEmit` is the only thing that does.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit tests, a production build with no
+integration keys set (proving every integration degrades rather than crashes), and a migrations
+job that applies migrations to a clean database, proves a re-run is a no-op, and seeds twice to
+prove the seed is idempotent.
 
 ### Troubleshooting
 
@@ -227,7 +248,13 @@ src/
 │   ├── store/             # Customer storefront
 │   └── create-store/      # Store creation flow
 ├── components/            # Reusable UI components
-├── lib/                   # Utility functions and services
+├── lib/                   # Domain logic
+│   ├── shipstation/       # ShipStation V2 client, sync, webhooks, order push
+│   ├── stripe/            # Stripe SDK singleton, Connect, webhook dispatch
+│   ├── billing/           # Cart pricing, coupons, orders, subscriptions
+│   ├── services/          # Job queue, monitoring, inventory, order status
+│   ├── auth/              # Sessions and JWT
+│   └── database/          # Connection and query helpers
 └── styles/               # Global styles and themes
 
 database/
@@ -236,10 +263,19 @@ database/
 └── sql/                 # Raw SQL files
 
 docs/
-├── decision-log.md      # Development history
-├── design/             # UI/UX design documents
-└── implementation-plans/ # Technical specifications
+├── decision-log.md              # Development history and live TODOs
+├── payments.md                  # Stripe money flows, in narrative form
+├── deployment-vercel.md         # Vercel runbook
+├── design-system.md             # UI primitives and tokens
+├── storefront-theme-spec.md     # Theme engine and presets
+├── brand.md, marketing-copy.md  # Voice and approved copy
+├── demo-data.md                 # What the demo seed creates
+├── shipstation-api-openapi.yaml # Upstream V2 contract
+└── audits/                      # Point-in-time critiques
 ```
+
+Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
+`src/lib/shipstation/CLAUDE.md` and `src/lib/stripe/CLAUDE.md` for the two integrations.
 
 ## API Routes
 
@@ -250,6 +286,8 @@ docs/
 - `/api/admin/analytics` - Store performance data
 - `/api/admin/sync/*` - Operator-triggered ShipStation sync, run synchronously in the request
   (`all`, `products`, `inventory`, `warehouses`, `inventory-warehouses`, `inventory-locations`)
+- `/api/admin/sync/status` - Sync history and aggregate statistics
+- `/api/admin/integrations/shipstation` - Save, test and disconnect a store's ShipStation key
 - `/api/admin/ai/*` - AI content generation
 
 ### Public APIs
@@ -258,6 +296,22 @@ docs/
 - `/api/orders` - Order creation and processing
 - `/api/blog` - Blog content management
 - `/api/stores` - Store information
+
+### Payments
+- `/api/checkout/quote` - Server-authoritative pricing preview; creates nothing
+- `/api/checkout/session` - Storefront Stripe Checkout Session ($0 carts complete without Stripe)
+- `/api/checkout/confirm` - Order confirmation resolved against our tables, not the query string
+- `/api/billing/{checkout,portal,status}` - Merchant subscription to the platform
+- `/api/connect/{onboard,status,return,refresh}` - Stripe Connect Express onboarding and payouts
+- `/api/webhooks/stripe` - The single Stripe webhook endpoint for both money flows
+
+### Integration and scheduled
+- `/api/shipstation/webhook/[storeToken]` - Per-store ShipStation webhook receiver
+- `/api/shipstation/orders` - Legacy Custom Store XML feed (order export, shipment notification)
+- `/api/cron/sync` - Vercel Cron: schedules a ShipStation sync per store
+- `/api/cron/inventory-snapshot` - Vercel Cron: daily inventory snapshot
+- `/api/jobs/process` - Drains `job_queue` (sync pages, order pushes, notifications)
+- `/api/health` - Liveness
 
 ### Authentication
 - `/api/auth/login` - User authentication
@@ -316,24 +370,42 @@ would create real records in the merchant's ShipStation account.
 ## Deployment
 
 ### Environment Variables
-```env
-# Database
-DATABASE_URL=postgresql://user:password@host:port/database
 
-# ShipStation API
-SHIPSTATION_API_KEY=your_api_key_here
-SHIPENGINE_SELLER_ID=your_seller_id
-SHIPENGINE_WAREHOUSE_ID=your_warehouse_id
+`.env.example` is the authoritative list, with a `[required]` / `[optional]` tag on every entry.
+The essentials:
+
+```env
+# Database — the only variable with no working fallback
+DATABASE_URL=postgresql://user:password@host:port/database
 
 # Authentication
 JWT_SECRET=your_jwt_secret
-ADMIN_PASSWORD=your_admin_password
 
-# AI Integration
+# ShipStation — per-store keys live in the database, not here.
+# This one is the AES-256-GCM key those stored credentials are encrypted with,
+# and it fails closed: without it, every credential read throws.
+SHIPSTATION_ENCRYPTION_KEY=32_random_bytes_base64_or_hex
+SHIPSTATION_API_KEY=            # optional fallback for /api/products/[productId] and the probe
+SHIPSTATION_WAREHOUSE_ID=       # optional default ship-from
+
+# Stripe
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...           # per endpoint, per environment
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_...
+STRIPE_PLATFORM_PRODUCT_ID=               # optional; otherwise resolved or created
+STRIPE_PLATFORM_PRICE_ID=                 # optional
+STRIPE_INTRO_COUPON_ID=                   # optional; defaults to rebelshops-intro-3mo
+STRIPE_APPLICATION_FEE_BPS=               # optional platform take rate
+
+# Scheduled work
+CRON_SECRET=your_cron_secret              # bearer for /api/cron/* and /api/jobs/process
+SYNC_AUTH_TOKEN=your_sync_token           # legacy operator bearer, still accepted
+
+# AI
 OPENAI_API_KEY=your_openai_key
 
-# Background Sync
-SYNC_AUTH_TOKEN=your_sync_token
+# Public origin, used for webhook and redirect URLs
+NEXT_PUBLIC_APP_URL=https://rebelshops.com
 ```
 
 ### Vercel Deployment
@@ -344,7 +416,9 @@ Production runs on Vercel at **rebelshops.com**.
    `DATABASE_URL`, `DATABASE_URL_UNPOOLED` and `POSTGRES_URL_NON_POOLING` on the project itself —
    `database/migrate.js` reads the unpooled one, because its advisory lock needs a direct
    (non-PgBouncer) connection.
-2. Set `CRON_SECRET` and `SYNC_AUTH_TOKEN`, plus the Stripe, OpenAI and ShipStation keys.
+2. Set `CRON_SECRET`, `SYNC_AUTH_TOKEN` and **`SHIPSTATION_ENCRYPTION_KEY`**, plus the Stripe,
+   OpenAI and ShipStation keys. The encryption key has been omitted from production before, and
+   the symptom was ShipStation appearing connected while every sync wrote nothing.
 3. Migrations run from the build command in `vercel.json`
    (`node database/migrate.js && npm run build`), so a missing connection string fails the deploy
    before Next.js ever builds.
@@ -355,13 +429,17 @@ See `docs/deployment-vercel.md` for the full runbook.
 
 ## Development Guidelines
 
-- Follow TypeScript strict mode conventions
+- Follow TypeScript strict mode conventions; `npx tsc --noEmit` is what enforces them
+- Every query touching tenant data carries `store_id` — the platform is multi-tenant
+- Money is integer cents in application code; convert at the boundary
+- Never log an API key or webhook secret, or any fragment of one
 - Use Mantine UI components for consistency
-- Implement proper error handling and loading states
+- Implement proper error handling and loading states; an unconfigured integration renders a
+  labelled "not configured" state rather than crashing
 - Write unit tests for all components and utilities
 - Use Playwright for e2e testing of critical flows
-- Document API endpoints and component props
-- Follow security best practices for authentication
+- Document API endpoints and component props with JSDoc
 - Maintain responsive design principles
 
-See `docs/decision-log.md` for detailed development history and architectural decisions.
+`CLAUDE.md` holds the full working rules for agents and contributors alike, and
+`docs/decision-log.md` has the development history and architectural decisions.

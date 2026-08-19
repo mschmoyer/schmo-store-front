@@ -1,6 +1,39 @@
-# E2E Test Suite - Admin Products
+# E2E Test Suite
 
-This directory contains comprehensive end-to-end tests for the Admin Products functionality using Playwright.
+Playwright end-to-end tests. Specs live here; reusable Page Object Models live in `../pages/`,
+and the shared admin login fixture in `../fixtures/admin-auth.js`.
+
+All of these require a dev server on `localhost:3000` (`npm run dev`).
+
+```bash
+npm run test:e2e                          # everything, headless
+npm run test:e2e -- --project=chromium    # one browser — note the `--`
+npm run test:e2e -- tests/e2e/storefront.spec.js
+npm run test:e2e:headed                   # visible browser
+npm run test:e2e:debug                    # step through
+npm run test:e2e:ui                       # interactive runner
+```
+
+## Specs
+
+| Spec | Covers |
+|---|---|
+| `marketing.spec.js` | Marketing site, pricing, FAQ |
+| `storefront.spec.js` | Customer storefront: catalogue, product, cart |
+| `onboarding.spec.js` | Merchant store-creation wizard |
+| `customizer.spec.js` | `/admin/design` theme customizer and live preview |
+| `admin-navigation.spec.js` | Admin shell and navigation |
+| `admin-products.spec.js` | Products listing and edit (documented in detail below) |
+| `admin-inventory.spec.js` | Inventory management |
+| `admin-orders.spec.js` | Order management |
+| `admin-coupons.spec.js` | Coupon management |
+
+The admin specs use `adminAuthFixture` from `../fixtures/admin-auth.js` rather than `test` directly.
+
+---
+
+The rest of this document details the **admin products** suite specifically; it predates the other
+specs and has not been generalised to them.
 
 ## Test Files
 
@@ -77,20 +110,13 @@ The tests are organized into 4 main describe blocks:
 - Tests handle both single and multiple product scenarios
 - Tests verify actual functionality rather than just clicking buttons
 
-## Running the Tests
+## Running the admin products tests
 
 ```bash
-# Run all admin products tests
-npx playwright test tests/e2e/admin-products.spec.js
-
-# Run specific test suite
-npx playwright test tests/e2e/admin-products.spec.js --grep "Core Functionality"
-
-# Run in headed mode to see browser
-npx playwright test tests/e2e/admin-products.spec.js --headed
-
-# Run with debug mode
-npx playwright test tests/e2e/admin-products.spec.js --debug
+npm run test:e2e -- tests/e2e/admin-products.spec.js
+npm run test:e2e -- tests/e2e/admin-products.spec.js --grep "Core Functionality"
+npm run test:e2e -- tests/e2e/admin-products.spec.js --headed
+npm run test:e2e -- tests/e2e/admin-products.spec.js --debug
 ```
 
 ## Test Requirements

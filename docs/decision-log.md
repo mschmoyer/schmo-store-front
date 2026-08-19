@@ -1390,3 +1390,87 @@ Open:
 - [ ] `destroySession()` is a no-op, so a stolen token stays valid until it expires. Logout is now
       correct for the browser, but there is still no server-side revocation (jti blacklist, or
       short-lived tokens plus refresh)
+
+## Agent instruction documentation: two integration guides, plus an audit (2026-08-19)
+
+**User request**: "Let's make two CLAUDE instruction documents using claude best practices that
+detail the ShipStation integration and all the API points, and one more for Stripe the same way.
+After that, let's audit our README.md and all other claude instruction documentation and bring it
+all up to best practices."
+
+Placed as nested `CLAUDE.md` files rather than `docs/*.md`, so Claude Code loads each one on demand
+when work touches that directory instead of carrying both in every session's context. The root
+`CLAUDE.md` names them and the surfaces they govern, so an agent editing a route outside `src/lib`
+still finds them.
+
+- [x] **`src/lib/shipstation/CLAUDE.md`** — eight rules, each tied to the audit finding it closes;
+      module map with an explicit "do not" column; the complete outbound V2 endpoint table (10
+      endpoints, which are probed and which deliberately are not); the complete inbound route table
+      with auth mode per route; credentials and the `ssenc:v1:` / `b64v0:` formats; the three
+      webhook checks; sync ordering; order-push semantics; data model; env; known gaps
+- [x] **`src/lib/stripe/CLAUDE.md`** — the two-flow table as the organising idea; ten rules; module
+      map; the complete Stripe SDK call-site list (verified exhaustive by grep, not by memory); the
+      inbound route table; the handled-event matrix; Connect and fees; the $0 path; known gaps.
+      `docs/payments.md` stays the narrative *why*; this is the operational *what not to break*
+- [x] Fixed two dangling references: `orderPush.ts` and `webhookRegistration.ts` both pointed at
+      `docs/shipstation.md`, which has never existed. They now point at the new file
+
+Root `CLAUDE.md` rewritten. What was wrong with it:
+
+- [x] Claimed **Next.js 15**; the project is on 16.3.0
+- [x] Said components live in `src/app/`; they live in `src/components/`
+- [x] Listed `npm run sync:test`, which is not in `package.json`
+- [x] Gave `npm run test:e2e --project=chromium`, which passes the flag to npm, not Playwright.
+      Needs `--`
+- [x] Said "Run tsc" without saying `npx tsc --noEmit`, and did not mention that
+      `next.config.ts` sets `typescript.ignoreBuildErrors` — so a green build is not a green
+      typecheck, and CI's separate typecheck job is the only enforcement
+- [x] Omitted **Stripe entirely**, along with multi-tenancy, the database, and `dev-local`
+- [x] Added the working rules that were previously only discoverable by reading file headers:
+      store scoping, integer cents, never logging key fragments, server-side price truth, honest
+      success values, graceful degradation when an integration is unconfigured
+
+`README.md` audit:
+
+- [x] Env block advertised `SHIPENGINE_SELLER_ID`, `SHIPENGINE_WAREHOUSE_ID` and `ADMIN_PASSWORD`.
+      None appears anywhere in the codebase
+- [x] Env block omitted **`SHIPSTATION_ENCRYPTION_KEY`**, the one integration variable that fails
+      closed rather than degrading — the exact omission that made production sync write nothing on
+      2026-08-12. Now in the README, in the optional-integrations table with its failure mode
+      spelled out, and in `.env.example`, where it was also missing
+- [x] Claimed "612 unit tests"; the suite is 799 across 48 suites
+- [x] "Node.js 20+" in the tech stack, "Node 22" in the prerequisites. `.nvmrc` says 22
+- [x] Listed ShipEngine as an API in use (it is not) and node-cron as the scheduler (the mechanism
+      is `job_queue` drained over HTTP, scheduled by Vercel Cron)
+- [x] Project structure pointed at `docs/design/` and `docs/implementation-plans/`, neither of which
+      exists; replaced with the actual `docs/` contents and the `src/lib/` breakdown
+- [x] API route list had no Stripe, checkout, Connect, webhook, cron or job-queue entries at all
+- [x] No mention of CI, which has existed since the workflow was added
+- [x] Stripe was absent from the integrations list despite being half the product
+
+`docs/payments.md` §8: two bullets had gone stale and were struck through rather than deleted, so
+the section reads as history. `docs/decision-log.md` records the free-order fix; the coupon-validate
+route no longer joins the dropped `discounts` table. The "no fulfilment hand-off" bullet was
+sharpened — see the open item below.
+
+`tests/e2e/README.md` described itself as the E2E suite but documented only `admin-products.spec.js`,
+one of nine specs. Added a suite index and corrected the run commands, which used bare
+`npx playwright test`.
+
+Verified with `npm run lint` (0 errors, 99 pre-existing warnings), `npx tsc --noEmit` (clean) and
+`npm test` (799/799).
+
+Open — found while writing the docs, not fixed here:
+- [ ] **`enqueueOrderPush` has no callers.** `jobQueueService` handles `shipstation_order_push` and
+      `processOrderPushJob` is complete, but nothing ever enqueues a job, so no paid order is
+      pushed to ShipStation. The hook belongs in `billing/orders.ts::createPaidOrder`. This is the
+      same "well-built dead code" shape as audit P0-8
+- [ ] `vercel.json` sets `functions` config for `src/app/api/shipstation/webhook/route.ts` — the
+      **retired** 410 endpoint — and not for the live `[storeToken]` receiver. It also sets no
+      limit for `/api/jobs/process`, whose header comment assumes a 60 s budget
+- [ ] `src/app/api/admin/integrations/test/route.ts:85` calls `fetch` directly rather than
+      `shipStationFetch`, so the generic connection test has no retry or rate-limit handling
+- [ ] `src/app/api/warehouses/route.ts:25` still reads the API key with raw
+      `Buffer.from(..., 'base64')`, bypassing `credentials.ts` (same defect class as P0-9)
+- [ ] `scripts/sync-{products,inventory,inventory-warehouses,inventory-locations}.ts` have no npm
+      script and no caller. Either wire them up or delete them

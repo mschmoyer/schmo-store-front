@@ -32,8 +32,8 @@ import {
  * `batch | carrier_connected | order_source_refresh_complete | rate | report_complete |
  * sales_orders_imported | track`; `track` is the one that carries shipment movement. The
  * `ITEM_SHIP_NOTIFY`-style resource types our handler switches on come from ShipStation's legacy
- * webhook vocabulary. Both are accepted on the wire; see `docs/shipstation.md` for why this
- * mismatch is called out rather than papered over.
+ * webhook vocabulary. Both are accepted on the wire; see `./CLAUDE.md` for why this mismatch is
+ * called out rather than papered over.
  */
 export type ShipStationWebhookEvent =
   | 'batch'
