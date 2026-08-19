@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { EmptyState, Button } from '@/components/ui';
+import ApiKeyInput from '../ApiKeyInput';
 import { Banner, StepNavigation, StepPanel } from '@/components/wizard';
 import { STEPS } from '../lib/steps';
 import type { OnboardingApi } from '../useOnboarding';
@@ -21,7 +22,24 @@ import styles from '../Onboarding.module.css';
  */
 export default function ImportStep({ api }: { api: OnboardingApi }): React.ReactElement {
   const progress = api.state.importProgress;
-  const skipped = api.state.shipstation.skipped || !api.state.shipstation.connected;
+  // The catalogue needs the V2 API key, and nothing else can supply it — the
+  // Custom Store feed set up at step 3 carries orders, not products. So this
+  // step gates on the key, not on `shipstation.connected`, which would send a
+  // merchant back to a screen that cannot give them what is missing here.
+  const hasKey = api.state.shipstation.catalogKeyPresent;
+  // Skipping is a decision about *this* step. It used to be inherited from
+  // `shipstation.skipped`, which now means "declined the order connection" — a
+  // merchant who skipped orders can still perfectly well import a catalogue,
+  // and would otherwise have been shown an empty state with no way forward.
+  const importSkipped = progress.status === 'skipped';
+  // Lets a merchant who skipped come back to the key form without a round trip
+  // to a route that would reject the request for want of the very key they are
+  // trying to supply.
+  const [reopened, setReopened] = React.useState(false);
+  const [apiKey, setApiKey] = React.useState('');
+  const [keyFailure, setKeyFailure] = React.useState<{ message: string; action: string } | null>(
+    null
+  );
   const [running, setRunning] = React.useState(false);
   const cancelled = React.useRef(false);
 
@@ -88,9 +106,78 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
     await api.submit('/api/onboarding/state', { step: 'style' });
   };
 
+  /**
+   * Verify the catalogue key and store it. Nothing is written unless the live
+   * check against ShipStation passes.
+   */
+  const saveKey = async () => {
+    if (!apiKey.trim() || api.busy) return;
+    setKeyFailure(null);
+    const failure = await api.submit('/api/onboarding/catalog-key', { apiKey: apiKey.trim() });
+    if (failure) {
+      setKeyFailure({
+        message: failure.check?.message ?? failure.message,
+        action: failure.check?.action ?? 'Try again',
+      });
+      return;
+    }
+    setApiKey('');
+  };
+
+  /* ---- No catalogue key yet: ask for the one thing that is missing ------ */
+
+  if (!hasKey && (!importSkipped || reopened) && progress.status !== 'complete' && progress.status !== 'partial') {
+    return (
+      <StepPanel
+        step={STEPS.import}
+        onSubmit={saveKey}
+        banner={
+          keyFailure ? (
+            <Banner tone="danger" title="ShipStation didn’t accept that key">
+              {keyFailure.message}
+            </Banner>
+          ) : null
+        }
+        footer={
+          <StepNavigation
+            primaryLabel={keyFailure ? keyFailure.action : 'Connect catalog'}
+            onPrimary={saveKey}
+            primaryDisabled={apiKey.trim().length === 0}
+            primaryLoading={api.busy}
+            onBack={back}
+            onSkip={skip}
+            skipLabel="Skip for now"
+          />
+        }
+      >
+        <p className={styles.sectionLabel}>
+          {/* Only true if they actually finished step 3 — a merchant who skipped it
+              would otherwise be told their orders were set up when they are not. */}
+          {api.state.shipstation.connected
+            ? 'Your orders are set up. To fill the store we need a ShipStation API key — generate one under Settings → Account → API Settings.'
+            : 'To fill the store we need a ShipStation API key — generate one under Settings → Account → API Settings. This is separate from the order connection you skipped, which you can finish later from Integrations.'}
+        </p>
+        <ApiKeyInput
+          value={apiKey}
+          onChange={(value) => {
+            setApiKey(value);
+            setKeyFailure(null);
+          }}
+          autoFocus
+          disabled={api.busy}
+          hint="We test it before saving. Nothing is stored until the test passes."
+        />
+        <p className={styles.inlineNote}>
+          This is a different credential from the order connection on the previous step. The key
+          reads your catalog; it is never used to change anything in ShipStation.
+        </p>
+      </StepPanel>
+    );
+  }
+
   /* ---- Not connected: the honest empty path ---------------------------- */
 
-  if (skipped && progress.status !== 'complete' && progress.status !== 'partial') {
+  if (importSkipped && !reopened && progress.status !== 'complete' && progress.status !== 'partial') {
     return (
       <StepPanel
         step={STEPS.import}
@@ -107,10 +194,10 @@ export default function ImportStep({ api }: { api: OnboardingApi }): React.React
         <div className={styles.emptyWrap}>
           <EmptyState
             title="No products yet"
-            description="Connect ShipStation and we'll pull your catalog in. You can do it now, or from Settings once your store is up."
+            description="Add your ShipStation API key and we'll pull your catalog in. You can do it now, or from Settings once your store is up."
             action={
-              <Button variant="secondary" onClick={back}>
-                Connect ShipStation
+              <Button variant="secondary" onClick={() => setReopened(true)}>
+                Add API key
               </Button>
             }
           />

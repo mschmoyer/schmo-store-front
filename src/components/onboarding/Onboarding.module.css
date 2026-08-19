@@ -603,3 +603,66 @@
     opacity: 0.4;
   }
 }
+
+/* --- Custom Store connection (step 3) -------------------------------------
+   The merchant retypes these into ShipStation's form, so each value gets its
+   own label, a monospace value and its own copy button. A single blob of text
+   would be copied wholesale into the first field. */
+
+.copyGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.copyRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+
+.copyRowText {
+  min-width: 0;
+  flex: 1;
+}
+
+.copyLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.copyValue {
+  display: block;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  word-break: break-all;
+}
+
+/* An empty value is a real instruction — ShipStation's On-Hold field must be
+   left blank, because we never emit that status. */
+.copyValueEmpty {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.setupList {
+  margin: 0 0 20px;
+  padding-left: 22px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  /* The global reset strips list markers, which turned an ordered list of setup
+     steps into an indented blob — the one thing this list has to convey is that
+     the steps happen in that order. */
+  list-style: decimal outside;
+}
+
+.setupList li {
+  margin-bottom: 4px;
+}

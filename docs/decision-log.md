@@ -1830,3 +1830,68 @@ Left deliberately, with reasons:
       the hook is probably the right answer and is a separate decision
 - [ ] `@typescript-eslint/no-unused-vars` in `scripts/dev-local.js:48` and `scripts/seed-demo.js:802`
       — `scripts/` was out of scope for this pass
+
+## ShipStation setup split by capability, in settings and onboarding (2026-08-19)
+
+**User request**: "On our integrations page on the dashboard, should this be how to setup a custom
+store? It looks like it is an APIv2 config?" … then, after the catalogue dependency surfaced: "Ah,
+this is why we need APIv2 AND the custom store. We do need both. The custom store should properly
+handle the order flow, and the API key allows product/inventory import."
+
+The two ShipStation surfaces are **not** alternatives, and the UI had been presenting them as if a
+merchant should pick one. Custom Store carries orders out and tracking back and has no catalogue
+capability; the V2 REST key imports products and stock and has no order-creation resource. A store
+that sells and ships needs both. Both screens now say so.
+
+- [x] **Integrations page** — Custom Store card first (nothing ships without it), V2 card second,
+      relabelled from "ShipStation" to **"ShipStation catalogue & inventory"** with a description
+      scoped to what the key actually does. Its old description claimed it managed "shipping",
+      which is what sent merchants looking for their orders in the wrong card
+- [x] The Custom Store card was the only card on the page with **no help link and no status badge**
+      — the most confusing setup on the screen was also the least supported. Both added, matching
+      the pattern the other cards already use
+- [x] Its own copy said the API key was configured "above" — it is now below it. Fixed
+- [x] **Onboarding step 3 is now the order connection.** It issues the credentials and shows the
+      four values plus the five case-sensitive status strings, each with its own copy button, and
+      the numbered path through ShipStation's own menus
+- [x] **The API key moved to step 4**, where it is the thing standing between the merchant and
+      their products, via the new `POST /api/onboarding/catalog-key`. The validation, the live
+      `GET /v2/warehouses` test and the P0-1/P0-2/P1-7 guarantees are carried over unchanged
+- [x] `statusMappingForForm`, the endpoint URL builder and the ShipStation setup steps moved to
+      `src/lib/shipstation/customStoreConnection.ts` so the admin card and onboarding cannot drift
+      apart. A status string that differs by one character between the two screens is a silent
+      mis-import
+- [x] `OnboardingShipStation` gained `catalogKeyPresent`, because `connected` now means the order
+      feed. `LaunchStep` was reporting catalogue outcomes ("products are in", "tied to this API
+      key") off `connected`, which after the split would have described the wrong credential
+
+Found by running the flow rather than reading it — none of these were visible in the diff:
+
+- [x] **Step 3 was skipped entirely.** Issuing credentials on mount also marked the step complete
+      and advanced the cursor, so the wizard jumped from Store to Catalog and the one screen whose
+      whole job is to display these values was never seen. Completion is now an explicit
+      `{ confirm: true }` sent by Continue
+- [x] **"Skip for now" was silently ignored.** Because step 3 issues credentials on arrival,
+      everyone had them by the time they reached Skip — and `buildState` cleared `skipped` whenever
+      credentials existed. A deliberate skip now outranks their presence
+- [x] **The numbered ShipStation steps rendered without numbers.** The global reset strips list
+      markers, turning "do these in this order" into an indented blob
+- [x] **Step 3's header still read "Paste your API key"**, the one thing that screen no longer does
+- [x] **Step 4 claimed "Your orders are set up"** unconditionally, including to merchants who had
+      just skipped step 3
+- [x] Dropped a success banner that announced "Your connection is ready" on arrival. The
+      credentials were ready; the connection is not until ShipStation calls. Same reason the admin
+      card reports a timestamp rather than a badge
+- [x] Verified in a real browser at each stage: `tsc --noEmit` clean, 843 unit tests, lint 0 errors
+- [x] **Version bumped** to 2.6.0
+
+Open:
+- [ ] The two ShipStation cards are rendered by different components (`CustomStoreCard` and the
+      generic `IntegrationSettings`), so their internal layouts differ slightly — icon placement
+      and header alignment. Cosmetic, but they sit adjacent and read as two design languages
+- [ ] `/admin/integrations/shipstation` (695 lines) is still reachable by URL, linked from nowhere,
+      and still generates credentials **client-side** before POSTing them. It is a second, divergent
+      credential path that can overwrite the real one. PR #5 planned to delete it and did not
+- [ ] Onboarding never verifies the Custom Store connection actually works — it cannot, since
+      ShipStation polls on its own schedule. The admin card's "last request received" is the only
+      evidence, and onboarding does not surface it

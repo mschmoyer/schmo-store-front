@@ -248,6 +248,8 @@ interface IntegrationRow extends Record<string, unknown> {
   configuration: Record<string, unknown> | null;
   is_active: boolean;
   api_key_encrypted: string | null;
+  shipstation_username: string | null;
+  custom_store_enabled: boolean | null;
 }
 
 /**
@@ -295,19 +297,39 @@ export async function buildState(
       typeof data.shipstationWarehouses === 'number' ? data.shipstationWarehouses : null,
     planLimited: data.shipstationPlanLimited === true,
     checkedAt: typeof data.shipstationCheckedAt === 'string' ? data.shipstationCheckedAt : null,
+    catalogKeyPresent: false,
   };
 
   if (row.store_id) {
     const integration = await db.query<IntegrationRow>(
-      `SELECT configuration, is_active, api_key_encrypted
+      `SELECT configuration, is_active, api_key_encrypted,
+              shipstation_username, custom_store_enabled
          FROM store_integrations
         WHERE store_id = $1 AND integration_type = 'shipstation'`,
       [row.store_id]
     );
     const found = integration.rows[0];
-    if (found?.is_active && found.api_key_encrypted) {
+
+    // The two ShipStation halves are tracked separately because they are separate
+    // capabilities, and a merchant can legitimately have one without the other.
+    // `connected` is the Custom Store feed — orders out, tracking back — which is
+    // what step 3 sets up. `catalogKeyPresent` is the V2 REST key, which is the
+    // only thing that can pull products and stock, and is asked for at the import
+    // step where it is actually used. Conflating them is what made a store with a
+    // catalogue key look "connected" for orders it could never receive.
+    // A deliberate skip outranks the credentials existing. Step 3 issues them on
+    // arrival so the merchant can see what to paste without clicking first, which
+    // means *everyone* has credentials by the time they reach the Skip button —
+    // clearing `skipped` here on their presence alone silently discarded the one
+    // decision the merchant actually made.
+    const customStoreReady = Boolean(found?.shipstation_username && found?.custom_store_enabled);
+    if (customStoreReady && data.shipstationSkipped !== true) {
       shipstation = { ...shipstation, connected: true, skipped: false };
     }
+    shipstation = {
+      ...shipstation,
+      catalogKeyPresent: Boolean(found?.is_active && found.api_key_encrypted),
+    };
   }
 
   return {

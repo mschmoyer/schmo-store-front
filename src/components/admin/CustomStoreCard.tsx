@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Anchor,
   Badge,
   Button,
   Card,
@@ -46,6 +47,7 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconCopy,
+  IconExternalLink,
   IconInfoCircle,
   IconRefresh,
   IconTruck,
@@ -245,18 +247,41 @@ export function CustomStoreCard({ token }: CustomStoreCardProps) {
             </Text>
           </div>
         </Group>
-        {connection?.configured && (
-          <Badge color={connection.lastPollAt ? 'green' : 'gray'} variant="light">
-            {connection.lastPollAt ? 'Receiving requests' : 'Awaiting first request'}
-          </Badge>
-        )}
+        <Group gap="sm">
+          {connection?.configured ? (
+            <Badge color={connection.lastPollAt ? 'green' : 'gray'} variant="light">
+              {connection.lastPollAt ? 'Receiving requests' : 'Awaiting first request'}
+            </Badge>
+          ) : (
+            // Every other card on this page shows its state at a glance. Without
+            // this one, "not set up yet" and "set up but never polled" looked the
+            // same: an unlabelled card.
+            <Badge color="gray" variant="light">
+              Not connected
+            </Badge>
+          )}
+          {/* This setup means retyping values into another product's form, which is
+              the most confusing thing on the page and was the only card with no way
+              to ask for help. Same destination the catalogue card uses. */}
+          <Anchor
+            href="https://docs.shipstation.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            size="sm"
+          >
+            <Group gap={4} wrap="nowrap">
+              Help
+              <IconExternalLink size="0.85rem" />
+            </Group>
+          </Anchor>
+        </Group>
       </Group>
 
       {/* Catalogue comes from the V2 API, not this feed. A merchant who sets this up and then
           wonders why no products appeared has been misled by an incomplete screen. */}
       <Alert icon={<IconInfoCircle size="1rem" />} variant="light" color="ink" mb="md">
         This connection carries <strong>orders and tracking only</strong>. Products and inventory
-        come from your ShipStation API key, configured separately above — most stores need both.
+        come from your ShipStation API key, set up in the card below — most stores need both.
       </Alert>
 
       {error && (

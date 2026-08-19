@@ -211,12 +211,20 @@ export default function IntegrationsPage() {
       {/* Shipping Integrations */}
       <div>
         <Title order={2} size="h3" mb="md">
-          Shipping & Fulfillment
+          Shipping &amp; Fulfillment
         </Title>
         <Text size="sm" c="dimmed" mb="lg">
-          Connect your shipping provider to sync products and manage inventory automatically.
+          ShipStation connects in two places, and a store that sells and ships needs both. They are
+          not alternatives to each other — neither one can do the other&apos;s job.
         </Text>
         <Stack gap="lg">
+          {/* Orders out, tracking back. ShipStation pulls orders from us over the Custom Store XML
+              feed, which has no catalogue capability of its own — hence the API key below. This is
+              listed first because it is the half a merchant must have to fulfil anything. */}
+          <CustomStoreCard token={authToken} />
+
+          {/* Catalogue and inventory in, over the ShipStation V2 REST API. This is the half that
+              has no order-creation resource, which is why it cannot replace the card above. */}
           {integrations
             .filter(integration => ['shipstation'].includes(integration.integrationType))
             .map((integration) => (
@@ -227,9 +235,6 @@ export default function IntegrationsPage() {
                 loading={saving}
               />
             ))}
-          {/* Orders travel the other way: ShipStation pulls them from us over the Custom Store
-              feed, so it needs its own credentials rather than the API key above. */}
-          <CustomStoreCard token={authToken} />
         </Stack>
       </div>
       

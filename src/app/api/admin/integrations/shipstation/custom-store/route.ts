@@ -28,34 +28,16 @@ import {
   issueCustomStoreCredentials,
   setCustomStoreEnabled
 } from '@/lib/shipstation/customStoreAuth';
-import { mapOrderStatusToShipStation } from '@/lib/shipstation/utils';
+import {
+  resolveCustomStoreEndpointUrl,
+  statusMappingForForm
+} from '@/lib/shipstation/customStoreConnection';
 
 /** Node runtime: encryption and Postgres. */
 export const runtime = 'nodejs';
 
 /** Never cached — this response carries a credential. */
 export const dynamic = 'force-dynamic';
-
-/**
- * The status strings ShipStation's connection form must be given, keyed by its own field labels.
- *
- * ShipStation maps *our* `<OrderStatus>` values onto its internal statuses, and the spec (§4,
- * "Connection form fields") notes the fields are **case-sensitive**. A merchant cannot guess these,
- * and a typo produces orders that import into the wrong ShipStation bucket with no error anywhere.
- * Deriving them from {@link mapOrderStatusToShipStation} rather than hardcoding keeps the screen
- * honest if the mapping ever changes.
- */
-function statusMappingForForm(): Record<string, string> {
-  return {
-    'Unpaid Status': mapOrderStatusToShipStation('pending'),
-    'Paid Status': mapOrderStatusToShipStation('confirmed'),
-    'Shipped Status': mapOrderStatusToShipStation('shipped'),
-    'Cancelled Status': mapOrderStatusToShipStation('cancelled'),
-    // We never emit an on-hold status, so the field is deliberately left blank rather than filled
-    // with a value ShipStation would then wait for and never see.
-    'On-Hold Status': ''
-  };
-}
 
 /**
  * When ShipStation last successfully authenticated against this store's feed.
@@ -99,24 +81,6 @@ async function resolveStoreId(userId: string): Promise<string | null> {
 }
 
 /**
- * Build the absolute endpoint URL the merchant pastes into ShipStation.
- *
- * @param request - Incoming request, used as a last resort in local development.
- * @returns Absolute URL of the Custom Store endpoint.
- */
-function resolveEndpointUrl(request: NextRequest): string {
-  const configured =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.NEXT_PUBLIC_BASE_URL ??
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : undefined);
-
-  const origin = (configured ?? new URL(request.url).origin).replace(/\/+$/, '');
-  return `${origin}/api/shipstation/orders`;
-}
-
-/**
  * Shape the response body shared by GET and POST.
  *
  * @param request - Incoming request, for URL resolution.
@@ -131,7 +95,7 @@ function connectionPayload(
   return {
     configured: credentials !== null,
     lastPollAt: lastPoll,
-    endpointUrl: resolveEndpointUrl(request),
+    endpointUrl: resolveCustomStoreEndpointUrl(request.url),
     username: credentials?.username ?? null,
     password: credentials?.password ?? null,
     enabled: credentials?.enabled ?? false,
