@@ -1,5 +1,13 @@
 # ShipStation Custom Store Development Guide
 
+
+> **REMOVED — historical reference.** The Custom Store integration this document specifies is no
+> longer part of RebelShops. Orders now go to ShipStation over the V2 REST API
+> (`POST /v2/shipments`), and tracking comes back from `GET /v2/shipments`; see
+> `src/lib/shipstation/CLAUDE.md`. The endpoint, the XML modules and the Basic-auth credentials
+> described below have all been deleted. This page is kept because the wire format is not published
+> anywhere else we control, and reinstating the feed would start from it.
+
 Reference notes for building a **Custom Store** endpoint that ShipStation can talk to. A Custom
 Store is ShipStation's escape hatch for order sources that have no pre-built integration: you
 expose one web endpoint that speaks XML, and ShipStation both pulls orders from it and pushes

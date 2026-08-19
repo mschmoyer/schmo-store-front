@@ -1,48 +1,44 @@
 /**
- * `POST /api/onboarding/shipstation` — step 3, the order connection.
+ * `POST /api/onboarding/shipstation` — step 3, the one that matters.
  *
  * Two shapes:
- *   `{}`             — issue (or re-read) this store's Custom Store credentials
- *                      and return everything the merchant pastes into ShipStation.
+ *   `{ apiKey }`     — test the key against ShipStation, save it only if the
+ *                      test actually passed.
  *   `{ skip: true }` — take the honest skip path.
  *
- * **This step sets up orders, not the catalogue.** ShipStation has two surfaces
- * and they do different jobs: the Custom Store XML feed carries orders out and
- * ship notices back, and the V2 REST API carries products and stock in. Neither
- * can do the other's work — the feed has no catalogue capability and V2 has no
- * real order-creation resource. The API key therefore moved to the import step
- * (`/api/onboarding/catalog-key`), where it is the thing standing between the
- * merchant and their products, rather than being collected here under a heading
- * about connecting ShipStation generally.
- *
  * Audit alignment:
- *   - **P0-1**: credentials shown here are exactly what was persisted. The secret
- *     is generated server-side and stored encrypted; we never show a value the
- *     server will not accept.
- *   - **P1-7**: no credential, or fragment of one, is logged.
+ *   - **P0-2**: the test is a real `GET https://api.shipstation.com/v2/warehouses`
+ *     (see `../_lib/shipstation.ts`). There is no branch that returns success
+ *     without a live response.
+ *   - **P0-1**: nothing is written until that call succeeds, and the key is
+ *     never echoed back — the merchant only ever sees `••••••••2f9c`. We cannot
+ *     show them credentials the server will not accept, because we show them no
+ *     credentials at all.
+ *   - **P1-7**: the key is not logged, not even a fragment.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/database/connection';
 import { buildState, originOf, persist, requireOnboarding } from '../_lib/state';
-import { issueCustomStoreCredentials, getCustomStoreCredentials } from '@/lib/shipstation/customStoreAuth';
-import { ShipStationKeyError } from '@/lib/shipstation/crypto';
-import {
-  resolveCustomStoreEndpointUrl,
-  SHIPSTATION_SETUP_STEPS,
-  statusMappingForForm
-} from '@/lib/shipstation/customStoreConnection';
+import { maskKey, validateShipStationKey, type FetchLike } from '../_lib/shipstation';
 
 interface ShipStationRequest {
+  apiKey?: string;
   skip?: boolean;
-  /** Sent by Continue: the merchant has seen the details and is moving on. */
-  confirm?: boolean;
 }
 
 /**
- * Issue the store's Custom Store credentials, or record a deliberate skip.
+ * Test-seam: routes cannot take constructor arguments, so the injectable fetch
+ * hangs off the module. `validateShipStationKey` is unit-tested directly; this
+ * hook exists for route-level integration tests.
+ */
+export const __testHooks: { fetchImpl?: FetchLike } = {};
+
+/**
+ * Validate and store the merchant's ShipStation key, or record a deliberate skip.
  *
- * @param request - JSON body: `{}` or `{ skip: true }`
- * @returns 200 with the connection details, or the skip acknowledgement
+ * @param request - JSON body: `{ apiKey }` or `{ skip: true }`
+ * @returns 200 on success/skip, 400 with a specific reason when the key fails
  */
 export async function POST(request: NextRequest) {
   try {
@@ -91,45 +87,77 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Reuse the existing secret when there is one. Re-issuing on every visit
-    // would silently invalidate a connection the merchant had already pasted
-    // into ShipStation — going back a step must not break a working store.
-    const credentials =
-      (await getCustomStoreCredentials(context.row.store_id)) ??
-      (await issueCustomStoreCredentials(context.row.store_id));
+    const apiKey = (body.apiKey ?? '').trim();
+    const result = await validateShipStationKey(apiKey, { fetchImpl: __testHooks.fetchImpl });
 
-    // Completion is a separate, explicit call. The step issues credentials as
-    // soon as it opens so the merchant can see what to paste without clicking
-    // first — but marking the step done there advanced the wizard past it on
-    // arrival, so the one screen whose entire job is to show these values was
-    // never actually seen.
-    const row = body.confirm === true
-      ? await persist(context.row, {
-          complete: 'shipstation',
-          goTo: 'import',
-          data: {
-            shipstationSkipped: false,
-            shipstationCheckedAt: new Date().toISOString(),
-          },
-        })
-      : context.row;
+    if (!result.ok) {
+      // Nothing is written. The merchant's previous connection, if any, is
+      // untouched — a failed test must never disconnect a working store.
+      return NextResponse.json(
+        { check: result, message: result.message },
+        {
+          status:
+            result.status === 'network_error' ||
+            result.status === 'timeout' ||
+            result.status === 'blocked_upstream'
+              ? 502
+              : 400,
+        }
+      );
+    }
+
+    // TODO(audit P0-9): `api_key_encrypted` is base64, not encryption. Every
+    // existing reader (every sync route) does
+    // `Buffer.from(value, 'base64')`, so writing anything else here would break
+    // the sync that this step exists to enable. Fixing the storage format is a
+    // cross-cutting change that has to land in `src/lib/shipstation/**` and all
+    // its readers at once; encoding it differently only here would be worse.
+    const encoded = Buffer.from(apiKey, 'utf-8').toString('base64');
+    const masked = maskKey(apiKey);
+    const checkedAt = new Date().toISOString();
+
+    await db.query(
+      `INSERT INTO store_integrations (
+          store_id, integration_type, api_key_encrypted, configuration,
+          is_active, auto_sync_enabled, auto_sync_interval, sync_status
+       ) VALUES ($1, 'shipstation', $2, $3::jsonb, true, true, '1hour', 'pending')
+       ON CONFLICT (store_id, integration_type) DO UPDATE
+          SET api_key_encrypted = EXCLUDED.api_key_encrypted,
+              configuration     = store_integrations.configuration || EXCLUDED.configuration,
+              is_active         = true,
+              sync_error_message = NULL,
+              updated_at        = NOW()`,
+      [
+        context.row.store_id,
+        encoded,
+        JSON.stringify({
+          apiKeyMasked: masked,
+          connectedVia: 'onboarding',
+          verifiedAt: checkedAt,
+          verifiedAgainst: 'GET https://api.shipstation.com/v2/warehouses',
+          planLimited: result.status === 'plan_limited',
+          warehouseCount: result.warehouseCount ?? null,
+        }),
+      ]
+    );
+
+    const row = await persist(context.row, {
+      complete: 'shipstation',
+      data: {
+        shipstationSkipped: false,
+        shipstationMaskedKey: masked,
+        shipstationWarehouses: result.warehouseCount ?? null,
+        shipstationPlanLimited: result.status === 'plan_limited',
+        shipstationCheckedAt: checkedAt,
+      },
+    });
 
     return NextResponse.json({
-      connection: {
-        endpointUrl: resolveCustomStoreEndpointUrl(request.url),
-        username: credentials.username,
-        password: credentials.password,
-        statusMapping: statusMappingForForm(),
-        setupSteps: SHIPSTATION_SETUP_STEPS,
-      },
-      message: 'Custom Store credentials ready.',
+      check: result,
+      message: 'ShipStation connected.',
       state: await buildState({ session: context.session, row }, originOf(request)),
     });
   } catch (error) {
-    if (error instanceof ShipStationKeyError) {
-      // Names a missing environment variable, never a secret. Actionable and safe.
-      return NextResponse.json({ message: error.message }, { status: 503 });
-    }
     console.error('[onboarding/shipstation] failed:', error);
     return NextResponse.json(
       { message: 'Something broke on our end. We’ve been notified.' },

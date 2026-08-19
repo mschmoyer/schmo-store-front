@@ -61,13 +61,9 @@ export const STEPS: Record<StepId, StepDefinition> = {
     id: 'shipstation',
     number: 3,
     title: 'Connect ShipStation',
-    // This step no longer takes an API key — that moved to the catalog step,
-    // where it is the thing doing the work. Here the merchant copies four values
-    // into ShipStation, so the helper says which direction the data flows.
-    helper:
-      'We generate the credentials; you paste them into ShipStation once. After that your orders go over automatically and tracking comes back.',
-    primaryLabel: 'Continue',
-    shortLabel: 'Orders',
+    helper: 'Paste your API key. We test the connection before saving anything.',
+    primaryLabel: 'Test connection',
+    shortLabel: 'ShipStation',
     skippable: true,
   },
   import: {
@@ -75,7 +71,7 @@ export const STEPS: Record<StepId, StepDefinition> = {
     number: 4,
     title: 'Pull in your catalog',
     helper:
-      "Your ShipStation API key lets us read products, SKUs, prices, images and stock levels. A few hundred SKUs takes a few minutes — keep this tab open, and if you close it the sync resumes where it stopped.",
+      "We'll read your products, SKUs, prices, images and stock levels. A few hundred SKUs takes a few minutes — keep this tab open, and if you close it the sync resumes where it stopped.",
     primaryLabel: 'Start sync',
     shortLabel: 'Catalog',
     skippable: true,

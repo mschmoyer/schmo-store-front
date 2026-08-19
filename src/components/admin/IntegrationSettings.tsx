@@ -84,12 +84,11 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
   
   const integrationConfig = {
     shipstation: {
-      // Scoped to what this key can actually do. It reads the catalogue over the V2 REST API and
-      // has no order-creation resource, so claiming it handles "shipping" sent merchants looking
-      // for their orders here instead of at the Custom Store card.
-      name: 'ShipStation catalogue & inventory',
+      // One credential now does everything: catalogue and inventory in, orders out
+      // over `POST /v2/shipments`, tracking back from `GET /v2/shipments`.
+      name: 'ShipStation',
       description:
-        'Imports products, stock levels and warehouses from ShipStation. Orders and tracking are handled by the Custom Store connection above.',
+        'Imports products and inventory, sends your orders for fulfilment, and brings tracking back.',
       icon: IconPlug,
       apiKeyLabel: 'ShipStation API Key',
       apiKeyPlaceholder: 'ukyI...',

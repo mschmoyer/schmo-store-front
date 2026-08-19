@@ -24,13 +24,7 @@ function api(progress: Partial<ImportProgress>): OnboardingApi {
       ...ANONYMOUS_STATE,
       authenticated: true,
       currentStep: 'import',
-      // These tests are about the progress UI, which only renders once the
-      // catalogue key exists — without it the step correctly shows the key form.
-      shipstation: {
-        ...ANONYMOUS_STATE.shipstation,
-        connected: true,
-        catalogKeyPresent: true,
-      },
+      shipstation: { ...ANONYMOUS_STATE.shipstation, connected: true },
       importProgress: { ...ANONYMOUS_STATE.importProgress, ...progress },
     },
     loading: false,

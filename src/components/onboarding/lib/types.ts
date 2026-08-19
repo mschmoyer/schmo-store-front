@@ -70,14 +70,6 @@ export interface OnboardingShipStation {
   /** Whether the account is on a plan that limits what we can read. */
   planLimited: boolean;
   checkedAt: string | null;
-  /**
-   * Whether a ShipStation V2 API key is stored.
-   *
-   * Separate from `connected`, which is the Custom Store order feed. The key is
-   * the only thing that can import products and stock; the feed is the only thing
-   * that can send orders. A store can have either without the other.
-   */
-  catalogKeyPresent: boolean;
 }
 
 export interface OnboardingTheme {
@@ -115,7 +107,6 @@ export const ANONYMOUS_STATE: OnboardingState = {
     warehouseCount: null,
     planLimited: false,
     checkedAt: null,
-    catalogKeyPresent: false,
   },
   importProgress: {
     status: 'idle',

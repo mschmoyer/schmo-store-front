@@ -1895,3 +1895,57 @@ Open:
 - [ ] Onboarding never verifies the Custom Store connection actually works — it cannot, since
       ShipStation polls on its own schedule. The admin card's "last request received" is the only
       evidence, and onboarding does not surface it
+
+## Pivot: everything on the V2 API, Custom Store removed (2026-08-19)
+
+**User request**: "Ok big pivot. We should drive everything off V2 api. Remove custom store.
+Implement order push and fetch from APIv2."
+
+One integration, one credential. The Custom Store XML feed is gone; catalogue, orders out and
+tracking back all go through the V2 REST API under the merchant's single API key.
+
+- [x] **Order push wired.** `enqueueOrderPush` had been complete but callerless since it was
+      written — the "well-built dead code" the audit flagged. `billing/orders.ts::createPaidOrder`
+      now enqueues it **after** the transaction commits and only for a genuinely new order, so a
+      redelivered Stripe event cannot double-push and a ShipStation outage cannot fail a checkout
+      the shopper already paid for
+- [x] **Order fetch implemented.** New `syncShipmentsPage` pages `GET /v2/shipments` on a
+      `modified_at_start` window and writes tracking, carrier, service, cost, shipment id and
+      shipped-at back onto orders. Matching is on `external_shipment_id`, which `orderPush` already
+      sets to our `order_number` — so the two halves key off each other and shipments belonging to
+      the merchant rather than to us are skipped. Registered in `SyncOperation`, `SYNC_OPERATIONS`,
+      `PAGED_OPERATIONS`, the `runSyncPage` switch and `scripts/shipstation-probe.mjs`
+- [x] The window is on *modified*, not created: a shipment created days ago and shipped this
+      morning is exactly the row we need. No stored cursor yet — each run re-reads a fixed 30-day
+      window, which is safe because every write is the same update with the same values
+- [x] **Custom Store removed** — the endpoint, `xmlBuilder`/`xmlParser`/`xmlTypes`,
+      `customStoreAuth`, `customStoreConnection`, the admin card, the credential route, the
+      verification script and its npm entry, and 43 tests
+- [x] Onboarding reverted to the single-credential flow: step 3 takes the API key again, step 4
+      imports the catalogue with it. The admin card is one ShipStation entry that does everything
+- [x] `docs/shipstation-custom-store.md` kept, headed as removed/historical — the wire format is
+      not published anywhere else we control, so reinstating the feed would start from it
+- [x] `npx tsc --noEmit` clean, 800 tests, lint 0 errors. App boots clean; `/api/shipstation/orders`
+      now 404s as intended
+- [x] **Version bumped** to 3.0.0 — an integration was removed, which is breaking for any store
+      already pointing ShipStation at the feed
+
+Open — and the first one decides whether this pivot works at all:
+
+- [ ] **`create_sales_order` is not in the published contract.** `docs/shipstation-api-openapi.yaml`
+      has no order resource at all — no `POST /v2/orders`, no `GET /v2/sales_orders`. It knows
+      `sales_order_id` as a read-only field on a shipment and a `sales_orders_imported` webhook
+      event, but nothing that creates one. Orders reach ShipStation only as a side effect of
+      `POST /v2/shipments` with `create_sales_order: true`, a field ShipStation does not document —
+      the same class as `/v2/products`, which 404s on some accounts. **Nothing here has run against
+      a live account.** If push does not produce a fulfillable order, this is the reason, and the
+      Custom Store feed removed above was the only alternative
+- [ ] Creating a *shipment* is not obviously the same as creating an order awaiting fulfilment.
+      Whether the merchant sees something they can pick and pack, or a record already marked
+      shipped, is unverified
+- [ ] `syncShipmentsPage` has no unit test. The sync writers are not unit-tested as a class — they
+      need a database — and `npm run shipstation:probe` is the check that catches a changed response
+      shape. The probe entry is in place
+- [ ] Migration 024's Custom Store columns (`shipstation_username`,
+      `custom_store_password_encrypted`, `custom_store_enabled`) are now unused. Left in place
+      rather than dropped, since dropping them is irreversible and they cost nothing

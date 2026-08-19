@@ -9,7 +9,6 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
-import { CustomStoreCard } from '@/components/admin/CustomStoreCard';
 import { IntegrationConfiguration } from '@/types/database';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
@@ -35,15 +34,11 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Held in state so child cards receive it as a prop rather than each reaching into
-  // localStorage during render, which is not available on the server pass.
-  const [authToken, setAuthToken] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchIntegrations = async () => {
       try {
         const token = localStorage.getItem('admin_token');
-        setAuthToken(token);
         if (!token) return;
         
         const response = await fetch('/api/admin/integrations', {
@@ -214,17 +209,10 @@ export default function IntegrationsPage() {
           Shipping &amp; Fulfillment
         </Title>
         <Text size="sm" c="dimmed" mb="lg">
-          ShipStation connects in two places, and a store that sells and ships needs both. They are
-          not alternatives to each other — neither one can do the other&apos;s job.
+          Connect ShipStation to import your catalogue, send orders for fulfilment, and get
+          tracking back.
         </Text>
         <Stack gap="lg">
-          {/* Orders out, tracking back. ShipStation pulls orders from us over the Custom Store XML
-              feed, which has no catalogue capability of its own — hence the API key below. This is
-              listed first because it is the half a merchant must have to fulfil anything. */}
-          <CustomStoreCard token={authToken} />
-
-          {/* Catalogue and inventory in, over the ShipStation V2 REST API. This is the half that
-              has no order-creation resource, which is why it cannot replace the card above. */}
           {integrations
             .filter(integration => ['shipstation'].includes(integration.integrationType))
             .map((integration) => (

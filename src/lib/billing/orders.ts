@@ -18,6 +18,7 @@ import type { PoolClient } from 'pg';
 import { db } from '@/lib/database/connection';
 import { assertStockAvailable } from './cart';
 import { centsToDecimalString } from './money';
+import { enqueueOrderPush } from '@/lib/shipstation/orderPush';
 import type {
   CartTotals,
   CheckoutCustomerDetails,
@@ -84,7 +85,7 @@ export async function findOrderByCheckoutSession(
  * @throws Error when stock ran out between session creation and payment.
  */
 export async function createPaidOrder(input: CreatePaidOrderInput): Promise<CreatedOrder> {
-  return await db.transaction(async (client: PoolClient) => {
+  const created = await db.transaction(async (client: PoolClient) => {
     // Idempotency: another delivery of the same event may already have written this order.
     const existing = await client.query<{ id: string; order_number: string }>(
       `SELECT id, order_number FROM orders WHERE stripe_checkout_session_id = $1 FOR UPDATE`,
@@ -237,6 +238,28 @@ export async function createPaidOrder(input: CreatePaidOrderInput): Promise<Crea
 
     return { orderId, orderNumber, alreadyExisted: false };
   });
+
+  // Hand the order to ShipStation *after* the transaction commits, and only for a
+  // genuinely new order — a redelivered Stripe event must not enqueue a second push.
+  //
+  // Two rules meet here. The local order is authoritative and is written first, so a
+  // ShipStation outage cannot fail a checkout the shopper has already paid for; and
+  // the push is a queued job rather than an inline call, so it cannot extend the
+  // webhook's request either. `enqueueOrderPush` reports its own failures onto
+  // `orders.fulfillment_sync_status` and never throws, but it is still guarded here:
+  // nothing about fulfilment may propagate into the paid-order path.
+  if (!created.alreadyExisted) {
+    try {
+      await enqueueOrderPush({ orderId: created.orderId, storeId: input.storeId });
+    } catch (error) {
+      console.error(
+        `Order ${created.orderNumber} was written but could not be queued for ShipStation:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
+  return created;
 }
 
 /**

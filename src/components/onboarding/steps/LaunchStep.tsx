@@ -74,19 +74,7 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
   const url = api.state.storeUrl ?? '';
   const published = Boolean(store?.isPublic);
   const imported = api.state.importProgress.imported;
-  // The two ShipStation halves land on this screen differently: the order feed
-  // decides whether the store can be fulfilled, the catalogue key decides
-  // whether there is anything in it. Reporting one under the other's name is
-  // how a store with products but no order feed used to read as fully set up.
-  const ordersConnected = api.state.shipstation.connected;
-  const catalogConnected = api.state.shipstation.catalogKeyPresent;
-  /*
-   * Only two of the five steps can be passed over: the order connection and the
-   * catalogue import. Counting them separately matters now that they are
-   * separate credentials — a merchant who connected orders but imported nothing
-   * has skipped one, not two.
-   */
-  const skippedCount = (ordersConnected ? 0 : 1) + (catalogConnected && imported > 0 ? 0 : 1);
+  const connected = api.state.shipstation.connected;
   const [copied, setCopied] = React.useState(false);
 
   /*
@@ -129,9 +117,9 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
   return (
     <div className={wizardStyles.card}>
       <span className={wizardStyles.stepEyebrow}>
-        {skippedCount === 0
+        {connected && imported > 0
           ? `${TOTAL_STEPS} of ${TOTAL_STEPS} done`
-          : `${TOTAL_STEPS - skippedCount} of ${TOTAL_STEPS} done · ${skippedCount} skipped`}
+          : `${TOTAL_STEPS - (connected ? 1 : 2)} of ${TOTAL_STEPS} done · ${connected ? 1 : 2} skipped`}
       </span>
 
       <div className={styles.launchHead}>
@@ -157,7 +145,7 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
       <p className={styles.sectionLabel}>What to do next</p>
 
       <ul className={styles.nextList}>
-        {catalogConnected ? (
+        {connected ? (
           imported > 0 ? (
             <li className={styles.nextItem}>
               <span className={styles.nextDot} aria-hidden="true" />
@@ -182,23 +170,8 @@ export default function LaunchStep({ api }: { api: OnboardingApi }): React.React
           <li className={styles.nextItem}>
             <span className={styles.nextDot} aria-hidden="true" />
             <span>
-              <strong>Add your ShipStation API key to import products.</strong> Your store works
+              <strong>Connect ShipStation to import your products.</strong> Your store works
               without it — it just has nothing to sell yet.
-            </span>
-          </li>
-        )}
-
-        {ordersConnected ? null : (
-          <li className={styles.nextItem}>
-            <span className={styles.nextDot} aria-hidden="true" />
-            <span>
-              <strong>Finish the ShipStation order connection.</strong> Until you do, orders stay
-              here — ShipStation will not collect them, so nothing gets picked, packed or
-              tracked. It lives under{' '}
-              <Link href="/admin/integrations" className={styles.inlineLink}>
-                Integrations
-              </Link>
-              .
             </span>
           </li>
         )}

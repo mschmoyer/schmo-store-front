@@ -140,10 +140,8 @@ export default function OnboardingWizard(): React.ReactElement {
    *
    * The server already knows — `shipstation.skipped` and an import whose status
    * is `skipped` — and the indicator is the only place that ever pretended
-   * otherwise. `import` also counts as skipped when no catalogue key was ever
-   * supplied, because there was nothing there to import in the first place.
-   * That gate is the *key*, not `shipstation.connected`: connected now means the
-   * order feed, which cannot import a product.
+   * otherwise. `import` also counts as skipped when ShipStation was never
+   * connected, because there was nothing there to import in the first place.
    */
   const skippedSteps: StepId[] = [];
   if (api.state.shipstation.skipped || (!api.state.shipstation.connected && api.state.completedSteps.includes('shipstation'))) {
