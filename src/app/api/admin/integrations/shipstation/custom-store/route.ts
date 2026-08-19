@@ -58,6 +58,33 @@ function statusMappingForForm(): Record<string, string> {
 }
 
 /**
+ * When ShipStation last successfully authenticated against this store's feed.
+ *
+ * This is the only honest evidence the integration is working. ShipStation's polling cadence is not
+ * a fixed interval a merchant can predict — the spec (§4, "Importing orders") says auto-update
+ * frequency depends on their usage history and "is not a fixed interval you can rely on" — so a
+ * screen that claims "connected" from configuration alone is claiming something it cannot know.
+ * A timestamp is a fact.
+ *
+ * @param storeId - Store UUID.
+ * @returns ISO timestamp of the last successful poll, or null if ShipStation has never called.
+ */
+async function lastPollAt(storeId: string): Promise<string | null> {
+  const result = await db.query<{ created_at: Date }>(
+    `SELECT created_at
+       FROM integration_logs
+      WHERE store_id = $1
+        AND integration_type = 'shipstation'
+        AND status = 'success'
+        AND operation LIKE 'custom\\_store\\_%'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [storeId]
+  );
+  return result.rows[0]?.created_at?.toISOString() ?? null;
+}
+
+/**
  * Resolve the store owned by the signed-in user.
  *
  * @param userId - Authenticated user id.
@@ -98,10 +125,12 @@ function resolveEndpointUrl(request: NextRequest): string {
  */
 function connectionPayload(
   request: NextRequest,
-  credentials: { username: string; password: string; enabled: boolean } | null
+  credentials: { username: string; password: string; enabled: boolean } | null,
+  lastPoll: string | null = null
 ) {
   return {
     configured: credentials !== null,
+    lastPollAt: lastPoll,
     endpointUrl: resolveEndpointUrl(request),
     username: credentials?.username ?? null,
     password: credentials?.password ?? null,
@@ -144,8 +173,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
-    const credentials = await getCustomStoreCredentials(storeId);
-    return NextResponse.json({ success: true, data: connectionPayload(request, credentials) });
+    const [credentials, lastPoll] = await Promise.all([
+      getCustomStoreCredentials(storeId),
+      lastPollAt(storeId)
+    ]);
+    return NextResponse.json({ success: true, data: connectionPayload(request, credentials, lastPoll) });
   } catch (error) {
     return errorResponse(error, 'Failed to load Custom Store connection details');
   }
@@ -172,8 +204,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // already pasted into ShipStation.
     if (typeof body?.enabled === 'boolean' && body.rotate !== true) {
       await setCustomStoreEnabled(storeId, body.enabled);
-      const credentials = await getCustomStoreCredentials(storeId);
-      return NextResponse.json({ success: true, data: connectionPayload(request, credentials) });
+      const [credentials, lastPoll] = await Promise.all([
+        getCustomStoreCredentials(storeId),
+        lastPollAt(storeId)
+      ]);
+      return NextResponse.json({ success: true, data: connectionPayload(request, credentials, lastPoll) });
     }
 
     const credentials = await issueCustomStoreCredentials(storeId);

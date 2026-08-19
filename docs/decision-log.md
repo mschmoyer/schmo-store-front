@@ -1691,3 +1691,44 @@ Open:
       probably be deleted
 - [ ] No end-to-end run against a real ShipStation account. That needs production: Vercel's
       `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect
+
+## Custom Store setup card (2026-08-19)
+
+Confirmed with the live ShipStation form: username and password are **separate fields**, so the
+merchant copies three values plus five status strings — nine fields, any one of which fails
+silently if mistyped. The card is built around that, not around looking configured.
+
+- [x] **`src/components/admin/CustomStoreCard.tsx`**, rendered in the Shipping & Fulfillment
+      section of `/admin/integrations`. Every value has a copy button, including the five status
+      strings, which are case-sensitive and which nobody guesses
+- [x] The status strings come from the server, derived from `mapOrderStatusToShipStation` rather
+      than hardcoded in the component, so the screen cannot drift from what the feed emits.
+      On-Hold renders "Leave this field empty" — we never emit that status, and filling it would
+      leave ShipStation waiting for a value it never sees
+- [x] **The password is shown in full, not masked.** It exists to be pasted into another system.
+      Masking would force a merchant who lost it to rotate, and rotating silently breaks a live
+      connection until they notice imports stopped. Rotation is behind a confirmation that says so
+- [x] **Status is a timestamp, not a badge claim.** `lastPollAt` reads the most recent successful
+      authentication from `integration_logs`. ShipStation's polling cadence is not a fixed interval
+      (spec §4), so "connected" asserts something we cannot know; "Last request received 16 minutes
+      ago" is a fact. Before the first poll the card says so plainly and calls it normal
+- [x] An alert states that this connection carries orders and tracking **only**, and that products
+      and inventory need the separate API key — the two-channel split, in the one place a merchant
+      would otherwise be misled by a screen that looks complete
+
+Verified in a real browser (Playwright against the running app), not just in tests: card renders,
+credentials and status strings display, endpoint URL correct.
+
+Two defects found and fixed during that check, both invisible to the unit tests:
+- The six-step instruction list rendered **without numbers** — Tailwind's preflight resets `ol`
+  list-style, and an unnumbered procedure is worse than no list. Needs `listStyleType` explicitly
+- `color="blue"` on the informational alert violated `admin-palette.test.ts`, which permits only
+  green, orange/yellow and red as semantic hues and neutral otherwise. Now `ink`
+
+Open:
+- [ ] Shipnotify is still not covered end to end by the verifier — it tests action routing and
+      rejection but never POSTs a real `<ShipNotice>` and asserts the order flips to shipped
+- [ ] The onboarding panel is still to build
+- [ ] Nothing has been exercised against a real ShipStation account. That needs production:
+      Vercel's `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth
+      redirect rather than our XML
