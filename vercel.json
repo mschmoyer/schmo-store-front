@@ -1,15 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-
   "buildCommand": "node database/migrate.js && npm run build",
   "installCommand": "npm ci",
-
-  "regions": ["iad1"],
-
+  "regions": [
+    "iad1"
+  ],
   "functions": {
     "src/app/api/cron/**/route.ts": {
       "maxDuration": 300,
+      "memory": 1769
+    },
+    "src/app/api/jobs/process/route.ts": {
+      "maxDuration": 60,
       "memory": 1769
     },
     "src/app/api/admin/sync/**/route.ts": {
@@ -41,18 +44,20 @@
       "memory": 1024
     }
   },
-
   "crons": [
     {
       "path": "/api/cron/sync",
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/jobs/process",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/inventory-snapshot",
       "schedule": "10 7 * * *"
     }
   ],
-
   "headers": [
     {
       "source": "/(.*)\\.(jpg|jpeg|png|gif|webp|avif|svg|ico)",
@@ -75,12 +80,17 @@
     {
       "source": "/api/cron/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-store, max-age=0" },
-        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
       ]
     }
   ],
-
   "git": {
     "deploymentEnabled": {
       "main": true

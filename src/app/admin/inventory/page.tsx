@@ -43,6 +43,7 @@ import {
   IconX
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
+import { ShipStationSyncButton } from '@/components/admin/ShipStationSyncButton';
 import { useDisclosure } from '@mantine/hooks';
 import InventoryEditModal from '@/components/admin/InventoryEditModal';
 import type { ForecastPeriod, ForecastResult } from '@/lib/inventory-forecasting-types';
@@ -304,49 +305,6 @@ export default function InventoryPage() {
     }
   }, [inventory, forecastPeriod, updateForecastData]);
 
-  const handleSyncShipStation = async () => {
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-
-      const response = await fetch('/api/admin/inventory', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ action: 'sync_shipstation' })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          notifications.show({
-            title: 'Sync Successful',
-            message: `Synced ${result.synced_items} items from ShipStation`,
-            color: 'green',
-            icon: <IconCheck size="1rem" />
-          });
-          fetchInventoryData(); // Refresh data
-        }
-      } else {
-        notifications.show({
-          title: 'Sync Failed',
-          message: 'Failed to sync with ShipStation. Check your integration settings.',
-          color: 'red',
-          icon: <IconAlertCircle size="1rem" />
-        });
-      }
-    } catch (error) {
-      console.error('Sync error:', error);
-      notifications.show({
-        title: 'Sync Error',
-        message: 'An error occurred while syncing with ShipStation',
-        color: 'red',
-        icon: <IconAlertCircle size="1rem" />
-      });
-    }
-  };
 
   const handleExportCSV = async () => {
     try {
@@ -491,9 +449,15 @@ export default function InventoryPage() {
         title="Inventory"
         description="Stock levels, forecasting and restock orders across every warehouse."
         actions={
-          <Button leftSection={<IconRefresh size="1rem" />} variant="default" onClick={handleSyncShipStation}>
-            Sync ShipStation
-          </Button>
+          /* Gated on the integration actually being connected. The button used to
+             be always enabled, so a store with no ShipStation key got a failure
+             notification instead of being told what was missing. */
+          <ShipStationSyncButton
+            endpoint="/api/admin/inventory"
+            body={{ action: 'sync_shipstation' }}
+            label="Sync from ShipStation"
+            onSynced={fetchInventoryData}
+          />
         }
       />
 

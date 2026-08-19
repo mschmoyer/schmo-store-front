@@ -1949,3 +1949,68 @@ Open — and the first one decides whether this pivot works at all:
 - [ ] Migration 024's Custom Store columns (`shipstation_username`,
       `custom_store_password_encrypted`, `custom_store_enabled`) are now unused. Left in place
       rather than dropped, since dropping them is irreversible and they cost nothing
+
+## Integration cards: Connect/Disconnect/Test, and the sync that was never running (2026-08-19)
+
+**User request**: "give the same UI treatment to the stripe integration in settings… When an
+integration is connected, is the Connect button replaced with a red Disconnect button? It should
+be… Where did the inventory/product sync go? Do we still do that on a daily cron? (we should)."
+
+Three findings, then the work:
+
+- [x] **The scheduled sync was scheduled but inert.** `/api/cron/sync` runs hourly and only
+      *enqueues* one `job_queue` row per store per operation. The drainer, `/api/jobs/process`, had
+      **no cron entry at all**, so nothing ever processed the queue. Catalogue and inventory sync
+      has therefore not been running in production; the admin button worked only because
+      `manualSync` bypasses the queue. Added `*/5 * * * *` for `/api/jobs/process`, plus the
+      `functions` entry it was also missing — its `WORK_BUDGET_MS` is 50 s and without a
+      `maxDuration` above that the platform default would kill jobs mid-flight
+- [x] **There was no Disconnect anywhere.** `Connect` rendered only when inactive and nothing
+      replaced it, so a connected integration offered no way out
+- [x] **`Test Connection` could not test what was stored.** `/api/admin/integrations/test` requires
+      `apiKey` in the body, so it only ever proved that a key the merchant had just typed worked.
+      The header Test now posts to `/api/admin/integrations/shipstation/test` with no body, which
+      falls back to the stored credential and goes through `shipStationFetch`. The in-form button
+      is relabelled **"Test this key"** so the two are not confusable
+- [x] Connected cards now show a green **Test** and a red **Disconnect**; disconnect confirms first,
+      since it stops catalogue sync and order push, then refetches the list rather than reloading
+- [x] **`ShipStationSyncButton`** on the Products and Inventory grids, disabled with the reason
+      until the integration is connected — an always-enabled button that fails tells the merchant
+      nothing. It reports rows written rather than "success"
+
+### The Stripe card was reporting a fiction
+
+It collected a per-store **Stripe Secret Key** into `store_integrations`, and nothing read it:
+grep across `src/lib/stripe/**`, `src/lib/billing/**` and the checkout/billing/connect routes finds
+no reader for `api_key_encrypted`. Payments run on the deployment's `STRIPE_SECRET_KEY` plus a
+Stripe **Connect** account per store. Its "Active" badge came from a row with no bearing on whether
+the store could take money — on the demo store it showed **Active** while `STRIPE_SECRET_KEY` was
+not set at all.
+
+- [x] Replaced with `StripeConnectCard`, driven by `GET /api/connect/status`: platform
+      configuration, then whether *their* account can accept charges and receive payouts. Connect
+      starts real onboarding via `/api/connect/onboard`; Test re-reads from Stripe and reports
+      capability rather than mere linkage; Disconnect unlinks via a new
+      `DELETE /api/connect/disconnect`
+- [x] That route deletes **our record of the link, not the Stripe account** — destroying a
+      merchant's account from our admin screen is the wrong power to hold, and Stripe does not
+      offer it for a live account anyway. The confirmation says so
+- [x] Verified in a browser: connected ShipStation shows Test/Disconnect, the Products button
+      enables only when connected, and Stripe correctly reads "Not connected" with the missing-key
+      alert. `tsc` clean, 800 tests, lint 0 errors (75 pre-existing warnings)
+- [x] **Version bumped** to 3.1.0
+
+Caught while wiring, worth recording: the inventory grid's `onSynced` was first pointed at
+`handleSyncShipStation`, which would have re-run the sync instead of refreshing the grid — every
+sync firing twice. It now refreshes, and the superseded handler is deleted.
+
+Open:
+- [ ] Square and PayPal cards are still the generic form with no disconnect route, so they show
+      Connect and never Test/Disconnect. They are also inactive everywhere — worth asking whether
+      they are real or should follow the Stripe card out
+- [ ] `/api/admin/integrations/test` still logs a masked fragment of the key
+      (`first4...last4`), which rule 3 in `src/lib/shipstation/CLAUDE.md` forbids outright, and
+      still uses a raw `fetch` rather than `shipStationFetch`. The header Test no longer routes
+      through it, but the in-form button does
+- [ ] The new `*/5` cron will drain a queue that has been accumulating; the first production run
+      after deploy may process a backlog

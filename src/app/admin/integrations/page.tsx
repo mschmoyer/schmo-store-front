@@ -10,6 +10,7 @@ import {
 import { IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
 import { IntegrationConfiguration } from '@/types/database';
+import { StripeConnectCard } from '@/components/admin/StripeConnectCard';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
 
@@ -35,8 +36,15 @@ export default function IntegrationsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchIntegrations = async () => {
+  /**
+   * Load the integration list.
+   *
+   * Hoisted out of the mount effect so a disconnect can refresh the cards
+   * without a full page reload — the card's state is derived entirely from this
+   * response, so a stale list would keep showing Disconnect for something that
+   * is already gone.
+   */
+  const fetchIntegrations = React.useCallback(async () => {
       try {
         const token = localStorage.getItem('admin_token');
         if (!token) return;
@@ -123,10 +131,15 @@ export default function IntegrationsPage() {
       } finally {
         setLoading(false);
       }
-    };
-    
-    fetchIntegrations();
   }, []);
+
+  useEffect(() => {
+    // Awaited inside the effect rather than called from its body: the state this
+    // sets lands after the request resolves, not synchronously on mount.
+    void (async () => {
+      await fetchIntegrations();
+    })();
+  }, [fetchIntegrations]);
   
   const handleUpdateIntegration = async (integrationType: string, data: Partial<Integration>) => {
     setSaving(true);
@@ -220,6 +233,7 @@ export default function IntegrationsPage() {
                 key={integration.integrationType}
                 integration={integration}
                 onUpdate={handleUpdateIntegration}
+                onDisconnected={fetchIntegrations}
                 loading={saving}
               />
             ))}
@@ -235,13 +249,21 @@ export default function IntegrationsPage() {
           Choose your payment processors to accept credit cards, digital wallets, and more.
         </Text>
         <Stack gap="lg">
+          {/* Stripe is not a stored API key on this platform: payments run on the
+              deployment's STRIPE_SECRET_KEY plus a Connect account per store. The
+              generic card collected a per-store secret that no payment code read,
+              so its "Active" badge was derived from a row with no bearing on
+              whether the store could take money. */}
+          <StripeConnectCard />
+
           {integrations
-            .filter(integration => ['stripe', 'square', 'paypal'].includes(integration.integrationType))
+            .filter(integration => ['square', 'paypal'].includes(integration.integrationType))
             .map((integration) => (
               <IntegrationSettings
                 key={integration.integrationType}
                 integration={integration}
                 onUpdate={handleUpdateIntegration}
+                onDisconnected={fetchIntegrations}
                 loading={saving}
               />
             ))}
