@@ -27,7 +27,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database';
-import { authenticateShipStationMulti, logAuthAttempt } from '@/lib/shipstation/auth';
+import {
+  authenticateCustomStoreRequest,
+  logCustomStoreAuthAttempt
+} from '@/lib/shipstation/customStoreAuth';
 import {
   CustomStoreOrderRow,
   exportOrdersToXML,
@@ -159,17 +162,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let authenticatedStoreId: string | null = null;
 
   try {
-    const authResult = await authenticateShipStationMulti(request);
-    await logAuthAttempt(request, authResult, 'GET');
+    const authResult = await authenticateCustomStoreRequest(request);
+    await logCustomStoreAuthAttempt(authResult, 'export');
 
-    if (!authResult.success) {
-      return xmlError(authResult.error || 'Authentication failed', 401);
+    if (!authResult.ok) {
+      // One generic reason for every failure: an unauthenticated caller learns
+      // nothing about which check failed, or whether the username is real.
+      return xmlError(authResult.reason, 401);
     }
 
-    const { storeId } = authResult;
-    if (!storeId) {
-      return xmlError('Store not found', 404);
-    }
+    const storeId = authResult.storeId;
     authenticatedStoreId = storeId;
 
     const { searchParams } = new URL(request.url);
@@ -358,17 +360,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let authenticatedStoreId: string | null = null;
 
   try {
-    const authResult = await authenticateShipStationMulti(request);
-    await logAuthAttempt(request, authResult, 'POST');
+    const authResult = await authenticateCustomStoreRequest(request);
+    await logCustomStoreAuthAttempt(authResult, 'shipnotify');
 
-    if (!authResult.success) {
-      return xmlError(authResult.error || 'Authentication failed', 401);
+    if (!authResult.ok) {
+      // One generic reason for every failure: an unauthenticated caller learns
+      // nothing about which check failed, or whether the username is real.
+      return xmlError(authResult.reason, 401);
     }
 
-    const { storeId } = authResult;
-    if (!storeId) {
-      return xmlError('Store not found', 404);
-    }
+    const storeId = authResult.storeId;
     authenticatedStoreId = storeId;
 
     // `action=shipnotify` is required, not merely honoured when present. An
@@ -549,17 +550,17 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
   const startTime = Date.now();
 
   try {
-    const authResult = await authenticateShipStationMulti(request);
-    await logAuthAttempt(request, authResult, 'PUT');
+    const authResult = await authenticateCustomStoreRequest(request);
+    await logCustomStoreAuthAttempt(authResult, 'status_update');
 
-    if (!authResult.success) {
-      return new NextResponse(formatShipStationError(authResult.error || 'Authentication failed'), {
+    if (!authResult.ok) {
+      return new NextResponse(formatShipStationError(authResult.reason), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    const { storeId } = authResult;
+    const storeId = authResult.storeId;
     if (!storeId) {
       return new NextResponse(formatShipStationError('Store not found'), {
         status: 404,

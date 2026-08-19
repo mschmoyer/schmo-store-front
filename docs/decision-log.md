@@ -1638,3 +1638,56 @@ Open:
       changing it would silently break any existing merchant mapping, but it collapses
       `confirmed`/`processing` and `delivered`/`shipped`, and offers nothing for On-Hold
 - [ ] A shipnotify for an order already `cancelled` still forces it to `shipped`
+
+## Custom Store credentials and Basic auth (2026-08-19)
+
+The verification loop reported `AUTH-5` — nothing could authenticate — which was accurate: the
+credential layer did not exist. A parallel session had meanwhile made the export and shipnotify
+handlers conform to the spec (`428c82c`), and left `auth.ts` untouched, so the two halves met here.
+
+- [x] **`src/lib/shipstation/customStoreAuth.ts`** replaces `auth.ts`, which is deleted. One
+      indexed lookup by username, then a constant-time comparison. The old module looped every
+      active integration row across every tenant and returned the first credential that matched
+      (P1-8); compared `shipstation_password_hash` against `Buffer.from(password).toString('base64')`,
+      which is an encoding and not a hash; and offered an `x-api-key` / `x-api-secret` scheme that
+      appears nowhere in ShipStation's contract. All three are gone
+- [x] The secret is **encrypted, not hashed** — 24 bytes from `crypto.randomBytes`, so the offline
+      brute-force attack bcrypt exists to slow does not apply, and encryption lets a merchant who
+      lost the value read it back instead of rotating and silently breaking a live connection
+- [x] **`GET`/`POST /api/admin/integrations/shipstation/custom-store`** issues and reads the
+      credentials, and returns the case-sensitive status strings ShipStation's connection form
+      needs (`awaiting_payment`, `awaiting_fulfillment`, `shipped`, `cancelled`, and a deliberate
+      blank for On-Hold, which we never emit). Derived from `mapOrderStatusToShipStation` rather
+      than hardcoded, so the screen cannot drift from the feed
+- [x] Toggling the feed is not rotating it. A merchant pausing imports keeps the credential they
+      already pasted into ShipStation
+- [x] `verify-custom-store.mjs` now provisions through that route, asserts the read-back matches
+      what was issued, and covers tenant isolation
+
+**A cross-tenant bug, caught by the loop within minutes of being written.**
+`buildCustomStoreUsername` truncated the store UUID to 16 hex characters. UUIDs minted in a batch
+commonly share a long prefix and differ only at the end, so seeded stores `...440001` and
+`...440002` both derived `store_650e8400e29b41d4`. Whichever store issued credentials second would
+have claimed the first store's username and then served its orders. The unique index added in
+migration 024 caught it as a constraint violation rather than a silent overwrite — which is exactly
+what that index is for, and is the second time on this branch that constraint has earned its place.
+The derivation now uses the whole id, with a regression test naming those two UUIDs.
+
+Verified locally against Postgres 16 and a running instance: **20/20 required checks**, XSD advisory
+passing with only the 27 documented `CurrencyCode` gaps tolerated. Store A sees 27 orders, store B
+sees 23, overlap 0; store A's secret against store B's username is 401. Suite 842/842 across 50
+suites, lint 0 errors, tsc clean.
+
+Open:
+- [ ] **Shipnotify is not yet covered end to end.** The verifier exercises action routing and
+      rejection, but does not POST a real `<ShipNotice>` and assert the order flips to shipped with
+      tracking recorded, because that mutates seeded data. It is the largest remaining hole in the
+      loop
+- [ ] The integrations UI card and the onboarding panel are still to build. The connection-form
+      recon — whether ShipStation takes username and password as separate fields or expects them in
+      the URL — is still open and gates the card's layout
+- [ ] `PUT /api/shipstation/orders` is not in the spec. It is now behind the same Basic auth rather
+      than the deleted module, but it is unreachable surface that mutates orders and should
+      probably be deleted
+- [ ] No end-to-end run against a real ShipStation account. That needs production: Vercel's
+      `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect

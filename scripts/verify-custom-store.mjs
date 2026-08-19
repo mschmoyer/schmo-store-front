@@ -167,7 +167,64 @@ async function resolveCredentials() {
   if (process.env.CUSTOM_STORE_USER && process.env.CUSTOM_STORE_PASS) {
     return { user: process.env.CUSTOM_STORE_USER, pass: process.env.CUSTOM_STORE_PASS };
   }
-  return null;
+
+  if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
+    return null;
+  }
+  return issueFor(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD, { checkRoundTrip: true });
+}
+
+/**
+ * Issue Custom Store credentials for one merchant through the real admin route.
+ *
+ * Deliberately never writes the database directly. A credential this script minted itself would
+ * prove nothing about the path a merchant actually takes — which is precisely the gap that let
+ * audit P0-1 ship a screen showing credentials the server had never stored.
+ *
+ * @param {string} email - Merchant sign-in email.
+ * @param {string} password - Merchant sign-in password.
+ * @param {{checkRoundTrip?: boolean}} [opts] - Whether to assert the read-back matches.
+ * @returns {Promise<{user: string, pass: string}|null>} Credentials, or null on any failure.
+ */
+async function issueFor(email, password, opts = {}) {
+  const login = await fetch(`${BASE_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!login.ok) {
+    console.log(`  (could not sign in as ${email}: ${login.status})`);
+    return null;
+  }
+  const { token } = await login.json();
+
+  const issued = await fetch(`${BASE_URL}/api/admin/integrations/shipstation/custom-store`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ rotate: true }),
+  });
+  if (!issued.ok) {
+    console.log(`  (credential issue failed for ${email}: ${issued.status} ${(await issued.text()).slice(0, 160)})`);
+    return null;
+  }
+  const { username, password: secret } = (await issued.json()).data ?? {};
+  if (!username || !secret) {
+    console.log(`  (credential route returned no username/password for ${email})`);
+    return null;
+  }
+
+  if (opts.checkRoundTrip) {
+    // What the screen reads back must equal what was persisted, or the merchant is being shown a
+    // credential the server will not accept.
+    const readBack = await fetch(`${BASE_URL}/api/admin/integrations/shipstation/custom-store`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const readBody = readBack.ok ? await readBack.json() : {};
+    record('CRED-1', readBody?.data?.username === username && readBody?.data?.password === secret, 'credentials read back identical to those issued (no phantom-credential class of bug)');
+    record('CRED-2', Boolean(readBody?.data?.statusMapping?.['Paid Status']), `status mapping supplied for ShipStation's form: ${JSON.stringify(readBody?.data?.statusMapping ?? {})}`);
+  }
+
+  return { user: username, pass: secret };
 }
 
 /**
@@ -242,6 +299,30 @@ async function main() {
     // The spec (§2) says return every order modified in the window REGARDLESS of status.
     const statuses = [...exp.body.matchAll(/<OrderStatus>(?:<!\[CDATA\[)?([^<\]]*)/g)].map((m) => m[1]);
     record('EXPORT-9', statuses.some((s) => /cancel/i.test(s)), statuses.length === 0 ? 'no orders returned — cannot check status coverage' : `cancelled orders present in feed (statuses: ${[...new Set(statuses)].join(', ')})`);
+  }
+
+  // ---- Tenant isolation -----------------------------------------------------------------
+  // The credential *is* the tenant selector here — there is no store id anywhere in a ShipStation
+  // request — so isolation rests entirely on the username lookup resolving exactly one row.
+  if (process.env.ADMIN_EMAIL_B && process.env.ADMIN_PASSWORD_B) {
+    console.log('\nTenant isolation');
+    const other = await issueFor(process.env.ADMIN_EMAIL_B, process.env.ADMIN_PASSWORD_B);
+    if (other) {
+      record('TENANT-1', other.user !== creds.user, `second store has a distinct username (${other.user})`);
+
+      const swapped = await call({ user: other.user, pass: creds.pass, query: { action: 'export', ...window, page: '1' } });
+      record('TENANT-2', swapped.status === 401, `store A's secret against store B's username → ${swapped.status} (want 401)`);
+
+      const mine = await call({ ...creds, query: { action: 'export', ...window, page: '1' } });
+      const theirs = await call({ user: other.user, pass: other.pass, query: { action: 'export', ...window, page: '1' } });
+      const numbers = (xml) => new Set([...xml.matchAll(/<OrderNumber>(?:<!\[CDATA\[)?([^<\]]*)/g)].map((m) => m[1]));
+      const a = numbers(mine.body);
+      const b = numbers(theirs.body);
+      const overlap = [...a].filter((n) => b.has(n));
+      record('TENANT-3', a.size > 0 && b.size > 0 && overlap.length === 0, `store A sees ${a.size} orders, store B sees ${b.size}, overlap ${overlap.length} (want 0)`);
+    } else {
+      record('TENANT-1', false, 'could not issue credentials for the second store');
+    }
   }
 
   console.log('\nAction routing');

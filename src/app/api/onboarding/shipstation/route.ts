@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     // TODO(audit P0-9): `api_key_encrypted` is base64, not encryption. Every
-    // existing reader (`src/lib/shipstation/auth.ts`, every sync route) does
+    // existing reader (every sync route) does
     // `Buffer.from(value, 'base64')`, so writing anything else here would break
     // the sync that this step exists to enable. Fixing the storage format is a
     // cross-cutting change that has to land in `src/lib/shipstation/**` and all
