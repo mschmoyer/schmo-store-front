@@ -1692,6 +1692,58 @@ Open:
 - [ ] No end-to-end run against a real ShipStation account. That needs production: Vercel's
       `ssoProtection` is `all_except_custom_domains`, so preview URLs serve an auth redirect
 
+## 2026-08-19
+
+### The whole stack, including Postgres, runs inside a Claude session container
+
+- [x] `scripts/setup-local-stack.sh` — starts the image's existing `postgresql-16` cluster,
+      creates the role password and database, then hands off to `dev-local --setup`. No Docker
+      (it is not available in the sandbox, and would be slower than the ~2s `pg_ctlcluster` start
+      even where it is)
+- [x] `.claude/hooks/session-start.sh` + `.claude/settings.json` run that script at session start,
+      synchronously — the e2e suite needs a seeded database, so a session that starts before the
+      seed lands just fails its first run
+- [x] `playwright.config.js` `webServer` uncommented, with `reuseExistingServer`. Every spec
+      navigates to localhost:3000 and the whole suite died with `ERR_CONNECTION_REFUSED` whenever
+      nobody had started `npm run dev` by hand — the single most common way to lose a run
+- [x] `dev-local.js` now writes `SHIPSTATION_ENCRYPTION_KEY` alongside `JWT_SECRET`. Credential
+      encryption fails closed, so without it every ShipStation path threw `ShipStationKeyError`
+      on a freshly set-up machine
+- [x] `scripts/connect-shipstation.js` (`npm run shipstation:connect`) — verifies a V2 key against
+      `GET /v2/warehouses`, then writes it AES-256-GCM-encrypted into `store_integrations`. The app
+      never reads a merchant key from the environment, so a key in `.env.local` connected nothing;
+      this is the headless equivalent of onboarding step 3
+- [x] The script carries its own copy of the `ssenc:v1:` construction because it is CommonJS and
+      `crypto.ts` is app TypeScript. `scriptCiphertext.test.ts` decrypts a script-written value
+      through `decryptSecret`, so the copies cannot drift silently
+- [x] Three e2e defects fixed, none of them environmental: the marketing CTA lands on
+      `/create-store?step=account` so anchoring the pattern to the path failed; the coupons error
+      text matched twice under `next dev` because the dev overlay repeats it; and the purchase
+      journey took the first product card, which is the deliberately sold-out one whenever
+      Postgres happens to order the seed's identical `created_at` values that way, and asserted
+      against a first-visit route on the 5s default timeout instead of the `COLD_COMPILE` budget
+      `marketing.spec.js` already had
+- [x] Chromium suite verified 134/134 from a genuinely cold start — no `.next`, no dev server,
+      Playwright starting everything — in 5.3min
+- [x] `docs/claude-session-setup.md` — runbook, measured timings, where ShipStation credentials go,
+      troubleshooting table
+- [x] **Version bumped** to 2.5.0
+
+**User Request**: "investigate how you can run this entire site end-to-end including database in your
+session/environment as efficiently as possible ... where would I place [ShipStation credentials]"
+
+Open:
+- [ ] **Egress policy blocks ShipStation.** The session proxy answers `403` to
+      `CONNECT api.shipstation.com:443` (and `ship.`/`www.shipstation.com`), so no credential can
+      reach ShipStation from a session until the environment's network policy allows those hosts.
+      `--no-verify` stores a key unproven; live syncs fail at the network layer, not at auth
+- [ ] `src/app/api/admin/integrations/route.ts:34` still writes credentials with a local
+      `encryptApiKey` that is bare base64, bypassing `saveCredentials` and AES-256-GCM entirely.
+      `decryptSecret` still reads those rows, so nothing is broken — but the admin page is writing
+      plaintext-equivalent credentials while every other path encrypts them. Route it through
+      `saveCredentials`
+- [ ] E2e specs share the dev server's database and leave rows behind. Fine today; a per-run
+      template database (`CREATE DATABASE ... TEMPLATE`) is the fix when it stops being fine
 ## Custom Store setup card (2026-08-19)
 
 Confirmed with the live ShipStation form: username and password are **separate fields**, so the

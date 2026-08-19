@@ -75,6 +75,21 @@ npm run dev-local -- --setup   # set up but do not start the server
 
 **Sign in:** `demo@schmostore.com` / `rebeldev` — every seeded user shares that password.
 
+### On a bare container (Claude Code on the web, CI sandboxes)
+
+```bash
+npm run setup:local     # starts Postgres too, then does everything dev-local does
+```
+
+`dev-local` expects a Postgres that is already running. `setup:local` is the superset for a
+container that has the server package installed but no server running: it starts (or creates)
+the cluster, gives the `postgres` role a password, creates the database, and hands off to
+`dev-local --setup`. About five seconds on a warm container, and no Docker anywhere.
+
+In Claude Code on the web this runs automatically at session start via
+`.claude/hooks/session-start.sh`. Full runbook, including where ShipStation credentials go:
+[`docs/claude-session-setup.md`](docs/claude-session-setup.md).
+
 ### Why it probes for credentials
 
 Postgres defaults differ by platform and there is no connection string that is correct
@@ -153,6 +168,17 @@ npm run dev
 
 The app reads **`.env.local`**, not `.env`. `DATABASE_URL` is the only variable without a
 working fallback.
+
+### Tests
+
+```bash
+npm run test                                # Jest unit tests
+npm run test:e2e -- --project=chromium      # Playwright, starts the dev server itself
+```
+
+Playwright's `webServer` reuses an already-running `npm run dev` and starts one otherwise, so
+the suite no longer depends on remembering to start the server first. The `--` before the flags
+is required — without it npm drops them and all three browser projects run.
 
 ### Optional integrations
 

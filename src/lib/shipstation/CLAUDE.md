@@ -182,6 +182,13 @@ variable first — that exact omission took down production sync once already.
 Legacy rows self-heal: `upgradeCiphertext` re-encrypts on first read with a key present, so no
 backfill job is needed.
 
+**Attaching a real key locally.** No path reads a merchant key from the environment, so
+`SHIPSTATION_API_KEY` in `.env.local` connects nothing — a `store_integrations` row has to exist.
+`npm run shipstation:connect` is the headless equivalent of onboarding step 3: it validates the key
+against `GET /v2/warehouses` first and only writes an encrypted row if that call succeeded, exactly
+as rule 8 requires. `--no-verify` stores it unproven, for an environment whose egress policy blocks
+api.shipstation.com. See `docs/claude-session-setup.md`.
+
 ## Webhooks
 
 ShipStation deliveries carry no field identifying our tenant, so tenancy is in the URL. Three
@@ -270,6 +277,10 @@ Per-store ShipStation keys are **never** environment variables — the platform 
   `maxAttempts`, `baseDelayMs`, `timeoutMs`). **Use it.** Test retry and backoff for real rather
   than mocking the module away — that is the whole reason the seam exists.
 - `npm run shipstation:probe` is the only check that catches a response whose *shape* changed.
+- `src/lib/shipstation/__tests__/scriptCiphertext.test.ts` — pins `scripts/connect-shipstation.js`
+  to this module's ciphertext format. The script cannot import `crypto.ts` (CommonJS vs. app
+  TypeScript), so it carries a copy; the test decrypts a script-written value through
+  `decryptSecret` so the copies cannot drift.
 
 ## Known gaps
 

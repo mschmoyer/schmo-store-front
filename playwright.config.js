@@ -94,10 +94,25 @@ module.exports = defineConfig({
     // },
   ],
 
-  /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run dev',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  /**
+   * Start the app if it is not already up.
+   *
+   * Every spec navigates to localhost:3000, and with this block commented out
+   * the whole suite failed with a bare ERR_CONNECTION_REFUSED whenever the
+   * dev server was not started by hand first — the single most common way to
+   * lose a test run. `reuseExistingServer` keeps an already-running
+   * `npm run dev` (and its warm Turbopack cache) instead of fighting it for
+   * the port.
+   *
+   * The database still has to exist: run `scripts/setup-local-stack.sh` once
+   * per container. Playwright cannot usefully start Postgres per test run.
+   */
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120 * 1000,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  },
 });

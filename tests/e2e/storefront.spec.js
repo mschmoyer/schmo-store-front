@@ -1,6 +1,16 @@
 const { test, expect } = require('@playwright/test');
 
 /**
+ * Assertion budget for the first hit on a route the dev server has not compiled
+ * yet. Turbopack compiles on demand, so with several workers warming different
+ * routes at once the first paint of `/store/[slug]/product/[handle]` can land
+ * well past the 5s default `expect` timeout — which shows up as a missing
+ * "Add to cart" button rather than as a slow page. `marketing.spec.js` carries
+ * the same constant for the same reason.
+ */
+const COLD_COMPILE = 60000;
+
+/**
  * End-to-end coverage for the shopper-facing storefront.
  *
  * `tests/e2e/` carried four admin suites and a marketing suite and nothing at
@@ -125,16 +135,25 @@ test.describe('the purchase journey stays inside the merchant\'s shop', () => {
       await expect(page.locator('div.storefront[data-store-id]')).toHaveCount(1);
       await expect(page.locator('h1')).toBeVisible();
 
-      // Listing.
+      // Listing. Take the first card that is actually purchasable: the demo
+      // catalogue deliberately carries a sold-out product, and every product
+      // is seeded in one statement, so they share a `created_at` and Postgres
+      // is free to order the ties differently on each seed. Taking `.first()`
+      // unconditionally therefore lands on the sold-out card — which renders
+      // no "Add to cart" button — on some seeds and not others.
       await page.goto(`${base}/products`);
-      const firstProduct = page.locator('a[href*="/product/"]').first();
-      await expect(firstProduct).toBeVisible();
+      const purchasable = page
+        .locator('article')
+        .filter({ hasNotText: /out of stock/i })
+        .first();
+      const firstProduct = purchasable.locator('a[href*="/product/"]').first();
+      await expect(firstProduct).toBeVisible({ timeout: COLD_COMPILE });
       const productHref = await firstProduct.getAttribute('href');
 
       // Product detail, then add to cart.
       await page.goto(productHref);
       const addToCart = page.getByRole('button', { name: /add to cart/i });
-      await expect(addToCart).toBeVisible();
+      await expect(addToCart).toBeVisible({ timeout: COLD_COMPILE });
       await addToCart.click();
       await expect(
         page.getByRole('status').filter({ hasText: /added to your cart/i }),

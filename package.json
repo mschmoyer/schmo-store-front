@@ -1,6 +1,6 @@
 {
   "name": "rebel-shops",
-  "version": "2.4.3",
+  "version": "2.5.0",
   "private": true,
   "scripts": {
     "build": "next build",
@@ -11,6 +11,8 @@
     "dev-local": "node scripts/dev-local.js",
     "dev:log": "next dev --turbopack 2>&1 | tee dev.log",
     "lint": "eslint .",
+    "setup:local": "bash scripts/setup-local-stack.sh",
+    "shipstation:connect": "node scripts/connect-shipstation.js",
     "shipstation:probe": "node scripts/shipstation-probe.mjs",
     "snapshot:inventory": "node scripts/inventory-snapshot.js",
     "start": "next start",
