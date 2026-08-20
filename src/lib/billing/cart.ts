@@ -7,6 +7,7 @@
  */
 
 import type { PoolClient } from 'pg';
+import { sellableStockLateral, sellableStockSubquery } from '@/lib/inventory/sellable';
 import { db } from '@/lib/database/connection';
 import { computeCartTotals, normalizeQuantity } from './cart-pricing';
 import { validateCouponForCart } from './coupons';
@@ -64,8 +65,11 @@ export function resolveUnitPriceCents(row: {
 /**
  * Sellable stock for a product.
  *
- * The `inventory` table (synced from ShipStation) wins when it has rows for the SKU; otherwise the
- * denormalized `products.stock_quantity` is used.
+ * `inventory_levels` — the ledger's projection, net of committed and held units and of stock in
+ * locations that cannot ship — wins when the product has rows there. A product with none is an
+ * untracked one, and falls back to the denormalized `products.stock_quantity`.
+ *
+ * See `src/lib/inventory/sellable.ts` for why this is one definition and not two.
  *
  * @param row - The product row, including the joined inventory sum.
  * @returns Available units.
@@ -103,13 +107,9 @@ async function loadProducts(storeId: string, identifiers: string[]): Promise<Pro
     `SELECT p.id, p.sku, p.name, p.override_name, p.base_price, p.sale_price, p.override_price,
             p.featured_image_url, p.category_id, p.requires_shipping, p.is_active,
             p.track_inventory, p.allow_backorder, p.stock_quantity, p.shipstation_product_id,
-            inv.total_available AS inventory_available
+            inv.sellable AS inventory_available
        FROM products p
-       LEFT JOIN (
-            SELECT store_id, sku, SUM(available)::int AS total_available
-              FROM inventory
-             GROUP BY store_id, sku
-       ) inv ON inv.store_id = p.store_id AND inv.sku = p.sku
+       ${sellableStockLateral('p', 'inv')}
       WHERE p.store_id = $1
         AND (
              ($2::uuid[] IS NOT NULL AND p.id = ANY($2::uuid[]))
@@ -305,8 +305,7 @@ export async function assertStockAvailable(
       inventory_available: string | null;
     }>(
       `SELECT p.name, p.stock_quantity, p.track_inventory, p.allow_backorder,
-              (SELECT SUM(available)::int FROM inventory i
-                WHERE i.store_id = p.store_id AND i.sku = p.sku) AS inventory_available
+              ${sellableStockSubquery('p')} AS inventory_available
          FROM products p
         WHERE p.id = $1 AND p.store_id = $2
         FOR UPDATE OF p`,

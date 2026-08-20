@@ -1,4 +1,5 @@
 import { db } from '@/lib/database/connection';
+import { sellableStockExpression, sellableStockLateral } from '@/lib/inventory/sellable';
 
 import type {
   CatalogueQuery,
@@ -326,7 +327,12 @@ const PRODUCT_COLUMNS = `p.id, p.store_id, p.sku, p.name, p.slug, p.short_descri
   --
   -- COALESCE to stock_quantity covers a product with no levels rows at all, which is what an
   -- untracked product looks like.
-  COALESCE(lv.sellable, p.stock_quantity) AS stock_quantity,
+  --
+  -- The lateral behind this comes from src/lib/inventory/sellable.ts, shared with the cart and the
+  -- checkout stock gate. It used to be spelled out here and differently there, and the two
+  -- disagreed: this side subtracted quarantined units and that side did not, so the shop refused a
+  -- sale the till would have allowed and the other way round.
+  ${sellableStockExpression('p', 'lv')} AS stock_quantity,
   p.allow_backorder, p.weight, p.weight_unit, p.length, p.width, p.height,
   p.dimension_unit, p.category_id, c.name AS category_name, c.slug AS category_slug,
   p.tags, p.featured_image_url, p.gallery_images, p.is_featured, p.requires_shipping,
@@ -338,18 +344,7 @@ const PRODUCT_COLUMNS = `p.id, p.store_id, p.sku, p.name, p.slug, p.short_descri
 
 const PRODUCT_FROM = `FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
-  LEFT JOIN LATERAL (
-    SELECT SUM(l.available)::int AS sellable
-      FROM inventory_levels l
-      JOIN inventory_locations loc
-        ON loc.id = l.location_id AND loc.store_id = l.store_id
-     WHERE l.product_id = p.id
-       AND l.store_id = p.store_id
-       -- A returns bay, a quarantine shelf or a closed location holds real stock that cannot be
-       -- sold from. Counting it is how a storefront promises what it cannot ship.
-       AND loc.is_fulfillable
-       AND loc.is_active
-  ) lv ON TRUE`;
+  ${sellableStockLateral('p', 'lv')}`;
 
 /** `ORDER BY` fragments, keyed by sort id. Never interpolate user input here. */
 const SORT_SQL: Record<SortKey, string> = {

@@ -2911,3 +2911,41 @@ Still open:
 - [ ] Nothing links "on order" back to the purchase order that created it
 - [ ] No skip-to-content link; every page costs 13 tab stops through the sidebar
 - [ ] No collections or metafields; `publish_at` remains a dead column
+
+## One definition of sellable stock (3.10.0)
+
+The IMS review found the worst defect in this branch, and it was one this branch created.
+
+- [x] **The storefront and the checkout gate were reading two different numbers.** The storefront
+      was repointed at `inventory_levels` — the ledger's projection, net of committed and held units
+      and of stock in locations that cannot ship. The cart and `assertStockAvailable`, the gate
+      inside `createPaidOrder`, went on reading `inventory`, the table the ShipStation sync mirrors
+      into, keyed on SKU. Nothing built in migrations 027–038 writes `inventory`, so the payment gate
+      was blind to the ledger, locations, quarantine, holds and receiving alike
+
+- [x] Demonstrated both directions on seeded data. Quarantine 20 of 42 units: the shop correctly
+      offers 22 and the till would have sold 40. The reviewer showed the mirror image — stock
+      received through the real endpoint is visible on the shelf and unbuyable at checkout
+
+- [x] `src/lib/inventory/sellable.ts` is now the only definition, and the storefront, the cart and
+      the payment gate all build their queries from it. Two careful copies is what produced the
+      divergence, so the fix is one copy rather than two corrected ones. The gate keeps its
+      `FOR UPDATE OF p` and takes the quantity as a correlated subquery rather than a lateral, so the
+      row lock stays on the one product row it is entitled to
+
+- [x] Verified through the running endpoint, not just in SQL: with 20 of 42 quarantined,
+      `POST /api/checkout/session` for 40 units is refused with "Only 22 … left in stock", and 22
+      clears the stock gate and then degrades correctly at unconfigured Stripe
+
+- [x] **Version bumped** to 3.10.0
+
+Still open, from the two adversarial reviews and unverified by me:
+- [ ] Stock may be decremented twice for an order that ships — once by the order-line trigger at
+      checkout, again by `processInventoryAdjustments` on the shipment webhook — with the
+      `inventory_logs` write then failing on a missing `store_id`
+- [ ] `PUT /api/admin/purchase-orders/[id]` with `items` 500s on a `total_amount` column that does
+      not exist, and the code behind that error would cascade-delete every receiving record
+- [ ] `committed` and `reserved` have no writer; a sale removes units from `on_hand` at order time
+- [ ] A CSV that renames a SKU forks the product into a second live listing instead of renaming it
+- [ ] Bulk `set_sale_price` accepts a negative price; the single-product route rejects it
+- [ ] The "Drafts" tab lists archived products while its badge counts only drafts
