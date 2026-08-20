@@ -229,17 +229,23 @@ prove the seed is idempotent.
 ### Customer-Facing Features
 - **Multi-Store Platform**: Create and manage multiple storefronts
 - **Product Catalog**: Browse products with real-time inventory
-- **Shopping Cart**: Add/remove items with persistent storage
+- **Product Options & Variants**: Up to three axes (size, colour, grind) with colour swatches,
+  per-variant price and stock, and a selector that distinguishes "sold out" from "never made"
+- **Shopping Cart**: Add/remove items with persistent storage; two variants of one product are two
+  lines, each priced and stock-checked on its own
 - **Checkout Flow**: Complete order processing with ShipStation
 - **Blog System**: Per-store blog with markdown support
 - **Responsive Design**: Mobile-optimized interface
 - **Social Sharing**: Share products and blog posts
-- **Theme System**: 10 customizable color themes for personalization
+- **Theme System**: Six preset designs, each with its own composition, over a token engine with
+  auto-contrast; merchant CSS is sanitised on every render
 - **Product Search**: Real-time search with analytics tracking
 
 ### Admin Dashboard
 - **Store Management**: Create, configure, and manage stores
-- **Product Management**: Add, edit, and sync products with ShipStation
+- **Product Management**: Create products by hand, edit them, or sync from ShipStation
+- **Variant Editor**: Declare option axes and generate the grid; a blank price inherits the
+  product's, so a merchant sets one price across ten sizes once
 - **Inventory Tracking**: Real-time stock levels and forecasting
 - **Purchase Orders**: Create, manage, and receive inventory
 - **Analytics**: Store performance and visitor tracking

@@ -19,7 +19,7 @@ environment variables. A missing `store_id` predicate is a cross-tenant data lea
 |---|---|
 | `src/app/` | App Router pages and `src/app/api/**/route.ts` handlers |
 | `src/components/` | React components, grouped by area with `index.ts` exports |
-| `src/lib/` | Domain logic: `shipstation/`, `stripe/`, `billing/`, `services/`, `auth/`, `database/` |
+| `src/lib/` | Domain logic: `shipstation/`, `stripe/`, `billing/`, `catalog/`, `services/`, `auth/`, `database/` |
 | `database/migrations/` | Numbered SQL migrations, applied by `database/migrate.js` |
 | `scripts/` | `dev-local.js`, `seed-demo.js`, `shipstation-probe.mjs`, background sync |
 | `tests/e2e/` | Playwright specs; unit tests live in `__tests__/` beside their source |
@@ -120,13 +120,32 @@ The app reads **`.env.local`**, not `.env`. `.env.example` documents every varia
 integration that is unconfigured must render a labelled "not configured" state rather than crash,
 and CI's build job runs with no Stripe or ShipStation keys precisely to keep that true.
 
-One variable fails closed rather than degrading: **`SHIPSTATION_ENCRYPTION_KEY`**. Without it every
-ShipStation credential read throws. If an environment's ShipStation integration is silently doing
-nothing, check this first.
+Two variables fail closed rather than degrading:
+
+- **`SHIPSTATION_ENCRYPTION_KEY`**. Without it every ShipStation credential read throws. If an
+  environment's ShipStation integration is silently doing nothing, check this first.
+- **`JWT_SECRET`**. Missing, shorter than 32 characters, or set to a placeholder that appears in
+  this repository, and `src/lib/auth/jwt-secret.ts` throws. It used to fall back to a literal that
+  is published here, which let anyone forge a session for any store. Degrading is not an option for
+  the thing that tells users apart.
+
+  The check is **lazy on purpose** — validated on first use, never at module load. A module-scope
+  throw fires wherever the module is merely imported, including client bundles that have no
+  environment, and that took the customizer's preview pane down once already.
 
 ## Working rules
 
 - **Store scope.** Every query touching tenant data carries `store_id`. No exceptions.
+- **Variants.** A product may carry up to three option axes (`product_options`) and one row per
+  combination (`product_variants`). A variant's `price`, `sale_price`, `track_inventory` and
+  `allow_backorder` are nullable and **NULL means "inherit the product"** — never copy the
+  product's value onto a variant. The storefront and the checkout both price through
+  `resolveVariant` in `src/lib/catalog/variants.ts`, so what is displayed and what is charged come
+  from one implementation; keep it that way.
+- **Starter copy.** Presets, default sections and page templates may not state anything a customer
+  could hold a merchant to — delivery times, returns windows, warranties, discount rates, payment
+  terms. Those are visible bracketed prompts. Brand voice is fine. Enforced by
+  `storefront-theme/__tests__/no-promises-on-their-behalf.test.ts`.
 - **Money.** Integer cents everywhere in application code; convert at the boundary with
   `src/lib/billing/money.ts`. Never float arithmetic on money. (ShipStation V2 is the exception —
   its money fields are decimal dollars, and that conversion belongs in the ShipStation library.)
@@ -163,7 +182,14 @@ a broken production. Cron schedules are declared in `vercel.json` under `crons`;
 `maxDuration` and memory live in the same file. `docs/deployment-vercel.md` is the full runbook.
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit tests, a migrations job that proves
-re-running is a no-op and the seed is idempotent, and a production build with no integration keys.
+re-running is a no-op and the seed is idempotent, a production build with no integration keys, and
+an **end-to-end job** (Chromium; `storefront.spec.js` and `customizer.spec.js`).
+
+The e2e job exists because a real regression walked through every other job untouched: making
+`JWT_SECRET` fail closed as a module-level `const` broke the customizer's preview pane, because a
+client component transitively imports that module and a browser bundle has no environment. Lint,
+typecheck, 922 unit tests and the build were all green; six Playwright tests were red. **A green
+unit suite does not mean the app renders.**
 
 ## Completing a task
 
