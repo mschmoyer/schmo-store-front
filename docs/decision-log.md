@@ -2014,3 +2014,144 @@ Open:
       through it, but the in-form button does
 - [ ] The new `*/5` cron will drain a queue that has been accumulating; the first production run
       after deploy may process a backlog
+
+## 2026-08-20
+
+### Product catalogue and inventory, rebuilt
+
+**User Request**: "Aggressively review our Product and Inventory pages in admin view and bring them
+up to AAA quality, best-in-class, simple, intuitive, and POWERFUL product catalog and inventory
+sub-products for your e-commerce storefront… Think Shopify grade or higher. Continue to use the
+available ShipStation V2 API to power these and use our local DB to supplement fields that don't
+exist over there. Aggressively spawn subagent adversarial reviewers…"
+
+Six adversarial reviewers went over the two screens and the routes behind them — UX, workflow, an
+IMS specialist, a catalogue specialist, an e-commerce specialist, and a security pass. What they
+found was not a polish problem. Two of the findings were live cross-tenant data leaks and most of
+the rest were surfaces that reported success over work that never happened. The order below is the
+order the work had to happen in: you cannot make a grid pleasant to use on top of a number that
+five different writers disagree about.
+
+#### Tenancy: two proven leaks, closed structurally
+
+- [x] **`products.category_id` and `products.supplier_id` had plain single-column foreign keys**,
+      so a merchant could file their product under another store's category by id and the database
+      would accept it. `026_tenancy_hardening.sql` adds `UNIQUE (id, store_id)` to categories and
+      suppliers, nulls the pre-existing cross-tenant references it found, and replaces the FKs with
+      composite `(category_id, store_id)` / `(supplier_id, store_id)` ones. The reference is now
+      unrepresentable rather than merely rejected in application code, which is the only version of
+      this that survives the next route someone writes
+- [x] **`products_shipstation_product_id_key` was globally unique**, so the first store to sync a
+      given ShipStation product id locked every other store out of it — two merchants on the same
+      ShipStation account silently lost each other's catalogue. Dropped for a partial unique index
+      on `(store_id, shipstation_product_id)`
+- [x] **`/api/admin/purchase-orders` had no `requireAuth` at all** and took `store_id` from the
+      request body. Anyone who could reach the route could read or write any store's purchase
+      orders. Auth added, store taken from the session, never the body. The PDF route was the same
+      shape and got the same treatment
+- [x] **`ORDER BY` was interpolated from a query parameter** on both grids. Replaced with a frozen
+      map from sort key to SQL in `_lib/query.ts` on each side; an unknown key falls back rather
+      than reaching the database. The blast radius had been amplified by 64 routes echoing
+      `error.message` to the client, so `src/lib/api/adminError.ts` now maps SQLSTATE to a status
+      code, logs the detail, and returns a generic message
+
+#### Inventory: one number, five writers, no history
+
+`products.stock_quantity` was written by the ShipStation sync (as *available*), by the order trigger
+(as *on hand*), by the adjustment modal, by the receive endpoint and by direct `UPDATE`s in three
+routes. They disagreed about what the number meant, so it drifted, and nothing recorded why.
+
+- [x] `027_inventory_ledger.sql` introduces `inventory_locations`, `inventory_levels` with
+      `available` as a generated column (`on_hand - committed - reserved - unavailable`), and an
+      append-only `inventory_transactions` ledger with a closed vocabulary of fourteen reasons.
+      `post_inventory_movement()` is the only way stock moves; `balance_after` is computed from the
+      previous balance by construction, so the ledger replays exactly to the level
+- [x] An immutability trigger refuses every `UPDATE` and allows a `DELETE` only when the parent
+      product is already gone — that is, only as part of a cascade. `031` adds that discrimination
+      after the seed's idempotency check caught the first version blocking its own cleanup
+- [x] `029_single_stock_writer.sql` rewrites `update_product_stock()` to post through the ledger
+      instead of clamping at zero, and makes the order trigger idempotent on
+      `reference_type = 'order_item'`. `030` adds a translation trigger so a legacy direct write to
+      `stock_quantity` becomes a proper movement rather than a silent divergence, terminating on a
+      zero delta so it cannot recurse
+- [x] **Oversold is now a state you can see** rather than a clamp. Stock going negative is a fact
+      about the business — it means you sold something you did not have — and rounding it up to
+      zero destroys the only evidence
+- [x] **Receiving was a `console.log` that returned `success: true`.** Rewritten:  receiving rows,
+      incremental quantities, ledger movements, damage posted as its own entry, and moving-average
+      cost derived from `movement.balance_after - quantity` so the damage entry does not skew it
+- [x] `028_receiving_reality.sql` drops the `quantity_received <= quantity` check — over-receipt
+      happens and refusing to record it does not make it stop — and rebuilds `quantity_pending` as
+      a generated column
+
+#### The sync was reverting merchant work
+
+Every sync overwrote the local name, description and price with ShipStation's, so a merchant who
+wrote storefront copy watched it disappear within the hour.
+
+- [x] `032_field_ownership.sql` adds `products.field_locks TEXT[]`. Editing a field in the admin
+      claims it; the sync's upsert then writes each column behind
+      `CASE WHEN 'x' = ANY(products.field_locks)`. Locking follows a *real change* — `sameValue()`
+      in the update route means re-saving an unchanged form claims nothing
+- [x] The backfill is evidence-based: it locks only fields that already differ from what
+      ShipStation last sent, rather than freezing every field on every existing product
+
+#### The surfaces that lied
+
+- [x] **Bulk actions, CSV export and CSV import all 404'd.** The buttons opened modals, the modals
+      posted to routes that did not exist, and the e2e suite asserted the modals opened. All three
+      are now implemented — 19 bulk actions with per-row results, a streaming export, and an import
+      whose dry run executes inside a transaction that is then rolled back so the preview is the
+      real outcome
+- [x] **`ProductAnalytics` rendered `NaN%` four times** against `analytics: Promise.resolve({rows: []})`
+      behind a `// TODO`. Rewritten to show only what the database can answer — units, revenue,
+      margin against cost at time of sale, stock movements — and to say plainly that per-product
+      traffic is not measured rather than inventing a conversion rate a merchant would price against
+- [x] **The purchase-order PDF was a forgery**: hardcoded supplier name and address, `base_price * 0.6`
+      as the unit cost. It now loads the real order and maps schema to template explicitly
+- [x] The reorder-point modal collected a value the API dropped on the floor beneath a
+      "Successfully updated" toast
+
+#### The two screens
+
+- [x] **Catalogue**: URL-as-state (view, search, sort, page all linkable), saved views whose badges
+      are computed by the same query that fills them, inline editing with optimistic rollback, bulk
+      selection that escalates from "this page" to "all N matching" with server-side resolution,
+      `aria-sort` on every sortable heading, named checkboxes and icon buttons. `/admin/products/new`
+      now exists — both "Add product" buttons previously navigated to a route nothing served
+- [x] **Inventory**: five quantities shown apart from one another instead of one ambiguous number,
+      days of cover in units a person reasons in, adjustment with a required reason from the closed
+      vocabulary and the consequence stated in words before it happens, and a ledger drawer — that
+      data had been accumulating since the platform was built with nothing to display it
+- [x] Purchase orders and suppliers were tabs here, duplicating screens that already existed. They
+      link out now; `/admin/suppliers` is the single home for `SuppliersManagement`
+- [x] Both grids report a failed fetch as an error with a retry, rather than rendering a complete
+      page with zeroed cards that a merchant reads as "I have no inventory"
+
+#### Verification
+
+- [x] 32 new unit tests in `src/lib/inventory/__tests__/ledger.test.ts` guard the invariants that
+      matter: no clamping, atomic balance update, immutability, cascade, idempotent sales, trigger
+      termination. Suite: 835 passing across 50 files
+- [x] The e2e specs were rewritten because the old ones were the reason three missing features
+      passed CI. Every test now asserts an outcome that survives a reload
+- [x] `tsc --noEmit` clean, lint 0 errors (77 pre-existing warnings), 110 e2e passing
+- [x] Ledger replay checked against the projection after a full parallel e2e run: 0 mismatched,
+      0 drifted
+- [x] **Version bumped** to 3.2.0
+
+Open, in rough order of how much they matter:
+- [ ] **No variant model.** A product is one row with one SKU and one price. This is the largest
+      structural gap against the "Shopify grade" bar, and it touches the storefront, checkout and
+      the ShipStation mapping, so it is its own piece of work
+- [ ] **No media storage.** `ImageGalleryManager` mints `blob:` URLs, reports success, and the
+      images are gone on reload. Needs a real object store before the panel should exist
+- [ ] `src/lib/inventory-forecasting*.ts` is duplicated and its safety-stock maths is unsound; the
+      grid deliberately does not read from it
+- [ ] Several routes outside these two still call `db.query('BEGIN')` on the pool, which does not
+      begin a transaction on a pooled connection — it begins one on whichever connection it lands on
+- [ ] No collections or metafields; no reservation at checkout, so a race can still oversell
+- [ ] The ShipStation webhook is never registered upstream, so it only ever fires if a merchant
+      wires it by hand
+- [ ] Onboarding's import path base64-decodes what is actually an AES ciphertext
+- [ ] The retired `/admin/integrations/shipstation` page is still routable
