@@ -2829,3 +2829,41 @@ the customizer before anything goes live.
       granularity), and feeding the store's real categories and products into the
       prompt so featured-collection and collection-grid sections point at things
       that exist
+
+## A media library, and the end of the fake upload (2026-08-20)
+
+Four reviewers were blocked on the same thing: every image field was a URL text
+box, and the "Upload Images" button was a lie. It minted an in-browser `blob:`
+URL, showed a green "uploaded successfully" toast, and persisted a pointer that
+existed only in that one tab — which then 500'd the storefront when the row was
+rendered. A merchant who is not technical and does not own an image CDN could
+not get their own photographs onto their shop.
+
+- [x] **Real uploads, through real storage.** `POST /api/admin/media` stores an
+      image in object storage (Vercel Blob over its REST API — no SDK dependency)
+      and records it in a new `store_media` table, store-scoped from the session.
+      `GET` lists a store's library
+- [x] **Identified by bytes, not by claim.** `sniffImage` reads an upload's magic
+      number and returns the canonical type, or null. A `.jpg` that is actually
+      HTML, or an SVG that carries script, is refused — SVG deliberately, since
+      `next.config.ts` keeps `dangerouslyAllowSVG` off for that reason. 8 tests
+- [x] **It degrades, it does not crash.** With no `BLOB_READ_WRITE_TOKEN`,
+      `getStorage()` returns null, `GET /api/admin/media` reports
+      `configured: false`, and `POST` returns a labelled 503 — never a 500, never
+      a fake success. The URL box stays usable, so nothing that worked before
+      breaks. Verified live: list 200 unconfigured, upload 503, no auth 401
+- [x] **The fake handlers are gone.** The product image gallery, the blog featured
+      image, and the customizer's image control now upload through the endpoint
+      and set only a URL the server actually stored; on a 503 they say uploads are
+      not set up and point the merchant at the URL field, rather than toasting a
+      success that did not happen. The customizer control's hint no longer
+      recommends `/uploads/hero.jpg`, a path that could never exist
+- [x] **Image columns widened to TEXT.** `featured_image_url`, `logo_url`,
+      `favicon_url` and the variant `image_url` were `VARCHAR(500)`, so a long
+      signed CDN URL or a data URI failed the whole write with a raw Postgres
+      "value too long" error leaked to the client. Migration 028 widens them and
+      adds `store_media`
+- [ ] Follow-ups: a picker that browses the library rather than re-uploading each
+      time; alt-text editing and deletion; a store-scoped S3/R2 adapter for
+      merchants who bring their own bucket; wiring `logo_url`/`favicon_url` into
+      the store settings form so a merchant can set them at all

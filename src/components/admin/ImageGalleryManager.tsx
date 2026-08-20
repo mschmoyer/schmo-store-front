@@ -159,10 +159,17 @@ export default function ImageGalleryManager({
 
     setUploading(true);
     try {
-      // In a real app, you would upload to your image service (e.g., Cloudinary, AWS S3)
-      // For now, we'll create object URLs for demonstration
+      // Real uploads through the media library. The previous version of this
+      // handler minted an in-browser `blob:` URL and showed a green "uploaded
+      // successfully" toast while persisting a pointer that existed only in this
+      // tab — which then 500'd the storefront when rendered. Each file now goes
+      // to POST /api/admin/media, and only a URL the server actually stored is
+      // added. When storage is not configured the endpoint returns 503 and we
+      // say so honestly rather than faking success.
+      const token = localStorage.getItem('admin_token');
       const newImages: ImageItem[] = [];
-      
+      let notConfigured = false;
+
       for (const file of uploadFiles) {
         if (file.size > maxFileSize * 1024 * 1024) {
           notifications.show({
@@ -173,23 +180,54 @@ export default function ImageGalleryManager({
           continue;
         }
 
-        const imageUrl = URL.createObjectURL(file);
-        newImages.push({
-          id: Date.now().toString() + Math.random().toString(36),
-          url: imageUrl,
-          alt: file.name.split('.')[0],
-          title: file.name
+        const body = new FormData();
+        body.append('file', file);
+        const response = await fetch('/api/admin/media', {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body
         });
+        const result = await response.json().catch(() => null);
+
+        if (response.status === 503) {
+          notConfigured = true;
+          break;
+        }
+        if (!response.ok || !result?.success) {
+          notifications.show({
+            title: 'Upload failed',
+            message: result?.error ?? `${file.name} could not be uploaded.`,
+            color: 'red'
+          });
+          continue;
+        }
+
+        newImages.push({
+          id: result.data.id,
+          url: result.data.url,
+          alt: file.name.split('.')[0],
+          title: result.data.filename ?? file.name
+        });
+      }
+
+      if (notConfigured) {
+        notifications.show({
+          title: 'Image uploads not set up',
+          message:
+            'This store has no image storage configured yet. Use "Add URL" to link an image you host elsewhere, or ask your administrator to enable uploads.',
+          color: 'orange'
+        });
+        return;
       }
 
       if (newImages.length > 0) {
         const updatedImages = [...images, ...newImages];
         const newFeaturedUrl = images.length === 0 ? newImages[0].url : featuredImageUrl;
         onChange(updatedImages, newFeaturedUrl);
-        
+
         notifications.show({
-          title: 'Success',
-          message: `${newImages.length} image(s) uploaded successfully`,
+          title: 'Uploaded',
+          message: `${newImages.length} image(s) added to your library`,
           color: 'green'
         });
       }

@@ -10,7 +10,7 @@
  */
 
 import * as React from 'react';
-import { IconPhoto, IconX } from '@tabler/icons-react';
+import { IconPhoto, IconUpload, IconX } from '@tabler/icons-react';
 
 import { Input } from '@/components/ui';
 
@@ -33,10 +33,55 @@ export function ImageControl({
 }: SettingControlProps): React.ReactElement {
   const url = asText(value);
   const [broken, setBroken] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const fileInput = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     setBroken(false);
   }, [url]);
+
+  /**
+   * Upload a chosen file through the media library and set its stored URL.
+   *
+   * On a store with no image storage configured the endpoint returns 503; this
+   * shows an honest inline message and leaves the URL box usable, rather than
+   * pretending an upload happened.
+   *
+   * @param event - The file input change
+   */
+  const onFile = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const token = localStorage.getItem('admin_token');
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch('/api/admin/media', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body,
+      });
+      const result = await response.json().catch(() => null);
+      if (response.status === 503) {
+        setUploadError('Uploads are not set up for this store yet — paste an image URL below instead.');
+        return;
+      }
+      if (!response.ok || !result?.success) {
+        setUploadError(result?.error ?? 'That image could not be uploaded.');
+        return;
+      }
+      onChange(result.data.url);
+    } catch {
+      setUploadError('That image could not be uploaded.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <div className={styles.field}>
@@ -54,10 +99,35 @@ export function ImageControl({
         )}
       </div>
 
+      <div className={styles.imageUploadRow}>
+        <button
+          type="button"
+          className={styles.uploadButton}
+          onClick={() => fileInput.current?.click()}
+          disabled={disabled || uploading}
+        >
+          <IconUpload size={14} aria-hidden="true" />
+          {uploading ? 'Uploading…' : 'Upload image'}
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={onFile}
+          aria-label={`Upload ${field.label}`}
+        />
+      </div>
+      {uploadError ? (
+        <p className={styles.uploadHint} role="status">
+          {uploadError}
+        </p>
+      ) : null}
+
       <Input
         id={controlId}
         label={field.label}
-        hint={field.help ?? 'Paste an image URL, or a path such as /uploads/hero.jpg'}
+        hint={field.help ?? 'Upload an image above, or paste an image URL (https).'}
         value={url}
         size="sm"
         spellCheck={false}
