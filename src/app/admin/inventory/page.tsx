@@ -34,6 +34,7 @@ import {
   ActionIcon,
   Alert,
   Badge,
+  Checkbox,
   Button,
   Group,
   Menu,
@@ -78,6 +79,7 @@ import {
   type TransferTarget
 } from '@/components/admin/inventory/TransferStockModal';
 import { LocationsModal } from '@/components/admin/inventory/LocationsModal';
+import { InventoryBulkBar } from '@/components/admin/inventory/InventoryBulkBar';
 import { LedgerDrawer } from '@/components/admin/inventory/LedgerDrawer';
 import {
   INVENTORY_VIEWS,
@@ -109,8 +111,10 @@ interface InventoryRow {
   daily_demand: number;
   days_of_cover: number | null;
   reorder_point: number | null;
+  reorder_quantity: number | null;
   suggested_reorder_point: number | null;
   low_stock_threshold: number | null;
+  supplier_id: string | null;
   supplier_name: string | null;
   category_name: string | null;
   state: 'in_stock' | 'low_stock' | 'out_of_stock' | 'oversold' | 'not_tracked';
@@ -173,6 +177,8 @@ export default function InventoryPage(): React.ReactElement {
 
   const [adjusting, setAdjusting] = useState<AdjustTarget | null>(null);
   const [transferring, setTransferring] = useState<TransferTarget | null>(null);
+  /* Selection for the bulk bar. Kept as ids so it survives a refetch that replaces the row objects. */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [locationsOpen, { open: openLocations, close: closeLocations }] = useDisclosure(false);
   const [viewingHistory, setViewingHistory] = useState<InventoryRow | null>(null);
 
@@ -600,6 +606,17 @@ export default function InventoryPage(): React.ReactElement {
             <Table highlightOnHover verticalSpacing="sm" className={refreshing ? styles.refreshing : undefined}>
               <Table.Thead>
                 <Table.Tr>
+                  <Table.Th w={40}>
+                    <Checkbox
+                      aria-label="Select all products on this page"
+                      checked={rows.length > 0 && selectedIds.length === rows.length}
+                      indeterminate={selectedIds.length > 0 && selectedIds.length < rows.length}
+                      onChange={(event) => {
+                        const checked = event.currentTarget.checked;
+                        setSelectedIds(checked ? rows.map((r) => r.product_id) : []);
+                      }}
+                    />
+                  </Table.Th>
                   <SortableTh column="name" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort}>
                     Product
                   </SortableTh>
@@ -684,6 +701,25 @@ export default function InventoryPage(): React.ReactElement {
               <Table.Tbody>
                 {rows.map((row) => (
                   <Table.Tr key={row.product_id}>
+                    <Table.Td>
+                      {/* Named for the product, not a row of twenty identical "checkbox"
+                          announcements. */}
+                      <Checkbox
+                        aria-label={`Select ${row.name}`}
+                        checked={selectedIds.includes(row.product_id)}
+                        onChange={(event) => {
+                          /* Read before the updater runs. React nulls `currentTarget` once the
+                           * handler returns, so reading it inside the functional update — which is
+                           * deferred — gives undefined and the box never ticks. */
+                          const checked = event.currentTarget.checked;
+                          setSelectedIds((current) =>
+                            checked
+                              ? [...current, row.product_id]
+                              : current.filter((id) => id !== row.product_id)
+                          );
+                        }}
+                      />
+                    </Table.Td>
                     <Table.Td>
                       <Group gap="sm" wrap="nowrap">
                         <div className={styles.thumb}>
@@ -885,6 +921,27 @@ export default function InventoryPage(): React.ReactElement {
         activeLocationId={params.locationId || null}
         token={token}
         onAdjusted={load}
+      />
+
+      <InventoryBulkBar
+        selected={rows
+          .filter((row) => selectedIds.includes(row.product_id))
+          .map((row) => ({
+            product_id: row.product_id,
+            sku: row.sku,
+            name: row.name,
+            available: Number(row.available) || 0,
+            incoming: Number(row.incoming) || 0,
+            reorder_point: row.reorder_point,
+            reorder_quantity: row.reorder_quantity,
+            suggested_reorder_point: row.suggested_reorder_point ?? null,
+            unit_cost: row.unit_cost,
+            supplier_id: row.supplier_id
+          }))}
+        onClear={() => setSelectedIds([])}
+        token={token}
+        onChanged={load}
+        suppliers={suppliers}
       />
 
       <LocationsModal

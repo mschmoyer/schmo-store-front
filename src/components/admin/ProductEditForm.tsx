@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Alert,
@@ -120,6 +120,59 @@ export default function ProductEditForm({
   });
 
   const [hasChanges, setHasChanges] = useState(false);
+
+  /*
+   * Warn before the tab is closed or reloaded with unsaved work.
+   *
+   * The form already tracked `hasChanges` and rendered "You have unsaved changes. Don't forget to
+   * save your work!" — and then let the merchant navigate away without a word, losing the lot.
+   * Telling someone they have unsaved changes and then discarding them silently is worse than not
+   * mentioning it.
+   *
+   * `beforeunload` covers closing the tab, reloading, and following an external link. It does not
+   * cover the client-side sidebar links; Next's App Router has no supported navigation guard, so
+   * those are handled by the link interception below rather than left unhandled.
+   */
+  useEffect(() => {
+    if (!hasChanges) return;
+
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      /* Browsers ignore custom text now and show their own wording; assigning is what triggers the
+       * prompt at all. */
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [hasChanges]);
+
+  /*
+   * The in-app equivalent: intercept a click on any admin link while there is unsaved work.
+   *
+   * Capture phase, so it runs before the router's own handler and can stop the navigation.
+   */
+  useEffect(() => {
+    if (!hasChanges) return;
+
+    const intercept = (event: MouseEvent) => {
+      const anchor = (event.target as HTMLElement | null)?.closest?.('a[href]');
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href') ?? '';
+      /* Only in-app navigations. An external link or a download already goes through
+       * `beforeunload`. */
+      if (!href.startsWith('/') || href === window.location.pathname) return;
+
+      if (!window.confirm('You have unsaved changes to this product. Leave without saving?')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    document.addEventListener('click', intercept, true);
+    return () => document.removeEventListener('click', intercept, true);
+  }, [hasChanges]);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const handleFieldChange = useCallback((field: string, value: string | number | boolean | null | string[]) => {

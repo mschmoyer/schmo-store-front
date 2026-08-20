@@ -186,6 +186,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
   // Modal state
   const [newStatus, setNewStatus] = useState<PurchaseOrderStatus>('pending');
   const [receivingData, setReceivingData] = useState<Record<string, number>>({});
+  /** Locations the store keeps stock in, for the receive dialog. */
+  const [locations, setLocations] = useState<Array<{ value: string; label: string }>>([]);
+  const [receiveLocationId, setReceiveLocationId] = useState<string | null>(null);
+  /* Damaged units, per line. Counted as arrived and then written off, so the supplier's invoice
+   * still reconciles and the damage is its own reportable event. */
+  const [damageData, setDamageData] = useState<Record<string, number>>({});
+  const [damageNote, setDamageNote] = useState('');
   
   /**
    * Fetch purchase order details
@@ -355,7 +362,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       .filter(([, quantity]) => quantity > 0)
       .map(([itemId, quantity]) => ({
         purchase_order_item_id: itemId,
-        quantity_received: quantity
+        quantity_received: quantity,
+        damaged_quantity: damageData[itemId] || 0,
+        damage_notes: damageData[itemId] ? damageNote.trim() || null : null
       }));
     
     if (itemsToReceive.length === 0) {
@@ -393,7 +402,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
           'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({
-          items: itemsToReceive,
+          items: itemsToReceive.map((line) => ({ ...line, location_id: receiveLocationId })),
           idempotency_key: receiptKeyRef.current
         })
       });
@@ -423,6 +432,8 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       }
 
       receiptKeyRef.current = null;
+      setDamageData({});
+      setDamageNote('');
       
       // Reset receiving data
       const resetReceivingData: Record<string, number> = {};
@@ -519,6 +530,29 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       fetchPurchaseOrder();
     }
   }, [isAuthenticated, session?.sessionToken, fetchPurchaseOrder]);
+
+  /* The store's stock locations, so a delivery can be received into the right one. */
+  useEffect(() => {
+    if (!session?.sessionToken) return;
+    fetch('/api/admin/inventory/locations', {
+      headers: { Authorization: `Bearer ${session.sessionToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const rows = payload?.locations ?? [];
+        const options = rows
+          .filter((l: { is_active: boolean }) => l.is_active)
+          .map((l: { id: string; name: string; is_default: boolean }) => ({
+            value: l.id,
+            label: l.is_default ? `${l.name} (default)` : l.name
+          }));
+        setLocations(options);
+        setReceiveLocationId(
+          rows.find((l: { is_default: boolean }) => l.is_default)?.id ?? options[0]?.value ?? null
+        );
+      })
+      .catch(() => setLocations([]));
+  }, [session?.sessionToken]);
   
   if (loading) {
     return (
@@ -946,7 +980,33 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       <Modal opened={receiveModalOpened} onClose={closeReceiveModal} title="Receive Items" size="lg">
         <Stack>
           <Text size="sm" c="dimmed">
-            Enter the quantities received for each item. This will update your inventory.
+            Enter what actually arrived. Each line posts a stock movement against the location you
+            choose, and the order&apos;s status follows from what has been received.
+          </Text>
+
+          {/*
+            * Where the delivery is going.
+            *
+            * There was no selector at all, so everything landed at the store's default location —
+            * fine for a single-location store and wrong for any other, since a delivery that
+            * arrives at the back room was recorded on the shop floor and the two balances drifted
+            * from the first pallet onwards. Only shown when there is a choice to make.
+            */}
+          {locations.length > 1 && (
+            <Select
+              label="Received into"
+              description="Where these units are going."
+              data={locations}
+              value={receiveLocationId}
+              onChange={setReceiveLocationId}
+              allowDeselect={false}
+            />
+          )}
+
+          {/* Over-receipt is allowed and reported rather than refused — suppliers over-ship, and
+              the alternative is a merchant editing the order to hide it. */}
+          <Text size="xs" c="dimmed">
+            You can receive more than was ordered; the difference is reported back to you.
           </Text>
           
           <Table>
@@ -956,6 +1016,16 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                 <Table.Th className={table.numeric}>Ordered</Table.Th>
                 <Table.Th className={table.numeric}>Already received</Table.Th>
                 <Table.Th className={table.numeric}>Receive now</Table.Th>
+                {/*
+                  * Damage, recorded on the receipt.
+                  *
+                  * The endpoint has always accepted `damaged_quantity` and posted it as its own
+                  * ledger movement — arrival then damage, two entries rather than one netted one,
+                  * because the supplier is invoicing for those units and the damage is its own
+                  * reportable event. Nothing collected it, so "the delivery arrived short and
+                  * damaged" was a journey that could not be completed anywhere in the admin.
+                  */}
+                <Table.Th className={table.numeric}>Of which damaged</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -984,8 +1054,22 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                         [item.id]: Number(value) || 0 
                       }))}
                       min={0}
-                      max={item.quantity - item.received_quantity}
                       size="sm"
+                      aria-label={`Receive now for ${item.product_name}`}
+                    />
+                  </Table.Td>
+
+                  <Table.Td>
+                    <NumberInput
+                      value={damageData[item.id] || 0}
+                      onChange={(value) =>
+                        setDamageData(prev => ({ ...prev, [item.id]: Number(value) || 0 }))
+                      }
+                      min={0}
+                      max={receivingData[item.id] || 0}
+                      size="sm"
+                      disabled={!receivingData[item.id]}
+                      aria-label={`Damaged units for ${item.product_name}`}
                     />
                   </Table.Td>
                 </Table.Tr>
@@ -993,6 +1077,15 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             </Table.Tbody>
           </Table>
           
+          {Object.values(damageData).some((n) => n > 0) && (
+            <TextInput
+              label="What was wrong with the damaged units"
+              description="Goes on the stock movement, and is what a carrier claim is built from."
+              value={damageNote}
+              onChange={(event) => setDamageNote(event.currentTarget.value)}
+            />
+          )}
+
           <Group justify="flex-end" mt="md">
             <Button variant="light" onClick={closeReceiveModal}>
               Cancel

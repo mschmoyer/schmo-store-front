@@ -61,8 +61,26 @@ async function sortByMostStock(page) {
   ).toHaveCount(1);
 }
 
-/** Read one row's numeric cell by column position. */
-async function cellValue(page, rowIndex, columnIndex) {
+/**
+ * Read one row's numeric cell, by column *heading* rather than position.
+ *
+ * Positional indices broke the moment a selection checkbox column was added to the left of the
+ * grid: every number silently shifted one place and the assertions started comparing on-hand
+ * against committed. Resolving the index from the header row means a test fails when the number is
+ * wrong, not when the layout moves.
+ *
+ * @param page - The Playwright page.
+ * @param rowIndex - Which body row, zero-based.
+ * @param heading - The column's heading text, such as "On hand".
+ * @returns The cell's numeric content.
+ */
+async function cellValue(page, rowIndex, heading) {
+  const headings = await page.locator('table thead th').allInnerTexts();
+  const columnIndex = headings.findIndex((text) => text.trim().startsWith(heading));
+  if (columnIndex === -1) {
+    throw new Error(`No column headed "${heading}". Headings: ${headings.join(' | ')}`);
+  }
+
   const text = await page
     .locator('table tbody tr')
     .nth(rowIndex)
@@ -114,7 +132,7 @@ test.describe('Admin inventory', () => {
   });
 
   test('a stock adjustment requires a reason and moves the stock', async ({ page }) => {
-    const onHandBefore = await cellValue(page, 0, 1);
+    const onHandBefore = await cellValue(page, 0, 'On hand');
 
     await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
     await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
@@ -151,7 +169,7 @@ test.describe('Admin inventory', () => {
     await page.waitForSelector('table tbody tr');
 
     /* "Damaged" removes stock, so on hand must have fallen by two. */
-    expect(await cellValue(page, 0, 1)).toBe(onHandBefore - 2);
+    expect(await cellValue(page, 0, 'On hand')).toBe(onHandBefore - 2);
 
     /* Put it back through the same path, which is also how a merchant corrects a mis-keyed
      * adjustment — the ledger has no edit. */
@@ -267,7 +285,7 @@ test.describe('Admin inventory', () => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
 
-    const onHandBefore = await cellValue(page, 0, 1);
+    const onHandBefore = await cellValue(page, 0, 'On hand');
 
     await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
     await page.getByRole('menuitem', { name: 'Move between locations' }).click();
@@ -286,7 +304,7 @@ test.describe('Admin inventory', () => {
 
     /* The store-wide total is unchanged: a transfer moves stock, it does not create or destroy it.
      * That is the property the two-legged ledger entry exists to guarantee. */
-    expect(await cellValue(page, 0, 1)).toBe(onHandBefore);
+    expect(await cellValue(page, 0, 'On hand')).toBe(onHandBefore);
 
     /* And both legs are in the history. */
     await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
@@ -307,8 +325,8 @@ test.describe('Admin inventory', () => {
      */
     await sortByMostStock(page);
 
-    const onHandBefore = await cellValue(page, 0, 1);
-    const availableBefore = await cellValue(page, 0, 3);
+    const onHandBefore = await cellValue(page, 0, 'On hand');
+    const availableBefore = await cellValue(page, 0, 'Available');
     expect(onHandBefore).toBeGreaterThan(2);
 
     await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
@@ -327,8 +345,8 @@ test.describe('Admin inventory', () => {
     await page.reload({ waitUntil: 'networkidle' });
     await page.waitForSelector('table tbody tr');
 
-    expect(await cellValue(page, 0, 1)).toBe(onHandBefore);
-    expect(await cellValue(page, 0, 3)).toBe(availableBefore - 2);
+    expect(await cellValue(page, 0, 'On hand')).toBe(onHandBefore);
+    expect(await cellValue(page, 0, 'Available')).toBe(availableBefore - 2);
 
     /* Put them back, so the suite can run twice. */
     await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
@@ -338,6 +356,40 @@ test.describe('Admin inventory', () => {
     await page.getByRole('textbox', { name: 'How many units' }).fill('2');
     await page.getByRole('button', { name: 'Record adjustment' }).click();
     await page.waitForTimeout(2000);
+  });
+
+  test('the restock worklist turns into a purchase order', async ({ page }) => {
+    /*
+     * The journey this page exists for, and the one it could not do.
+     *
+     * Inventory had no row selection and no bulk actions at all, so deciding what to order for
+     * forty SKUs meant opening forty row menus — and the screen that turned a shortage into a
+     * purchase order was a separate page whose Create button could never submit.
+     */
+    await sortByMostStock(page);
+
+    /* No bar until something is selected: it is a response to a choice, not furniture. */
+    expect(await page.locator('[role="region"][aria-label*="Bulk actions"]').count()).toBe(0);
+
+    await page.locator('table tbody tr input[type="checkbox"]').first().check();
+    const bar = page.locator('[role="region"][aria-label*="Bulk actions"]');
+    await expect(bar).toBeVisible();
+    await expect(bar).toContainText('1 product selected');
+
+    await page.getByRole('button', { name: 'Create purchase order' }).first().click();
+
+    const modal = page.locator('.mantine-Modal-body');
+    await expect(modal.getByText('One order, to one supplier')).toBeVisible();
+
+    /* Every selected line is listed with a quantity already worked out from the reorder policy,
+     * net of what is on the shelf and what is already on order. */
+    const quantity = modal.locator('input[aria-label^="Order quantity for"]').first();
+    await expect(quantity).toBeVisible();
+
+    /* And it will not submit without a supplier — an order is placed with someone. */
+    await expect(
+      modal.getByRole('button', { name: 'Create purchase order' })
+    ).toBeDisabled();
   });
 
   test('reports an error rather than an empty table', async ({ page }) => {

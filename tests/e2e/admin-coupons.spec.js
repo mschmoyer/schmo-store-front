@@ -184,6 +184,11 @@ adminAuthFixture.describe('Admin coupons — the editor', () => {
     await dialog.getByLabel(/^Code/).fill('WELCOME10');
     await dialog.getByRole('button', { name: 'Create coupon' }).click();
 
-    await expect(adminPage.getByText(/already exists/i)).toBeVisible({ timeout: 15000 });
+    /*
+     * `.first()`, because the whole-page search matched two elements under parallel workers and a
+     * strict-mode violation reads as a product failure when it is a test-isolation one. The claim
+     * is that the duplicate is refused and said so — one such message is enough to establish it.
+     */
+    await expect(adminPage.getByText(/already exists/i).first()).toBeVisible({ timeout: 15000 });
   });
 });

@@ -2722,3 +2722,63 @@ Still open from this pass:
 - [ ] Purchase Orders and Suppliers are reachable only through Inventory → More, and the nav's own
       comment claims they are "already a tab inside Inventory", which they are not
 - [ ] Three dead components: `ReceivingModal`, `PurchaseOrderModal`, `SmartReorderWidget`
+
+### Acting on the two journeys the UX pass found dead
+
+Follow-on from the entry above, closing the gaps rather than only the bugs.
+
+#### Inventory can now be acted on in bulk
+
+The catalogue has had a bulk bar since it was rewritten; Inventory had none, so deciding what to
+order for forty SKUs meant opening forty row menus. That is the weekly restock — the most
+repetitive thing a merchant does on this screen — and it was the one thing the screen could not
+help with.
+
+- [x] Row selection and a bulk bar: reorder point, low-stock level, and stock tracking, all reusing
+      the tested bulk endpoint with its per-row outcomes
+- [x] **Create a purchase order from the selection.** Every selected line arrives with a quantity
+      already worked out from the reorder policy, net of what is on the shelf *and* what is already
+      on order — ignoring `incoming` is how a merchant orders the same pallet twice. Lines are
+      editable, lines at zero are excluded, the order total is shown, and lines with no cost on file
+      are named rather than quietly dropped from that total. Verified end to end in a browser:
+      selection → dialog → `PO-0001`, one line, 18 units at the recorded cost
+- [x] A checkbox bug found while building it, worth recording because it is silent: reading
+      `event.currentTarget.checked` inside a functional `setState` updater gives `undefined`, since
+      React nulls `currentTarget` once the handler returns. The box simply never ticked
+
+#### A short and damaged delivery can now be recorded
+
+- [x] **Receiving had no location selector**, so every delivery landed at the store's default —
+      fine for one location and wrong for any other, with the two balances drifting from the first
+      pallet. It is chosen now, and only shown when there is a choice
+- [x] **Damage could not be recorded anywhere in receiving.** The endpoint has always accepted
+      `damaged_quantity` and posted it as its own ledger movement — arrival then damage, two entries
+      rather than one netted one, because the supplier is invoicing for those units and the damage
+      is its own reportable event — and nothing collected it. Verified: 12 of 20 received into a
+      chosen location with 3 damaged produces `po_receipt +12, damage -3`, 9 on hand there, and the
+      order correctly `partially_received` with 8 outstanding
+- [x] The per-line receive input was capped at the outstanding quantity, contradicting the
+      endpoint's deliberate acceptance of over-receipt. Uncapped, with the behaviour stated
+
+#### The rest
+
+- [x] Unsaved product edits are no longer discarded silently. The form already tracked the changes
+      and *said so* — then let the merchant navigate away without a word, which is worse than never
+      mentioning it. `beforeunload` covers the tab; a capture-phase click guard covers in-app links,
+      because the App Router has no supported navigation guard
+- [x] The nav's comment claimed Purchase Orders was "already a tab inside Inventory". It was not,
+      and had not been since Inventory was rewritten — its tabs are stock views. The comment now
+      says where the door actually is
+- [x] Three dead components deleted: `ReceivingModal`, `PurchaseOrderModal`, `SmartReorderWidget`.
+      `ReceivingModal` held the damage fields the live path lacked; rather than delete the
+      capability with it, those fields moved into the path that runs
+
+- [x] **Version bumped** to 3.8.0
+
+Still open:
+- [ ] **Variants.** Unchanged, and still the largest gap. The schema and the five-step sequence are
+      specced in the entry above
+- [ ] `reserved` has no writer; a checkout reservation is what would close the oversell race
+- [ ] Nothing links "on order" back to the purchase order that created it
+- [ ] No skip-to-content link; every page costs 13 tab stops through the sidebar
+- [ ] No collections or metafields; `publish_at` remains a dead column

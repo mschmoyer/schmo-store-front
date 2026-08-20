@@ -244,6 +244,7 @@ prove the seed is idempotent.
 - **Inventory**: On hand, committed, available, on order and days of cover shown apart from one
   another, backed by an append-only stock ledger with reasons
 - **Multiple locations**: Stock counted per location, with transfers recorded as a paired movement
+- **Restocking**: Select what needs ordering and turn it straight into a purchase order
 - **Quarantine**: Units held back from sale without leaving the shelf
 - **Purchase Orders**: Create, manage, and receive inventory against that ledger
 - **Analytics**: Store performance and visitor tracking
