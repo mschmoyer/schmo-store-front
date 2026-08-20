@@ -1,409 +1,295 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  Box,
-  Stack,
-  Group,
-  Text,
-  Card,
-  SimpleGrid,
-  Progress,
-  Badge,
-  Timeline,
-  Tooltip,
-  Select,
-  Skeleton,
-  Center,
-  ActionIcon,
-  Alert
-} from '@mantine/core';
-import {
-  IconTrendingUp,
-  IconEye,
-  IconShoppingCart,
-  IconCurrencyDollar,
-  IconPackage,
-  IconRefresh,
-  IconAlertCircle
-} from '@tabler/icons-react';
+/**
+ * How one product is performing.
+ *
+ * The previous version of this panel rendered `NaN%` four times.
+ *
+ * The route it read from returned `analytics: Promise.resolve({ rows: [] })` behind a `// TODO:
+ * Implement analytics` — not merely empty, but the wrong shape entirely. So `analytics.views`
+ * rendered nothing, `(analytics.conversion_rate * 100).toFixed(1)` rendered `NaN%`, three progress
+ * bars got `value={NaN}`, and a verdict computed from `undefined` told the merchant their product
+ * was "Needs improvement" in red. It also shipped a grey box reading "Sales chart visualization
+ * would go here", and a time-range selector that changed only the sentence beside it.
+ *
+ * A fabricated conversion rate is worse than no conversion rate, because a merchant will price and
+ * merchandise against it. So this shows what the database can actually answer — units, revenue,
+ * margin against cost at the time of sale, and the stock movements behind it — and says plainly
+ * where a figure is not measured rather than inventing one.
+ */
 
-interface SalesData {
+import React from 'react';
+import {
+  Alert,
+  Badge,
+  Card,
+  Group,
+  SimpleGrid,
+  Stack,
+  Table,
+  Text,
+  Title
+} from '@mantine/core';
+import { IconInfoCircle } from '@tabler/icons-react';
+import { Price } from '@/components/ui';
+import { StatCard, StatGrid } from './StatCard';
+import table from './adminTable.module.css';
+
+/** The sales figures the product route returns. */
+export interface ProductSalesData {
   total_sales: number;
   total_revenue: number;
   total_orders: number;
+  gross_profit: number;
   avg_sale_price: number;
-  first_sale_date?: Date;
-  last_sale_date?: Date;
+  units_30d: number;
+  units_90d: number;
+  first_sale_date: string | null;
+  last_sale_date: string | null;
 }
 
-interface ProductAnalyticsData {
-  views: number;
-  cart_adds: number;
-  cart_abandons: number;
-  conversion_rate: number;
-  bounce_rate: number;
-  avg_time_on_page: number;
+/** One stock movement, as the product route returns it. */
+export interface ProductMovement {
+  id: string;
+  reason: string;
+  delta: number;
+  balance_after: number;
+  note: string | null;
+  created_at: string;
+  location_name: string;
+  actor_name: string | null;
 }
 
-interface InventoryChange {
-  change_type: string;
-  quantity_change: number;
-  quantity_after: number;
-  reference_type?: string;
-  reference_id?: string;
-  notes?: string;
-  created_at: Date;
+export interface ProductAnalyticsProps {
+  salesData: ProductSalesData;
+  movements: ProductMovement[];
+  /** Current selling price, for the margin figure. */
+  effectivePrice: number;
+  /** Recorded cost, or null when there is none. */
+  costPrice: number | null;
+  /** Available stock, for days of cover. */
+  available: number;
 }
 
-interface ProductAnalyticsProps {
-  productId: string;
-  salesData: SalesData;
-  analytics: ProductAnalyticsData;
-  inventoryHistory: InventoryChange[];
-  needsAttention: string[];
-  loading?: boolean;
-}
+/** How each movement reason is worded. */
+const REASON_LABEL: Record<string, string> = {
+  initial_stock: 'Opening balance',
+  sale: 'Sold',
+  return_to_stock: 'Customer return',
+  po_receipt: 'Received',
+  transfer_in: 'Transferred in',
+  transfer_out: 'Transferred out',
+  cycle_count: 'Stock count',
+  damage: 'Damaged',
+  shrinkage: 'Missing',
+  expiry: 'Expired',
+  sample: 'Sample',
+  write_off: 'Written off',
+  correction: 'Correction',
+  sync_correction: 'Reconciled with ShipStation'
+};
 
 /**
- * Product Analytics Component
- * 
- * Displays comprehensive analytics for a product including:
- * - Sales performance metrics
- * - Inventory history and changes
- * - Customer behavior analytics
- * - Performance indicators and alerts
- * 
- * @param props - ProductAnalyticsProps
- * @returns JSX.Element
+ * The performance panel for one product.
+ *
+ * @param props - {@link ProductAnalyticsProps}
+ * @returns Sales figures, margin, and the stock movements behind them.
  */
-export default function ProductAnalytics({
+export function ProductAnalytics({
   salesData,
-  analytics,
-  inventoryHistory,
-  needsAttention,
-  loading = false
-}: ProductAnalyticsProps) {
-  const [timeRange, setTimeRange] = useState('30d');
-  const [refreshing, setRefreshing] = useState(false);
+  movements,
+  effectivePrice,
+  costPrice,
+  available
+}: ProductAnalyticsProps): React.ReactElement {
+  const marginPercent =
+    costPrice !== null && effectivePrice > 0
+      ? Math.round(((effectivePrice - costPrice) / effectivePrice) * 1000) / 10
+      : null;
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
-
-  const formatDate = (date: Date | undefined) => {
-    if (!date) return 'Never';
-    return new Date(date).toLocaleDateString();
-  };
-
-  // Utility functions for future use
-  // const getChangeIcon = (change: number) => {
-  //   if (change > 0) return <IconArrowUpRight size={16} color="var(--success-text)" />;
-  //   if (change < 0) return <IconArrowDownRight size={16} color="var(--danger-text)" />;
-  //   return null;
-  // };
-
-  // const getChangeColor = (change: number) => {
-  //   if (change > 0) return 'green';
-  //   if (change < 0) return 'red';
-  //   return 'gray';
-  // };
-
-  const getInventoryChangeIcon = (changeType: string) => {
-    switch (changeType) {
-      case 'restock':
-        return <IconPackage size={16} color="var(--success-text)" />;
-      case 'sale':
-        return <IconShoppingCart size={16} color="var(--text-primary)" />;
-      case 'adjustment':
-        return <IconRefresh size={16} color="var(--warning-text)" />;
-      case 'return':
-        return <IconTrendingUp size={16} color="var(--text-primary)" />;
-      default:
-        return <IconPackage size={16} color="var(--text-quaternary)" />;
-    }
-  };
-
-  const getInventoryChangeColor = (changeType: string) => {
-    switch (changeType) {
-      case 'restock':
-        return 'green';
-      case 'sale':
-        return 'blue';
-      case 'adjustment':
-        return 'orange';
-      case 'return':
-        return 'teal';
-      default:
-        return 'gray';
-    }
-  };
-
-  const refreshAnalytics = async () => {
-    setRefreshing(true);
-    // In a real app, this would make an API call to refresh the data
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
-  };
-
-  if (loading) {
-    return (
-      <Stack gap="md">
-        <Skeleton height={200} />
-        <Skeleton height={300} />
-        <Skeleton height={250} />
-      </Stack>
-    );
-  }
+  /* Ninety days rather than thirty: a month of data on a product that sells a few units a week is
+   * mostly noise, and the reorder maths downstream uses the same window. */
+  const dailyDemand = salesData.units_90d / 90;
+  const daysOfCover = dailyDemand > 0 ? Math.round(available / dailyDemand) : null;
 
   return (
-    <Stack gap="md">
-      {/* Header */}
-      <Group justify="space-between" align="center">
-        <Box>
-          <Text size="lg" fw={600}>Performance Analytics</Text>
-          <Text size="sm" c="dimmed">
-            Sales and engagement metrics for the last {timeRange}
-          </Text>
-        </Box>
-        <Group>
-          <Select
-            value={timeRange}
-            onChange={(value) => setTimeRange(value || '30d')}
-            data={[
-              { value: '7d', label: 'Last 7 days' },
-              { value: '30d', label: 'Last 30 days' },
-              { value: '90d', label: 'Last 90 days' },
-              { value: '1y', label: 'Last year' }
-            ]}
-            size="sm"
-          />
-          <Tooltip label="Refresh data">
-            <ActionIcon
-              variant="light"
-              loading={refreshing}
-              onClick={refreshAnalytics}
-            >
-              <IconRefresh size={16} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
-      </Group>
+    <Stack gap="lg">
+      <StatGrid>
+        <StatCard
+          label="Units sold"
+          value={salesData.total_sales}
+          meta={`${salesData.units_90d} in the last 90 days`}
+        />
+        <StatCard
+          label="Revenue"
+          value={salesData.total_revenue}
+          format="currency"
+          meta={`Across ${salesData.total_orders} order${salesData.total_orders === 1 ? '' : 's'}`}
+        />
+        <StatCard
+          label="Gross profit"
+          value={salesData.gross_profit}
+          format="currency"
+          /* Against the cost recorded at the time of each sale, which order lines snapshot —
+           * computing it against today's cost would restate history every time a price changed. */
+          meta="Against cost at the time of sale"
+        />
+        <StatCard
+          label="Margin"
+          value={marginPercent === null ? 'Not known' : `${marginPercent.toFixed(1)}%`}
+          format="raw"
+          tone={marginPercent !== null && marginPercent < 20 ? 'warning' : 'neutral'}
+          meta={
+            marginPercent === null
+              ? 'Record a cost to calculate it'
+              : `${formatMoney(effectivePrice - (costPrice ?? 0))} per unit`
+          }
+        />
+      </StatGrid>
 
-      {/* Attention Alerts */}
-      {needsAttention.length > 0 && (
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          title="Needs Attention"
-          color="orange"
-          variant="light"
-        >
-          <Stack gap="xs">
-            {needsAttention.map((issue, index) => (
-              <Text key={index} size="sm">
-                • {issue.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+      <SimpleGrid cols={{ base: 1, md: 2 }}>
+        <Card withBorder p="md">
+          <Stack gap="sm">
+            <Title order={4} size="h5">
+              Demand
+            </Title>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">
+                Last 30 days
               </Text>
-            ))}
+              <Text size="sm" fw={600}>
+                {salesData.units_30d} units
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">
+                Last 90 days
+              </Text>
+              <Text size="sm" fw={600}>
+                {salesData.units_90d} units
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">
+                Days of cover
+              </Text>
+              <Text size="sm" fw={600}>
+                {/* Not "∞" and not a sentinel: no demand signal is a different fact from never
+                    running out, and only one of them is a reason to do nothing. */}
+                {daysOfCover === null ? 'No recent sales' : formatCover(daysOfCover)}
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">
+                Average selling price
+              </Text>
+              <Text size="sm" fw={600}>
+                <Price value={salesData.avg_sale_price} />
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">
+                Last sold
+              </Text>
+              <Text size="sm" fw={600}>
+                {salesData.last_sale_date
+                  ? new Date(salesData.last_sale_date).toLocaleDateString(undefined, {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric'
+                    })
+                  : 'Never'}
+              </Text>
+            </Group>
           </Stack>
-        </Alert>
-      )}
-
-      {/* Sales Performance Cards */}
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Total Sales
-              </Text>
-              <Text fw={700} size="xl">
-                {salesData.total_sales}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {salesData.total_orders} orders
-              </Text>
-            </Box>
-            <IconShoppingCart size={32} color="var(--text-primary)" />
-          </Group>
         </Card>
 
         <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Revenue
+          <Stack gap="sm">
+            <Title order={4} size="h5">
+              Recent stock movements
+            </Title>
+            {movements.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                No stock movements recorded yet.
               </Text>
-              <Text fw={700} size="xl">
-                {formatCurrency(salesData.total_revenue)}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Avg: {formatCurrency(salesData.avg_sale_price)}
-              </Text>
-            </Box>
-            <IconCurrencyDollar size={32} color="var(--success-text)" />
-          </Group>
-        </Card>
-
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Page Views
-              </Text>
-              <Text fw={700} size="xl">
-                {analytics.views}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Avg time: {Math.round(analytics.avg_time_on_page / 60)}min
-              </Text>
-            </Box>
-            <IconEye size={32} color="var(--text-primary)" />
-          </Group>
-        </Card>
-
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Box>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Conversion Rate
-              </Text>
-              <Text fw={700} size="xl">
-                {(analytics.conversion_rate * 100).toFixed(1)}%
-              </Text>
-              <Text size="xs" c="dimmed">
-                {analytics.cart_adds} cart adds
-              </Text>
-            </Box>
-            <IconTrendingUp size={32} color="var(--text-primary)" />
-          </Group>
+            ) : (
+              <Table>
+                <Table.Tbody>
+                  {movements.slice(0, 8).map((movement) => (
+                    <Table.Tr key={movement.id}>
+                      <Table.Td>
+                        <Text size="xs" c="dimmed">
+                          {new Date(movement.created_at).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short'
+                          })}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge variant="light" size="sm">
+                          {REASON_LABEL[movement.reason] ?? movement.reason}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td className={table.numeric}>
+                        <Text size="sm" fw={600}>
+                          {movement.delta > 0 ? '+' : ''}
+                          {movement.delta}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td className={table.numeric}>
+                        <Text size="sm" c="dimmed">
+                          {movement.balance_after}
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
+          </Stack>
         </Card>
       </SimpleGrid>
 
-      {/* Performance Indicators */}
-      <Card withBorder p="md">
-        <Text size="md" fw={600} mb="md">Performance Indicators</Text>
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
-          <Box>
-            <Group justify="space-between" mb="xs">
-              <Text size="sm">Conversion Rate</Text>
-              <Text size="sm" fw={500}>
-                {(analytics.conversion_rate * 100).toFixed(1)}%
-              </Text>
-            </Group>
-            <Progress
-              value={analytics.conversion_rate * 100}
-              color={analytics.conversion_rate > 0.02 ? 'green' : analytics.conversion_rate > 0.01 ? 'orange' : 'red'}
-              size="md"
-            />
-            <Text size="xs" c="dimmed" mt="xs">
-              {analytics.conversion_rate > 0.02 ? 'Excellent' : analytics.conversion_rate > 0.01 ? 'Good' : 'Needs improvement'}
-            </Text>
-          </Box>
-
-          <Box>
-            <Group justify="space-between" mb="xs">
-              <Text size="sm">Cart Abandonment</Text>
-              <Text size="sm" fw={500}>
-                {((analytics.cart_abandons / (analytics.cart_adds + analytics.cart_abandons)) * 100).toFixed(1)}%
-              </Text>
-            </Group>
-            <Progress
-              value={(analytics.cart_abandons / (analytics.cart_adds + analytics.cart_abandons)) * 100}
-              color="red"
-              size="md"
-            />
-            <Text size="xs" c="dimmed" mt="xs">
-              {analytics.cart_abandons} abandoned carts
-            </Text>
-          </Box>
-
-          <Box>
-            <Group justify="space-between" mb="xs">
-              <Text size="sm">Bounce Rate</Text>
-              <Text size="sm" fw={500}>
-                {(analytics.bounce_rate * 100).toFixed(1)}%
-              </Text>
-            </Group>
-            <Progress
-              value={analytics.bounce_rate * 100}
-              color={analytics.bounce_rate < 0.5 ? 'green' : analytics.bounce_rate < 0.7 ? 'orange' : 'red'}
-              size="md"
-            />
-            <Text size="xs" c="dimmed" mt="xs">
-              {analytics.bounce_rate < 0.5 ? 'Low' : analytics.bounce_rate < 0.7 ? 'Moderate' : 'High'}
-            </Text>
-          </Box>
-        </SimpleGrid>
-      </Card>
-
-      {/* Sales Timeline */}
-      <Card withBorder p="md">
-        <Text size="md" fw={600} mb="md">Sales Timeline</Text>
-        <Group justify="space-between" mb="md">
-          <Text size="sm" c="dimmed">
-            First Sale: {formatDate(salesData.first_sale_date)}
-          </Text>
-          <Text size="sm" c="dimmed">
-            Last Sale: {formatDate(salesData.last_sale_date)}
-          </Text>
-        </Group>
-        <Box style={{ height: 100, backgroundColor: 'var(--surface-2)', borderRadius: 8 }}>
-          <Center h={100}>
-            <Text size="sm" c="dimmed">
-              Sales chart visualization would go here
-            </Text>
-          </Center>
-        </Box>
-      </Card>
-
-      {/* Inventory History */}
-      <Card withBorder p="md">
-        <Text size="md" fw={600} mb="md">Recent Inventory Changes</Text>
-        {inventoryHistory.length > 0 ? (
-          <Timeline active={inventoryHistory.length - 1} bulletSize={20} lineWidth={2}>
-            {inventoryHistory.slice(0, 10).map((change, index) => (
-              <Timeline.Item
-                key={index}
-                bullet={getInventoryChangeIcon(change.change_type)}
-                title={
-                  <Group gap="xs">
-                    <Text size="sm" fw={500}>
-                      {change.change_type.charAt(0).toUpperCase() + change.change_type.slice(1)}
-                    </Text>
-                    <Badge
-                      size="xs"
-                      color={getInventoryChangeColor(change.change_type)}
-                      variant="light"
-                    >
-                      {change.quantity_change > 0 ? '+' : ''}{change.quantity_change}
-                    </Badge>
-                  </Group>
-                }
-              >
-                <Text size="xs" c="dimmed">
-                  Quantity after: {change.quantity_after}
-                </Text>
-                {change.notes && (
-                  <Text size="xs" c="dimmed" mt="xs">
-                    {change.notes}
-                  </Text>
-                )}
-                <Text size="xs" c="dimmed" mt="xs">
-                  {formatDate(change.created_at)}
-                </Text>
-              </Timeline.Item>
-            ))}
-          </Timeline>
-        ) : (
-          <Text size="sm" c="dimmed">
-            No inventory changes recorded yet
-          </Text>
-        )}
-      </Card>
+      {/*
+        * Said out loud rather than filled in with a plausible number. The platform records
+        * pageviews but does not yet join them to a product, so there is no conversion rate to
+        * show — and one invented for the shape of the panel is a figure a merchant would act on.
+        */}
+      <Alert icon={<IconInfoCircle size={16} />} variant="light">
+        <Text size="sm">
+          Storefront traffic — views, conversion rate and cart abandonment — is not yet measured per
+          product, so it is not shown here. Everything above comes from your orders and your stock
+          ledger.
+        </Text>
+      </Alert>
     </Stack>
   );
+}
+
+export default ProductAnalytics;
+
+/**
+ * Format an amount for the per-unit margin note.
+ *
+ * @param amount - A value in major units.
+ * @returns The amount as currency.
+ */
+function formatMoney(amount: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+}
+
+/**
+ * Days of cover in the unit a person reasons in, matching the inventory grid.
+ *
+ * A slow mover can have four thousand days of cover, which is true and carries no decision.
+ *
+ * @param days - Days of cover.
+ * @returns A short label.
+ */
+function formatCover(days: number): string {
+  if (days < 60) return `${Math.round(days)} days`;
+  if (days < 365) return `${Math.round(days / 30)} months`;
+  const years = days / 365;
+  return years >= 5 ? 'over 5 years' : `${years.toFixed(1)} years`;
 }

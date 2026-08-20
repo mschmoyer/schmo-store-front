@@ -352,17 +352,9 @@ async function applyUpdate(request: NextRequest, productId: string): Promise<Nex
 
   const body = (await request.json()) as Record<string, unknown>;
 
-  const existing = await db.query<{
-    id: string;
-    sku: string;
-    slug: string;
-    name: string;
-    status: string;
-    base_price: string;
-    cost_price: string | null;
-    field_locks: string[];
-  }>(
-    'SELECT id, sku, slug, name, status, base_price, cost_price, field_locks FROM products WHERE id = $1 AND store_id = $2',
+  /* The whole row, because locking has to compare the incoming value against the stored one. */
+  const existing = await db.query<Record<string, unknown>>(
+    'SELECT * FROM products WHERE id = $1 AND store_id = $2',
     [productId, storeId]
   );
   if (existing.rows.length === 0) {
@@ -396,10 +388,21 @@ async function applyUpdate(request: NextRequest, productId: string): Promise<Nex
       continue;
     }
 
-    values.push(coerceValue(rawValue, spec.coerce, key));
+    const coerced = coerceValue(rawValue, spec.coerce, key);
+    values.push(coerced);
     assignments.push(`${spec.column} = $${values.length}`);
     applied.push(spec.column);
-    if (spec.locks) locks.push(spec.column);
+
+    /*
+     * A field is claimed from ShipStation only when its value actually *changes*.
+     *
+     * The edit form posts every field it renders, so locking everything it sent would mean one
+     * save — of a single dimension, say — silently disconnected the product's name, price and
+     * image from upstream forever. "Editing a field claims it" has to mean editing, not saving.
+     */
+    if (spec.locks && !sameValue(before[spec.column], coerced)) {
+      locks.push(spec.column);
+    }
   }
 
   /* Lifecycle is its own field because it carries side effects: a publish stamps `published_at`,
@@ -419,7 +422,9 @@ async function applyUpdate(request: NextRequest, productId: string): Promise<Nex
     values.push(nextStatus);
     assignments.push(`status = $${values.length}`);
     applied.push('status');
-    locks.push('status');
+    /* Publishing state is only claimed when it actually changes — otherwise every save would stop
+     * the sync ever reflecting a product being deactivated upstream. */
+    if (nextStatus !== before.status) locks.push('status');
 
     if (nextStatus === 'active' && before.status !== 'active') {
       assignments.push('published_at = COALESCE(published_at, NOW())');
@@ -435,7 +440,7 @@ async function applyUpdate(request: NextRequest, productId: string): Promise<Nex
       values.push(slug);
       assignments.push(`slug = $${values.length}`);
       applied.push('slug');
-      retiredSlug = before.slug;
+      retiredSlug = String(before.slug);
     }
   }
 
@@ -644,4 +649,33 @@ export async function DELETE(
   } catch (error) {
     return adminErrorResponse(error, 'products.delete');
   }
+}
+
+/**
+ * Whether a stored value and an incoming one are the same.
+ *
+ * Loose on representation and strict on meaning: `pg` returns NUMERIC as a string and DATE as a
+ * Date, and a form posts numbers, so `'249.00' !== 249` would report a change on every save and
+ * defeat the whole point of comparing.
+ *
+ * @param stored - The value currently in the database.
+ * @param incoming - The coerced value from the request.
+ * @returns True when the two mean the same thing.
+ */
+function sameValue(stored: unknown, incoming: unknown): boolean {
+  if (stored === incoming) return true;
+  if (stored === null || stored === undefined) return incoming === null || incoming === undefined;
+  if (incoming === null || incoming === undefined) return false;
+
+  if (Array.isArray(stored) && Array.isArray(incoming)) {
+    return stored.length === incoming.length && stored.every((v, i) => String(v) === String(incoming[i]));
+  }
+
+  const storedNumber = Number(stored);
+  const incomingNumber = Number(incoming);
+  if (Number.isFinite(storedNumber) && Number.isFinite(incomingNumber)) {
+    return storedNumber === incomingNumber;
+  }
+
+  return String(stored) === String(incoming);
 }

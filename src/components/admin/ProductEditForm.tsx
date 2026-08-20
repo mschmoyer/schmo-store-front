@@ -1,20 +1,22 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import Link from 'next/link';
 import {
+  Alert,
+  Anchor,
   Box,
-  Stack,
-  Group,
-  Text,
-  TextInput,
-  NumberInput,
-  Textarea,
-  Switch,
-  Select,
   Button,
   Card,
+  Group,
+  NumberInput,
+  Select,
+  Stack,
+  Switch,
   TagsInput,
-  Alert
+  Text,
+  TextInput,
+  Textarea
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -71,12 +73,12 @@ export default function ProductEditForm({
   // Form state - User-entered values automatically override integration data
   const [formData, setFormData] = useState({
     // Basic Information - These will become override values when user enters data
-    name: product.override_name || '',
+    name: product.name || '',
     sku: product.sku || '',
     slug: product.slug || '',
     short_description: product.short_description || '',
-    long_description: product.override_description || '',
-    description_html: product.description_html || '',
+    long_description: product.long_description || '',
+    description_html: product.description_html || product.long_description || '',
     
     // Pricing
     base_price: product.base_price || 0,
@@ -87,9 +89,6 @@ export default function ProductEditForm({
     // Images
     featured_image_url: product.featured_image_url || '',
     gallery_images: product.gallery_images || [],
-    // `products` has no thumbnail column, so there is nothing to prefill here.
-    thumbnail_url: '',
-    
     // SEO
     meta_title: product.meta_title || '',
     meta_description: product.meta_description || '',
@@ -98,6 +97,22 @@ export default function ProductEditForm({
     category_id: product.category_id || '',
     tags: product.tags || [],
     
+    // Shipping — the fields carriers quote rates against, which used to live in a tab that
+    // discarded them.
+    weight: product.weight ?? null,
+    weight_unit: product.weight_unit || 'lb',
+    length: product.length ?? null,
+    width: product.width ?? null,
+    height: product.height ?? null,
+    dimension_unit: product.dimension_unit || 'in',
+
+    // Inventory policy. Stock itself is not here: it moves through the ledger with a reason.
+    track_inventory: product.track_inventory ?? true,
+    low_stock_threshold: product.low_stock_threshold ?? null,
+    reorder_point: (product as { reorder_point?: number | null }).reorder_point ?? null,
+    lead_time_days: (product as { lead_time_days?: number | null }).lead_time_days ?? null,
+    allow_backorder: product.allow_backorder ?? false,
+
     // Settings
     is_active: product.is_active || false,
     is_featured: product.is_featured || false,
@@ -190,23 +205,27 @@ export default function ProductEditForm({
     }
 
     try {
-      // Transform form data to save user-entered values as overrides
+      /*
+       * WHAT GETS SENT, AND WHY IT NO LONGER PINS AN OVERRIDE.
+       *
+       * This used to set `override_name: formData.name` and
+       * `override_description: formData.long_description` on *every* save. So changing a price
+       * also silently overrode the product's name — and since the route ignored `override_name`
+       * entirely and wrote plain `name` instead, the edit was then reverted by the next
+       * ShipStation sync. The merchant saw their change, then saw it disappear an hour later.
+       *
+       * Ownership is per-field now: the API locks whichever fields a save actually touches, and the
+       * sync skips locked fields. So the form sends the fields as themselves and nothing is pinned
+       * that the merchant did not deliberately edit.
+       */
       const saveData = {
         ...formData,
-        // Convert null values to undefined for TypeScript compatibility
-        sale_price: formData.sale_price || undefined,
-        cost_price: formData.cost_price || undefined,
-        override_price: formData.override_price || undefined,
-        // Save user entries as overrides (convert null to undefined for TypeScript)
-        override_name: formData.name || undefined,
-        override_description: formData.long_description || undefined,
-        // Keep the original values from integration data intact when not overridden
-        name: formData.name || product.name,
-        long_description: formData.long_description || product.long_description,
-        base_price: formData.base_price || product.base_price
+        sale_price: formData.sale_price || null,
+        cost_price: formData.cost_price || null,
+        override_price: formData.override_price || null
       };
-      
-      await onSave(saveData);
+
+      await onSave(saveData as Parameters<typeof onSave>[0]);
       setHasChanges(false);
     } catch (error) {
       console.error('Error saving product:', error);
@@ -322,17 +341,16 @@ export default function ProductEditForm({
             
             <Group grow>
               <NumberInput
-                label="Base Price (Integration)"
-                placeholder={product.base_price ? `${product.base_price}` : "0.00"}
+                label="Price"
+                placeholder="0.00"
                 value={formData.base_price}
                 onChange={(value) => handleFieldChange('base_price', value)}
                 error={validationErrors.base_price}
-                description={`From ShipStation: $${product.base_price || '0.00'}`}
+                description="Editing this claims it from ShipStation — the sync will not overwrite it"
                 min={0}
                 step={0.01}
                 decimalScale={2}
                 leftSection="$"
-                disabled
               />
               <NumberInput
                 label="Override Price"
@@ -393,14 +411,6 @@ export default function ProductEditForm({
         <Card withBorder p="md">
           <Stack gap="md">
             <Text size="md" fw={600}>Product Images</Text>
-            
-            <TextInput
-              label="ShipStation Thumbnail URL"
-              placeholder="URL from ShipStation integration"
-              value={formData.thumbnail_url}
-              onChange={(e) => handleFieldChange('thumbnail_url', e.target.value)}
-              description="Thumbnail image URL from ShipStation. You can also upload your own images below."
-            />
             
             <ImageGalleryManager
               images={imageItems}
@@ -466,6 +476,141 @@ export default function ProductEditForm({
               onChange={(value) => handleFieldChange('tags', value)}
               description="Tags help customers find your product"
             />
+          </Stack>
+        </Card>
+
+        {/*
+          * SHIPPING AND INVENTORY.
+          *
+          * These fields lived in an "Advanced Settings" tab whose four change handlers were all
+          * `console.log`, and whose form had no save button at all — so a merchant could set
+          * dimensions, a shipping class, a low-stock threshold and a backorder policy, navigate
+          * away, and lose every one of them with no warning. Dimensions in particular are not
+          * decoration: they are what ShipStation quotes rates against.
+          *
+          * They are here because this is the form that saves.
+          */}
+        <Card withBorder p="md">
+          <Stack gap="md">
+            <Text size="md" fw={600}>Shipping</Text>
+
+            <Group grow>
+              <NumberInput
+                label="Weight"
+                value={formData.weight ?? undefined}
+                onChange={(value) => handleFieldChange('weight', value)}
+                min={0}
+                step={0.01}
+                decimalScale={2}
+                rightSection={
+                  <Text size="xs" c="dimmed" pr="xs">
+                    {formData.weight_unit || 'lb'}
+                  </Text>
+                }
+              />
+              <NumberInput
+                label="Length"
+                value={formData.length ?? undefined}
+                onChange={(value) => handleFieldChange('length', value)}
+                min={0}
+                step={0.1}
+                decimalScale={2}
+              />
+              <NumberInput
+                label="Width"
+                value={formData.width ?? undefined}
+                onChange={(value) => handleFieldChange('width', value)}
+                min={0}
+                step={0.1}
+                decimalScale={2}
+              />
+              <NumberInput
+                label="Height"
+                value={formData.height ?? undefined}
+                onChange={(value) => handleFieldChange('height', value)}
+                min={0}
+                step={0.1}
+                decimalScale={2}
+              />
+            </Group>
+
+            <Text size="xs" c="dimmed">
+              Dimensions are in {formData.dimension_unit || 'in'} and are what carriers quote
+              shipping rates against. A product with none is quoted on a guess.
+            </Text>
+          </Stack>
+        </Card>
+
+        <Card withBorder p="md">
+          <Stack gap="md">
+            <Text size="md" fw={600}>Inventory</Text>
+
+            <Group justify="space-between">
+              <Box>
+                <Text size="sm" fw={500}>Track inventory</Text>
+                <Text size="xs" c="dimmed">
+                  Count stock for this product and stop it selling when there is none
+                </Text>
+              </Box>
+              <Switch
+                checked={formData.track_inventory}
+                onChange={(e) => handleFieldChange('track_inventory', e.currentTarget.checked)}
+              />
+            </Group>
+
+            {formData.track_inventory && (
+              <>
+                <Group grow>
+                  <NumberInput
+                    label="Low stock threshold"
+                    description="Flag this product when available stock reaches it"
+                    value={formData.low_stock_threshold ?? undefined}
+                    onChange={(value) => handleFieldChange('low_stock_threshold', value)}
+                    min={0}
+                  />
+                  <NumberInput
+                    label="Reorder point"
+                    description="Raise a purchase order at this level"
+                    value={formData.reorder_point ?? undefined}
+                    onChange={(value) => handleFieldChange('reorder_point', value)}
+                    min={0}
+                  />
+                  <NumberInput
+                    label="Lead time (days)"
+                    description="How long the supplier takes"
+                    value={formData.lead_time_days ?? undefined}
+                    onChange={(value) => handleFieldChange('lead_time_days', value)}
+                    min={0}
+                  />
+                </Group>
+
+                <Group justify="space-between">
+                  <Box>
+                    <Text size="sm" fw={500}>Allow backorders</Text>
+                    <Text size="xs" c="dimmed">
+                      Let customers buy this when it is out of stock
+                    </Text>
+                  </Box>
+                  <Switch
+                    checked={formData.allow_backorder}
+                    onChange={(e) => handleFieldChange('allow_backorder', e.currentTarget.checked)}
+                  />
+                </Group>
+
+                {/* Stock itself is not editable here. It moves through the inventory page, where a
+                    reason is recorded — a quantity typed into a product form cannot say what
+                    happened to the units. */}
+                <Alert icon={<IconInfoCircle size={16} />} variant="light">
+                  <Text size="sm">
+                    Stock levels are changed on the{' '}
+                    <Anchor component={Link} href="/admin/inventory" size="sm">
+                      inventory page
+                    </Anchor>
+                    , where each movement records why it happened.
+                  </Text>
+                </Alert>
+              </>
+            )}
           </Stack>
         </Card>
 
