@@ -24,42 +24,90 @@
 --      attaching the "Large" value to the "Colour" option is not a validation rule someone can
 --      forget to write — it is a constraint violation.
 --
--- One rule governs every constraint below: **a variant may not be stricter than the product it is
--- generated from.** `create_default_variant()` fires on every product insert, so a CHECK the variant
--- table has and `products` does not turns a write the catalogue has always accepted into a hard
--- failure — at product creation, at ShipStation sync, and at this migration's own backfill. Blank
--- SKUs and negative weights are both bad data and both currently legal, and this migration is not
--- the place to start rejecting them. `base_price >= 0`, `cost_price >= 0` and
--- `sale_price <= base_price` appear here only because `products` carries exactly those three.
+-- Two rules govern the DDL below, both learned from deploys this migration broke.
+--
+-- **`CREATE TABLE IF NOT EXISTS` says nothing about the table's shape.** If the table is already
+-- there — from a hand-run experiment, an earlier branch of this work, anything — the statement is a
+-- silent no-op and every inline constraint in it is skipped with it. The next foreign key that
+-- points at one of those constraints then fails with a message about a unique constraint that this
+-- file plainly declares, which is a genuinely confusing thing to read at 2am. So the tables are
+-- created bare and every constraint and index is added afterwards, guarded on `pg_constraint` and
+-- `pg_indexes` by name. A pre-existing table is healed rather than assumed.
+--
+-- **A mirror may not be stricter than what it mirrors.** `create_default_variant()` fires on every
+-- product insert, so a constraint the variant table has and `products` does not never rejects the
+-- bad value — it rejects the *product write*, at creation, at ShipStation sync, and at this
+-- migration's own backfill against any database already holding such a row. A non-blank-SKU CHECK
+-- and a non-negative-weight CHECK each broke it that way; `products` constrains neither.
+--
+-- So `product_variants` carries no value constraints at all in step 1 — not even the ones `products`
+-- appears to have, because a constraint that is only safe if some *other* migration definitely ran,
+-- on a database this file cannot inspect, is a bet whose downside is a failed deploy rather than a
+-- bad row. Uniqueness and validity belong to the step that makes the variant the system of record,
+-- on data this schema has by then had a chance to report on. Step 1 mirrors, and mirroring must not
+-- fail.
 
 BEGIN;
+
+-- A guard the rest of the file leans on ---------------------------------------------------------
+
+/*
+ * `ALTER TABLE ... ADD CONSTRAINT` has no `IF NOT EXISTS`, and `DROP CONSTRAINT IF EXISTS` followed
+ * by `ADD` would rewrite constraints that are already correct — on a large table that is a lock and
+ * a table scan for no reason. Checking `pg_constraint` by name is the cheap, honest version.
+ *
+ * `pg_temp` rather than `public`: this is scaffolding for one migration, and a helper left behind in
+ * the schema is a helper someone else eventually depends on.
+ */
+CREATE OR REPLACE FUNCTION pg_temp.add_constraint_if_absent(
+  p_table TEXT, p_name TEXT, p_definition TEXT
+) RETURNS VOID
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = p_table::regclass AND conname = p_name
+  ) THEN
+    EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I %s', p_table, p_name, p_definition);
+  END IF;
+END;
+$fn$;
 
 -- `product_media` predates the composite-key convention migration 026 established, so there was
 -- nothing for a variant image reference to point at that also carried the store. Adding it here
 -- rather than pointing at the bare primary key: a variant must not be able to borrow another
 -- merchant's photograph, and a constraint settles that for every code path, written and unwritten.
-ALTER TABLE public.product_media
-  DROP CONSTRAINT IF EXISTS product_media_id_store_id_key;
-ALTER TABLE public.product_media
-  ADD CONSTRAINT product_media_id_store_id_key UNIQUE (id, store_id);
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_media', 'product_media_id_store_id_key', 'UNIQUE (id, store_id)');
 
 -- Options ---------------------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.product_options (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id   UUID NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+  store_id   UUID NOT NULL,
   product_id UUID NOT NULL,
   name       VARCHAR(100) NOT NULL,
-  -- Capped at three axes. Beyond that the variant count stops being something a merchant can hold
-  -- in their head or manage in a grid, and every platform that allows more regrets it.
-  position   SMALLINT NOT NULL CHECK (position BETWEEN 1 AND 3),
+  -- Capped at three axes by the CHECK below. Beyond that the variant count stops being something a
+  -- merchant can hold in their head or manage in a grid, and every platform that allows more
+  -- regrets it.
+  position   SMALLINT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT product_options_name_not_blank CHECK (btrim(name) <> ''),
-  CONSTRAINT product_options_id_store_id_key UNIQUE (id, store_id),
-  CONSTRAINT product_options_product_id_store_id_fkey
-    FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_options', 'product_options_store_id_fkey',
+  'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_options', 'product_options_position_check', 'CHECK (position BETWEEN 1 AND 3)');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_options', 'product_options_name_not_blank', $q$CHECK (btrim(name) <> '')$q$);
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_options', 'product_options_id_store_id_key', 'UNIQUE (id, store_id)');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_options', 'product_options_product_id_store_id_fkey',
+  'FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE');
 
 -- Case-insensitive: "Colour" and "colour" are one axis, not two.
 CREATE UNIQUE INDEX IF NOT EXISTS product_options_product_name_key
@@ -71,18 +119,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS product_options_product_position_key
 
 CREATE TABLE IF NOT EXISTS public.product_option_values (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id   UUID NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+  store_id   UUID NOT NULL,
   option_id  UUID NOT NULL,
   value      VARCHAR(255) NOT NULL,
   position   SMALLINT NOT NULL DEFAULT 1,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT product_option_values_not_blank CHECK (btrim(value) <> ''),
-  CONSTRAINT product_option_values_id_store_id_key UNIQUE (id, store_id),
-  -- The target of invariant 3's composite key: a value row is reachable only through its own option.
-  CONSTRAINT product_option_values_id_option_id_key UNIQUE (id, option_id),
-  CONSTRAINT product_option_values_option_id_store_id_fkey
-    FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_option_values', 'product_option_values_store_id_fkey',
+  'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_option_values', 'product_option_values_not_blank',
+  $q$CHECK (btrim(value) <> '')$q$);
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_option_values', 'product_option_values_id_store_id_key', 'UNIQUE (id, store_id)');
+-- The target of invariant 3's composite key: a value row is reachable only through its own option.
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_option_values', 'product_option_values_id_option_id_key', 'UNIQUE (id, option_id)');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_option_values', 'product_option_values_option_id_store_id_fkey',
+  'FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE');
 
 CREATE UNIQUE INDEX IF NOT EXISTS product_option_values_option_value_key
   ON public.product_option_values (store_id, option_id, lower(value));
@@ -91,7 +148,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS product_option_values_option_value_key
 
 CREATE TABLE IF NOT EXISTS public.product_variants (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id               UUID NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+  store_id               UUID NOT NULL,
   product_id             UUID NOT NULL,
 
   -- Display name assembled from the option values ("Small / Red"), or "Default Title" for the
@@ -104,14 +161,12 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   -- options, which is why invariant 2's UNIQUE also caps a product at one implicit default.
   option_key             TEXT NOT NULL DEFAULT '',
 
-  -- What the warehouse and the till care about.
+  -- What the warehouse and the till care about. No value CHECKs — see the header.
   sku                    VARCHAR(255) NOT NULL,
   barcode                VARCHAR(255),
-  base_price             NUMERIC(10,2) NOT NULL CHECK (base_price >= 0),
+  base_price             NUMERIC(10,2) NOT NULL,
   sale_price             NUMERIC(10,2),
-  cost_price             NUMERIC(10,2) CHECK (cost_price IS NULL OR cost_price >= 0),
-  -- No non-negative check: `products.weight` has none, and adding one here would refuse the
-  -- product write rather than the bad weight.
+  cost_price             NUMERIC(10,2),
   weight                 NUMERIC(8,2),
   weight_unit            VARCHAR(10) NOT NULL DEFAULT 'lb',
   requires_shipping      BOOLEAN NOT NULL DEFAULT TRUE,
@@ -129,62 +184,84 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   is_active              BOOLEAN NOT NULL DEFAULT TRUE,
 
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  -- Mirrored from `products_sale_price_not_above_base`, and no stricter than it.
-  CONSTRAINT product_variants_sale_price_not_above_base
-    CHECK (sale_price IS NULL OR sale_price <= base_price),
-  -- `products_store_id_sku_key` has enforced this since migration 001, and the backfill is 1:1, so
-  -- the index is guaranteed to build. A SKU names one sellable unit per store; with variants that
-  -- unit is the variant, which is why the constraint has to exist on this table too.
-  CONSTRAINT product_variants_store_id_sku_key UNIQUE (store_id, sku),
-  CONSTRAINT product_variants_id_store_id_key UNIQUE (id, store_id),
-  CONSTRAINT product_variants_product_id_store_id_fkey
-    FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE,
-  -- The column list on SET NULL matters: `store_id` is NOT NULL, so an unqualified SET NULL would
-  -- try to null it too and fail at the moment a merchant deletes a photograph.
-  CONSTRAINT product_variants_image_media_id_store_id_fkey
-    FOREIGN KEY (image_media_id, store_id) REFERENCES public.product_media(id, store_id)
-    ON DELETE SET NULL (image_media_id),
-  /*
-   * Invariant 2, deferred to commit — and that is not a weakening.
-   *
-   * `option_key` is maintained by a trigger on `variant_option_values`, so a variant is necessarily
-   * inserted before the rows that give it its identity. Every variant in a four-row grid therefore
-   * carries the empty key for the length of one statement, and so does the auto-created default
-   * they are replacing. Checked immediately, creating any multi-variant product is a unique
-   * violation against itself; checked at commit, only the state the merchant actually asked for is
-   * tested. The trade is that this constraint cannot serve as an ON CONFLICT arbiter — upserts key
-   * on the SKU instead.
-   */
-  CONSTRAINT product_variants_product_option_key UNIQUE (store_id, product_id, option_key)
-    DEFERRABLE INITIALLY DEFERRED
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_product_variants_product ON public.product_variants (store_id, product_id, position);
--- Per store, matching migration 026: a ShipStation product id is unique to one merchant's account.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variants_shipstation
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_variants', 'product_variants_store_id_fkey',
+  'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_variants', 'product_variants_id_store_id_key', 'UNIQUE (id, store_id)');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_variants', 'product_variants_product_id_store_id_fkey',
+  'FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE');
+-- The column list on SET NULL matters: `store_id` is NOT NULL, so an unqualified SET NULL would try
+-- to null it too and fail at the moment a merchant deletes a photograph.
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_variants', 'product_variants_image_media_id_store_id_fkey',
+  'FOREIGN KEY (image_media_id, store_id) REFERENCES public.product_media(id, store_id)
+     ON DELETE SET NULL (image_media_id)');
+
+/*
+ * Invariant 2, deferred to commit — and that is not a weakening.
+ *
+ * `option_key` is maintained by a trigger on `variant_option_values`, so a variant is necessarily
+ * inserted before the rows that give it its identity. Every variant in a four-row grid therefore
+ * carries the empty key for the length of one statement, and so does the auto-created default they
+ * are replacing. Checked immediately, creating any multi-variant product is a unique violation
+ * against itself; checked at commit, only the state the merchant actually asked for is tested. The
+ * trade is that this constraint cannot serve as an ON CONFLICT arbiter.
+ */
+SELECT pg_temp.add_constraint_if_absent(
+  'public.product_variants', 'product_variants_product_option_key',
+  'UNIQUE (store_id, product_id, option_key) DEFERRABLE INITIALLY DEFERRED');
+
+CREATE INDEX IF NOT EXISTS idx_product_variants_product
+  ON public.product_variants (store_id, product_id, position);
+/*
+ * Deliberately not UNIQUE. A SKU should name one sellable unit per store, and with variants that
+ * unit is the variant — but enforcing it here breaks two things at once. The auto-created default
+ * variant holds the product's SKU, so the first real variant that keeps it (what a Shopify import
+ * does, and what a merchant does) collides with the ghost it is replacing. And the empty string is
+ * not NULL, so a store that does not use SKUs gets exactly one blank-SKU variant and cannot save a
+ * three-colour tee. Both belong to the step that adds the variant editor, which can choose the SKU
+ * semantics — a nullable column for "unset", or a partial index — with a merchant-facing duplicate
+ * report behind it.
+ */
+CREATE INDEX IF NOT EXISTS idx_product_variants_sku ON public.product_variants (store_id, sku);
+-- Also not UNIQUE, and for the same reason: it would only be safe if migration 026's per-store
+-- uniqueness on `products.shipstation_product_id` definitely ran on the database being migrated,
+-- which this file has no way to confirm.
+CREATE INDEX IF NOT EXISTS idx_product_variants_shipstation
   ON public.product_variants (store_id, shipstation_product_id)
   WHERE shipstation_product_id IS NOT NULL;
 
 -- Which value each variant carries on each axis ---------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.variant_option_values (
-  store_id   UUID NOT NULL REFERENCES public.stores(id) ON DELETE CASCADE,
+  store_id   UUID NOT NULL,
   variant_id UUID NOT NULL,
   option_id  UUID NOT NULL,
   value_id   UUID NOT NULL,
-  PRIMARY KEY (variant_id, option_id),
-  CONSTRAINT variant_option_values_variant_id_store_id_fkey
-    FOREIGN KEY (variant_id, store_id) REFERENCES public.product_variants(id, store_id) ON DELETE CASCADE,
-  CONSTRAINT variant_option_values_option_id_store_id_fkey
-    FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE,
-  -- Invariant 3: the value must belong to the option it is filed under.
-  CONSTRAINT variant_option_values_value_id_option_id_fkey
-    FOREIGN KEY (value_id, option_id) REFERENCES public.product_option_values(id, option_id) ON DELETE CASCADE
+  PRIMARY KEY (variant_id, option_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_variant_option_values_value ON public.variant_option_values (store_id, value_id);
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_store_id_fkey',
+  'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_variant_id_store_id_fkey',
+  'FOREIGN KEY (variant_id, store_id) REFERENCES public.product_variants(id, store_id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_option_id_store_id_fkey',
+  'FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE');
+-- Invariant 3: the value must belong to the option it is filed under.
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_value_id_option_id_fkey',
+  'FOREIGN KEY (value_id, option_id) REFERENCES public.product_option_values(id, option_id) ON DELETE CASCADE');
+
+CREATE INDEX IF NOT EXISTS idx_variant_option_values_value
+  ON public.variant_option_values (store_id, value_id);
 
 -- Invariant 2's maintenance: the canonical option key --------------------------------------------
 
@@ -255,7 +332,12 @@ SELECT
   p.hs_code, p.country_of_origin,
   COALESCE(p.track_inventory, TRUE), COALESCE(p.allow_backorder, FALSE),
   p.low_stock_threshold, p.reorder_point,
-  p.shipstation_product_id, TRUE,
+  /*
+   * `p.is_active`, not TRUE. Hardcoding it meant every draft and every archived product carried a
+   * purchasable variant, waiting for step 2 to repoint reads at it — the exact class of divergence
+   * the bridge triggers exist to prevent, in the one column the bridge had forgotten.
+   */
+  p.shipstation_product_id, COALESCE(p.is_active, FALSE),
   COALESCE(p.created_at, NOW()), NOW()
   FROM public.products p
  WHERE NOT EXISTS (
@@ -290,7 +372,7 @@ BEGIN
     NEW.hs_code, NEW.country_of_origin,
     COALESCE(NEW.track_inventory, TRUE), COALESCE(NEW.allow_backorder, FALSE),
     NEW.low_stock_threshold, NEW.reorder_point,
-    NEW.shipstation_product_id, TRUE
+    NEW.shipstation_product_id, COALESCE(NEW.is_active, FALSE)
   );
   RETURN NULL;
 END;
@@ -344,6 +426,7 @@ BEGIN
          low_stock_threshold    = NEW.low_stock_threshold,
          reorder_point          = NEW.reorder_point,
          shipstation_product_id = NEW.shipstation_product_id,
+         is_active              = COALESCE(NEW.is_active, FALSE),
          updated_at             = NOW()
    WHERE v.product_id = NEW.id
      AND v.store_id = NEW.store_id
@@ -360,7 +443,7 @@ DROP TRIGGER IF EXISTS trg_products_sync_default_variant ON public.products;
 CREATE TRIGGER trg_products_sync_default_variant
   AFTER UPDATE OF sku, barcode, base_price, sale_price, cost_price, weight, weight_unit,
                   requires_shipping, hs_code, country_of_origin, track_inventory, allow_backorder,
-                  low_stock_threshold, reorder_point, shipstation_product_id
+                  low_stock_threshold, reorder_point, shipstation_product_id, is_active, status
   ON public.products
   FOR EACH ROW EXECUTE FUNCTION public.sync_default_variant_from_product();
 

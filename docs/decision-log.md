@@ -2864,7 +2864,22 @@ variant, and nothing reads any of it yet. That is what makes it shippable and re
 
 - [x] Two new invariant cases cover both, and both fail against the schema that broke the deploy
 
-- [x] **Version bumped** to 3.9.1
+- [x] **The real cause of the failed deploys was neither of my first two guesses.** The build log
+      said: `there is no unique constraint matching given keys for referenced table "product_options"`
+      — a constraint this file plainly declares. `CREATE TABLE IF NOT EXISTS` says nothing about the
+      *shape* of a table that already exists: the statement is a silent no-op and every inline
+      constraint goes with it, so the first foreign key pointing at one of them fails describing a
+      constraint you can read three lines above. Reproduced exactly by planting a bare
+      `product_options` and running the deployed file against it
+
+- [x] Every table is now created bare, and every constraint and index added afterwards through
+      `pg_temp.add_constraint_if_absent`, guarded on `pg_constraint` by name. A pre-existing table is
+      healed rather than assumed. The helper lives in `pg_temp` so it does not outlive the migration
+
+- [x] The two relaxations above stand on their own merit regardless — a mirror must not be stricter
+      than what it mirrors — but the header no longer claims they were what broke the deploy
+
+- [x] **Version bumped** to 3.9.2
 
 Still open:
 - [ ] **Variants, steps 2–5.** Repoint the write paths (`inventory_levels`, `inventory_holds`,

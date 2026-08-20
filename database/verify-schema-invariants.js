@@ -210,18 +210,38 @@ const CASES = [
     },
   },
   {
-    name: 'a SKU names one sellable unit per store',
+    name: 'a variant is never purchasable when its product is not',
     async run(client) {
+      /*
+       * The backfill hardcoded TRUE here, so every draft and every archived product carried a
+       * purchasable variant, waiting for the step that repoints reads at the variant tables.
+       */
       const storeId = await FIXTURE.store(client);
-      await FIXTURE.product(client, storeId, 'INV-UNIQ');
-      const other = await FIXTURE.product(client, storeId, 'INV-UNIQ-OTHER');
-      await mustRefuse(client, 'two variants sharing a SKU in one store', ['23505'], async () => {
+      const productId = await FIXTURE.product(client, storeId, 'INV-ACTIVE');
+
+      const born = await client.query(
+        `SELECT p.is_active AS product, v.is_active AS variant
+           FROM products p JOIN product_variants v ON v.product_id = p.id AND v.store_id = p.store_id
+          WHERE p.id = $1::uuid`,
+        [productId],
+      );
+      if (born.rows[0].variant !== born.rows[0].product) {
+        throw new Error(`a new product is ${born.rows[0].product} but its variant is ${born.rows[0].variant}`);
+      }
+
+      for (const active of [true, false]) {
         await client.query(
-          `UPDATE product_variants SET sku = 'INV-UNIQ'
-            WHERE product_id = $1::uuid AND store_id = $2::uuid`,
-          [other, storeId],
+          'UPDATE products SET is_active = $2 WHERE id = $1::uuid AND store_id = $3::uuid',
+          [productId, active, storeId],
         );
-      });
+        const { rows } = await client.query(
+          'SELECT is_active FROM product_variants WHERE product_id = $1::uuid AND store_id = $2::uuid',
+          [productId, storeId],
+        );
+        if (rows[0].is_active !== active) {
+          throw new Error(`product set to ${active} but its variant stayed ${rows[0].is_active}`);
+        }
+      }
     },
   },
   {
