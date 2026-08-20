@@ -8,12 +8,31 @@ export interface ClientCartItem {
   readonly product_id: string | number;
   /** Requested quantity. Coerced to a positive integer server-side. */
   readonly quantity: number;
+  /**
+   * The chosen variant, when the product has options.
+   *
+   * Identity only, like `product_id` — the server looks the variant up in this
+   * store and takes the price from the row it finds. A variant id belonging to
+   * another merchant resolves to nothing and the line is rejected; it can never
+   * price a line here.
+   */
+  readonly variant_id?: string | null;
 }
 
 /** A cart line after the server has re-priced it from the database. */
 export interface PricedLineItem {
   /** Canonical `products.id`. */
   readonly productId: string;
+  /** Canonical `product_variants.id`, or null when the product has no options. */
+  readonly variantId: string | null;
+  /**
+   * "Alpine Green / Medium", or null when there are no options.
+   *
+   * Carried through to `order_items.variant_title` so an order confirmation
+   * still reads correctly after the variant has been deleted.
+   */
+  readonly variantTitle: string | null;
+  /** The variant's SKU when one was chosen, otherwise the product's. */
   readonly sku: string;
   readonly name: string;
   /** Authoritative unit price in cents, read from the database. */

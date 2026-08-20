@@ -26,6 +26,8 @@ function line(overrides: Partial<PricedLineItem> = {}): PricedLineItem {
 
   return {
     productId: overrides.productId ?? '850e8400-e29b-41d4-a716-446655440001',
+    variantId: overrides.variantId ?? null,
+    variantTitle: overrides.variantTitle ?? null,
     sku: overrides.sku ?? 'SKU-1',
     name: overrides.name ?? 'Test product',
     unitPriceCents,

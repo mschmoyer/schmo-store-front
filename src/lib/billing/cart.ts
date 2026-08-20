@@ -11,6 +11,8 @@ import { db } from '@/lib/database/connection';
 import { computeCartTotals, normalizeQuantity } from './cart-pricing';
 import { validateCouponForCart } from './coupons';
 import { toCents } from './money';
+import { resolveVariant, variantTitle, type ProductVariant } from '@/lib/catalog/variants';
+import { getVariantsForProducts } from '@/lib/catalog/variants.db';
 import type {
   ClientCartItem,
   PricedCart,
@@ -151,10 +153,27 @@ export async function repriceCart(options: RepriceCartOptions): Promise<PricedCa
     }
   }
 
+  // Variants for every product in the cart, in one query rather than per line.
+  // Store-scoped, so a variant id from another merchant's catalogue simply is
+  // not in this map and the line is rejected below.
+  const variantsByProduct = await getVariantsForProducts(
+    options.storeId,
+    products.map((row) => row.id),
+  );
+  const variantsById = new Map<string, ProductVariant & { productId: string }>();
+  for (const [productId, list] of variantsByProduct) {
+    for (const variant of list) variantsById.set(variant.id, { ...variant, productId });
+  }
+
   const items: PricedLineItem[] = [];
   const rejected: RejectedLineItem[] = [];
-  // Collapse duplicate cart lines for the same product before checking stock.
-  const quantities = new Map<string, number>();
+  // Collapse duplicate cart lines before checking stock.
+  //
+  // Keyed on product **and** variant: two lines for the same shirt in
+  // different sizes are two lines, and collapsing them onto the product would
+  // check one size's stock against the other's quantity. A product with no
+  // options keys on an empty variant, so its behaviour is unchanged.
+  const quantities = new Map<string, { productId: string; variantId: string | null; quantity: number }>();
 
   for (const clientItem of options.items) {
     const requestedId = String(clientItem.product_id);
@@ -188,16 +207,83 @@ export async function repriceCart(options: RepriceCartOptions): Promise<PricedCa
       continue;
     }
 
-    quantities.set(row.id, (quantities.get(row.id) ?? 0) + quantity);
+    // Resolve the chosen variant, if any.
+    const requestedVariantId = clientItem.variant_id ? String(clientItem.variant_id) : null;
+    let variant: (ProductVariant & { productId: string }) | null = null;
+
+    if (requestedVariantId) {
+      const found = variantsById.get(requestedVariantId);
+      // The variant must exist, belong to this store (it is not in the map
+      // otherwise) *and* belong to the product on this line. Without the last
+      // check a shopper could pair a cheap variant id with an expensive
+      // product and the line would price at the variant.
+      if (!found || found.productId !== row.id) {
+        rejected.push({
+          requestedId,
+          reason: 'not_found',
+          message: `That option of ${row.name} is no longer available.`,
+        });
+        continue;
+      }
+      if (!found.isActive) {
+        rejected.push({
+          requestedId,
+          reason: 'inactive',
+          message: `That option of ${row.name} is no longer for sale.`,
+        });
+        continue;
+      }
+      variant = found;
+    } else if ((variantsByProduct.get(row.id)?.length ?? 0) > 0) {
+      // The product has options and the client did not choose one. Guessing a
+      // variant would charge for something the shopper did not pick.
+      rejected.push({
+        requestedId,
+        reason: 'not_found',
+        message: `Choose an option for ${row.name} before checking out.`,
+      });
+      continue;
+    }
+
+    const key = `${row.id}:${variant?.id ?? ''}`;
+    const existing = quantities.get(key);
+    quantities.set(key, {
+      productId: row.id,
+      variantId: variant?.id ?? null,
+      quantity: (existing?.quantity ?? 0) + quantity,
+    });
   }
 
-  for (const [productId, quantity] of quantities) {
+  for (const [, line] of quantities) {
+    const { productId, variantId, quantity } = line;
     const row = products.find((product) => product.id === productId);
     if (!row) continue;
 
-    const tracksInventory = row.track_inventory !== false;
-    const allowsBackorder = row.allow_backorder === true;
-    const available = resolveAvailableStock(row);
+    const variant = variantId ? variantsById.get(variantId) ?? null : null;
+
+    // A variant's nullable fields inherit the product's, which is what
+    // `resolveVariant` exists to settle. Doing it here rather than inline keeps
+    // the storefront's displayed price and the checkout's charged price on the
+    // same code path -- the two disagreeing is the defect this guards against.
+    const resolved = variant
+      ? resolveVariant(variant, {
+          basePriceCents: resolveUnitPriceCents(row),
+          salePriceCents: null,
+          trackInventory: row.track_inventory !== false,
+          allowBackorder: row.allow_backorder === true,
+        })
+      : null;
+
+    const tracksInventory = variant
+      ? (variant.trackInventory ?? row.track_inventory !== false)
+      : row.track_inventory !== false;
+    const allowsBackorder = variant
+      ? (variant.allowBackorder ?? row.allow_backorder === true)
+      : row.allow_backorder === true;
+    // A variant carries its own stock. The `inventory` table is keyed on the
+    // product SKU and knows nothing about variants, so it is not consulted for
+    // a variant line.
+    const available = variant ? variant.stockQuantity : resolveAvailableStock(row);
 
     if (tracksInventory && !allowsBackorder) {
       if (available <= 0) {
@@ -223,7 +309,7 @@ export async function repriceCart(options: RepriceCartOptions): Promise<PricedCa
     // Zero is a legitimate price. `products.base_price` is `NOT NULL`, so a value of 0 is a
     // deliberate "this is free", not a missing price, and a giveaway must reach checkout like any
     // other line. Only a negative price is nonsense, and that is what this rejects.
-    const unitPriceCents = resolveUnitPriceCents(row);
+    const unitPriceCents = resolved ? resolved.priceCents : resolveUnitPriceCents(row);
     if (unitPriceCents < 0) {
       rejected.push({
         requestedId: productId,
@@ -233,14 +319,19 @@ export async function repriceCart(options: RepriceCartOptions): Promise<PricedCa
       continue;
     }
 
+    const title = variant ? variantTitle(variant.options) : null;
+
     items.push({
       productId: row.id,
-      sku: row.sku,
+      variantId: variant?.id ?? null,
+      variantTitle: title && title.length > 0 ? title : null,
+      // The warehouse picks by the variant's SKU when there is one.
+      sku: variant ? variant.sku : row.sku,
       name: row.override_name || row.name,
       unitPriceCents,
       quantity,
       lineTotalCents: unitPriceCents * quantity,
-      imageUrl: row.featured_image_url,
+      imageUrl: variant?.imageUrl ?? row.featured_image_url,
       categoryId: row.category_id,
       requiresShipping: row.requires_shipping !== false,
     });
