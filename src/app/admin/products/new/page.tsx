@@ -149,7 +149,7 @@ export default function NewProductPage(): React.ReactElement {
             variant="subtle"
             leftSection={<IconArrowLeft size={16} />}
             component={Link}
-            href="/admin/products"
+            href="/admin/products?import=1"
           >
             Back to products
           </Button>
@@ -253,14 +253,14 @@ export default function NewProductPage(): React.ReactElement {
 
           <Text size="xs" c="dimmed">
             Images, dimensions, SEO and stock settings are on the product page after it is created.{' '}
-            <Anchor component={Link} href="/admin/products" size="xs">
+            <Anchor component={Link} href="/admin/products?import=1" size="xs">
               Or import a spreadsheet
             </Anchor>{' '}
             if you are adding many at once.
           </Text>
 
           <Group justify="flex-end">
-            <Button variant="default" component={Link} href="/admin/products">
+            <Button variant="default" component={Link} href="/admin/products?import=1">
               Cancel
             </Button>
             <Button variant="default" loading={saving} onClick={() => void save(false)}>

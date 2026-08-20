@@ -51,6 +51,14 @@ export interface InlineEditProps {
   onMoveDown?: () => void;
   /** Right-aligns, for numeric columns. */
   numeric?: boolean;
+  /**
+   * Rendered as `data-cell` on the cell button, so the grid can move focus down a column.
+   *
+   * The catalogue page was passing `data-cell="price"` as a prop this component did not accept, so
+   * it landed nowhere — and `focusCell` then had nothing to query, which is why Enter left focus on
+   * `<body>` instead of the next row.
+   */
+  cellKey?: string;
   /** Marks the cell as carrying a merchant override the sync will not touch. */
   locked?: boolean;
 }
@@ -73,9 +81,15 @@ export function InlineEdit({
   min = 0,
   onMoveDown,
   numeric = true,
-  locked = false
+  locked = false,
+  cellKey
 }: InlineEditProps): React.ReactElement {
   const [editing, setEditing] = useState(false);
+  /* So Escape can put focus back where it was. Without it the input unmounts and focus lands on
+   * `<body>`, which for a keyboard user means starting again from the top of the page. */
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  /* Set when the cell should return focus to itself after leaving edit mode. */
+  const restoreFocus = useRef(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,8 +142,23 @@ export function InlineEdit({
 
       setEditing(false);
 
-      /* Nothing changed: do not spend a request, and do not flash a saving state. */
-      if (next === shown || (next === null && shown === null)) return;
+      /*
+       * Nothing changed: do not spend a request, and do not flash a saving state — but still leave
+       * edit mode and still move down.
+       *
+       * Returning outright meant pressing Enter on a cell you had looked at and not altered left
+       * the editor open and focus stranded, so tabbing down a column of prices broke the moment one
+       * of them was already right.
+       */
+      if (next === shown || (next === null && shown === null)) {
+        setEditing(false);
+        if (thenMoveDown) {
+          requestAnimationFrame(() => onMoveDown?.());
+        } else {
+          restoreFocus.current = true;
+        }
+        return;
+      }
 
       setOptimistic(next);
       setSaving(true);
@@ -143,7 +172,12 @@ export function InlineEdit({
         setError(caught instanceof Error ? caught.message : 'Could not save');
       } finally {
         setSaving(false);
-        if (thenMoveDown) onMoveDown?.();
+        /*
+         * After the browser has painted, so the next row's cell button exists to receive focus.
+         * Calling it synchronously here focused nothing — React had not yet re-rendered the row
+         * being left, let alone the one being moved to — and the keyboard user landed on `<body>`.
+         */
+        if (thenMoveDown) requestAnimationFrame(() => onMoveDown?.());
       }
     },
     [draft, min, onCommit, onMoveDown, shown, type]
@@ -154,6 +188,19 @@ export function InlineEdit({
   useEffect(() => {
     if (optimistic !== undefined && optimistic === value) setOptimistic(undefined);
   }, [optimistic, value]);
+
+  /*
+   * Put focus back on the cell after Escape.
+   *
+   * Run after the button has rendered, not inside the key handler, because at that moment the
+   * input is still mounted and the button does not exist to receive focus.
+   */
+  useEffect(() => {
+    if (!editing && restoreFocus.current) {
+      restoreFocus.current = false;
+      buttonRef.current?.focus();
+    }
+  }, [editing]);
 
   if (!editing) {
     return (
@@ -168,6 +215,8 @@ export function InlineEdit({
         ]
           .filter(Boolean)
           .join(' ')}
+        ref={buttonRef}
+        data-cell={cellKey}
         onClick={begin}
         /*
          * Deliberately no `onFocus` handler.
@@ -236,6 +285,7 @@ export function InlineEdit({
         } else if (event.key === 'Escape') {
           event.preventDefault();
           cancelled.current = true;
+          restoreFocus.current = true;
           setEditing(false);
           setError(null);
         } else if (event.key === 'Tab') {

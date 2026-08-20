@@ -96,7 +96,15 @@ export function AdjustStockModal({
   /* Holding and releasing share a mode, because they are the same decision seen from either end. */
   const [holdReason, setHoldReason] = useState<string>('quarantine');
   const [releasing, setReleasing] = useState(false);
-  const [reason, setReason] = useState<InventoryReason>('damage');
+  /*
+   * No default reason.
+   *
+   * It defaulted to `damage`, so opening the dialog, typing a number and pressing the button wrote
+   * stock off as damaged — a reason with real consequences for valuation and supplier claims,
+   * chosen by nobody. The reason is the point of this dialog; making the merchant pick one costs a
+   * click and is the whole difference between a number and a fact.
+   */
+  const [reason, setReason] = useState<InventoryReason | null>(null);
   const [quantity, setQuantity] = useState<number | string>('');
   const [counted, setCounted] = useState<number | string>('');
   const [note, setNote] = useState('');
@@ -125,7 +133,7 @@ export function AdjustStockModal({
   useEffect(() => {
     if (!target) return;
     setMode('move');
-    setReason('damage');
+    setReason(null);
     setHoldReason('quarantine');
     setReleasing(false);
     setQuantity('');
@@ -199,6 +207,10 @@ export function AdjustStockModal({
   const submit = async () => {
     if (!target || !token) return;
 
+    if (mode === 'move' && !reason) {
+      setError('Choose what happened to these units');
+      return;
+    }
     if (mode === 'move' && delta === 0) {
       setError('Enter how many units moved');
       return;
@@ -216,7 +228,7 @@ export function AdjustStockModal({
       return;
     }
     if (needsNote && !note.trim()) {
-      setError(`Add a note explaining this ${reason.replace('_', ' ')}`);
+      setError(`Add a note explaining this ${(reason ?? 'adjustment').replace('_', ' ')}`);
       return;
     }
 
@@ -330,8 +342,9 @@ export function AdjustStockModal({
                 label="Why"
                 description={selectedReason?.description}
                 data={DELTA_REASONS.map((r) => ({ value: r.value, label: r.label }))}
+                placeholder="Choose what happened"
                 value={reason}
-                onChange={(value) => setReason((value ?? 'damage') as InventoryReason)}
+                onChange={(value) => setReason((value || null) as InventoryReason | null)}
                 allowDeselect={false}
               />
               <NumberInput

@@ -461,6 +461,15 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
             variant="light"
             leftSection={<IconEye size={16} />}
             onClick={handlePreview}
+            /* Enabled for a draft too. Preview is *most* useful before publishing — it is how a
+             * merchant checks a product looks right — and disabling it exactly then, with no
+             * tooltip and no aria-label to say why, made it look broken. The storefront route
+             * already 404s a draft, so the honest thing is to say that in the label. */
+            title={
+              product.is_active
+                ? 'Open this product on your storefront'
+                : 'Drafts are not on the storefront yet — publish to see this live'
+            }
             disabled={!product.is_active}
           >
             Preview

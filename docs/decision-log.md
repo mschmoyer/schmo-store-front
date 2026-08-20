@@ -2629,3 +2629,96 @@ Still open, and now with a design:
       other backends' visibility checks past 64
 - [ ] `resolveRetiredSlug` does not check `is_active`, so a renamed-then-unpublished product
       redirects into a 404 rather than 404ing directly
+
+### Third pass: the UX reviewer walked six merchant journeys, and two of them were dead
+
+A design reviewer drove the admin in a browser through the journeys a merchant actually performs.
+Two could not be completed at all.
+
+#### The weekly restock was impossible
+
+- [x] **"Create Purchase Order" could never create a purchase order.** Three independent contract
+      mismatches on one button: the page posted `supplier` where the route requires `supplier_id`,
+      sent lines with no SKU where a SKU is required, and then checked `result.success` against a
+      route that returned the raw row. Any one of them alone was fatal. The merchant saw
+      **"Error / HTTP error! status: 400"**, because the page threw on `!response.ok` before reading
+      the body that carried the real reason
+- [x] The supplier field was free text and never touched the Suppliers list, so the supplier's terms
+      and lead time were unreachable from the order that needed them. It is a picker now
+- [x] **The line's unit cost defaulted to the retail price.** A keyboard costing $85.86 and selling
+      for $159.00 produced a purchase order line at $159.00 — a PO valued at retail, which then
+      poisons the receipt's moving-average cost and every margin figure downstream
+- [x] The detail page read `total_amount` where the API returns `total_cost` (**$NaN** beside a
+      correct subtotal) and `supplier` where it returns `supplier_name` (an empty Supplier row)
+- [x] **A partial receipt trapped the order permanently.** `partially_received` was missing from the
+      page's status union, its labels and its colours, so the header rendered an empty pill and the
+      list showed the raw enum — and because the Receive button was gated on `status === 'shipped'`,
+      it vanished the moment a partial receipt happened and the outstanding units could never be
+      received. Receiving is now offered whenever the order is open and something is outstanding,
+      with the count on the button; the status picker no longer offers the two states that are
+      derived from receipts
+
+#### Recording a damaged delivery
+
+- [x] Receiving is reachable and correct, but there is still no location selector — in a
+      two-location store a delivery can only be received into the default. Recorded as open below
+
+#### The rest
+
+- [x] **The transfer picker printed the literal string "null"** — "Audit Back Room — null available"
+      — because a location with no level row returns null rather than zero, and `null <= 0` also
+      silently disabled the option with no explanation. Mine, from the multi-location work
+- [x] **The stock history hid which location each movement happened at.** `location_name` was
+      fetched, declared on the type, and never rendered — while the balance column is *per
+      location*, so in a two-location store a `+3` transfer in appeared to reduce the balance and
+      the `-3` out appeared to raise it. That is the screen a merchant opens to explain a
+      discrepancy
+- [x] **A load failure rendered the error banner and the "you have nothing" empty state together** —
+      "Could not load products / Database connection lost / Try again" directly above "No products
+      yet — add a product by hand". A transient database blip told the merchant their catalogue was
+      empty. Both grids
+- [x] **Raising a bulk sale price 400'd the entire batch.** `COALESCE(sale_price, base_price)` means
+      any selected product not already on sale computes from its regular price and lands above it,
+      violating the check constraint and aborting everything with "One of the values is outside the
+      range this field allows" — no product named, nothing written. Those rows are skipped and named
+      now, like the below-cost ones
+- [x] **Ten of the nineteen bulk actions had no UI**, including the two a merchant reaches for most:
+      `set_sale_price` and `clear_sale_price` *are* the sale operation, so running a promotion meant
+      a percentage adjustment that cannot express "everything is £19.99", and ending one meant
+      opening every product individually. `unarchive` was missing too, making archiving a one-way
+      door
+- [x] **Publish, unpublish and archive fired with no confirmation.** With "Select all N matching"
+      and no undo anywhere, one mis-click unlisted an entire storefront
+- [x] Bulk repricing claimed the field from ShipStation and said nothing, while the inline grid edit
+      discloses exactly that — the faster path to the same edit had the quieter consequence
+- [x] **Inline editing lost focus on both Enter and Escape.** `data-cell` was passed as a prop the
+      component did not accept, so `focusCell` had nothing to query; Escape unmounted the input
+      without restoring focus; and pressing Enter on an unchanged cell returned before leaving edit
+      mode at all. Repricing a column by keyboard cost 26 tab stops per row
+- [x] Adjust stock defaulted to **Damaged**, so opening the dialog and typing a number wrote stock
+      off as damaged — a reason with consequences for valuation and supplier claims, chosen by
+      nobody. There is no default now
+- [x] "Add Image URL" accepted `not-a-url`, marked it Featured and rendered a broken tile
+- [x] The disabled Sync buttons explained themselves only through a hover tooltip on a wrapper —
+      and a `disabled` button is not focusable, so the reason was unreachable by keyboard by
+      construction. `aria-disabled` now, focusable, with the reason in the accessible name
+- [x] Preview was disabled exactly when it is most useful — on a draft — with no explanation
+- [x] "Or import a spreadsheet" linked to the bare catalogue, where the importer is three clicks
+      inside a More menu
+- [x] The missing-image placeholder was a crossed-out **eye**, which in a grid that also shows
+      Draft and Archived reads as "this product is hidden"
+- [x] Suppliers rendered two stacked titles, because an embedded component assumed it owned the page
+
+- [x] **Version bumped** to 3.7.0
+
+Still open from this pass:
+- [ ] Receiving has no location selector
+- [ ] The inventory grid has no row checkboxes and no bulk actions, so acting on 40 SKUs is 40 row
+      menus — Products has a full bulk bar
+- [ ] Nothing links "on order" back to the purchase order that created it
+- [ ] Unsaved product edits are discarded silently on navigation — the form knows it has changes and
+      says so, but nothing blocks leaving
+- [ ] No skip-to-content link; every page costs 13 tab stops through the sidebar
+- [ ] Purchase Orders and Suppliers are reachable only through Inventory → More, and the nav's own
+      comment claims they are "already a tab inside Inventory", which they are not
+- [ ] Three dead components: `ReceivingModal`, `PurchaseOrderModal`, `SmartReorderWidget`

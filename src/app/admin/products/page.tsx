@@ -58,6 +58,7 @@ import {
   IconDots,
   IconExternalLink,
   IconEyeOff,
+  IconPhotoOff,
   IconFileExport,
   IconFileImport,
   IconPlus,
@@ -160,7 +161,15 @@ export default function ProductsAdminPage(): React.ReactElement {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allMatching, setAllMatching] = useState(false);
+  /* `?import=1` opens the importer directly, so "Or import a spreadsheet" on the new-product page
+   * lands on the thing it names. That link used to point at the bare catalogue, where the importer
+   * is three clicks away inside a More menu — a label that described a destination it did not
+   * reach. */
   const [importOpen, setImportOpen] = useState(false);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('import') === '1') setImportOpen(true);
+  }, []);
 
   /* The search box is local so typing is never blocked on a request, and the URL is updated on a
    * debounce. Driving the input from the URL directly makes every keystroke a navigation. */
@@ -638,7 +647,14 @@ export default function ProductsAdminPage(): React.ReactElement {
 
         {loading ? (
           <TableSkeleton rows={8} columns={8} />
-        ) : rows.length === 0 ? (
+        ) : /*
+             * `!error` matters: without it a failed load rendered the error banner and the
+             * "you have nothing" empty state in the same viewport — "Could not load products /
+             * Database connection lost / Try again" directly above "No products yet — add a
+             * product by hand" with a call to action. A merchant with a transient database blip
+             * was being told their catalogue was empty.
+             */
+          !error && rows.length === 0 ? (
           <EmptyState
             title={hasFilters || params.view !== 'all' ? 'Nothing matches that' : 'No products yet'}
             description={
@@ -737,8 +753,14 @@ export default function ProductsAdminPage(): React.ReactElement {
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={row.featured_image_url} alt="" loading="lazy" />
                           ) : (
-                            <span className={styles.noImage} title="No image">
-                              <IconEyeOff size={14} />
+                            <span className={styles.noImage}>
+                              {/* A crossed-out photo, not a crossed-out eye. In a grid that also
+                                  shows Draft and Archived, the universal "hidden" glyph read as
+                                  "this product is hidden" — and its only clarification was a
+                                  native title on a non-focusable span, invisible to keyboard users
+                                  and unreliable for screen readers. */}
+                              <IconPhotoOff size={14} aria-hidden="true" />
+                              <span className={styles.srOnly}>No image</span>
                             </span>
                           )}
                         </div>
@@ -788,7 +810,7 @@ export default function ProductsAdminPage(): React.ReactElement {
                         render={(value) => <Price value={Number(value)} />}
                         onCommit={(next) => saveField(row.id, { base_price: next ?? 0 })}
                         onMoveDown={() => focusCell(index + 1, 'price')}
-                        data-cell="price"
+                        cellKey="price"
                       />
                       {row.sale_price !== null && (
                         <div className={table.sub}>
@@ -805,6 +827,7 @@ export default function ProductsAdminPage(): React.ReactElement {
                         render={(value) => <Price value={Number(value)} />}
                         onCommit={(next) => saveField(row.id, { cost_price: next })}
                         onMoveDown={() => focusCell(index + 1, 'cost')}
+                        cellKey="cost"
                       />
                     </Table.Td>
 
@@ -1010,10 +1033,28 @@ export default function ProductsAdminPage(): React.ReactElement {
  * @param rowIndex - The row to move to.
  * @param cell - Which column.
  */
-function focusCell(rowIndex: number, cell: string): void {
+function focusCell(rowIndex: number, cell: string, attempt = 0): void {
+  /*
+   * The cell button itself carries `data-cell`, so this is a direct hit rather than a descendant
+   * search. It used to look for `[data-cell] button` because the attribute was being passed to a
+   * component that did not forward it, so it matched nothing at all — and repricing a column by
+   * keyboard cost 26 tab stops per row.
+   *
+   * Retried across a couple of frames because committing the edit re-renders the row being left,
+   * and React can replace the cell that had focus after the first attempt lands. Three frames is
+   * enough for the commit to settle and short enough that a genuinely absent row — the last one in
+   * the grid — gives up without the merchant noticing.
+   */
   const rows = document.querySelectorAll('tbody tr');
-  const target = rows[rowIndex]?.querySelector<HTMLElement>(`[data-cell="${cell}"] button, [data-cell="${cell}"]`);
-  target?.focus();
+  const target = rows[rowIndex]?.querySelector<HTMLElement>(`[data-cell="${cell}"]`);
+
+  if (!target) return;
+
+  target.focus();
+
+  if (document.activeElement !== target && attempt < 3) {
+    requestAnimationFrame(() => focusCell(rowIndex, cell, attempt + 1));
+  }
 }
 
 /** Turn the current view state into the filter object the bulk endpoint resolves server-side. */

@@ -568,7 +568,14 @@ export default function InventoryPage(): React.ReactElement {
 
         {loading ? (
           <TableSkeleton rows={10} columns={9} />
-        ) : rows.length === 0 ? (
+        ) : /*
+             * `!error` matters: without it a failed load rendered the error banner and the
+             * "you have nothing" empty state in the same viewport — "Could not load products /
+             * Database connection lost / Try again" directly above "No products yet — add a
+             * product by hand" with a call to action. A merchant with a transient database blip
+             * was being told their catalogue was empty.
+             */
+          !error && rows.length === 0 ? (
           <EmptyState
             title={params.view === 'all' && !hasFilters ? 'No stock tracked yet' : 'Nothing matches that'}
             description={

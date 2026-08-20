@@ -318,7 +318,22 @@ export async function POST(request: NextRequest) {
       return { ...order, items: lineResult.rows };
     });
 
-    return NextResponse.json(created, { status: 201 });
+    /*
+     * `{ success, data }`, like every other admin route.
+     *
+     * This returned the raw row, while the create page checks `result.success` and throws when it
+     * is absent — so even a request that succeeded and wrote a purchase order was reported to the
+     * merchant as a failure. That was the third independent contract mismatch on this one button,
+     * on top of `supplier` vs `supplier_id` and the missing SKU.
+     */
+    return NextResponse.json(
+      {
+        success: true,
+        data: { purchase_order: created },
+        message: `${created.po_number} created.`
+      },
+      { status: 201 }
+    );
   } catch (error) {
     return adminErrorResponse(error, 'purchase-orders.create');
   }

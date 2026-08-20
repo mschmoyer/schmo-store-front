@@ -272,14 +272,29 @@ export async function POST(request: NextRequest) {
 
           /* Never let a bulk move price a product below its own cost silently. Those rows are
            * skipped and named, so the merchant can decide rather than discover it in a P&L. */
-          const guard = floorAtCost
+          const costGuard = floorAtCost
             ? `AND (cost_price IS NULL OR ${expression} >= cost_price)`
             : '';
+
+          /*
+           * A sale price may not exceed the regular price, and the whole batch used to die on it.
+           *
+           * Raising the sale price by a percentage evaluates `COALESCE(sale_price, base_price)`,
+           * so any selected product with *no* sale price computes from `base_price` and lands
+           * above it — violating `products_sale_price_not_above_base`, aborting the transaction and
+           * returning "One of the values is outside the range this field allows" with no product
+           * named and nothing written. Selecting a catalogue and nudging sale prices up is an
+           * ordinary thing to do, and it failed every time any product was not already on sale.
+           *
+           * Those rows are skipped and named now, like the below-cost ones.
+           */
+          const ceilingGuard =
+            target === 'sale_price' ? `AND ${expression} <= base_price` : '';
 
           const updated = await tx.query<{ id: string }>(
             `UPDATE products
                 SET ${target} = GREATEST(${expression}, 0), updated_at = NOW()
-              WHERE store_id = $1 AND id = ANY($2::uuid[]) ${guard}
+              WHERE store_id = $1 AND id = ANY($2::uuid[]) ${costGuard} ${ceilingGuard}
               RETURNING id`,
             [storeId, ids, amount]
           );
@@ -292,7 +307,10 @@ export async function POST(request: NextRequest) {
                     id,
                     sku: skuById.get(id) ?? '',
                     status: 'skipped',
-                    reason: 'That change would put the price at or below cost'
+                    reason:
+                      target === 'sale_price'
+                        ? 'That change would put the sale price above the regular price, or below cost'
+                        : 'That change would put the price at or below cost'
                   }
             );
           }

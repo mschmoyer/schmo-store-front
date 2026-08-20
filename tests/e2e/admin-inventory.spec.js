@@ -125,6 +125,19 @@ test.describe('Admin inventory', () => {
 
     await page.getByRole('textbox', { name: 'How many units' }).fill('2');
 
+    /*
+     * Submitting without a reason is refused.
+     *
+     * The dialog used to default to "Damaged", so opening it, typing a number and pressing the
+     * button wrote stock off as damaged — a reason with real consequences for valuation and for a
+     * supplier claim, chosen by nobody. The reason is the entire point of this dialog.
+     */
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await expect(page.getByText('Choose what happened to these units')).toBeVisible();
+
+    await page.getByRole('textbox', { name: 'Why' }).click();
+    await page.getByRole('option', { name: 'Damaged' }).first().click();
+
     /* The consequence is stated in words before it happens, not encoded in a colour. */
     /* "On hand at Back Room becomes 12" in a multi-location store, "On hand becomes 12" in a
      * single-location one — the location is named only when there is more than one, because it is
@@ -137,7 +150,7 @@ test.describe('Admin inventory', () => {
     await page.reload({ waitUntil: 'networkidle' });
     await page.waitForSelector('table tbody tr');
 
-    /* "Damaged" is the default reason and removes stock, so on hand must have fallen by two. */
+    /* "Damaged" removes stock, so on hand must have fallen by two. */
     expect(await cellValue(page, 0, 1)).toBe(onHandBefore - 2);
 
     /* Put it back through the same path, which is also how a merchant corrects a mis-keyed

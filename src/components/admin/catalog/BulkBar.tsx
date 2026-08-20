@@ -27,6 +27,7 @@ import {
   Menu,
   Modal,
   NumberInput,
+  TextInput,
   Radio,
   Select,
   Stack,
@@ -88,7 +89,26 @@ export function BulkBar({
   onClear,
   onExport
 }: BulkBarProps): React.ReactElement | null {
-  const [openAction, setOpenAction] = useState<null | 'price' | 'tags' | 'category' | 'reorder' | 'delete'>(null);
+  const [openAction, setOpenAction] = useState<
+    | null
+    | 'price'
+    | 'tags'
+    | 'category'
+    | 'reorder'
+    | 'low_stock'
+    | 'vendor'
+    | 'sale_price'
+    | 'clear_sale'
+    | 'publish'
+    | 'unpublish'
+    | 'archive'
+    | 'unarchive'
+    | 'delete'
+  >(null);
+
+  /* Value for the single-field dialogs, so each does not need its own state. */
+  const [numberValue, setNumberValue] = useState<number | string>('');
+  const [textValue, setTextValue] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [priceMode, setPriceMode] = useState<'percent' | 'absolute'>('percent');
@@ -113,6 +133,42 @@ export function BulkBar({
   };
 
   const noun = `${count.toLocaleString()} product${count === 1 ? '' : 's'}`;
+
+  /**
+   * A confirmation for an action that changes what shoppers can see.
+   *
+   * @param action - The bulk action to run on confirm.
+   * @param title - The dialog title.
+   * @param body - What will happen, in the merchant's terms.
+   * @param confirmLabel - The button text.
+   * @param danger - Whether to colour the confirm button as destructive.
+   * @returns The modal.
+   */
+  const confirmDialog = (
+    action: string,
+    title: string,
+    body: string,
+    confirmLabel: string,
+    danger = false
+  ) => (
+    <Modal opened={openAction === action} onClose={() => setOpenAction(null)} title={title} centered>
+      <Stack>
+        <Text size="sm">{body}</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setOpenAction(null)}>
+            Cancel
+          </Button>
+          <Button
+            color={danger ? 'red' : undefined}
+            loading={busy}
+            onClick={() => run({ action })}
+          >
+            {confirmLabel}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
 
   return (
     <>
@@ -158,12 +214,18 @@ export function BulkBar({
             >
               Category
             </Button>
+            {/*
+              * Confirmed, like Delete.
+              *
+              * These fired immediately. Combined with "Select all N matching" and no undo anywhere
+              * in the catalogue, one mis-click unlisted an entire storefront — and unpublishing is
+              * as visible to a shopper as deleting, it just leaves the rows behind.
+              */}
             <Button
               size="compact-sm"
               variant="default"
               leftSection={<IconEye size={14} />}
-              loading={busy}
-              onClick={() => run({ action: 'publish' })}
+              onClick={() => setOpenAction('publish')}
             >
               Publish
             </Button>
@@ -171,8 +233,7 @@ export function BulkBar({
               size="compact-sm"
               variant="default"
               leftSection={<IconEyeOff size={14} />}
-              loading={busy}
-              onClick={() => run({ action: 'unpublish' })}
+              onClick={() => setOpenAction('unpublish')}
             >
               Unpublish
             </Button>
@@ -184,20 +245,64 @@ export function BulkBar({
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
+                {/*
+                  * The actions the API has always supported and this bar did not offer.
+                  *
+                  * Ten of the nineteen were unreachable, and two of them are the ones a merchant
+                  * reaches for most: `set_sale_price` and `clear_sale_price` *are* the sale
+                  * operation. Without them, running a promotion meant a percentage adjustment —
+                  * which cannot express "everything in this collection is £19.99" — and ending one
+                  * meant opening every product individually, because there was no way to clear a
+                  * sale price in bulk at all.
+                  */}
+                <Menu.Item
+                  leftSection={<IconCurrencyDollar size={14} />}
+                  onClick={() => setOpenAction('sale_price')}
+                >
+                  Set sale price
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconCurrencyDollar size={14} />}
+                  onClick={() => setOpenAction('clear_sale')}
+                >
+                  End the sale
+                </Menu.Item>
+                <Menu.Divider />
                 <Menu.Item
                   leftSection={<IconPackageExport size={14} />}
                   onClick={() => setOpenAction('reorder')}
                 >
                   Set reorder point
                 </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconPackageExport size={14} />}
+                  onClick={() => setOpenAction('low_stock')}
+                >
+                  Set low-stock threshold
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconTag size={14} />}
+                  onClick={() => setOpenAction('vendor')}
+                >
+                  Set vendor
+                </Menu.Item>
                 <Menu.Item leftSection={<IconPackageExport size={14} />} onClick={onExport}>
                   Export selected as CSV
                 </Menu.Item>
+                <Menu.Divider />
                 <Menu.Item
                   leftSection={<IconArchive size={14} />}
-                  onClick={() => run({ action: 'archive' })}
+                  onClick={() => setOpenAction('archive')}
                 >
                   Archive
+                </Menu.Item>
+                {/* Archiving was a one-way door from the UI: the API has always had `unarchive`
+                    and nothing called it. */}
+                <Menu.Item
+                  leftSection={<IconArchive size={14} />}
+                  onClick={() => setOpenAction('unarchive')}
+                >
+                  Restore from archive
                 </Menu.Item>
                 <Menu.Divider />
                 {/* Destructive actions are separated and last, never adjacent to a routine one. */}
@@ -267,6 +372,13 @@ export function BulkBar({
           <Text size="xs" c="dimmed">
             Products that would end up priced at or below their cost are skipped, and named in the
             result.
+          </Text>
+
+          {/* The same disclosure the inline grid edit already makes ("✓ Edited by you. ShipStation
+              will not overwrite it"). Bulk repricing claims the field too, and said nothing — so
+              the faster path to the same edit had the quieter consequence. */}
+          <Text size="xs" c="dimmed">
+            Changing a price claims it from ShipStation, so the sync will not overwrite it.
           </Text>
 
           <Group justify="flex-end">
@@ -409,6 +521,129 @@ export function BulkBar({
             </Button>
             <Button color="red" loading={busy} onClick={() => run({ action: 'delete' })}>
               Delete {noun}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {confirmDialog(
+        'publish',
+        'Publish these products?',
+        `${noun} will appear on your storefront. Anything without a price is skipped and named.`,
+        'Publish'
+      )}
+      {confirmDialog(
+        'unpublish',
+        'Take these off the storefront?',
+        `${noun} will stop being visible to shoppers. Nothing is deleted and you can publish them again.`,
+        'Unpublish'
+      )}
+      {confirmDialog(
+        'archive',
+        'Archive these products?',
+        `${noun} will be hidden from your catalogue and your storefront. Their order history is kept, and you can restore them.`,
+        'Archive'
+      )}
+      {confirmDialog(
+        'unarchive',
+        'Restore these products?',
+        `${noun} will come back into your catalogue as drafts. Publish them when you are ready.`,
+        'Restore'
+      )}
+
+      <Modal
+        opened={openAction === 'sale_price'}
+        onClose={() => setOpenAction(null)}
+        title="Set a sale price"
+        centered
+      >
+        <Stack>
+          <NumberInput
+            label="Sale price"
+            description="Applied to every selected product. Anything above its regular price, or below its cost, is skipped and named."
+            min={0}
+            decimalScale={2}
+            prefix="$"
+            value={numberValue}
+            onChange={setNumberValue}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setOpenAction(null)}>
+              Cancel
+            </Button>
+            <Button
+              loading={busy}
+              disabled={numberValue === ''}
+              onClick={() => run({ action: 'set_sale_price', sale_price: Number(numberValue) })}
+            >
+              Set sale price
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {confirmDialog(
+        'clear_sale',
+        'End the sale?',
+        `Sale prices are removed from ${noun}, so each goes back to its regular price.`,
+        'End the sale'
+      )}
+
+      <Modal
+        opened={openAction === 'low_stock'}
+        onClose={() => setOpenAction(null)}
+        title="Set the low-stock threshold"
+        centered
+      >
+        <Stack>
+          <NumberInput
+            label="Warn below"
+            description="The level at which these products start showing as low stock."
+            min={0}
+            allowDecimal={false}
+            value={numberValue}
+            onChange={setNumberValue}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setOpenAction(null)}>
+              Cancel
+            </Button>
+            <Button
+              loading={busy}
+              disabled={numberValue === ''}
+              onClick={() =>
+                run({ action: 'set_low_stock_threshold', low_stock_threshold: Number(numberValue) })
+              }
+            >
+              Save
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={openAction === 'vendor'}
+        onClose={() => setOpenAction(null)}
+        title="Set the vendor"
+        centered
+      >
+        <Stack>
+          <TextInput
+            label="Vendor"
+            description="Who makes or supplies these products."
+            value={textValue}
+            onChange={(event) => setTextValue(event.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setOpenAction(null)}>
+              Cancel
+            </Button>
+            <Button
+              loading={busy}
+              disabled={!textValue.trim()}
+              onClick={() => run({ action: 'set_vendor', vendor: textValue.trim() })}
+            >
+              Save
             </Button>
           </Group>
         </Stack>

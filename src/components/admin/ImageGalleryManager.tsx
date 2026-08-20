@@ -276,11 +276,35 @@ export default function ImageGalleryManager({
    * Handle URL addition
    */
   const handleUrlAdd = () => {
-    if (!imageUrl.trim()) return;
+    const candidate = imageUrl.trim();
+    if (!candidate) return;
+
+    /*
+     * Checked before it goes in the gallery.
+     *
+     * Typing `not-a-url` and pressing Add succeeded: the gallery reported 1 of 10, marked the entry
+     * Featured, and rendered a broken image with the title text spilling out of the tile. Nothing
+     * said anything was wrong, and the value would have been saved onto the product and served to
+     * shoppers.
+     *
+     * A site-relative path is allowed because that is what the demo data and the ShipStation import
+     * both use.
+     */
+    const looksLikeUrl =
+      candidate.startsWith('/') || /^https?:\/\/[^\s]+\.[^\s]+/i.test(candidate);
+    if (!looksLikeUrl) {
+      notifications.show({
+        title: 'That is not an image address',
+        message:
+          'Paste a full address beginning http:// or https://, or upload the file instead.',
+        color: 'red'
+      });
+      return;
+    }
 
     const newImage: ImageItem = {
       id: Date.now().toString() + Math.random().toString(36),
-      url: imageUrl.trim(),
+      url: candidate,
       alt: imageAlt || 'Product image',
       title: imageTitle || 'Product image'
     };

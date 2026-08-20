@@ -43,7 +43,24 @@ import { useRouter } from 'next/navigation';
 import table from '@/components/admin/adminTable.module.css';
 
 // Types
-export type PurchaseOrderStatus = 'pending' | 'approved' | 'shipped' | 'delivered' | 'cancelled';
+/*
+ * Every status the database allows.
+ *
+ * Three were missing — `draft`, `partially_received` and `closed` — and the omissions were not
+ * cosmetic. Receiving 7 of 10 units sets `partially_received`, which had no label and no colour, so
+ * the header rendered an **empty status pill** and the list page showed the raw enum. Worse, the
+ * Receive button was gated on `status === 'shipped'`, so it disappeared the moment a partial
+ * receipt happened and the outstanding 3 units could never be received: the order was trapped.
+ */
+export type PurchaseOrderStatus =
+  | 'draft'
+  | 'pending'
+  | 'approved'
+  | 'shipped'
+  | 'partially_received'
+  | 'delivered'
+  | 'closed'
+  | 'cancelled';
 
 interface PurchaseOrderItem {
   id: string;
@@ -66,7 +83,10 @@ interface PurchaseOrderItem {
 interface PurchaseOrder {
   id: string;
   po_number: string;
-  supplier: string;
+  /* The API returns `supplier_name`. This declared `supplier`, so the Supplier row on the detail
+   * page rendered empty while the list page — reading the right field — showed the name. */
+  supplier_name: string;
+  supplier_id: string | null;
   order_date: string;
   expected_delivery: string;
   actual_delivery: string;
@@ -74,28 +94,52 @@ interface PurchaseOrder {
   subtotal: number;
   tax_amount: number;
   shipping_amount: number;
-  total_amount: number;
+  /* The column is `total_cost`. Reading `total_amount` rendered the order total as **$NaN** beside
+   * a correct subtotal. */
+  total_cost: number;
   notes: string;
   created_at: string;
   updated_at: string;
   items: PurchaseOrderItem[];
 }
 
-const STATUS_COLORS = {
+/**
+ * Statuses an order can still be received against.
+ *
+ * Deliberately includes `partially_received`: a part-delivered order is the one most likely to have
+ * another box arrive.
+ */
+const RECEIVABLE_STATUSES: PurchaseOrderStatus[] = [
+  'draft',
+  'pending',
+  'approved',
+  'shipped',
+  'partially_received'
+];
+
+const STATUS_COLORS: Record<PurchaseOrderStatus, string> = {
+  draft: 'gray',
   pending: 'yellow',
   approved: 'blue',
   shipped: 'cyan',
+  partially_received: 'orange',
   delivered: 'green',
+  closed: 'gray',
   cancelled: 'red'
-} as const;
+};
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
+  draft: 'Draft',
   pending: 'Pending',
   approved: 'Approved',
   shipped: 'Shipped',
-  delivered: 'Delivered',
+  /* Named, because "some of it arrived" is a different situation from both "nothing has" and
+   * "everything has", and it is the one that needs action. */
+  partially_received: 'Partly received',
+  delivered: 'Received',
+  closed: 'Closed',
   cancelled: 'Cancelled'
-} as const;
+};
 
 /**
  * Purchase Order Detail/Edit Page Component
@@ -523,7 +567,14 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       </Container>
     );
   }
-  
+
+  /* What is still to arrive. Drives whether receiving is offered at all, and says how much is
+   * outstanding on the button itself so the merchant does not have to add it up from the table. */
+  const unitsOutstanding = purchaseOrder.items.reduce(
+    (total, item) => total + Math.max(0, item.quantity - (item.received_quantity ?? 0)),
+    0
+  );
+
   return (
     <Container size="lg">
       {/* Header */}
@@ -582,7 +633,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                 onClick={() => {
                   setEditing(false);
                   setFormData({
-                    supplier: purchaseOrder.supplier || '',
+                    supplier: purchaseOrder.supplier_name || '',
                     order_date: purchaseOrder.order_date || '',
                     expected_delivery: purchaseOrder.expected_delivery || '',
                     notes: purchaseOrder.notes || ''
@@ -635,7 +686,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                   style={{ flex: 1, maxWidth: 200 }}
                 />
               ) : (
-                <Text>{purchaseOrder.supplier}</Text>
+                <Text>{purchaseOrder.supplier_name}</Text>
               )}
             </Group>
             
@@ -720,7 +771,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             
             <Group justify="space-between">
               <Text fw={700} size="lg">Total:</Text>
-              <Text fw={700} size="lg">{formatCurrency(purchaseOrder.total_amount)}</Text>
+              <Text fw={700} size="lg">{formatCurrency(purchaseOrder.total_cost)}</Text>
             </Group>
             
             <Divider />
@@ -742,12 +793,24 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       <Card withBorder p="lg" mb="xl">
         <Group justify="space-between" mb="md">
           <Title order={3}>Items</Title>
-          {purchaseOrder.status === 'shipped' && (
+          {/*
+            * Receivable whenever the order is open and something is still outstanding.
+            *
+            * This was gated on `status === 'shipped'` alone, so receiving 7 of 10 units flipped the
+            * order to `partially_received` and the button vanished — the remaining 3 could never be
+            * received and the order was stuck there permanently. A merchant also routinely receives
+            * against an order still marked `approved`, because deliveries arrive before anyone
+            * updates a status field.
+            */}
+          {RECEIVABLE_STATUSES.includes(purchaseOrder.status) && unitsOutstanding > 0 && (
             <Button
               leftSection={<IconPackage size={16} />}
               onClick={openReceiveModal}
             >
-              Receive Items
+              Receive items
+              <Text span size="xs" ml={6} c="var(--mantine-color-white)">
+                ({unitsOutstanding} outstanding)
+              </Text>
             </Button>
           )}
         </Group>
@@ -836,17 +899,31 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             Update the status of purchase order {purchaseOrder.po_number}
           </Text>
           
+          {/*
+            * Only the statuses a person sets by hand.
+            *
+            * `partially_received` and `delivered` are *derived* from the receipts — the receive
+            * endpoint sets them, and migration 035 refuses `delivered` on an order nothing has been
+            * received against. Offering them here would let a merchant assert a delivery the
+            * receipts do not support, and their units would then count as incoming forever.
+            *
+            * The list also had no current value selected, so opening the dialog and pressing Update
+            * silently discarded a partial state.
+            */}
           <Select
-            label="New Status"
+            label="New status"
+            description="Received and Partly received are set by receiving the delivery, not here."
             data={[
+              { value: 'draft', label: 'Draft' },
               { value: 'pending', label: 'Pending' },
               { value: 'approved', label: 'Approved' },
               { value: 'shipped', label: 'Shipped' },
-              { value: 'delivered', label: 'Delivered' },
+              { value: 'closed', label: 'Closed — no more is coming' },
               { value: 'cancelled', label: 'Cancelled' }
             ]}
-            value={newStatus}
+            value={newStatus || purchaseOrder.status}
             onChange={(value) => setNewStatus(value as PurchaseOrderStatus)}
+            allowDeselect={false}
           />
           
           <Group justify="flex-end" mt="md">

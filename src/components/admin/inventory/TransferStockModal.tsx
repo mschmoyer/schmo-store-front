@@ -104,17 +104,25 @@ export function TransferStockModal({
    * location — they are due to leave from this one — and the ledger refuses the transfer if you
    * try, so showing on-hand here would set the merchant up to be told no after typing a number.
    */
-  const originAvailable = from ? (byId[from]?.available ?? 0) : 0;
+  const originAvailable = from ? Number(byId[from]?.available ?? 0) : 0;
   const moving = Math.max(0, Math.trunc(Number(quantity) || 0));
 
   /* Origin options carry their balance, so the merchant picks a place with stock in it rather than
    * discovering it is empty on submit. */
   const originOptions = locations.map((l) => {
-    const held = byId[l.value];
+    /*
+     * `null`, not zero, when the product has no level row at that location — and rendering it raw
+     * printed the string "null" into the picker: "Audit Back Room — null available". Which is also
+     * why the option was silently disabled: `null <= 0` is true.
+     *
+     * A location with no row holds nothing, so it reads as zero and is disabled for the same reason
+     * as a genuinely empty one — but it says so.
+     */
+    const available = Number(byId[l.value]?.available ?? 0);
     return {
       value: l.value,
-      label: held ? `${l.label} — ${held.available} available` : l.label,
-      disabled: held !== undefined && held.available <= 0
+      label: `${l.label} — ${available} available`,
+      disabled: available <= 0
     };
   });
 
@@ -122,7 +130,7 @@ export function TransferStockModal({
     .filter((l) => l.value !== from)
     .map((l) => ({
       value: l.value,
-      label: byId[l.value] ? `${l.label} — holds ${byId[l.value].on_hand}` : l.label
+      label: `${l.label} — holds ${Number(byId[l.value]?.on_hand ?? 0)}`
     }));
 
   const submit = async () => {

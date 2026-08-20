@@ -110,6 +110,12 @@ export function LedgerDrawer({ product, onClose, token }: LedgerDrawerProps): Re
     void load();
   }, [load]);
 
+  /*
+   * The location column only appears once there is more than one, because in a single-location
+   * store it is a column of one repeated value — noise that pushes the numbers off a narrow screen.
+   */
+  const showLocations = new Set(movements.map((m) => m.location_name)).size > 1;
+
   return (
     <Drawer
       opened={product !== null}
@@ -177,6 +183,13 @@ export function LedgerDrawer({ product, onClose, token }: LedgerDrawerProps): Re
                     <Table.Tr>
                       <Table.Th>When</Table.Th>
                       <Table.Th>What</Table.Th>
+                      {/* Which location. `location_name` was fetched, declared on the type, and
+                          never rendered — and the balance column is *per location*, so in a
+                          two-location store the history read as nonsense: a `+3` transfer in
+                          appeared to reduce the balance and the `-3` out appeared to raise it,
+                          because consecutive rows were describing different shelves. This is the
+                          screen a merchant opens to explain a discrepancy. */}
+                      {showLocations && <Table.Th>Where</Table.Th>}
                       <Table.Th className={table.numeric}>Change</Table.Th>
                       <Table.Th className={table.numeric}>Balance</Table.Th>
                     </Table.Tr>
@@ -214,6 +227,13 @@ export function LedgerDrawer({ product, onClose, token }: LedgerDrawerProps): Re
                             </Text>
                           )}
                         </Table.Td>
+                        {showLocations && (
+                          <Table.Td>
+                            <Text size="xs" c="dimmed">
+                              {movement.location_name}
+                            </Text>
+                          </Table.Td>
+                        )}
                         <Table.Td className={table.numeric}>
                           <Text size="sm" fw={600}>
                             {movement.delta > 0 ? '+' : ''}
@@ -221,6 +241,8 @@ export function LedgerDrawer({ product, onClose, token }: LedgerDrawerProps): Re
                           </Text>
                         </Table.Td>
                         <Table.Td className={table.numeric}>
+                          {/* Labelled as the balance *there*, not the product's total, which is
+                              what makes the column readable once more than one location exists. */}
                           <Text size="sm">{movement.balance_after.toLocaleString()}</Text>
                         </Table.Td>
                       </Table.Tr>
