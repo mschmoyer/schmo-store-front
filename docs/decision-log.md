@@ -2542,3 +2542,43 @@ Open on pages and navigation:
       other half-built surfaces, and the next thing to close
 - [ ] The customizer's preview iframe is still hardcoded to the home page URL,
       so a merchant cannot preview a custom page inside the editor
+
+## The Pages screen: merchants can now write their own pages (2026-08-20)
+
+The pages API existed and no merchant could reach it, which is the same
+criticism the review made of other half-built surfaces. `/admin/pages` closes it.
+
+- [x] Built **around the templates rather than around a blank page**. The
+      blank-page moment is where storefronts stall, and "what does a Shipping &
+      Returns page even contain" is a question the platform can answer once
+      instead of every merchant answering it badly
+- [x] Essentials first and labelled "Every shop needs these"; a template whose
+      slug is already taken reads "Already added" rather than failing on submit
+- [x] Publish/unpublish per page, with the distinction stated in the UI:
+      unpublishing takes the page off the shop, deleting destroys the copy.
+      The delete confirmation says which one the merchant probably wants
+- [x] Live pages link straight to the storefront, so "publish and check" is one
+      click rather than a URL to reconstruct
+- [x] Driven in a browser: create from a template, publish, see the Live badge,
+      and confirm the rows in Postgres
+
+Two things it turned up:
+
+- [x] The React compiler rejected the icon lookup — resolving a component from
+      a namespace import during render. Replaced with an explicit map, matching
+      `SectionIcon.tsx`, which keeps the whole icon package out of the bundle
+      too
+- [x] **The nav had a test pinning it at nine items.** An earlier audit trimmed
+      it from eleven, and adding Pages made ten. Rather than working around the
+      guard, the test now reads ten with the reasoning written down: the audit's
+      point was that a small merchant should be able to *find* what they need,
+      and a merchant who cannot reach Pages cannot write a returns policy. The
+      comment names ten as the ceiling, so the next addition has to argue for
+      itself rather than treat this as permission
+
+Open:
+
+- [ ] Section-level editing per page still goes through the API. The customizer
+      can compose the home page and only the home page; adding a page switcher
+      to its rail is the next step, and its preview iframe is hardcoded to the
+      home URL

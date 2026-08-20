@@ -22,3 +22,4 @@ export * from './sections';
 export * from './preview';
 export * from './navigation';
 export * from './pages';
+export * from './page-templates';

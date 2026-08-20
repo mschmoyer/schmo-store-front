@@ -323,11 +323,21 @@ describe('the nav', () => {
     expect(nav).toContain("href: '/admin/orders'");
   });
 
-  it('shows nine items to a small merchant, not eleven', () => {
+  it('shows ten items to a small merchant, not eleven', () => {
     const enabled = nav.match(/enabled: true/g) ?? [];
-    // The critic's target: Dashboard, Orders, Products, Inventory, Analytics,
-    // Page Design, Blog, Integrations, Billing. Down from eleven.
-    expect(enabled.length).toBe(9);
+    // Dashboard, Orders, Products, Inventory, Analytics, Page Design, Pages,
+    // Blog, Integrations, Billing.
+    //
+    // The critic's target was nine, down from eleven, and this is the one item
+    // added back since. It earns its place: a merchant with no way to reach
+    // Pages has no way to write an About page or a returns policy, and the
+    // whole point of the audit was that a small merchant should be able to
+    // *find* what they need — not that fewer things should exist. It sits next
+    // to Page Design, which is the same mental category.
+    //
+    // Ten is the ceiling. The next thing that wants a nav item should take
+    // this comment as a reason to justify itself, not as permission.
+    expect(enabled.length).toBe(10);
   });
 
   it('keeps the merged routes reachable rather than deleting them', () => {

@@ -29,11 +29,16 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   let storeId: string;
+  // The admin needs the slug to link a published page to the live shop. It is
+  // not on `AdminSession`, and the customizer already gets it the same way —
+  // from the API response rather than from the token.
+  let storeSlug = '';
   try {
     const user = await requireAuth(request);
     const resolved = resolveStoreId(user);
     if (!resolved) return badRequest('This account is not linked to a store.');
     storeId = resolved;
+    storeSlug = user.storeSlug ?? '';
   } catch {
     return unauthorized();
   }
@@ -42,7 +47,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const pages = await listPageSummaries(storeId);
     return NextResponse.json({
       success: true,
-      data: { pages, templates: PAGE_TEMPLATE_LIST, maxPages: MAX_PAGES_PER_STORE },
+      data: { pages, storeSlug, templates: PAGE_TEMPLATE_LIST, maxPages: MAX_PAGES_PER_STORE },
     });
   } catch (error) {
     console.error('Failed to list store pages:', error);
