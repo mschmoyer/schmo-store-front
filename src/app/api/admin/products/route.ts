@@ -169,7 +169,13 @@ export async function GET(request: NextRequest) {
         COUNT(*) FILTER (WHERE track_inventory AND stock_quantity > 0
                            AND stock_quantity <= COALESCE(low_stock_threshold, 0))::int AS low_stock,
         COUNT(*) FILTER (WHERE track_inventory AND stock_quantity <= 0)::int        AS out_of_stock,
-        COUNT(*) FILTER (WHERE completeness_score < 8)::int                         AS incomplete,
+        /* Counts exactly what the "Needs attention" view filters on — see ISSUE_SQL.incomplete.
+         * A tab whose badge disagrees with the list it opens is worse than no badge. */
+        COUNT(*) FILTER (WHERE featured_image_url IS NULL OR featured_image_url = ''
+                           OR COALESCE(NULLIF(TRIM(long_description), ''),
+                                       NULLIF(TRIM(short_description), '')) IS NULL
+                           OR base_price IS NULL OR base_price <= 0)::int             AS incomplete,
+        COUNT(*) FILTER (WHERE cost_price IS NULL OR cost_price <= 0)::int            AS uncosted,
         COUNT(*) FILTER (WHERE cost_price IS NOT NULL
                            AND COALESCE(sale_price, base_price) <= cost_price)::int AS negative_margin,
         COALESCE(SUM(CASE WHEN track_inventory THEN stock_quantity * COALESCE(cost_price, 0) END), 0)::numeric AS inventory_value_at_cost,
@@ -242,6 +248,7 @@ export async function GET(request: NextRequest) {
           lowStock: Number(stats.low_stock) || 0,
           outOfStock: Number(stats.out_of_stock) || 0,
           incomplete: Number(stats.incomplete) || 0,
+          uncosted: Number(stats.uncosted) || 0,
           negativeMargin: Number(stats.negative_margin) || 0,
           inventoryValueAtCost: Number(stats.inventory_value_at_cost) || 0,
           inventoryValueAtRetail: Number(stats.inventory_value_at_retail) || 0

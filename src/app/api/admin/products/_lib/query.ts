@@ -125,7 +125,17 @@ export const ISSUE_SQL = {
   missing_weight: 'p.weight IS NULL OR p.weight <= 0',
   missing_seo: "COALESCE(NULLIF(TRIM(p.meta_title), ''), NULLIF(TRIM(p.meta_description), '')) IS NULL",
   /* A price at or below cost. Silent margin leaks are the expensive kind. */
-  negative_margin: 'p.cost_price IS NOT NULL AND COALESCE(p.sale_price, p.base_price) <= p.cost_price'
+  negative_margin: 'p.cost_price IS NOT NULL AND COALESCE(p.sale_price, p.base_price) <= p.cost_price',
+  /*
+   * Materially incomplete: no image, no words, or no price. Deliberately narrower than
+   * `completeness_score < 8`, which counts SEO fields and tags — on a freshly imported catalogue
+   * that flags *every* product, and a signal that fires on everything is not a signal. These three
+   * are the ones that stop a listing from selling.
+   */
+  incomplete:
+    "p.featured_image_url IS NULL OR p.featured_image_url = ''" +
+    " OR COALESCE(NULLIF(TRIM(p.long_description), ''), NULLIF(TRIM(p.short_description), '')) IS NULL" +
+    ' OR p.base_price IS NULL OR p.base_price <= 0'
 } as const;
 
 export type ProductIssue = keyof typeof ISSUE_SQL;

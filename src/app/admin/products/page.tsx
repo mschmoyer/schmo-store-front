@@ -1,1218 +1,1027 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+/**
+ * The catalogue.
+ *
+ * A rewrite rather than a repair, because most of what was wrong was structural.
+ *
+ * The page kept its view state in component state, so a merchant who filtered to "out of stock,
+ * worst margin first", opened a product and pressed Back landed on page one of the unfiltered
+ * catalogue. It replaced the entire screen with a skeleton on every refetch — including on every
+ * keystroke of a search, which destroyed the cursor mid-word. Its sort control was a `<Select>`
+ * beside the filters rather than the column headings every merchant clicks first. Its bulk actions,
+ * export and import posted to routes that did not exist, its "Add product" button navigated to a
+ * 404, its category filter was a permanently empty array, and its price filter inputs had no
+ * `value` and no `onChange` at all.
+ *
+ * What replaces it is built on three ideas.
+ *
+ * **The URL is the state.** Views, filters, sort and page all live in the query string, so a view
+ * is bookmarkable, shareable, survives Back, and can be linked to — which is what turns the counts
+ * above the grid from posters into doors.
+ *
+ * **The grid is where the work happens.** Price, cost and reorder point are editable in place, with
+ * Enter committing and moving down. The old path to changing one price was eight interactions and
+ * two page loads.
+ *
+ * **Never blank what is already on screen.** A refetch dims the rows; the skeleton is for the first
+ * paint only. Losing the toolbar and the filters mid-interaction is what made the page feel broken.
+ */
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
-  Box,
-  Paper,
-  Table,
-  Button,
-  TextInput,
-  Select,
-  Badge,
   ActionIcon,
-  Group,
-  Text,
-  Avatar,
-  Checkbox,
-  Pagination,
-  Menu,
-  Stack,
-  NumberInput,
   Alert,
-  Tooltip,
-  Modal,
-  FileInput
+  Badge,
+  Button,
+  Checkbox,
+  Group,
+  Menu,
+  Pagination,
+  Paper,
+  Select,
+  Stack,
+  Table,
+  Tabs,
+  Text,
+  TextInput,
+  Tooltip
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
-  IconSearch,
-  IconPlus,
-  IconEye,
-  IconEyeOff,
-  IconEdit,
-  IconTrash,
-  IconDots,
-  IconSortAscending,
-  IconSortDescending,
-  IconRefresh,
-  IconPackage,
   IconAlertTriangle,
-  IconCheck,
+  IconCategory,
+  IconChevronDown,
+  IconCopy,
+  IconDots,
+  IconExternalLink,
+  IconEyeOff,
   IconFileExport,
   IconFileImport,
-  IconChevronDown,
-  IconAdjustments,
-  IconCurrencyDollar,
-  IconShoppingCart,
-  IconTicket
+  IconPlus,
+  IconSearch,
+  IconTicket,
+  IconTrash,
+  IconX
 } from '@tabler/icons-react';
-import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
-import { Product, ProductFilters } from '@/types/database';
 import { EmptyState, Price } from '@/components/ui';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { ShipStationSyncButton } from '@/components/admin/ShipStationSyncButton';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { SortableTh } from '@/components/admin/catalog/SortableTh';
+import { InlineEdit } from '@/components/admin/catalog/InlineEdit';
+import { BulkBar, type BulkRequest } from '@/components/admin/catalog/BulkBar';
+import { ImportModal } from '@/components/admin/catalog/ImportModal';
+import { downloadWithAuth } from '@/components/admin/catalog/download';
+import { CATALOG_VIEWS, useCatalogParams, type CatalogViewKey } from '@/components/admin/catalog/useCatalogParams';
 import table from '@/components/admin/adminTable.module.css';
+import styles from './products.module.css';
 
-// Enhanced Product interface with sales data
-interface ProductWithSales extends Product {
+/** A product as the list endpoint returns it. */
+interface CatalogRow {
+  id: string;
+  sku: string;
+  name: string;
+  slug: string;
+  status: 'draft' | 'active' | 'archived';
+  featured_image_url: string | null;
+  base_price: number;
+  sale_price: number | null;
+  cost_price: number | null;
+  effective_price: number;
+  margin_percent: number | null;
+  stock_quantity: number;
+  low_stock_threshold: number | null;
+  reorder_point: number | null;
   stock_status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'not_tracked';
+  days_of_cover: number | null;
+  completeness_score: number;
+  category_name: string | null;
+  vendor: string | null;
+  field_locks: string[] | null;
   sales_data: {
     total_sales: number;
     total_revenue: number;
-    total_orders: number;
-    last_sale_date?: Date;
-  };
-  recent_inventory_changes: Array<{
-    change_type: string;
-    quantity_change: number;
-    created_at: Date;
-  }>;
-}
-
-interface ProductsResponse {
-  products: ProductWithSales[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-    hasNext: boolean;
-    hasPrev: boolean;
-  };
-  statistics: {
-    total: number;
-    active: number;
-    inStock: number;
-    outOfStock: number;
-    lowStock: number;
-    totalValue: number;
+    units_30d: number;
+    units_90d: number;
+    last_sale_date: string | null;
   };
 }
 
-const STOCK_STATUS_COLORS = {
-  in_stock: 'green',
-  low_stock: 'yellow',
-  out_of_stock: 'red',
-  not_tracked: 'gray'
-} as const;
+interface Statistics {
+  total: number;
+  active: number;
+  draft: number;
+  archived: number;
+  inStock: number;
+  lowStock: number;
+  outOfStock: number;
+  incomplete: number;
+  negativeMargin: number;
+  uncosted: number;
+  inventoryValueAtCost: number;
+  inventoryValueAtRetail: number;
+}
 
-const STOCK_STATUS_LABELS = {
-  in_stock: 'In Stock',
-  low_stock: 'Low Stock',
-  out_of_stock: 'Out of Stock',
-  not_tracked: 'Not Tracked'
-} as const;
+/** Stock state rendered as a dot plus a word — never colour alone. */
+const STOCK_LABEL: Record<CatalogRow['stock_status'], string> = {
+  in_stock: 'In stock',
+  low_stock: 'Low',
+  out_of_stock: 'Out',
+  not_tracked: 'Untracked'
+};
 
 /**
- * Products Admin Page Component
- * 
- * Comprehensive product management interface with:
- * - Product listing with search, filters, and sorting
- * - Quick actions (list/delist, view details, stock indicators)
- * - Bulk operations and export/import functionality
- * - Responsive design with loading states and error handling
- * 
- * @returns JSX.Element
+ * The catalogue page.
+ *
+ * @returns The products grid with its views, filters and bulk actions.
  */
-export default function ProductsAdminPage() {
+export default function ProductsAdminPage(): React.ReactElement {
   const router = useRouter();
-  const { session, isAuthenticated } = useAdmin();
-  
-  // State management
-  const [products, setProducts] = useState<ProductWithSales[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  
-  // Statistics state
-  const [statistics, setStatistics] = useState({
-    total: 0,
-    active: 0,
-    inStock: 0,
-    outOfStock: 0,
-    lowStock: 0,
-    totalValue: 0
-  });
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(20);
-  const [totalPages, setTotalPages] = useState(0);
-  
-  // Filter and search state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [stockFilter, setStockFilter] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'name' | 'price' | 'created_at' | 'updated_at'>('created_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  
-  // Selection state
-  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
-  const [selectAll, setSelectAll] = useState(false);
-  
-  // Modal states
-  const [filtersOpened, { open: openFilters, close: closeFilters }] = useDisclosure(false);
-  const [bulkActionsOpened, { open: openBulkActions, close: closeBulkActions }] = useDisclosure(false);
-  const [exportModalOpened, { open: openExportModal, close: closeExportModal }] = useDisclosure(false);
-  const [importModalOpened, { open: openImportModal, close: closeImportModal }] = useDisclosure(false);
-  
-  // Export/Import state
-  const [exportFormat, setExportFormat] = useState<'csv' | 'json' | 'xlsx'>('csv');
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importProcessing, setImportProcessing] = useState(false);
-  
-  // Categories for filtering (would be fetched from API)
-  const [categories] = useState<Array<{ id: string; name: string }>>([]);
-  
-  /**
-   * Fetch products from API with current filters and pagination
-   */
-  const fetchProducts = useCallback(async (page: number = currentPage, refresh: boolean = false) => {
-    if (refresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    
-    setError(null);
-    
-    try {
-      const filters: ProductFilters = {
-        search: searchQuery.length >= 3 ? searchQuery : undefined,
-        category_id: categoryFilter || undefined,
-        is_active: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
-        in_stock: stockFilter === 'in_stock' ? true : stockFilter === 'out_of_stock' ? false : undefined,
-        sort_by: sortBy,
-        sort_order: sortOrder,
-        limit: itemsPerPage,
-        offset: (page - 1) * itemsPerPage
-      };
-      
-      const queryParams = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined) {
-          queryParams.append(key, value.toString());
-        }
-      });
-      
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
-      }
+  const { session } = useAdmin();
+  const { params, update, setView, toggleSort, apiQuery, hasFilters, clearFilters } =
+    useCatalogParams();
 
-      const response = await fetch(`/api/admin/products?${queryParams.toString()}`, {
+  const [rows, setRows] = useState<CatalogRow[]>([]);
+  const [statistics, setStatistics] = useState<Statistics | null>(null);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [categories, setCategories] = useState<Array<{ value: string; label: string }>>([]);
+
+  /* `loading` is the first paint only; `refreshing` is every subsequent fetch. Conflating them is
+   * what made every keystroke replace the page with a skeleton. */
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [allMatching, setAllMatching] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+
+  /* The search box is local so typing is never blocked on a request, and the URL is updated on a
+   * debounce. Driving the input from the URL directly makes every keystroke a navigation. */
+  const [searchDraft, setSearchDraft] = useState(params.search);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const firstLoad = useRef(true);
+
+  const token = session?.sessionToken;
+  /* The storefront preview link needs the store's public slug, which the session carries under
+   * different names depending on where it was created. */
+  const storeSlug =
+    (session as { storeSlug?: string; store?: { slug?: string } } | null)?.storeSlug ??
+    (session as { store?: { slug?: string } } | null)?.store?.slug ??
+    '';
+
+  const authFetch = useCallback(
+    async (url: string, init?: RequestInit) => {
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch(url, {
+        ...init,
         headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
+          ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+          ...init?.headers,
+          Authorization: `Bearer ${token}`
         }
       });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || `Request failed (${response.status})`);
       }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch products');
-      }
-      
-      const data: ProductsResponse = result.data;
-      
-      setProducts(data.products);
-      setTotalPages(data.pagination.totalPages);
-      setCurrentPage(data.pagination.page);
-      setStatistics(data.statistics);
-      
-      // Reset selection when data changes
-      setSelectedProducts(new Set());
-      setSelectAll(false);
-      
-    } catch (err) {
-      console.error('Error fetching products:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch products');
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to load products. Please try again.',
-        color: 'red'
-      });
+      return payload;
+    },
+    [token]
+  );
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    if (firstLoad.current) setLoading(true);
+    else setRefreshing(true);
+    setError(null);
+
+    try {
+      const payload = await authFetch(`/api/admin/products?${apiQuery}`);
+      setRows(payload.data.products);
+      setStatistics(payload.data.statistics);
+      setTotal(payload.data.pagination.total);
+      setTotalPages(payload.data.pagination.totalPages);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not load products');
     } finally {
+      firstLoad.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentPage, itemsPerPage, searchQuery, categoryFilter, statusFilter, stockFilter, sortBy, sortOrder, session?.sessionToken]);
-  
-  /**
-   * Toggle product active status
-   */
-  const toggleProductStatus = async (productId: string, currentStatus: boolean) => {
-    try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
-      }
+  }, [apiQuery, authFetch, token]);
 
-      const response = await fetch(`/api/admin/products/${productId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
-        },
-        body: JSON.stringify({
-          is_active: !currentStatus
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update product status');
-      }
-      
-      // Update local state
-      setProducts(prev => prev.map(product => 
-        product.id === productId 
-          ? { ...product, is_active: !currentStatus }
-          : product
-      ));
-      
-      notifications.show({
-        title: 'Success',
-        message: `Product ${!currentStatus ? 'listed' : 'unlisted'} successfully`,
-        color: 'green'
-      });
-      
-    } catch (err) {
-      console.error('Error updating product status:', err);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to update product status',
-        color: 'red'
-      });
-    }
-  };
-  
-  /**
-   * Handle bulk actions for selected products
-   */
-  const handleBulkAction = async (action: 'list' | 'unlist' | 'delete') => {
-    if (selectedProducts.size === 0) {
-      notifications.show({
-        title: 'Warning',
-        message: 'Please select products to perform bulk actions',
-        color: 'yellow'
-      });
-      return;
-    }
-    
-    try {
-      const productIds = Array.from(selectedProducts);
-      
-      if (action === 'delete') {
-        // Confirmation for delete action
-        if (!confirm(`Are you sure you want to delete ${productIds.length} product(s)? This action cannot be undone.`)) {
-          return;
-        }
-      }
-      
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
-      }
-
-      const response = await fetch('/api/admin/products/bulk', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
-        },
-        body: JSON.stringify({
-          action,
-          product_ids: productIds
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to perform bulk action');
-      }
-      
-      // Refresh products list
-      await fetchProducts(currentPage, true);
-      
-      notifications.show({
-        title: 'Success',
-        message: `Bulk action completed for ${productIds.length} product(s)`,
-        color: 'green'
-      });
-      
-      closeBulkActions();
-      
-    } catch (err) {
-      console.error('Error performing bulk action:', err);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to perform bulk action',
-        color: 'red'
-      });
-    }
-  };
-  
-  /**
-   * Handle product export
-   */
-  const handleExport = async () => {
-    try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
-      }
-
-      const response = await fetch(`/api/admin/products/export?format=${exportFormat}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to export products');
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `products-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      notifications.show({
-        title: 'Success',
-        message: 'Products exported successfully',
-        color: 'green'
-      });
-      
-      closeExportModal();
-      
-    } catch (err) {
-      console.error('Error exporting products:', err);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to export products',
-        color: 'red'
-      });
-    }
-  };
-  
-  /**
-   * Handle product import
-   */
-  const handleImport = async () => {
-    if (!importFile) {
-      notifications.show({
-        title: 'Warning',
-        message: 'Please select a file to import',
-        color: 'yellow'
-      });
-      return;
-    }
-    
-    setImportProcessing(true);
-    
-    try {
-      const formData = new FormData();
-      formData.append('file', importFile);
-      
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
-      }
-
-      const response = await fetch('/api/admin/products/import', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        },
-        body: formData
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to import products');
-      }
-      
-      const result = await response.json();
-      
-      notifications.show({
-        title: 'Success',
-        message: `Import completed: ${result.imported} products imported, ${result.updated} updated`,
-        color: 'green'
-      });
-      
-      // Refresh products list
-      await fetchProducts(1, true);
-      
-      closeImportModal();
-      setImportFile(null);
-      
-    } catch (err) {
-      console.error('Error importing products:', err);
-      notifications.show({
-        title: 'Error',
-        message: 'Failed to import products',
-        color: 'red'
-      });
-    } finally {
-      setImportProcessing(false);
-    }
-  };
-  
-  /**
-   * Handle selection changes
-   */
-  const handleSelectProduct = (productId: string, checked: boolean) => {
-    const newSelected = new Set(selectedProducts);
-    if (checked) {
-      newSelected.add(productId);
-    } else {
-      newSelected.delete(productId);
-    }
-    setSelectedProducts(newSelected);
-    setSelectAll(newSelected.size === products.length);
-  };
-  
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedProducts(new Set(products.map(p => p.id)));
-      setSelectAll(true);
-    } else {
-      setSelectedProducts(new Set());
-      setSelectAll(false);
-    }
-  };
-  
-  /**
-   * Format currency values
-   */
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
-  
-  
-  /**
-   * Apply filters and refresh data
-   */
-  const applyFilters = () => {
-    setCurrentPage(1);
-    fetchProducts(1);
-    closeFilters();
-  };
-  
-  /**
-   * Reset all filters
-   */
-  const resetFilters = () => {
-    setSearchQuery('');
-    setCategoryFilter('');
-    setStatusFilter('');
-    setStockFilter('');
-    setSortBy('created_at');
-    setSortOrder('desc');
-    setCurrentPage(1);
-    fetchProducts(1);
-    closeFilters();
-  };
-  
-  // Fetch data on component mount and when filters change
   useEffect(() => {
-    if (isAuthenticated && session?.sessionToken) {
-      fetchProducts(currentPage);
-    }
-  }, [fetchProducts, currentPage, isAuthenticated, session?.sessionToken]);
-  
-  // Debounced search
+    void load();
+  }, [load]);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery.length >= 3 && isAuthenticated && session?.sessionToken) {
-        setCurrentPage(1);
-        fetchProducts(1);
-      } else if (searchQuery === '' && isAuthenticated && session?.sessionToken) {
-        // Reset search when clearing the input
-        setCurrentPage(1);
-        fetchProducts(1);
-      }
-    }, 500);
-    
+    if (!token) return;
+    authFetch('/api/admin/categories')
+      .then((payload) => setCategories(payload.options ?? []))
+      /* A failed category list is not worth an error banner over the whole page — the filter just
+       * stays empty, which is what it was before this endpoint existed. */
+      .catch(() => setCategories([]));
+  }, [authFetch, token]);
+
+  /* Debounced search. One timer, cleared on every keystroke, so exactly one request is made per
+   * pause — the previous version raced its own debounce against an effect and fired roughly two
+   * requests per character. */
+  useEffect(() => {
+    if (searchDraft === params.search) return;
+    const timer = setTimeout(() => update({ search: searchDraft || null }, { replace: true }), 350);
     return () => clearTimeout(timer);
-  }, [searchQuery, fetchProducts, isAuthenticated, session?.sessionToken]);
-  
-  
-  if (loading && !refreshing) {
-    /* Two grey slabs told you nothing about what was coming. This is the real
-       screen's geometry: a heading, five stat cards and the product grid (§5). */
-    return (
-      <Stack gap="lg">
-        <AdminPageHeader title="Products" description="Loading your catalog." />
-        <StatGridSkeleton count={5} />
-        <TableSkeleton rows={8} columns={6} label="Loading products" />
-      </Stack>
-    );
-  }
-  
-  if (error) {
-    return (
-      <Alert 
-        icon={<IconAlertTriangle size={16} />} 
-        title="Error" 
-        color="red" 
-        variant="light"
-        mb="md"
-      >
-        {error}
-        <Button 
-          variant="light" 
-          size="sm" 
-          mt="sm" 
-          onClick={() => fetchProducts(currentPage)}
-        >
-          Try Again
-        </Button>
-      </Alert>
-    );
-  }
-  
+  }, [searchDraft, params.search, update]);
+
+  /* `/` focuses search, as it does in every tool a merchant already uses. Ignored while typing, so
+   * it never swallows a slash in a product name. */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (event.key === '/' && !typing) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* Selection is dropped when the *filter* changes, not when the page does — a merchant paging
+   * through results to pick rows across pages is doing something reasonable, and the old code
+   * silently cleared the set on every fetch. */
+  useEffect(() => {
+    setSelected(new Set());
+    setAllMatching(false);
+  }, [params.view, params.search, params.categoryId, params.stockStatus, params.issue, params.vendor]);
+
+  const pageIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const someOnPageSelected = pageIds.some((id) => selected.has(id));
+
+  const toggleRow = useCallback((id: string) => {
+    setAllMatching(false);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const togglePage = useCallback(() => {
+    setAllMatching(false);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (pageIds.every((id) => next.has(id))) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [pageIds]);
+
+  /**
+   * Save one field on one product, optimistically.
+   *
+   * @param id - The product.
+   * @param body - The fields to change.
+   */
+  const saveField = useCallback(
+    async (id: string, body: Record<string, unknown>) => {
+      const payload = await authFetch(`/api/admin/products/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body)
+      });
+
+      /* Patch the row in place rather than refetching the page. A refetch after every cell edit
+       * would reorder the grid under the merchant's cursor when they are sorted by the column they
+       * are editing — which is exactly when they are most likely to be editing it. */
+      setRows((current) =>
+        current.map((row) =>
+          row.id === id
+            ? {
+                ...row,
+                ...payload.data.product,
+                base_price: Number(payload.data.product.base_price) || 0,
+                sale_price:
+                  payload.data.product.sale_price === null
+                    ? null
+                    : Number(payload.data.product.sale_price),
+                cost_price:
+                  payload.data.product.cost_price === null
+                    ? null
+                    : Number(payload.data.product.cost_price),
+                sales_data: row.sales_data
+              }
+            : row
+        )
+      );
+    },
+    [authFetch]
+  );
+
+  const runBulk = useCallback(
+    async (request: BulkRequest) => {
+      try {
+        const body = allMatching
+          ? { ...request, filter: filterForApi(params) }
+          : { ...request, product_ids: [...selected] };
+
+        const payload = await authFetch('/api/admin/products/bulk', {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+
+        const { summary, results } = payload.data;
+        const skipped = results.filter((r: { status: string }) => r.status === 'skipped');
+
+        /* The result is reported per row, not as a blanket success. "183 updated, 2 skipped:
+         * SKU-991 would drop below cost" is something a merchant can act on. */
+        notifications.show({
+          title: `${summary.updated + summary.deleted} of ${summary.requested} updated`,
+          message:
+            skipped.length > 0
+              ? `${skipped.length} skipped — ${skipped
+                  .slice(0, 3)
+                  .map((r: { sku: string; reason?: string }) => `${r.sku}: ${r.reason}`)
+                  .join('; ')}${skipped.length > 3 ? '…' : ''}`
+              : 'Done.',
+          color: skipped.length > 0 ? 'yellow' : 'green',
+          autoClose: skipped.length > 0 ? 12000 : 4000
+        });
+
+        setSelected(new Set());
+        setAllMatching(false);
+        await load();
+      } catch (caught) {
+        notifications.show({
+          title: 'That did not work',
+          message: caught instanceof Error ? caught.message : 'Bulk action failed',
+          color: 'red'
+        });
+        throw caught;
+      }
+    },
+    [allMatching, authFetch, load, params, selected]
+  );
+
+  const exportCsv = useCallback(
+    async (onlySelected: boolean) => {
+      const query = new URLSearchParams(apiQuery);
+      /* Page and page size are view state, not export scope: a merchant asking for "this view"
+       * means every matching row, not the twenty-five currently rendered. */
+      query.delete('page');
+      query.delete('limit');
+      if (onlySelected && selected.size > 0) query.set('ids', [...selected].join(','));
+
+      try {
+        await downloadWithAuth(
+          `/api/admin/products/export?${query.toString()}`,
+          token,
+          'products.csv'
+        );
+      } catch (caught) {
+        notifications.show({
+          title: 'Could not export',
+          message: caught instanceof Error ? caught.message : 'Export failed',
+          color: 'red'
+        });
+      }
+    },
+    [apiQuery, selected, token]
+  );
+
+  const viewCounts: Record<CatalogViewKey, number | undefined> = {
+    all: statistics?.total,
+    active: statistics?.active,
+    draft: statistics?.draft,
+    incomplete: statistics?.incomplete,
+    low_stock: statistics?.lowStock,
+    out_of_stock: statistics?.outOfStock,
+    no_cost: statistics?.uncosted,
+    negative_margin: statistics?.negativeMargin
+  };
+
+  const showingFrom = total === 0 ? 0 : (params.page - 1) * params.limit + 1;
+  const showingTo = Math.min(params.page * params.limit, total);
+
   return (
-    <Box>
-      {/* Header Section */}
+    <Stack gap="lg" className={styles.page}>
       <AdminPageHeader
         title="Products"
-        description={
-          <>
-            {statistics.total} product{statistics.total !== 1 ? 's' : ''} total
-            {statistics.active > 0 && ` • ${statistics.active} active`}
-            {selectedProducts.size > 0 && ` • ${selectedProducts.size} selected`}
-          </>
-        }
+        description="Your catalogue, its stock position, and what each product is earning."
         actions={
-          <>
-          {/* Pulls the catalogue from ShipStation on demand rather than waiting for
-              the hourly scheduled run. Disabled, with the reason, until the
-              integration is connected. */}
-          <ShipStationSyncButton
-            endpoint="/api/admin/sync/products"
-            label="Sync from ShipStation"
-            onSynced={() => fetchProducts(currentPage, true)}
-          />
-
-          {/* Coupons lost its top-level nav slot — a merchant edits promotions
-              monthly, not daily, and a coupon is part of pricing the catalog.
-              This is its door. */}
-          <Button
-            variant="light"
-            component="a"
-            href="/admin/coupons"
-            leftSection={<IconTicket size={16} />}
-          >
-            Pricing & promotions
-          </Button>
-
-          <Button 
-            variant="light" 
-            leftSection={<IconRefresh size={16} />}
-            onClick={() => fetchProducts(currentPage, true)}
-            loading={refreshing}
-          >
-            Refresh
-          </Button>
-          
-          <Menu shadow="md" width={200} position="bottom-end">
-            <Menu.Target>
-              <Button 
-                variant="light" 
-                leftSection={<IconDots size={16} />}
-                rightSection={<IconChevronDown size={16} />}
-              >
-                Actions
-              </Button>
-            </Menu.Target>
-            
-            <Menu.Dropdown>
-              <Menu.Item 
-                leftSection={<IconFileExport size={16} />}
-                onClick={openExportModal}
-              >
-                Export Products
-              </Menu.Item>
-              <Menu.Item 
-                leftSection={<IconFileImport size={16} />}
-                onClick={openImportModal}
-              >
-                Import Products
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item 
-                leftSection={<IconEdit size={16} />}
-                onClick={openBulkActions}
-                disabled={selectedProducts.size === 0}
-              >
-                Bulk Actions ({selectedProducts.size})
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-          
-          <Button 
-            leftSection={<IconPlus size={16} />}
-            onClick={() => router.push('/admin/products/add')}
-          >
-            Add Product
-          </Button>
-          </>
+          <Group gap="xs">
+            <ShipStationSyncButton onSynced={load} />
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <Button variant="default" rightSection={<IconChevronDown size={14} />}>
+                  More
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconFileExport size={14} />} onClick={() => void exportCsv(false)}>
+                  Export this view as CSV
+                </Menu.Item>
+                <Menu.Item leftSection={<IconFileImport size={14} />} onClick={() => setImportOpen(true)}>
+                  Import from CSV
+                </Menu.Item>
+                <Menu.Divider />
+                {/* Coupons is merged into the catalogue rather than carrying its own nav slot, so
+                    this is the route's entry point. In the overflow rather than the header: it is
+                    a neighbouring surface, not a thing you do to the products on this page. */}
+                <Menu.Item
+                  leftSection={<IconTicket size={14} />}
+                  component={Link}
+                  href="/admin/coupons"
+                >
+                  Pricing and promotions
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconCategory size={14} />}
+                  component={Link}
+                  href="/admin/inventory"
+                >
+                  Inventory and stock
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <Button
+              leftSection={<IconPlus size={16} />}
+              component={Link}
+              href="/admin/products/new"
+            >
+              Add product
+            </Button>
+          </Group>
         }
       />
-      
-      {/*
-        Five bespoke cards became five StatCards. What went with them: a green
-        tick beside "Active", a green cart beside "In Stock" and an amber
-        triangle beside "Out of Stock" — three tinted 32px icons doing the job
-        the numbers already do. §2 reserves the signal for money, stock and
-        success; a count of listings is none of those, and a warning triangle
-        that is always amber tells you nothing about whether anything is wrong.
-        Tone now follows the value: out-of-stock is only red when it is not zero.
-      */}
-      <StatGrid min={190}>
-        <StatCard label="Total products" value={statistics.total} icon={<IconPackage size={18} stroke={1.6} />} />
-        <StatCard label="Active" value={statistics.active} meta="Listed in the store" icon={<IconCheck size={18} stroke={1.6} />} />
-        <StatCard
-          label="In stock"
-          value={statistics.inStock}
-          tone="signal"
-          meta="Available to ship"
-          icon={<IconShoppingCart size={18} stroke={1.6} />}
-        />
-        <StatCard
-          label="Out of stock"
-          value={statistics.outOfStock}
-          tone={statistics.outOfStock > 0 ? 'danger' : 'neutral'}
-          meta={statistics.outOfStock > 0 ? 'Cannot be ordered' : 'Nothing is out'}
-          icon={<IconAlertTriangle size={18} stroke={1.6} />}
-        />
-        <StatCard
-          label="Inventory value"
-          value={statistics.totalValue}
-          format="currency"
-          meta="At list price"
-          icon={<IconCurrencyDollar size={18} stroke={1.6} />}
-        />
-      </StatGrid>
 
-      <Box mb="xl" />
+      {loading ? (
+        <StatGridSkeleton count={4} />
+      ) : (
+        statistics && (
+          /*
+           * Four cards, every one of them a link into a filtered view. The previous row was five
+           * counts a merchant could not act on and could not click — a count with no door is a
+           * poster, not a tool. "Inventory value" was also shown here at list price and on the
+           * inventory page at cost, two screens giving one label two numbers that differed by the
+           * whole gross margin.
+           */
+          <StatGrid>
+            <StatCard
+              label="Out of stock"
+              value={statistics.outOfStock}
+              tone={statistics.outOfStock > 0 ? 'danger' : 'neutral'}
+              meta="Not sellable right now"
+              href="/admin/products?view=out_of_stock"
+            />
+            <StatCard
+              label="Low stock"
+              value={statistics.lowStock}
+              tone={statistics.lowStock > 0 ? 'warning' : 'neutral'}
+              meta="At or below the reorder point"
+              href="/admin/products?view=low_stock"
+            />
+            <StatCard
+              label="Stock value at cost"
+              value={statistics.inventoryValueAtCost}
+              format="currency"
+              meta="What the shelf is worth"
+              href="/admin/inventory"
+            />
+            <StatCard
+              label="Needs attention"
+              value={statistics.incomplete}
+              tone={statistics.incomplete > 0 ? 'warning' : 'neutral'}
+              meta="Listings missing images, copy or a price"
+              href="/admin/products?view=incomplete"
+            />
+          </StatGrid>
+        )
+      )}
 
-      {/* Search and Filters */}
-      <Paper withBorder p="md" mb="md">
-        <Group justify="space-between" mb="md">
-          <Group>
-            <TextInput
-              placeholder="Search products (min 3 characters)..."
-              leftSection={<IconSearch size={16} />}
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.currentTarget.value)}
-              style={{ minWidth: 300 }}
-              description={searchQuery.length > 0 && searchQuery.length < 3 ? "Enter at least 3 characters to search" : undefined}
-              error={searchQuery.length > 0 && searchQuery.length < 3}
-            />
-            
-            <Select
-              aria-label="Filter by status"
-              placeholder="Status"
-              data={[
-                { value: '', label: 'All Status' },
-                { value: 'active', label: 'Active' },
-                { value: 'inactive', label: 'Inactive' }
-              ]}
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value || '')}
-              clearable
-            />
-            
-            <Select
-              aria-label="Filter by stock"
-              placeholder="Stock"
-              data={[
-                { value: '', label: 'All Stock' },
-                { value: 'in_stock', label: 'In Stock' },
-                { value: 'low_stock', label: 'Low Stock' },
-                { value: 'out_of_stock', label: 'Out of Stock' }
-              ]}
-              value={stockFilter}
-              onChange={(value) => setStockFilter(value || '')}
-              clearable
-            />
-          </Group>
-          
-          <Group>
-            <Button 
-              variant="light" 
-              leftSection={<IconAdjustments size={16} />}
-              onClick={openFilters}
-            >
-              Advanced Filters
+      <Paper withBorder radius="md" className={styles.panel}>
+        <Tabs
+          value={params.view}
+          onChange={(value) => setView((value ?? 'all') as CatalogViewKey)}
+          keepMounted={false}
+        >
+          <Tabs.List className={styles.tabs}>
+            {(Object.keys(CATALOG_VIEWS) as CatalogViewKey[]).map((key) => (
+              <Tabs.Tab
+                key={key}
+                value={key}
+                rightSection={
+                  viewCounts[key] === undefined ? null : (
+                    <Badge size="xs" variant="light" circle={false}>
+                      {viewCounts[key]}
+                    </Badge>
+                  )
+                }
+              >
+                {CATALOG_VIEWS[key].label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs>
+
+        <Group gap="sm" className={styles.toolbar} wrap="wrap">
+          <TextInput
+            ref={searchRef}
+            className={styles.search}
+            leftSection={<IconSearch size={16} />}
+            placeholder="Search name, SKU or barcode"
+            aria-label="Search products"
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.currentTarget.value)}
+            rightSection={
+              searchDraft ? (
+                <ActionIcon variant="subtle" onClick={() => setSearchDraft('')} aria-label="Clear search">
+                  <IconX size={14} />
+                </ActionIcon>
+              ) : null
+            }
+          />
+
+          <Select
+            placeholder="Any category"
+            aria-label="Filter by category"
+            data={categories}
+            value={params.categoryId || null}
+            onChange={(value) => update({ category_id: value })}
+            clearable
+            searchable
+            w={190}
+            nothingFoundMessage="No categories yet"
+          />
+
+          <Select
+            placeholder="Any stock level"
+            aria-label="Filter by stock level"
+            data={[
+              { value: 'in_stock', label: 'In stock' },
+              { value: 'low_stock', label: 'Low stock' },
+              { value: 'out_of_stock', label: 'Out of stock' },
+              { value: 'not_tracked', label: 'Not tracked' }
+            ]}
+            value={params.stockStatus || null}
+            onChange={(value) => update({ stock_status: value })}
+            clearable
+            w={160}
+          />
+
+          <Select
+            placeholder="Any issue"
+            aria-label="Filter by listing issue"
+            data={[
+              { value: 'missing_image', label: 'No image' },
+              { value: 'missing_description', label: 'No description' },
+              { value: 'missing_price', label: 'No price' },
+              { value: 'missing_cost', label: 'No cost' },
+              { value: 'missing_category', label: 'No category' },
+              { value: 'missing_seo', label: 'No SEO' },
+              { value: 'negative_margin', label: 'Priced below cost' }
+            ]}
+            value={params.issue || null}
+            onChange={(value) => update({ issue: value })}
+            clearable
+            w={175}
+          />
+
+          {hasFilters && (
+            <Button variant="subtle" size="compact-sm" onClick={clearFilters} leftSection={<IconX size={14} />}>
+              Clear filters
             </Button>
-            
-            <Select
-              aria-label="Sort by"
-              placeholder="Sort by"
-              data={[
-                { value: 'created_at', label: 'Date Created' },
-                { value: 'updated_at', label: 'Last Updated' },
-                { value: 'name', label: 'Name' },
-                { value: 'price', label: 'Price' }
-              ]}
-              value={sortBy}
-              onChange={(value) => setSortBy(value as 'name' | 'price' | 'created_at' | 'updated_at')}
-            />
-            
-            {/* An icon-only control with no accessible name: a screen-reader
-                user heard "button" and nothing else, and it could not be
-                targeted by role in a test either. */}
-            <ActionIcon
-              variant="light"
-              aria-label={sortOrder === 'asc' ? 'Sort ascending, switch to descending' : 'Sort descending, switch to ascending'}
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            >
-              {sortOrder === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />}
-            </ActionIcon>
-          </Group>
-        </Group>
-      </Paper>
-      
-      {/* Products Table */}
-      <Paper withBorder>
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>
-                <Checkbox
-                  checked={selectAll}
-                  indeterminate={selectedProducts.size > 0 && !selectAll}
-                  onChange={(event) => handleSelectAll(event.currentTarget.checked)}
-                />
-              </Table.Th>
-              <Table.Th>Product</Table.Th>
-              <Table.Th className={table.numeric}>Price</Table.Th>
-              {/* The list already had price and cost on the row; one column
-                  turns the catalog into a pricing tool. Margin was in exactly
-                  one place in the admin before this, on the valuation report,
-                  where it divided by cost and so read 97.3% against a true
-                  49.3%. This divides by the price the shopper pays. */}
-              <Table.Th className={table.numeric}>Margin</Table.Th>
-              <Table.Th>Stock</Table.Th>
-              <Table.Th className={table.numeric}>Sales</Table.Th>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {products.map((product) => (
-              <Table.Tr key={product.id}>
-                <Table.Td>
-                  <Checkbox
-                    checked={selectedProducts.has(product.id)}
-                    onChange={(event) => handleSelectProduct(product.id, event.currentTarget.checked)}
-                  />
-                </Table.Td>
-                
-                <Table.Td>
-                  <Group gap="sm">
-                    <Avatar
-                      src={product.featured_image_url}
-                      alt={product.name}
-                      size="sm"
-                      radius="sm"
-                    >
-                      <IconPackage size={16} />
-                    </Avatar>
-                    <Box>
-                      <Text fw={500} lineClamp={1}>
-                        {product.name}
-                      </Text>
-                      <Text component="span" className={table.code}>
-                        {product.sku}
-                      </Text>
-                    </Box>
-                  </Group>
-                </Table.Td>
-                
-                <Table.Td className={table.numeric}>
-                  {/* When a sale price exists it is the price the shopper
-                      pays, so it is the one Price renders; the list price is
-                      the struck-through compare-at. The old order had it
-                      backwards. */}
-                  {product.sale_price ? (
-                    <Price
-                      value={Number(product.sale_price)}
-                      compareAt={Number(product.base_price)}
-                      showSavings={false}
-                      size="sm"
-                    />
-                  ) : (
-                    <Price value={Number(product.base_price)} size="sm" />
-                  )}
-                </Table.Td>
+          )}
 
-                <Table.Td className={table.numeric}>
-                  {(() => {
-                    const price = Number(product.sale_price ?? product.base_price) || 0;
-                    const cost = Number(product.cost_price) || 0;
-                    if (!cost || !price) {
-                      return (
-                        <Tooltip label="No cost price on file for this product">
+          <div className={styles.spacer} />
+
+          {/* The row count a merchant needs to know whether the filter did what they meant.
+              Rendered even while refreshing, so the number never disappears mid-interaction. */}
+          <Text size="sm" c="dimmed" className={styles.count}>
+            {total === 0 ? 'No products' : `${showingFrom}–${showingTo} of ${total.toLocaleString()}`}
+          </Text>
+
+          <Select
+            aria-label="Products per page"
+            data={['25', '50', '100', '250']}
+            value={String(params.limit)}
+            onChange={(value) => update({ limit: value, page: 1 })}
+            w={90}
+          />
+        </Group>
+
+        {error && (
+          <Alert
+            color="red"
+            icon={<IconAlertTriangle size={16} />}
+            title="Could not load products"
+            className={styles.alert}
+          >
+            <Stack gap="xs" align="flex-start">
+              <Text size="sm">{error}</Text>
+              <Button size="compact-sm" variant="default" onClick={load}>
+                Try again
+              </Button>
+            </Stack>
+          </Alert>
+        )}
+
+        {loading ? (
+          <TableSkeleton rows={8} columns={8} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title={hasFilters || params.view !== 'all' ? 'Nothing matches that' : 'No products yet'}
+            description={
+              hasFilters || params.view !== 'all'
+                ? 'Try a different view, or clear the filters to see the whole catalogue.'
+                : 'Sync your ShipStation catalogue, or add a product by hand.'
+            }
+            action={
+              hasFilters || params.view !== 'all' ? (
+                <Button variant="default" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : (
+                <Button component={Link} href="/admin/products/new" leftSection={<IconPlus size={16} />}>
+                  Add product
+                </Button>
+              )
+            }
+          />
+        ) : (
+          /* A scroll container, because eight columns do not fit a phone. Without it the whole
+             document scrolls sideways and takes the nav and the header with it. */
+          <Table.ScrollContainer minWidth={1000}>
+            <Table
+              highlightOnHover
+              verticalSpacing="sm"
+              className={refreshing ? styles.refreshing : undefined}
+            >
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={40}>
+                    <Checkbox
+                      checked={allOnPageSelected}
+                      indeterminate={someOnPageSelected && !allOnPageSelected}
+                      onChange={togglePage}
+                      aria-label={allOnPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
+                    />
+                  </Table.Th>
+                  <SortableTh column="name" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort}>
+                    Product
+                  </SortableTh>
+                  <SortableTh column="stock" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort} numeric width={120}>
+                    Stock
+                  </SortableTh>
+                  <SortableTh column="price" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort} numeric width={110}>
+                    Price
+                  </SortableTh>
+                  <SortableTh column="cost" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort} numeric width={100}>
+                    Cost
+                  </SortableTh>
+                  <SortableTh
+                    column="margin"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={90}
+                    hint="Margin on the price a shopper pays, against the recorded cost"
+                  >
+                    Margin
+                  </SortableTh>
+                  <SortableTh
+                    column="units_sold"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={110}
+                    hint="Units sold in the last 90 days, and lifetime revenue"
+                  >
+                    Sold 90d
+                  </SortableTh>
+                  <Table.Th w={44}>
+                    <span className={styles.srOnly}>Actions</span>
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+
+              <Table.Tbody>
+                {rows.map((row, index) => (
+                  <Table.Tr key={row.id} data-selected={selected.has(row.id) || undefined}>
+                    <Table.Td>
+                      <Checkbox
+                        checked={selected.has(row.id)}
+                        onChange={() => toggleRow(row.id)}
+                        /* Named, so a screen-reader user hears which product they are selecting
+                           rather than "checkbox" twenty-five times. */
+                        aria-label={`Select ${row.name}`}
+                      />
+                    </Table.Td>
+
+                    <Table.Td>
+                      <Group gap="sm" wrap="nowrap">
+                        <div className={styles.thumb}>
+                          {row.featured_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={row.featured_image_url} alt="" loading="lazy" />
+                          ) : (
+                            <span className={styles.noImage} title="No image">
+                              <IconEyeOff size={14} />
+                            </span>
+                          )}
+                        </div>
+                        <div className={styles.identity}>
+                          <Link href={`/admin/products/${row.id}`} className={styles.name}>
+                            {row.name}
+                          </Link>
+                          <Group gap={6}>
+                            <span className={table.code}>{row.sku}</span>
+                            {row.status !== 'active' && (
+                              <Badge size="xs" variant="light" color={row.status === 'draft' ? 'gray' : 'orange'}>
+                                {row.status === 'draft' ? 'Draft' : 'Archived'}
+                              </Badge>
+                            )}
+                            {row.completeness_score < 8 && (
+                              <Tooltip label={`${8 - row.completeness_score} listing fields still empty`}>
+                                <Badge size="xs" variant="light" color="yellow">
+                                  {row.completeness_score}/8
+                                </Badge>
+                              </Tooltip>
+                            )}
+                          </Group>
+                        </div>
+                      </Group>
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      <div className={table.stacked}>
+                        <span>{row.stock_quantity.toLocaleString()}</span>
+                        {/* A dot and a word. Colour alone tells a colour-blind merchant nothing
+                            and tells a screen reader nothing at all. */}
+                        <span className={`${table.sub} ${styles.stockState}`} data-state={row.stock_status}>
+                          <span className={styles.dot} aria-hidden="true" />
+                          {STOCK_LABEL[row.stock_status]}
+                          {row.days_of_cover !== null && row.days_of_cover < 30 && row.stock_quantity > 0
+                            ? ` · ${Math.round(row.days_of_cover)}d left`
+                            : ''}
+                        </span>
+                      </div>
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      <InlineEdit
+                        label={`Price for ${row.name}`}
+                        value={row.base_price}
+                        locked={row.field_locks?.includes('base_price')}
+                        render={(value) => <Price value={Number(value)} />}
+                        onCommit={(next) => saveField(row.id, { base_price: next ?? 0 })}
+                        onMoveDown={() => focusCell(index + 1, 'price')}
+                        data-cell="price"
+                      />
+                      {row.sale_price !== null && (
+                        <div className={table.sub}>
+                          on sale at <Price value={row.sale_price} />
+                        </div>
+                      )}
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      <InlineEdit
+                        label={`Cost for ${row.name}`}
+                        value={row.cost_price}
+                        placeholder="Not set"
+                        render={(value) => <Price value={Number(value)} />}
+                        onCommit={(next) => saveField(row.id, { cost_price: next })}
+                        onMoveDown={() => focusCell(index + 1, 'cost')}
+                      />
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      {row.margin_percent === null ? (
+                        /* Not "0%" or "100%": an unknown cost means an unknown margin, and a
+                           fabricated figure here is one a merchant would price against. */
+                        <Tooltip label="Record a cost to see the margin">
                           <Text size="sm" c="dimmed">
                             —
                           </Text>
                         </Tooltip>
-                      );
-                    }
-                    /* (price − cost) / price. Margin, not markup. */
-                    const margin = ((price - cost) / price) * 100;
-                    return (
-                      <span className={table.stacked}>
-                        <Text
-                          size="sm"
-                          fw={600}
-                          c={margin < 20 ? 'var(--warning-text)' : undefined}
-                        >
-                          {margin.toFixed(1)}%
-                        </Text>
-                        <span className={table.sub}>{formatCurrency(price - cost)}/unit</span>
-                      </span>
-                    );
-                  })()}
-                </Table.Td>
+                      ) : (
+                        <span className={styles.margin} data-low={row.margin_percent < 20 || undefined}>
+                          {row.margin_percent < 20 && (
+                            <IconAlertTriangle size={12} aria-hidden="true" />
+                          )}
+                          {row.margin_percent.toFixed(1)}%
+                        </span>
+                      )}
+                    </Table.Td>
 
-                <Table.Td>
-                  <Group gap="xs">
-                    <Badge
-                      color={STOCK_STATUS_COLORS[product.stock_status]}
-                      variant="light"
-                      size="sm"
-                    >
-                      {STOCK_STATUS_LABELS[product.stock_status]}
-                    </Badge>
-                    {product.track_inventory && (
-                      <Text size="xs" c="dimmed">
-                        {product.stock_quantity}
-                      </Text>
-                    )}
-                  </Group>
-                </Table.Td>
-                
-                <Table.Td className={table.numeric}>
-                  {/* Units and revenue used to sit side by side as "4 $916.00",
-                      which reads as two unlabelled columns squeezed into one.
-                      Stacked, the revenue is visibly a gloss on the count. */}
-                  <span className={table.stacked}>
-                    <span>{product.sales_data.total_sales}</span>
-                    <span className={table.sub}>
-                      {formatCurrency(product.sales_data.total_revenue)}
-                    </span>
-                  </span>
-                </Table.Td>
-                
-                <Table.Td>
-                  <Badge
-                    color={product.is_active ? 'green' : 'gray'}
-                    variant="light"
-                    size="sm"
-                  >
-                    {product.is_active ? 'Listed' : 'Unlisted'}
-                  </Badge>
-                </Table.Td>
-                
-                <Table.Td>
-                  {/* Row actions are icon-only. A Mantine Tooltip is not an
-                      accessible name, so all three read as "button" to a
-                      screen reader and to any test trying to reach them by
-                      role. Each now names both the action and the product it
-                      acts on, which matters in a forty-row table where three
-                      dozen buttons otherwise share one label. */}
-                  <Group gap="xs">
-                    <Tooltip label="View Details">
-                      <ActionIcon
-                        variant="light"
-                        size="md"
-                        aria-label={`View ${product.name}`}
-                        onClick={() => router.push(`/admin/products/${product.id}`)}
-                      >
-                        <IconEye size={18} />
-                      </ActionIcon>
-                    </Tooltip>
+                    <Table.Td className={table.numeric}>
+                      <div className={table.stacked}>
+                        <span>{row.sales_data.units_90d.toLocaleString()}</span>
+                        <span className={table.sub}>
+                          <Price value={row.sales_data.total_revenue} /> all time
+                        </span>
+                      </div>
+                    </Table.Td>
 
-                    <Tooltip label="Edit Product">
-                      <ActionIcon
-                        variant="light"
-                        size="md"
-                        aria-label={`Edit ${product.name}`}
-                        onClick={() => router.push(`/admin/products/${product.id}`)}
-                      >
-                        <IconEdit size={18} />
-                      </ActionIcon>
-                    </Tooltip>
-
-                    <Menu shadow="md" width={200} position="bottom-end">
-                      <Menu.Target>
-                        <ActionIcon variant="light" size="md" aria-label={`More actions for ${product.name}`}>
-                          <IconDots size={18} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      
-                      <Menu.Dropdown>
-                        <Menu.Item
-                          leftSection={product.is_active ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                          onClick={() => toggleProductStatus(product.id, product.is_active)}
-                        >
-                          {product.is_active ? 'Unlist' : 'List'} Product
-                        </Menu.Item>
-                        <Menu.Item
-                          leftSection={<IconEdit size={16} />}
-                          onClick={() => router.push(`/admin/products/${product.id}`)}
-                        >
-                          Edit Product
-                        </Menu.Item>
-                        <Menu.Divider />
-                        <Menu.Item
-                          leftSection={<IconTrash size={16} />}
-                          color="red"
-                          onClick={() => {
-                            if (confirm('Are you sure you want to delete this product?')) {
-                              // Handle delete
+                    <Table.Td>
+                      <Menu position="bottom-end" withinPortal>
+                        <Menu.Target>
+                          <ActionIcon variant="subtle" aria-label={`Actions for ${row.name}`}>
+                            <IconDots size={16} />
+                          </ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          <Menu.Item onClick={() => router.push(`/admin/products/${row.id}`)}>
+                            Edit
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconCopy size={14} />}
+                            onClick={() => void duplicate(row)}
+                          >
+                            Duplicate
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconExternalLink size={14} />}
+                            component="a"
+                            href={`/store/${storeSlug}/product/${row.slug}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View on storefront
+                          </Menu.Item>
+                          <Menu.Divider />
+                          <Menu.Item
+                            onClick={() =>
+                              void saveField(row.id, {
+                                status: row.status === 'active' ? 'draft' : 'active'
+                              })
                             }
-                          }}
-                        >
-                          Delete Product
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
-                  </Group>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-        
-        {products.length === 0 && !loading && (
-          <Box p="xl">
-            <EmptyState
-              titleAs="p"
-              title={
-                searchQuery || statusFilter || stockFilter
-                  ? 'No products match these filters'
-                  : 'No products yet'
-              }
-              description={
-                searchQuery || statusFilter || stockFilter
-                  ? 'Clear a filter or widen the search to see more of your catalog.'
-                  : 'Products sync in from ShipStation, or you can add one by hand.'
-              }
-              action={
-                searchQuery || statusFilter || stockFilter ? (
-                  <Button
-                    variant="default"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setStatusFilter('');
-                      setStockFilter('');
-                    }}
-                  >
-                    Clear filters
-                  </Button>
-                ) : (
-                  <Button
-                    leftSection={<IconPlus size={16} />}
-                    onClick={() => router.push('/admin/products/add')}
-                  >
-                    Add your first product
-                  </Button>
-                )
-              }
+                          >
+                            {row.status === 'active' ? 'Unpublish' : 'Publish'}
+                          </Menu.Item>
+                          <Menu.Item
+                            color="red"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={() => void remove(row)}
+                          >
+                            Delete
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+
+        {totalPages > 1 && (
+          <Group justify="space-between" className={styles.footer}>
+            <Text size="sm" c="dimmed">
+              Page {params.page} of {totalPages}
+            </Text>
+            <Pagination
+              total={totalPages}
+              value={params.page}
+              onChange={(page) => update({ page })}
+              siblings={1}
+              withEdges
             />
-          </Box>
+          </Group>
         )}
       </Paper>
-      
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <Group justify="center" mt="md">
-          <Pagination
-            value={currentPage}
-            onChange={setCurrentPage}
-            total={totalPages}
-            siblings={2}
-            boundaries={1}
-          />
-        </Group>
-      )}
-      
-      {/* Advanced Filters Modal */}
-      <Modal opened={filtersOpened} onClose={closeFilters} title="Advanced Filters">
-        <Stack>
-          <TextInput
-            label="Search in name or description"
-            placeholder="Enter keywords..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.currentTarget.value)}
-          />
-          
-          <Select
-            label="Category"
-            placeholder="Select category"
-            data={categories.map(cat => ({ value: cat.id, label: cat.name }))}
-            value={categoryFilter}
-            onChange={(value) => setCategoryFilter(value || '')}
-            clearable
-          />
-          
-          <Group grow>
-            <NumberInput
-              label="Min Price"
-              placeholder="0.00"
-              min={0}
-              step={0.01}
-              leftSection="$"
-            />
-            <NumberInput
-              label="Max Price"
-              placeholder="999.99"
-              min={0}
-              step={0.01}
-              leftSection="$"
-            />
-          </Group>
-          
-          <Group grow>
-            <Select
-              label="Sort By"
-              data={[
-                { value: 'created_at', label: 'Date Created' },
-                { value: 'updated_at', label: 'Last Updated' },
-                { value: 'name', label: 'Name' },
-                { value: 'price', label: 'Price' }
-              ]}
-              value={sortBy}
-              onChange={(value) => setSortBy(value as 'name' | 'price' | 'created_at' | 'updated_at')}
-            />
-            <Select
-              label="Order"
-              data={[
-                { value: 'asc', label: 'Ascending' },
-                { value: 'desc', label: 'Descending' }
-              ]}
-              value={sortOrder}
-              onChange={(value) => setSortOrder(value as 'asc' | 'desc')}
-            />
-          </Group>
-          
-          <Group justify="flex-end" mt="md">
-            <Button variant="light" onClick={resetFilters}>
-              Reset Filters
-            </Button>
-            <Button onClick={applyFilters}>
-              Apply Filters
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-      
-      {/* Bulk Actions Modal */}
-      <Modal opened={bulkActionsOpened} onClose={closeBulkActions} title="Bulk Actions">
-        <Stack>
-          <Text size="sm" c="dimmed">
-            {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} selected
-          </Text>
-          
-          <Group>
-            {/* These carried color="green" and color="yellow". Listing a
-                product is not a success state and unlisting one is not a
-                warning — they are two ordinary bulk actions, and §2 keeps
-                green for money, stock and success. Only the destructive
-                action stays red. */}
-            <Button
-              variant="default"
-              onClick={() => handleBulkAction('list')}
-            >
-              List Products
-            </Button>
-            <Button
-              variant="default"
-              onClick={() => handleBulkAction('unlist')}
-            >
-              Unlist Products
-            </Button>
-            <Button 
-              variant="light" 
-              color="red"
-              onClick={() => handleBulkAction('delete')}
-            >
-              Delete Products
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-      
-      {/* Export Modal */}
-      <Modal opened={exportModalOpened} onClose={closeExportModal} title="Export Products">
-        <Stack>
-          <Select
-            label="Export Format"
-            data={[
-              { value: 'csv', label: 'CSV' },
-              { value: 'json', label: 'JSON' },
-              { value: 'xlsx', label: 'Excel' }
-            ]}
-            value={exportFormat}
-            onChange={(value) => setExportFormat(value as 'csv' | 'json' | 'xlsx')}
-          />
-          
-          <Group justify="flex-end" mt="md">
-            <Button variant="light" onClick={closeExportModal}>
-              Cancel
-            </Button>
-            <Button onClick={handleExport}>
-              Export
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-      
-      {/* Import Modal */}
-      <Modal opened={importModalOpened} onClose={closeImportModal} title="Import Products">
-        <Stack>
-          <FileInput
-            label="Select file"
-            placeholder="Choose CSV, JSON, or Excel file"
-            accept=".csv,.json,.xlsx"
-            value={importFile}
-            onChange={setImportFile}
-          />
-          
-          <Text size="sm" c="dimmed">
-            Supported formats: CSV, JSON, Excel (.xlsx)
-          </Text>
-          
-          <Group justify="flex-end" mt="md">
-            <Button variant="light" onClick={closeImportModal}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleImport}
-              loading={importProcessing}
-              disabled={!importFile}
-            >
-              Import
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-    </Box>
+
+      <BulkBar
+        selectedIds={[...selected]}
+        allMatching={allMatching}
+        totalMatching={total}
+        categories={categories}
+        onRun={runBulk}
+        onSelectAllMatching={() => setAllMatching(true)}
+        onClear={() => {
+          setSelected(new Set());
+          setAllMatching(false);
+        }}
+        onExport={() => void exportCsv(true)}
+      />
+
+      <ImportModal
+        opened={importOpen}
+        onClose={() => setImportOpen(false)}
+        token={token}
+        onImported={load}
+      />
+    </Stack>
   );
+
+  /**
+   * Copy a product into a new draft.
+   *
+   * Duplicating is how merchants create their second through thousandth product, and it did not
+   * exist. The copy is always a draft: a duplicate that went straight onto the storefront under a
+   * near-identical name would be a merchandising accident.
+   *
+   * @param row - The product to copy.
+   */
+  async function duplicate(row: CatalogRow) {
+    try {
+      const detail = await authFetch(`/api/admin/products/${row.id}`);
+      const source = detail.data.product;
+      const created = await authFetch('/api/admin/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...source,
+          id: undefined,
+          name: `${source.name} (copy)`,
+          sku: `${source.sku}-COPY`,
+          slug: undefined,
+          status: 'draft',
+          stock_quantity: 0
+        })
+      });
+      notifications.show({
+        title: 'Duplicated',
+        message: `Created "${created.data.product.name}" as a draft.`,
+        color: 'green'
+      });
+      router.push(`/admin/products/${created.data.product.id}`);
+    } catch (caught) {
+      notifications.show({
+        title: 'Could not duplicate',
+        message: caught instanceof Error ? caught.message : 'Something went wrong',
+        color: 'red'
+      });
+    }
+  }
+
+  /**
+   * Delete a product, or archive it when it has order history.
+   *
+   * @param row - The product to remove.
+   */
+  async function remove(row: CatalogRow) {
+    if (!window.confirm(`Delete "${row.name}"? Products with order history are archived instead.`)) {
+      return;
+    }
+    try {
+      const payload = await authFetch(`/api/admin/products/${row.id}`, { method: 'DELETE' });
+      notifications.show({
+        title: payload.data.archived ? 'Archived' : 'Deleted',
+        message: payload.data.message,
+        color: 'green',
+        autoClose: 8000
+      });
+      await load();
+    } catch (caught) {
+      notifications.show({
+        title: 'Could not delete',
+        message: caught instanceof Error ? caught.message : 'Something went wrong',
+        color: 'red'
+      });
+    }
+  }
+}
+
+/**
+ * Move focus to the same editable column one row down.
+ *
+ * Enter committing and advancing is what makes editing a column of prices feel like a spreadsheet
+ * rather than forty separate interactions.
+ *
+ * @param rowIndex - The row to move to.
+ * @param cell - Which column.
+ */
+function focusCell(rowIndex: number, cell: string): void {
+  const rows = document.querySelectorAll('tbody tr');
+  const target = rows[rowIndex]?.querySelector<HTMLElement>(`[data-cell="${cell}"] button, [data-cell="${cell}"]`);
+  target?.focus();
+}
+
+/** Turn the current view state into the filter object the bulk endpoint resolves server-side. */
+function filterForApi(params: ReturnType<typeof useCatalogParams>['params']): Record<string, unknown> {
+  const viewParams = CATALOG_VIEWS[params.view].params as Record<string, string>;
+  return {
+    search: params.search || undefined,
+    category_id: params.categoryId || undefined,
+    vendor: params.vendor || undefined,
+    stock_status: params.stockStatus || viewParams.stock_status || undefined,
+    issue: params.issue || viewParams.issue || undefined,
+    min_price: params.minPrice ? Number(params.minPrice) : undefined,
+    max_price: params.maxPrice ? Number(params.maxPrice) : undefined,
+    is_active: viewParams.is_active === undefined ? undefined : viewParams.is_active === 'true'
+  };
 }
