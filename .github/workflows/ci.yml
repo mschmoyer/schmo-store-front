@@ -133,7 +133,13 @@ jobs:
       # Build-time only. Never a real secret — every Stripe/ShipStation entry
       # point is required to degrade gracefully when unconfigured, and this job
       # is part of how we keep that true.
-      JWT_SECRET: ci-build-only-not-a-secret
+      #
+      # JWT_SECRET is the one variable that does NOT degrade: src/lib/auth/jwt-secret.ts
+      # throws at module load on a missing, short (<32 char) or known-placeholder
+      # value, because a fallback secret lets anyone forge a session for any
+      # store. So this value has to clear the length floor even though it is
+      # public — it must never be used anywhere real.
+      JWT_SECRET: ci-build-only-not-a-secret-padded-to-clear-the-length-floor
       NEXT_PUBLIC_APP_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
