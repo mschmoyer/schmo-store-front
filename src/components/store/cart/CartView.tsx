@@ -60,7 +60,7 @@ export function CartView({ storeId, storeSlug, currency }: CartViewProps) {
   const base = `/store/${storeSlug}`;
 
   // A coupon validated against an older basket must not survive a change to it.
-  const signature = lines.map((line) => `${line.productId}:${line.quantity}`).join(',');
+  const signature = lines.map((line) => `${line.key}:${line.quantity}`).join(',');
   React.useEffect(() => {
     setCoupon(null);
   }, [signature]);
@@ -115,7 +115,7 @@ export function CartView({ storeId, storeSlug, currency }: CartViewProps) {
             {lines.map((line) => {
               const href = `${base}/product/${line.slug || line.productId}`;
               return (
-                <li key={line.productId} className={styles.line}>
+                <li key={line.key} className={styles.line}>
                   <Link href={href} className={styles.lineMedia} aria-hidden="true" tabIndex={-1}>
                     {line.thumbnailUrl ? (
                       <Image src={line.thumbnailUrl} alt="" fill sizes="96px" />
@@ -126,6 +126,11 @@ export function CartView({ storeId, storeSlug, currency }: CartViewProps) {
                     <Link href={href} className={styles.lineName}>
                       {line.name}
                     </Link>
+                    {/* Without this, two sizes of one shirt are two identical
+                        rows and the shopper cannot tell which is which. */}
+                    {line.variantTitle ? (
+                      <span className={styles.lineVariant}>{line.variantTitle}</span>
+                    ) : null}
                     {line.sku ? <span className={styles.lineSku}>SKU {line.sku}</span> : null}
 
                     <div className={styles.lineControls}>
@@ -133,7 +138,7 @@ export function CartView({ storeId, storeSlug, currency }: CartViewProps) {
                         <button
                           type="button"
                           className={storeUi.qtyBtn}
-                          onClick={() => setQuantity(line.productId, line.quantity - 1)}
+                          onClick={() => setQuantity(line.key, line.quantity - 1)}
                           disabled={line.quantity <= 1}
                           aria-label={`Decrease quantity of ${line.name}`}
                         >
@@ -148,13 +153,13 @@ export function CartView({ storeId, storeSlug, currency }: CartViewProps) {
                           value={line.quantity}
                           aria-label={`Quantity of ${line.name}`}
                           onChange={(event) =>
-                            setQuantity(line.productId, Number(event.target.value))
+                            setQuantity(line.key, Number(event.target.value))
                           }
                         />
                         <button
                           type="button"
                           className={storeUi.qtyBtn}
-                          onClick={() => setQuantity(line.productId, line.quantity + 1)}
+                          onClick={() => setQuantity(line.key, line.quantity + 1)}
                           disabled={line.quantity >= line.maxQuantity}
                           aria-label={`Increase quantity of ${line.name}`}
                         >
@@ -165,7 +170,7 @@ export function CartView({ storeId, storeSlug, currency }: CartViewProps) {
                       <button
                         type="button"
                         className={styles.remove}
-                        onClick={() => removeItem(line.productId)}
+                        onClick={() => removeItem(line.key)}
                       >
                         Remove
                       </button>

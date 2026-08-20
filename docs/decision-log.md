@@ -2161,3 +2161,106 @@ Open — the capability tranche, in the order the reviewers ranked it:
       excludes it (`next.config.ts`), and the CSP elsewhere is Report-Only with `unsafe-inline`
 - [ ] The customizer preview iframe is `allow-same-origin allow-scripts`, which is no isolation.
       A separate origin for merchant-authored execution is the prerequisite for any custom scripting
+
+## Product variants, end to end (2026-08-20)
+
+The gap five of six merchant reviewers were blocked by, and the one two of them
+named as "the one thing" independently. Built in three layers, each verified
+against the live database before the next went on top.
+
+- [x] **Migration 026**: `product_options` (axis name, ordered values, per-value
+      swatch/image metadata) and `product_variants` (three flat option columns,
+      nullable price, stock, image), plus `order_items.variant_id` and a
+      denormalised `variant_title`, plus a trigger-maintained
+      `products.variant_count`
+- [x] Three axes in flat `option1..3` columns, the Shopify model. An EAV table
+      would be more general and would turn every variant lookup into a
+      join-and-pivot; three columns are indexable, and the fourth axis does not
+      occur in retail
+- [x] **`price` is NULLable and NULL means "inherit the product".** A merchant
+      selling ten sizes at one price sets it once. Copying the product price
+      onto every variant would make a price change a ten-row update a failure
+      could leave half-applied, and would stop inheriting the day somebody
+      edited the product
+- [x] `NULLS NOT DISTINCT` on the option combination. Postgres counts NULLs as
+      distinct in a unique index, so a one-axis product could otherwise hold
+      unlimited duplicate rows for the same size. Verified by trying it
+- [x] `order_items.variant_id` is `ON DELETE SET NULL` with the title alongside.
+      Deleting a discontinued variant must not delete the orders that bought it,
+      and must not be blocked forever by them either
+
+### The money path
+
+- [x] `ClientCartItem` gains `variant_id` — identity only, like `product_id`.
+      The server looks it up store-scoped and takes the price from the row it
+      finds
+- [x] **A variant must belong to this store *and* to the product on its line.**
+      Without the second check a shopper could pair a cheap variant id with an
+      expensive product and the line would price at the variant
+- [x] **A product with options and no chosen variant is rejected, not guessed.**
+      Picking one on the shopper's behalf charges for something they did not
+      select
+- [x] Cart lines key on `(product, variant)`. Collapsing two sizes onto the
+      product would check one size's stock against the other's quantity
+- [x] Variant stock comes from the variant row. The `inventory` ledger is keyed
+      on the product SKU and knows nothing about variants, so it is not
+      consulted for a variant line
+- [x] The storefront and the checkout both price through the same
+      `resolveVariant`, so the displayed price and the charged price cannot
+      drift. Two rules there are about honesty rather than correctness: a
+      variant does not inherit a product sale price if it has overridden the
+      regular price (that would invent a discount nobody set), and a sale price
+      *above* the regular price is ignored rather than rendered as a discount
+
+### The shopper's half
+
+- [x] `VariantSelector` renders swatches or pills — **decided by the data, not
+      by the axis name.** Sniffing for "Colour" would guess wrong for "Finish"
+      or "Stain", and wrong in every language but English
+- [x] A combination that does not exist is **disabled**; one that exists but is
+      sold out stays **selectable and marked**. A shopper is entitled to learn
+      that their size exists and is gone, rather than watching it vanish and
+      concluding the shop never carried it
+- [x] Availability is computed against the *other* axes only, so choosing a
+      colour never greys out the colours — the behaviour that makes a selector
+      feel broken
+- [x] State is carried in the accessible name, not in colour: a greyed pill and
+      a struck-through pill are otherwise identical to a screen reader
+- [x] Every colour, radius and size reads from the `--st-*` theme tokens, so a
+      merchant's preset drives the selector. Three tokens were invented while
+      writing the CSS (`--st-space`, `--st-text-sm`, `--st-radius-control`) and
+      corrected against `resolve.ts` — the same class of error the page-template
+      test was written to catch
+- [x] A product with no options keeps the original server-rendered markup and
+      still works with JavaScript off
+
+### One bug worth recording
+
+`readStorage` rebuilds every stored cart line field by field, and the first
+version **dropped `variant_id`**. The failure was quiet and total: the stored
+line lost its variant, the next sync asked the server to price a product that
+has options without naming one, the server correctly refused, and the client
+pruned the line — so adding anything to the cart emptied it a second later.
+Found by driving a real browser through the flow, not by any test, and the
+reason the browser pass happened before the commit.
+
+- [x] Demo seed now ships one optioned product per store: a smartwatch (case x
+      band, with one combination sold out and one never made), a mug (single
+      axis, every glaze inheriting the product price) and a kettlebell (per
+      variant pricing, since 24 kg cannot cost what 12 kg costs). Idempotent;
+      re-running the seed leaves 12 variants
+- [x] 890 tests, `tsc` clean, lint 0 errors. Verified in a browser: picking Navy
+      moves the price to $99, picking Alpine Green moves it to $74, and the two
+      land in the cart as two lines totalling $173
+
+Open:
+
+- [ ] **No admin editor for variants yet.** They can only be created through the
+      seed or the persistence layer, which means the feature is not yet usable
+      by a merchant — the next thing to build
+- [ ] The catalogue grid does not yet show a price range for an optioned
+      product, so a card reads one price for a product whose variants run
+      $54-$96. `priceRange` exists and is tested; nothing calls it
+- [ ] ShipStation sync does not create or update variants
+- [ ] Variant images are stored and honoured by the panel, but there is still no
+      media library to put one there

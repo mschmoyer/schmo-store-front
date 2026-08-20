@@ -31,6 +31,9 @@ import {
 } from '../../../_lib/present';
 import styles from '@/components/store/product/ProductDetail.module.css';
 import sectionStyles from '@/components/store/sections/Sections.module.css';
+import { VariantPurchasePanel } from '@/components/store/product/VariantPurchasePanel';
+import { resolveVariant } from '@/lib/catalog/variants';
+import { getProductOptions, getProductVariants } from '@/lib/catalog/variants.db';
 
 interface ProductPageProps {
   params: Promise<{ storeSlug: string; productId: string }>;
@@ -92,6 +95,28 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   if (!product) notFound();
 
   const related = await getRelatedProducts(product, 4);
+
+  // Options and variants. A product with neither is the overwhelming majority
+  // and takes the original, fully server-rendered path below -- which keeps
+  // working with JavaScript off.
+  const [productOptions, storedVariants] = await Promise.all([
+    getProductOptions(store.id, product.id),
+    getProductVariants(store.id, product.id),
+  ]);
+
+  // Resolved here, on the server, through the same function the checkout
+  // re-prices with. The panel renders what it is given rather than computing a
+  // price of its own, so the displayed price and the charged price come from
+  // one implementation.
+  const resolvedVariants = storedVariants.map((entry) =>
+    resolveVariant(entry, {
+      basePriceCents: Math.round(product.price * 100),
+      salePriceCents: null,
+      trackInventory: product.trackInventory,
+      allowBackorder: product.allowBackorder,
+    }),
+  );
+  const hasOptions = productOptions.length > 0 && resolvedVariants.length > 0;
 
   const state = stockState(product);
   const purchasable = isPurchasable(product);
@@ -162,27 +187,40 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                 <span className={styles.sku}>SKU {product.sku}</span>
               </div>
 
-              <div className={styles.priceRow}>
-                <StorePrice
-                  value={product.price}
-                  compareAt={product.compareAtPrice}
-                  currency={store.currency}
-                  size="lg"
-                />
-                <StockIndicator state={state} quantity={product.stockQuantity} />
-              </div>
+              {hasOptions ? null : (
+                <div className={styles.priceRow}>
+                  <StorePrice
+                    value={product.price}
+                    compareAt={product.compareAtPrice}
+                    currency={store.currency}
+                    size="lg"
+                  />
+                  <StockIndicator state={state} quantity={product.stockQuantity} />
+                </div>
+              )}
 
               {product.shortDescription ? (
                 <p className={styles.summary}>{product.shortDescription}</p>
               ) : null}
 
-              <BuyBox
-                productId={product.id}
-                productName={product.name}
-                maxQuantity={maxQuantity}
-                disabled={!purchasable}
-                cartHref={`${base}/cart`}
-              />
+              {hasOptions ? (
+                <VariantPurchasePanel
+                  productId={product.id}
+                  productName={product.name}
+                  options={productOptions}
+                  variants={resolvedVariants}
+                  currency={store.currency}
+                  cartHref={`${base}/cart`}
+                />
+              ) : (
+                <BuyBox
+                  productId={product.id}
+                  productName={product.name}
+                  maxQuantity={maxQuantity}
+                  disabled={!purchasable}
+                  cartHref={`${base}/cart`}
+                />
+              )}
 
               {weight || dimensions || product.requiresShipping ? (
                 <div className={styles.facts}>

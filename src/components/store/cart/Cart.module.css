@@ -78,6 +78,17 @@
   color: var(--st-text-muted);
 }
 
+/*
+ * The chosen options ("Alpine Green / Medium"). Weighted a step above the SKU:
+ * it is what the shopper picked and how they tell two lines of the same
+ * product apart, whereas the SKU is reference data.
+ */
+.lineVariant {
+  font-size: var(--st-small);
+  font-weight: 600;
+  color: var(--st-text);
+}
+
 .lineControls {
   display: flex;
   flex-wrap: wrap;
