@@ -12,10 +12,40 @@ interface ProductFilters {
   max_price?: number;
   in_stock?: boolean;
   tags?: string[];
-  sort_by?: 'name' | 'price' | 'created_at' | 'updated_at';
+  sort_by?: SortKey;
   sort_order?: 'asc' | 'desc';
   limit: number;
   offset: number;
+}
+
+/**
+ * Sort keys the list endpoint accepts, mapped to the real column each one
+ * sorts by.
+ *
+ * `ORDER BY` cannot be parameterised, so the sort column is interpolated into
+ * the SQL string. A `sort_by` value cast with `as` — as this route did — is a
+ * promise to the compiler that the runtime never keeps: `?sort_by=(SELECT
+ * pg_sleep(2))` reached `ORDER BY` verbatim and ran, and because an ORDER BY
+ * subquery carries no `store_id`, it read across tenants. This map is the
+ * allow-list that closes it: a key absent here can never become SQL, and the
+ * public key ("price") is decoupled from the physical column ("base_price").
+ */
+const SORT_COLUMNS = {
+  name: 'name',
+  price: 'base_price',
+  created_at: 'created_at',
+  updated_at: 'updated_at',
+} as const;
+
+type SortKey = keyof typeof SORT_COLUMNS;
+
+/**
+ * Coerce an untrusted `sort_by` value to a known key, or the default.
+ * @param value - Raw `sort_by` query parameter
+ * @returns A key that is safe to look up in `SORT_COLUMNS`
+ */
+function toSortKey(value: string | null): SortKey {
+  return value !== null && value in SORT_COLUMNS ? (value as SortKey) : 'created_at';
 }
 
 
@@ -52,8 +82,8 @@ export async function GET(request: NextRequest) {
       max_price: searchParams.get('max_price') ? parseFloat(searchParams.get('max_price')!) : undefined,
       in_stock: searchParams.get('in_stock') === 'true' ? true : undefined,
       tags: searchParams.get('tags') ? searchParams.get('tags')!.split(',') : undefined,
-      sort_by: (searchParams.get('sort_by') as 'name' | 'price' | 'created_at' | 'updated_at') || 'created_at',
-      sort_order: (searchParams.get('sort_order') as 'asc' | 'desc') || 'desc',
+      sort_by: toSortKey(searchParams.get('sort_by')),
+      sort_order: searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc',
       limit,
       offset
     };
@@ -64,7 +94,9 @@ export async function GET(request: NextRequest) {
     let paramIndex = 2;
 
     if (filters.search) {
-      whereClause += ` AND (name ILIKE $${paramIndex} OR short_description ILIKE $${paramIndex} OR long_description ILIKE $${paramIndex})`;
+      // SKU is included so a merchant managing a part-number catalogue can find
+      // a row by the identifier they actually know it by.
+      whereClause += ` AND (name ILIKE $${paramIndex} OR sku ILIKE $${paramIndex} OR short_description ILIKE $${paramIndex} OR long_description ILIKE $${paramIndex})`;
       queryParams.push(`%${filters.search}%`);
       paramIndex++;
     }
@@ -88,13 +120,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (filters.min_price !== undefined) {
-      whereClause += ` AND price >= $${paramIndex}`;
+      whereClause += ` AND base_price >= $${paramIndex}`;
       queryParams.push(filters.min_price);
       paramIndex++;
     }
 
     if (filters.max_price !== undefined) {
-      whereClause += ` AND price <= $${paramIndex}`;
+      whereClause += ` AND base_price <= $${paramIndex}`;
       queryParams.push(filters.max_price);
       paramIndex++;
     }
@@ -108,13 +140,14 @@ export async function GET(request: NextRequest) {
     const countResult = await db.query(countQuery, queryParams);
     const total = parseInt(String(countResult.rows[0]?.total || '0'));
 
-    // Products query with pagination
-    const sortBy = filters.sort_by || 'created_at';
-    const sortOrder = filters.sort_order || 'desc';
+    // Products query with pagination. Both interpolated fragments come from the
+    // allow-list above, never from the raw query string.
+    const sortColumn = SORT_COLUMNS[filters.sort_by ?? 'created_at'];
+    const sortOrder = filters.sort_order === 'asc' ? 'ASC' : 'DESC';
     const productsQuery = `
-      SELECT * FROM products 
-      ${whereClause} 
-      ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
+      SELECT * FROM products
+      ${whereClause}
+      ORDER BY ${sortColumn} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
     queryParams.push(filters.limit, filters.offset);
@@ -328,14 +361,27 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // `is_digital` and `requires_shipping` were absent from this INSERT, so a
+    // merchant creating a digital product got `success: true` and a row that
+    // silently kept the column defaults (`is_digital=false`, requires shipping).
+    // The sibling PUT route already carries the fix and a comment describing the
+    // same bug on the update path; this is the create half of it. When a product
+    // is digital it does not ship and — being a file that copies forever — it is
+    // not inventory-tracked, so both are derived here unless explicitly set.
+    const isDigital = body.is_digital === true;
+    const requiresShipping =
+      body.requires_shipping !== undefined ? body.requires_shipping === true : !isDigital;
+    const trackInventory =
+      body.track_inventory !== undefined ? body.track_inventory === true : !isDigital;
+
     const insertResult = await db.query(`
       INSERT INTO products (
-        store_id, sku, name, slug, short_description, long_description, 
+        store_id, sku, name, slug, short_description, long_description,
         base_price, sale_price, cost_price, track_inventory, stock_quantity,
         allow_backorder, weight, category_id, tags, featured_image_url, gallery_images,
-        is_active, is_featured, published_at, created_at, updated_at
+        is_active, is_featured, is_digital, requires_shipping, published_at, created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
       ) RETURNING *
     `, [
       user.storeId,
@@ -349,7 +395,7 @@ export async function POST(request: NextRequest) {
         ? Number.parseFloat(String(body.sale_price ?? body.compare_price))
         : null,
       body.cost_price ? parseFloat(body.cost_price) : null,
-      body.track_inventory ?? true,
+      trackInventory,
       body.inventory_quantity ? parseInt(body.inventory_quantity) : 0,
       body.allow_backorder ?? false,
       body.weight ? parseFloat(body.weight) : null,
@@ -359,6 +405,8 @@ export async function POST(request: NextRequest) {
       toTextArray(body.images ?? body.gallery_images),
       body.is_active ?? false,
       body.is_featured ?? false,
+      isDigital,
+      requiresShipping,
       body.is_active ? new Date() : null,
       new Date(),
       new Date()
@@ -368,7 +416,7 @@ export async function POST(request: NextRequest) {
 
     // Log initial inventory if tracking is enabled
     const initialQuantity = body.inventory_quantity ? parseInt(body.inventory_quantity) : 0;
-    if ((body.track_inventory ?? true) && initialQuantity > 0) {
+    if (trackInventory && initialQuantity > 0) {
       await db.query(`
         INSERT INTO inventory_logs (
           store_id, product_id, change_type, quantity_change, quantity_after, notes

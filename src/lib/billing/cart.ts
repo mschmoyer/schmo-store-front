@@ -6,6 +6,7 @@
  * is ignored entirely; it never reaches {@link computeCartTotals}.
  */
 
+import { renderableImageUrl } from '@/lib/images/renderable';
 import type { PoolClient } from 'pg';
 import { db } from '@/lib/database/connection';
 import { computeCartTotals, normalizeQuantity } from './cart-pricing';
@@ -331,7 +332,7 @@ export async function repriceCart(options: RepriceCartOptions): Promise<PricedCa
       unitPriceCents,
       quantity,
       lineTotalCents: unitPriceCents * quantity,
-      imageUrl: variant?.imageUrl ?? row.featured_image_url,
+      imageUrl: renderableImageUrl(variant?.imageUrl ?? row.featured_image_url),
       categoryId: row.category_id,
       requiresShipping: row.requires_shipping !== false,
     });
