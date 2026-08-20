@@ -92,7 +92,7 @@ export async function POST(
 
     for (const [key, line] of wanted) {
       const product = byId.get(line.productId);
-      if (!product || !isPurchasable(product)) {
+      if (!product) {
         removed.push(key);
         continue;
       }
@@ -101,12 +101,18 @@ export async function POST(
       let resolved: ReturnType<typeof resolveVariant> | null = null;
 
       if (productVariants.length > 0) {
+        // The product has options. Purchasability is the variant's to decide,
+        // not the product's: stock lives on the variant rows, and a product
+        // that sells only through variants usually carries product-level
+        // stock_quantity = 0. Running `isPurchasable(product)` here — as this
+        // did — dropped every variant line as "out of stock" before the variant
+        // was ever resolved, so no optioned product could be added to a cart.
         const chosen = line.variantId
           ? productVariants.find((entry) => entry.id === line.variantId)
           : undefined;
-        // The product has options. A line with no variant, or one naming a
-        // variant that has since been deleted or hidden, cannot be priced --
-        // guessing one would put something in the cart the shopper never chose.
+        // A line with no variant, or one naming a variant that has since been
+        // deleted or hidden, cannot be priced -- guessing one would put
+        // something in the cart the shopper never chose.
         if (!chosen || !chosen.isActive) {
           removed.push(key);
           continue;
@@ -117,12 +123,19 @@ export async function POST(
           trackInventory: product.trackInventory,
           allowBackorder: product.allowBackorder,
         });
-        if (!resolved.isActive) {
+        // The chosen variant is real but sold out, and the product does not
+        // allow backorders: it cannot be added.
+        if (!resolved.isActive || !resolved.inStock) {
           removed.push(key);
           continue;
         }
       } else if (line.variantId) {
         // A variant id on a product that has none: stale storage.
+        removed.push(key);
+        continue;
+      } else if (!isPurchasable(product)) {
+        // A simple product with no options: the product-level stock is the
+        // truth, and an out-of-stock one cannot be added.
         removed.push(key);
         continue;
       }

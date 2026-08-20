@@ -31,7 +31,7 @@ import {
 } from '../../../_lib/present';
 import styles from '@/components/store/product/ProductDetail.module.css';
 import sectionStyles from '@/components/store/sections/Sections.module.css';
-import { VariantPurchasePanel } from '@/components/store/product/VariantPurchasePanel';
+import { ProductMedia } from '@/components/store/product/ProductMedia';
 import { resolveVariant } from '@/lib/catalog/variants';
 import { getProductOptions, getProductVariants } from '@/lib/catalog/variants.db';
 
@@ -138,6 +138,79 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       ? Math.max(product.stockQuantity, 1)
       : 99;
 
+  // The buy column's pieces that do not depend on variant selection. They are
+  // shared between the plain-product layout and the optioned-product layout
+  // (where the gallery and panel are wired together in a client component and
+  // these are handed in as server-rendered nodes).
+  const titleBlock = (
+    <div className={styles.titleBlock}>
+      {product.categoryName ? (
+        <span className={styles.category}>{product.categoryName}</span>
+      ) : null}
+      <h1>{product.name}</h1>
+      <span className={styles.sku}>SKU {product.sku}</span>
+    </div>
+  );
+
+  const shortDescription = product.shortDescription ? (
+    <p className={styles.summary}>{product.shortDescription}</p>
+  ) : null;
+
+  const buyFacts = (
+    <>
+      {weight || dimensions || product.requiresShipping ? (
+        <div className={styles.facts}>
+          {weight ? (
+            <div className={styles.fact}>
+              <span className={styles.factLabel}>
+                <IconWeight size={15} aria-hidden="true" />
+                Shipping weight
+              </span>
+              <span className={styles.factValue}>{weight}</span>
+            </div>
+          ) : null}
+          {dimensions ? (
+            <div className={styles.fact}>
+              <span className={styles.factLabel}>
+                <IconRuler2 size={15} aria-hidden="true" />
+                Boxed size
+              </span>
+              <span className={styles.factValue}>{dimensions}</span>
+            </div>
+          ) : null}
+          <div className={styles.fact}>
+            <span className={styles.factLabel}>
+              <IconTruck size={15} aria-hidden="true" />
+              Delivery
+            </span>
+            <span className={styles.factValue}>
+              {product.requiresShipping ? 'Ships to you' : 'No shipping needed'}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {product.requiresShipping ? (
+        <Notice icon={<IconTruck size={16} />}>
+          Shipping is calculated at checkout from your delivery address — we do not estimate it
+          here, because a guess would be wrong as often as it was right.
+        </Notice>
+      ) : (
+        <Notice icon={<IconTruck size={16} />}>
+          No shipping — nothing physical ships for this item.
+        </Notice>
+      )}
+
+      {product.tags.length > 0 ? (
+        <div className={styles.tags}>
+          {product.tags.slice(0, 8).map((tag) => (
+            <Pill key={tag}>{tag}</Pill>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
     <StorefrontShell {...result.data}>
       <ProductSchema product={product} store={store} path={path} />
@@ -175,19 +248,31 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
             </span>
           </nav>
 
-          <div className={styles.layout}>
-            <ProductGallery images={images} name={product.name} sku={product.sku} />
+          {hasOptions ? (
+            <ProductMedia
+              images={images}
+              productName={product.name}
+              sku={product.sku}
+              productId={product.id}
+              options={productOptions}
+              variants={resolvedVariants}
+              currency={store.currency}
+              cartHref={`${base}/cart`}
+              header={
+                <>
+                  {titleBlock}
+                  {shortDescription}
+                </>
+              }
+              footer={buyFacts}
+            />
+          ) : (
+            <div className={styles.layout}>
+              <ProductGallery images={images} name={product.name} sku={product.sku} />
 
-            <div className={styles.buy}>
-              <div className={styles.titleBlock}>
-                {product.categoryName ? (
-                  <span className={styles.category}>{product.categoryName}</span>
-                ) : null}
-                <h1>{product.name}</h1>
-                <span className={styles.sku}>SKU {product.sku}</span>
-              </div>
+              <div className={styles.buy}>
+                {titleBlock}
 
-              {hasOptions ? null : (
                 <div className={styles.priceRow}>
                   <StorePrice
                     value={product.price}
@@ -197,22 +282,9 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                   />
                   <StockIndicator state={state} quantity={product.stockQuantity} />
                 </div>
-              )}
 
-              {product.shortDescription ? (
-                <p className={styles.summary}>{product.shortDescription}</p>
-              ) : null}
+                {shortDescription}
 
-              {hasOptions ? (
-                <VariantPurchasePanel
-                  productId={product.id}
-                  productName={product.name}
-                  options={productOptions}
-                  variants={resolvedVariants}
-                  currency={store.currency}
-                  cartHref={`${base}/cart`}
-                />
-              ) : (
                 <BuyBox
                   productId={product.id}
                   productName={product.name}
@@ -220,54 +292,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
                   disabled={!purchasable}
                   cartHref={`${base}/cart`}
                 />
-              )}
 
-              {weight || dimensions || product.requiresShipping ? (
-                <div className={styles.facts}>
-                  {weight ? (
-                    <div className={styles.fact}>
-                      <span className={styles.factLabel}>
-                        <IconWeight size={15} aria-hidden="true" />
-                        Shipping weight
-                      </span>
-                      <span className={styles.factValue}>{weight}</span>
-                    </div>
-                  ) : null}
-                  {dimensions ? (
-                    <div className={styles.fact}>
-                      <span className={styles.factLabel}>
-                        <IconRuler2 size={15} aria-hidden="true" />
-                        Boxed size
-                      </span>
-                      <span className={styles.factValue}>{dimensions}</span>
-                    </div>
-                  ) : null}
-                  <div className={styles.fact}>
-                    <span className={styles.factLabel}>
-                      <IconTruck size={15} aria-hidden="true" />
-                      Delivery
-                    </span>
-                    <span className={styles.factValue}>
-                      {product.requiresShipping ? 'Ships to you' : 'No shipping needed'}
-                    </span>
-                  </div>
-                </div>
-              ) : null}
-
-              <Notice icon={<IconTruck size={16} />}>
-                Shipping is calculated at checkout from your delivery address — we do not estimate
-                it here, because a guess would be wrong as often as it was right.
-              </Notice>
-
-              {product.tags.length > 0 ? (
-                <div className={styles.tags}>
-                  {product.tags.slice(0, 8).map((tag) => (
-                    <Pill key={tag}>{tag}</Pill>
-                  ))}
-                </div>
-              ) : null}
+                {buyFacts}
+              </div>
             </div>
-          </div>
+          )}
 
           {descriptionHtml || paragraphs.length > 0 ? (
             <div className={styles.description}>

@@ -389,6 +389,59 @@ export async function assertStockAvailable(
   const rejections: RejectedLineItem[] = [];
 
   for (const item of items) {
+    // A variant line is checked against the variant row, not the product.
+    // Product-level stock is meaningless for an optioned product (it is
+    // typically 0), so locking and re-reading `products` — as this used to for
+    // every line — would let two shoppers race for the last unit of a size and
+    // both win, because the count it inspected never moved. The variant row is
+    // where the stock lives and is what the order-write trigger decrements, so
+    // that is the row to lock.
+    if (item.variantId) {
+      const variantResult = await client.query<{
+        stock_quantity: number;
+        track_inventory: boolean;
+        allow_backorder: boolean;
+      }>(
+        // A variant's track_inventory / allow_backorder are nullable and mean
+        // "inherit the product" when null, exactly as `resolveVariant` reads
+        // them, so both are COALESCEd onto the product's value here.
+        `SELECT v.stock_quantity,
+                COALESCE(v.track_inventory, p.track_inventory) AS track_inventory,
+                COALESCE(v.allow_backorder, p.allow_backorder) AS allow_backorder
+           FROM product_variants v
+           JOIN products p ON p.id = v.product_id
+          WHERE v.id = $1 AND v.product_id = $2 AND p.store_id = $3 AND v.is_active = true
+          FOR UPDATE OF v`,
+        [item.variantId, item.productId, storeId]
+      );
+
+      const variant = variantResult.rows[0];
+      if (!variant) {
+        rejections.push({
+          requestedId: item.variantId,
+          reason: 'not_found',
+          message: `${item.variantTitle ? `${item.name} (${item.variantTitle})` : item.name} is no longer available.`,
+        });
+        continue;
+      }
+
+      if (variant.track_inventory === false || variant.allow_backorder === true) {
+        continue;
+      }
+
+      const available = variant.stock_quantity ?? 0;
+      if (item.quantity > available) {
+        const label = item.variantTitle ? `${item.name} (${item.variantTitle})` : item.name;
+        rejections.push({
+          requestedId: item.variantId,
+          reason: 'insufficient_stock',
+          message: `Only ${available} of ${label} left in stock.`,
+          available,
+        });
+      }
+      continue;
+    }
+
     const result = await client.query<{
       name: string;
       stock_quantity: number | null;

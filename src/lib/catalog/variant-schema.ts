@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 
+import { isRenderableImageUrl } from '@/lib/images/renderable';
 import { MAX_OPTION_AXES, MAX_OPTION_VALUES } from './variants';
 
 /** Hex colour for a swatch. Same shape the theme engine accepts. */
@@ -72,7 +73,19 @@ export const variantInputSchema = z
     stockQuantity: z.number().int().min(0).max(1_000_000),
     trackInventory: z.boolean().nullable(),
     allowBackorder: z.boolean().nullable(),
-    imageUrl: z.string().trim().max(2048).nullable(),
+    // A variant image ends up in `next/image`, so an unrenderable value here —
+    // `javascript:`, `data:`, a protocol-relative `//host` — is rejected on the
+    // way in rather than silently dropped at render. Empty is normalised to null.
+    imageUrl: z
+      .string()
+      .trim()
+      .max(2048)
+      .nullable()
+      .transform((value) => (value === '' ? null : value))
+      .refine(
+        (value) => value === null || isRenderableImageUrl(value),
+        'Image must be an https URL or a store path such as /uploads/green.jpg',
+      ),
     position: z.number().int().min(1).max(10_000),
     isActive: z.boolean(),
   })

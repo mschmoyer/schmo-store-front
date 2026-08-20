@@ -2703,3 +2703,89 @@ Bulk actions, export and import all posted to routes that had never existed:
       correct line numbers, category auto-created, and a bulk delete that kept
       the product with four order lines against it
 - [x] 963 tests, `tsc` clean, lint 0 errors
+
+## Round two: what the reviewers found by using it (2026-08-20)
+
+A second wave of adversarial industry reviewers (apparel, B2B distributor,
+bakery, digital foundry, home-goods photographer) and a security auditor
+exercised the running site. They found that the variant *foundation* was sound
+but not wired to the paths that make it work, plus a set of live defects. Every
+item below was reproduced against a running server before it was fixed.
+
+### Variants, made to actually work end to end
+
+- [x] **A variant product could not be added to a cart at all.** `cart/validate`
+      ran `isPurchasable(product)` — which reads `products.stock_quantity` — before
+      it looked at variants, so a product that keeps its stock on the variant rows
+      (0 at product level, which is the normal setup) had every line dropped as
+      "out of stock". Purchasability is now the variant's decision when a product
+      has options, and the product's only when it does not. Verified: a variant
+      with 5 in stock on a product with 0 product-stock now adds; an out-of-stock
+      variant and a variantless line on an optioned product are still refused
+- [x] **Variant stock never moved on a sale.** The `order_items` insert trigger
+      only ever called `update_product_stock(product_id)`, so a variant with one
+      unit sold to unlimited shoppers and two racers for the last size both won.
+      Migration 027 adds `update_variant_stock` and teaches the trigger to
+      decrement the variant row when the line names a variant. `assertStockAvailable`
+      — the `FOR UPDATE` re-check the webhook runs before writing the order — now
+      locks and re-reads the variant row, not the product. Verified: selling 3 of a
+      10-stock variant leaves it at 7 and the product untouched
+- [x] **The variant editor destroyed images and inherited settings on every save.**
+      It hard-coded `imageUrl: null` (and `salePriceCents`/`trackInventory`/
+      `allowBackorder` to null) in the full-replace PUT, so a green "20 variants
+      saved" toast silently wiped 20 images. The editor now has an image column,
+      loads and preserves the fields it does not surface controls for, and the
+      wire schema rejects an unrenderable image URL rather than storing a
+      `javascript:` value. Verified: an https image round-trips; a `javascript:`
+      one is refused with a field error
+- [x] **Picking a variant now moves the gallery to that variant's photograph.**
+      `VariantPurchasePanel` already emitted the selected image; the product page
+      never handed it to the gallery. A thin `ProductMedia` client component owns
+      the shared selection so the gallery and the panel stay in sync, while the
+      title, description and shipping facts stay server-rendered
+
+### Live defects the same reviews surfaced
+
+- [x] **SQL injection in `GET /api/admin/products`.** `sort_by` was cast with `as`
+      and interpolated into `ORDER BY`, so `?sort_by=(SELECT pg_sleep(2))` ran
+      verbatim (a 2.02s response proved it) and — an ORDER BY subquery carrying no
+      `store_id` — read across tenants. Replaced with a key→column allow-list
+- [x] **A hostile image URL 500'd the whole storefront.** A `javascript:` value in
+      an image column made `next/image` throw during server render, escaping the
+      section boundary. A single `renderableImageUrl` boundary now sanitises every
+      image the storefront queries and the cart build, so one bad row can no longer
+      take a page down. The customizer also stopped silently dropping https hero
+      images — `imageSrc` accepts https, which `next.config.ts` already allows
+- [x] **`setFulfillmentSyncStatus` threw on every call** (`$2` deduced as two
+      types), so no order could leave `pending` and the merchant-visible sync-error
+      signal never fired. Pinned `$2` to `::text`
+- [x] **The product create route dropped `is_digital`/`requires_shipping`** —
+      returning success for a write it discarded, the sibling update route's
+      already-fixed bug — and the min/max price filter referenced a non-existent
+      `price` column while admin search ignored SKU. All fixed
+- [x] **The product page's shipping notice was inverted for non-shipped items:**
+      it claimed "shipping is calculated from your address" for a product that does
+      not ship, and hid the honest "No shipping needed" exactly when it was true.
+      Now branches on `requires_shipping`
+
+### Still open, ranked by how many reviewers it blocked
+
+- [ ] **Media library / image upload** (4 reviewers). Every image field is still a
+      URL box; the "Upload Images" button mints an in-memory `blob:` URL behind a
+      green success toast and persists it. Needs a storage adapter (degrading to a
+      labelled "not configured" state), a `store_media` table, an upload route, and
+      a picker — replacing the two fake-upload handlers
+- [ ] **Fulfilment methods** (bakery: the one thing). The order model is welded to
+      "a parcel to an address" across a `NOT NULL` schema, a positional insert, an
+      API validator and the checkout form. Pickup and local delivery are
+      unrepresentable; a `fulfillment_method` on the order with a conditional
+      address is the unlock
+- [ ] **Digital delivery** (digital foundry: the one thing). Marking a product
+      digital only zeroes shipping; there is no asset table, no download route, no
+      email. A paid digital order hands the buyer an order number and nothing else
+- [ ] **Structured product attributes / spec tables and facet search** (B2B: the
+      one thing). Catalogue imports cleanly but as free text; buyers cannot filter
+      by thread size or match a mangled part number
+- [ ] **Collections CRUD** — `categories` API is GET-only, so "New In"/"Sale"
+      cannot be created; **variant CSV import**; **customer accounts / re-download**;
+      **per-variant restock from the inventory screen**

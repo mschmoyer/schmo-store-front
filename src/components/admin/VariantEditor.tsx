@@ -46,6 +46,20 @@ interface DraftVariant {
   price: string;
   stock: number;
   isActive: boolean;
+  /** Image URL or store path shown when this variant is selected; '' for none. */
+  image: string;
+  /**
+   * Fields this editor does not surface controls for but must not destroy.
+   *
+   * The PUT is a full replace, so anything omitted from the payload is wiped.
+   * These three can be set through the API, and before they were carried here a
+   * save from this screen silently reset every variant's sale price and
+   * inventory flags to "inherit". They are loaded, held, and written back
+   * unchanged.
+   */
+  salePriceCents: number | null;
+  trackInventory: boolean | null;
+  allowBackorder: boolean | null;
 }
 
 export interface VariantEditorProps {
@@ -140,6 +154,10 @@ export function VariantEditor({ productId, productPrice, productSku }: VariantEd
             price: variant.priceCents === null ? '' : (variant.priceCents / 100).toFixed(2),
             stock: variant.stockQuantity,
             isActive: variant.isActive,
+            image: variant.imageUrl ?? '',
+            salePriceCents: variant.salePriceCents,
+            trackInventory: variant.trackInventory,
+            allowBackorder: variant.allowBackorder,
           })),
         );
       } finally {
@@ -202,6 +220,10 @@ export function VariantEditor({ productId, productPrice, productSku }: VariantEd
           price: '',
           stock: 0,
           isActive: true,
+          image: '',
+          salePriceCents: null,
+          trackInventory: null,
+          allowBackorder: null,
         };
       });
     });
@@ -239,11 +261,11 @@ export function VariantEditor({ productId, productPrice, productSku }: VariantEd
         sku: variant.sku.trim(),
         options: variant.options.slice(0, usable.length),
         priceCents: toCentsOrInherit(variant.price),
-        salePriceCents: null,
+        salePriceCents: variant.salePriceCents,
         stockQuantity: Math.max(0, Math.floor(variant.stock) || 0),
-        trackInventory: null,
-        allowBackorder: null,
-        imageUrl: null,
+        trackInventory: variant.trackInventory,
+        allowBackorder: variant.allowBackorder,
+        imageUrl: variant.image.trim() === '' ? null : variant.image.trim(),
         position: index + 1,
         isActive: variant.isActive,
       })),
@@ -418,6 +440,7 @@ export function VariantEditor({ productId, productPrice, productSku }: VariantEd
                 <Table.Th>SKU</Table.Th>
                 <Table.Th style={{ width: 140 }}>Price</Table.Th>
                 <Table.Th style={{ width: 120 }}>Stock</Table.Th>
+                <Table.Th style={{ width: 220 }}>Image URL</Table.Th>
                 <Table.Th style={{ width: 110 }}>For sale</Table.Th>
                 <Table.Th style={{ width: 50 }} />
               </Table.Tr>
@@ -459,6 +482,18 @@ export function VariantEditor({ productId, productPrice, productSku }: VariantEd
                       value={variant.stock}
                       onChange={(value) => updateVariant(index, { stock: Number(value) || 0 })}
                       aria-label={`Stock for ${variant.options.filter(Boolean).join(' / ')}`}
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <TextInput
+                      size="xs"
+                      placeholder="https://… or /path.jpg"
+                      value={variant.image}
+                      error={fieldErrors[`variants.${index}.imageUrl`]?.[0]}
+                      onChange={(event) =>
+                        updateVariant(index, { image: event.currentTarget.value })
+                      }
+                      aria-label={`Image for ${variant.options.filter(Boolean).join(' / ')}`}
                     />
                   </Table.Td>
                   <Table.Td>

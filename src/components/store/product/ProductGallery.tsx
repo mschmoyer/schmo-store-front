@@ -11,6 +11,13 @@ export interface ProductGalleryProps {
   images: string[];
   name: string;
   sku: string;
+  /**
+   * Image to show on the stage, driven from outside — the photograph of the
+   * variant a shopper has selected. When it matches one of `images`, that
+   * thumbnail becomes active, so picking "Forest Green" moves the gallery to
+   * the green shirt. Null or absent leaves the shopper's own choice alone.
+   */
+  activeSrc?: string | null;
 }
 
 /**
@@ -28,9 +35,23 @@ export interface ProductGalleryProps {
  * @param props - {@link ProductGalleryProps}
  * @returns An image stage with an optional thumbnail strip
  */
-export function ProductGallery({ images, name, sku }: ProductGalleryProps) {
+export function ProductGallery({ images, name, sku, activeSrc }: ProductGalleryProps) {
   const [active, setActive] = React.useState(0);
   const thumbRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
+
+  // Follow an externally-chosen image (the selected variant's photograph) onto
+  // its thumbnail while still letting the shopper browse the strip themselves.
+  // This is React's "adjust state when a prop changes" pattern — comparing the
+  // last `activeSrc` and setting state during render, not in an effect, so
+  // there is no extra commit and the change is applied before paint.
+  const [lastSrc, setLastSrc] = React.useState(activeSrc ?? null);
+  if ((activeSrc ?? null) !== lastSrc) {
+    setLastSrc(activeSrc ?? null);
+    if (activeSrc) {
+      const index = images.indexOf(activeSrc);
+      if (index >= 0) setActive(index);
+    }
+  }
 
   const count = images.length;
   const current = images[Math.min(active, Math.max(count - 1, 0))];
