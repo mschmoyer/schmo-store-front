@@ -2631,3 +2631,75 @@ fixed it. Not a code problem, but half an hour of confusion is worth one line
 in a log.
 
 - [x] 936 tests, 23/23 e2e, `tsc` clean, lint 0 errors
+
+## Places the product was lying, and the three buttons that did nothing (2026-08-20)
+
+A batch of defects the review found where the UI states something untrue. This
+codebase has a test file called `no-confident-lies.test.ts`; these had slipped
+past it because they live in copy and in missing routes rather than in
+responses.
+
+- [x] **The hero section's help text pointed at a 404.** "A path on your store,
+      such as /products or **/collections/new**" — there is no `/collections`
+      route anywhere in the codebase, and a merchant following that instruction
+      got a broken button. Now points at `/pages/about`, which exists as of this
+      branch
+- [x] **The checkout claimed tax was calculated from the delivery address.**
+      `computeTaxCents` returns 0 for every cart and every destination —
+      deliberately, so no order is silently mis-taxed by a guess — so the Tax
+      row's "From your address" promised a calculation that never happens and
+      then resolved to $0.00. It shows the figure directly now, and the notice
+      says tax is not added at checkout
+- [x] **And that shipping was too.** Shipping is a flat rate per method with a
+      free-over threshold on the subtotal; the address is collected to ship to
+      and never enters the price. The row now reads "From your delivery speed",
+      which is what actually determines it. The stale comment above
+      `hasDestination` said the same wrong thing and is corrected
+- [x] **The account page told shoppers the shop was unfinished.** It rendered
+      "Welcome Back!", a *My Account* heading, three cards styled
+      `cursor: pointer` with no handler, and body copy reading "This is a
+      placeholder account page. In a full implementation, this would show user
+      profile information, order history…" — on a public URL, linked from the
+      header and footer of every merchant's shop, in the platform's gradients
+      rather than the merchant's theme. Replaced with a short honest page in the
+      merchant's own chrome that says accounts are not set up, explains the
+      confirmation email covers the same ground, and offers two links. It stays
+      linked rather than 404ing, because a shopper who clicks a person icon
+      deserves an answer. 258 lines of inline-styled placeholder became 80
+
+### The three dead buttons
+
+Bulk actions, export and import all posted to routes that had never existed:
+405, 404 and 404. All three now work.
+
+- [x] **Export** (`GET .../export?format=csv`) emits the same columns the
+      importer reads, so an export is a round trip: pull the catalogue, edit it
+      in a spreadsheet, push it back. A merchant who cannot get their catalogue
+      out is a merchant who will not put one in
+- [x] **Bulk** (`POST .../bulk`) lists, unlists and deletes. Every statement
+      carries `store_id`, and the response reports rows actually touched rather
+      than the request's count. Deleting checks `order_items` first and **keeps
+      products that appear in past orders**, saying so — that is somebody's
+      order history, and the foreign key would have failed the whole request
+      anyway
+- [x] **Import** (`POST .../import`, multipart) upserts on `(store_id, sku)`, so
+      re-importing an edited export updates rather than duplicates. Categories
+      named in the file are created if missing — an import that silently dropped
+      them would look like it worked and produce an uncategorised catalogue.
+      One transaction: a half-applied catalogue is worse than a rejected one
+- [x] **Bad rows are reported, not fatal.** A merchant importing 4,000 rows
+      needs to know rows 12 and 3,900 are wrong, not that "the import failed".
+      Row numbers count the header, so they match what the spreadsheet shows
+- [x] The CSV parser is hand-rolled and dependency-free; the alternatives want a
+      stream or a Node-only API. 27 tests cover what a real spreadsheet emits and
+      a naive `split(',')` gets wrong: quoted commas, embedded newlines, doubled
+      quotes, a UTF-8 BOM, CRLF. Any of those wrong shifts every later column
+      and corrupts a catalogue quietly
+- [x] Exported fields beginning `=`, `+`, `-` or `@` are prefixed with a quote.
+      Excel and Sheets execute those, so without it a merchant opening their own
+      export could run a formula somebody had put in a product name
+- [x] Verified end to end: exported 12 products, imported a file with one new
+      row, one update and three bad rows — 1 added, 1 updated, 3 skipped with
+      correct line numbers, category auto-created, and a bulk delete that kept
+      the product with four order lines against it
+- [x] 963 tests, `tsc` clean, lint 0 errors

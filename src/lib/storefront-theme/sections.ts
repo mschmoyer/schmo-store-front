@@ -60,7 +60,7 @@ const heroFields: SettingField[] = [
     label: 'Button link',
     type: 'text',
     default: '/products',
-    help: 'A path on your store, such as /products or /collections/new.',
+    help: 'A path on your store, such as /products or /pages/about.',
   },
   { id: 'secondaryLabel', label: 'Secondary button label', type: 'text', default: '' },
   { id: 'secondaryHref', label: 'Secondary button link', type: 'text', default: '' },
