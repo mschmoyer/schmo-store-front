@@ -49,15 +49,73 @@
 
 BEGIN;
 
--- A guard the rest of the file leans on ---------------------------------------------------------
+-- Two guards the rest of the file leans on --------------------------------------------------------
+
+/*
+ * `CREATE TABLE IF NOT EXISTS` says nothing about the *shape* of a table that already exists. If one
+ * of these four names is already taken — by an earlier incarnation of this work, a hand-run
+ * experiment, anything — the statement is a silent no-op and the entire definition goes with it:
+ * columns, constraints, defaults. The migration then fails on the first thing that references a
+ * piece that was never created, describing a column or constraint you can read plainly in this file.
+ * Three deploys died that way, each one statement further along than the last, because patching the
+ * symptom moves the failure rather than removing it.
+ *
+ * So a table is only accepted if it actually has the columns this migration defines. If it does not:
+ * an empty table is replaced (nothing can be lost — no code in this application has ever written
+ * these tables), and one with rows in it stops the migration with a message naming the table, what
+ * is missing and how many rows are at stake. Adopting an unknown table silently is how a schema
+ * becomes two schemas.
+ */
+CREATE OR REPLACE FUNCTION pg_temp.ensure_table(p_table TEXT, p_columns TEXT[], p_ddl TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  reg          regclass;
+  missing      TEXT[];
+  rows_present BIGINT;
+BEGIN
+  reg := to_regclass(p_table);
+
+  IF reg IS NULL THEN
+    EXECUTE p_ddl;
+    RETURN;
+  END IF;
+
+  SELECT array_agg(c) INTO missing
+    FROM unnest(p_columns) AS c
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_attribute a
+      WHERE a.attrelid = reg AND a.attname = c AND a.attnum > 0 AND NOT a.attisdropped
+   );
+
+  IF missing IS NULL THEN
+    RETURN;
+  END IF;
+
+  EXECUTE format('SELECT count(*) FROM %s', p_table) INTO rows_present;
+
+  IF rows_present > 0 THEN
+    RAISE EXCEPTION
+      'Table % already exists with a different shape (missing: %) and holds % row(s). Refusing to replace it. Inspect that table and drop it by hand if it is not yours.',
+      p_table, array_to_string(missing, ', '), rows_present
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  RAISE NOTICE 'Replacing empty table % — it existed but was missing: %',
+    p_table, array_to_string(missing, ', ');
+  EXECUTE format('DROP TABLE %s CASCADE', p_table);
+  EXECUTE p_ddl;
+END;
+$fn$;
 
 /*
  * `ALTER TABLE ... ADD CONSTRAINT` has no `IF NOT EXISTS`, and `DROP CONSTRAINT IF EXISTS` followed
  * by `ADD` would rewrite constraints that are already correct — on a large table that is a lock and
  * a table scan for no reason. Checking `pg_constraint` by name is the cheap, honest version.
  *
- * `pg_temp` rather than `public`: this is scaffolding for one migration, and a helper left behind in
- * the schema is a helper someone else eventually depends on.
+ * Both helpers live in `pg_temp` rather than `public`: this is scaffolding for one migration, and a
+ * helper left behind in the schema is a helper someone else eventually depends on.
  */
 CREATE OR REPLACE FUNCTION pg_temp.add_constraint_if_absent(
   p_table TEXT, p_name TEXT, p_definition TEXT
@@ -74,27 +132,111 @@ BEGIN
 END;
 $fn$;
 
+-- The four tables, each accepted only if it has the shape defined here --------------------------
+
+SELECT pg_temp.ensure_table(
+  'public.product_options',
+  ARRAY['id','store_id','product_id','name','position','created_at','updated_at'],
+  $ddl$
+  CREATE TABLE public.product_options (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id   UUID NOT NULL,
+    product_id UUID NOT NULL,
+    name       VARCHAR(100) NOT NULL,
+    -- Capped at three axes by a CHECK below. Beyond that the variant count stops being something a
+    -- merchant can hold in their head or manage in a grid, and every platform that allows more
+    -- regrets it.
+    position   SMALLINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+  $ddl$);
+
+SELECT pg_temp.ensure_table(
+  'public.product_option_values',
+  ARRAY['id','store_id','option_id','value','position','created_at'],
+  $ddl$
+  CREATE TABLE public.product_option_values (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id   UUID NOT NULL,
+    option_id  UUID NOT NULL,
+    value      VARCHAR(255) NOT NULL,
+    position   SMALLINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+  $ddl$);
+
+SELECT pg_temp.ensure_table(
+  'public.product_variants',
+  ARRAY['id','store_id','product_id','title','position','option_key','sku','barcode','base_price',
+        'sale_price','cost_price','weight','weight_unit','requires_shipping','hs_code',
+        'country_of_origin','track_inventory','allow_backorder','low_stock_threshold',
+        'reorder_point','shipstation_product_id','image_media_id','is_active','created_at',
+        'updated_at'],
+  $ddl$
+  CREATE TABLE public.product_variants (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id               UUID NOT NULL,
+    product_id             UUID NOT NULL,
+
+    -- Display name assembled from the option values ("Small / Red"), or "Default Title" for the
+    -- implicit single variant. Stored rather than derived because order line items snapshot it and
+    -- the storefront renders it on every card.
+    title                  VARCHAR(255) NOT NULL DEFAULT 'Default Title',
+    position               SMALLINT NOT NULL DEFAULT 1,
+
+    -- Canonical, order-independent identity of the option tuple. Empty string for a variant with no
+    -- options, which is why invariant 2's UNIQUE also caps a product at one implicit default.
+    option_key             TEXT NOT NULL DEFAULT '',
+
+    -- What the warehouse and the till care about. No value CHECKs — see the header.
+    sku                    VARCHAR(255) NOT NULL,
+    barcode                VARCHAR(255),
+    base_price             NUMERIC(10,2) NOT NULL,
+    sale_price             NUMERIC(10,2),
+    cost_price             NUMERIC(10,2),
+    weight                 NUMERIC(8,2),
+    weight_unit            VARCHAR(10) NOT NULL DEFAULT 'lb',
+    requires_shipping      BOOLEAN NOT NULL DEFAULT TRUE,
+    hs_code                VARCHAR(16),
+    country_of_origin      CHAR(2),
+
+    -- Stock policy travels with the stock-keeping unit, not with the marketing page.
+    track_inventory        BOOLEAN NOT NULL DEFAULT TRUE,
+    allow_backorder        BOOLEAN NOT NULL DEFAULT FALSE,
+    low_stock_threshold    INTEGER,
+    reorder_point          INTEGER,
+
+    shipstation_product_id VARCHAR(255),
+    image_media_id         UUID,
+    is_active              BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+  $ddl$);
+
+SELECT pg_temp.ensure_table(
+  'public.variant_option_values',
+  ARRAY['store_id','variant_id','option_id','value_id'],
+  $ddl$
+  CREATE TABLE public.variant_option_values (
+    store_id   UUID NOT NULL,
+    variant_id UUID NOT NULL,
+    option_id  UUID NOT NULL,
+    value_id   UUID NOT NULL,
+    PRIMARY KEY (variant_id, option_id)
+  )
+  $ddl$);
+
+-- Constraints, added only where absent -----------------------------------------------------------
+
 -- `product_media` predates the composite-key convention migration 026 established, so there was
 -- nothing for a variant image reference to point at that also carried the store. Adding it here
 -- rather than pointing at the bare primary key: a variant must not be able to borrow another
 -- merchant's photograph, and a constraint settles that for every code path, written and unwritten.
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_media', 'product_media_id_store_id_key', 'UNIQUE (id, store_id)');
-
--- Options ---------------------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.product_options (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id   UUID NOT NULL,
-  product_id UUID NOT NULL,
-  name       VARCHAR(100) NOT NULL,
-  -- Capped at three axes by the CHECK below. Beyond that the variant count stops being something a
-  -- merchant can hold in their head or manage in a grid, and every platform that allows more
-  -- regrets it.
-  position   SMALLINT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_options', 'product_options_store_id_fkey',
@@ -108,23 +250,6 @@ SELECT pg_temp.add_constraint_if_absent(
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_options', 'product_options_product_id_store_id_fkey',
   'FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE');
-
--- Case-insensitive: "Colour" and "colour" are one axis, not two.
-CREATE UNIQUE INDEX IF NOT EXISTS product_options_product_name_key
-  ON public.product_options (store_id, product_id, lower(name));
-CREATE UNIQUE INDEX IF NOT EXISTS product_options_product_position_key
-  ON public.product_options (store_id, product_id, position);
-
--- Option values ---------------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.product_option_values (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id   UUID NOT NULL,
-  option_id  UUID NOT NULL,
-  value      VARCHAR(255) NOT NULL,
-  position   SMALLINT NOT NULL DEFAULT 1,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_option_values', 'product_option_values_store_id_fkey',
@@ -141,52 +266,6 @@ SELECT pg_temp.add_constraint_if_absent(
   'public.product_option_values', 'product_option_values_option_id_store_id_fkey',
   'FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE');
 
-CREATE UNIQUE INDEX IF NOT EXISTS product_option_values_option_value_key
-  ON public.product_option_values (store_id, option_id, lower(value));
-
--- Variants --------------------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.product_variants (
-  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id               UUID NOT NULL,
-  product_id             UUID NOT NULL,
-
-  -- Display name assembled from the option values ("Small / Red"), or "Default Title" for the
-  -- implicit single variant. Stored rather than derived because order line items snapshot it and
-  -- the storefront renders it on every card.
-  title                  VARCHAR(255) NOT NULL DEFAULT 'Default Title',
-  position               SMALLINT NOT NULL DEFAULT 1,
-
-  -- Canonical, order-independent identity of the option tuple. Empty string for a variant with no
-  -- options, which is why invariant 2's UNIQUE also caps a product at one implicit default.
-  option_key             TEXT NOT NULL DEFAULT '',
-
-  -- What the warehouse and the till care about. No value CHECKs — see the header.
-  sku                    VARCHAR(255) NOT NULL,
-  barcode                VARCHAR(255),
-  base_price             NUMERIC(10,2) NOT NULL,
-  sale_price             NUMERIC(10,2),
-  cost_price             NUMERIC(10,2),
-  weight                 NUMERIC(8,2),
-  weight_unit            VARCHAR(10) NOT NULL DEFAULT 'lb',
-  requires_shipping      BOOLEAN NOT NULL DEFAULT TRUE,
-  hs_code                VARCHAR(16),
-  country_of_origin      CHAR(2),
-
-  -- Stock policy travels with the stock-keeping unit, not with the marketing page.
-  track_inventory        BOOLEAN NOT NULL DEFAULT TRUE,
-  allow_backorder        BOOLEAN NOT NULL DEFAULT FALSE,
-  low_stock_threshold    INTEGER,
-  reorder_point          INTEGER,
-
-  shipstation_product_id VARCHAR(255),
-  image_media_id         UUID,
-  is_active              BOOLEAN NOT NULL DEFAULT TRUE,
-
-  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_variants', 'product_variants_store_id_fkey',
   'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
@@ -195,12 +274,16 @@ SELECT pg_temp.add_constraint_if_absent(
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_variants', 'product_variants_product_id_store_id_fkey',
   'FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE');
--- The column list on SET NULL matters: `store_id` is NOT NULL, so an unqualified SET NULL would try
--- to null it too and fail at the moment a merchant deletes a photograph.
+/*
+ * No `ON DELETE` action, which means NO ACTION: deleting a photograph a variant still points at is
+ * refused. The column-list form (`SET NULL (image_media_id)`) would read better but needs
+ * PostgreSQL 15, and a migration that runs on someone else's database should not carry a version
+ * floor it cannot check. `deleteMedia` already detaches media from products inside one transaction;
+ * the step that lets a merchant attach an image to a variant extends it to do the same here.
+ */
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_variants', 'product_variants_image_media_id_store_id_fkey',
-  'FOREIGN KEY (image_media_id, store_id) REFERENCES public.product_media(id, store_id)
-     ON DELETE SET NULL (image_media_id)');
+  'FOREIGN KEY (image_media_id, store_id) REFERENCES public.product_media(id, store_id)');
 
 /*
  * Invariant 2, deferred to commit — and that is not a weakening.
@@ -215,6 +298,31 @@ SELECT pg_temp.add_constraint_if_absent(
 SELECT pg_temp.add_constraint_if_absent(
   'public.product_variants', 'product_variants_product_option_key',
   'UNIQUE (store_id, product_id, option_key) DEFERRABLE INITIALLY DEFERRED');
+
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_store_id_fkey',
+  'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_variant_id_store_id_fkey',
+  'FOREIGN KEY (variant_id, store_id) REFERENCES public.product_variants(id, store_id) ON DELETE CASCADE');
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_option_id_store_id_fkey',
+  'FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE');
+-- Invariant 3: the value must belong to the option it is filed under.
+SELECT pg_temp.add_constraint_if_absent(
+  'public.variant_option_values', 'variant_option_values_value_id_option_id_fkey',
+  'FOREIGN KEY (value_id, option_id) REFERENCES public.product_option_values(id, option_id) ON DELETE CASCADE');
+
+-- Indexes ----------------------------------------------------------------------------------------
+
+-- Case-insensitive: "Colour" and "colour" are one axis, not two.
+CREATE UNIQUE INDEX IF NOT EXISTS product_options_product_name_key
+  ON public.product_options (store_id, product_id, lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS product_options_product_position_key
+  ON public.product_options (store_id, product_id, position);
+
+CREATE UNIQUE INDEX IF NOT EXISTS product_option_values_option_value_key
+  ON public.product_option_values (store_id, option_id, lower(value));
 
 CREATE INDEX IF NOT EXISTS idx_product_variants_product
   ON public.product_variants (store_id, product_id, position);
@@ -235,30 +343,6 @@ CREATE INDEX IF NOT EXISTS idx_product_variants_sku ON public.product_variants (
 CREATE INDEX IF NOT EXISTS idx_product_variants_shipstation
   ON public.product_variants (store_id, shipstation_product_id)
   WHERE shipstation_product_id IS NOT NULL;
-
--- Which value each variant carries on each axis ---------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.variant_option_values (
-  store_id   UUID NOT NULL,
-  variant_id UUID NOT NULL,
-  option_id  UUID NOT NULL,
-  value_id   UUID NOT NULL,
-  PRIMARY KEY (variant_id, option_id)
-);
-
-SELECT pg_temp.add_constraint_if_absent(
-  'public.variant_option_values', 'variant_option_values_store_id_fkey',
-  'FOREIGN KEY (store_id) REFERENCES public.stores(id) ON DELETE CASCADE');
-SELECT pg_temp.add_constraint_if_absent(
-  'public.variant_option_values', 'variant_option_values_variant_id_store_id_fkey',
-  'FOREIGN KEY (variant_id, store_id) REFERENCES public.product_variants(id, store_id) ON DELETE CASCADE');
-SELECT pg_temp.add_constraint_if_absent(
-  'public.variant_option_values', 'variant_option_values_option_id_store_id_fkey',
-  'FOREIGN KEY (option_id, store_id) REFERENCES public.product_options(id, store_id) ON DELETE CASCADE');
--- Invariant 3: the value must belong to the option it is filed under.
-SELECT pg_temp.add_constraint_if_absent(
-  'public.variant_option_values', 'variant_option_values_value_id_option_id_fkey',
-  'FOREIGN KEY (value_id, option_id) REFERENCES public.product_option_values(id, option_id) ON DELETE CASCADE');
 
 CREATE INDEX IF NOT EXISTS idx_variant_option_values_value
   ON public.variant_option_values (store_id, value_id);

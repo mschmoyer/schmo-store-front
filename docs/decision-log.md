@@ -2879,7 +2879,25 @@ variant, and nothing reads any of it yet. That is what makes it shippable and re
 - [x] The two relaxations above stand on their own merit regardless — a mirror must not be stricter
       than what it mirrors — but the header no longer claims they were what broke the deploy
 
-- [x] **Version bumped** to 3.9.2
+- [x] **Patching the symptom moved the failure three times before I stopped doing it.** Missing
+      constraint, then missing column, each one statement further along. One cause underneath all of
+      them: the target database already holds tables by these four names with a different shape, and
+      `CREATE TABLE IF NOT EXISTS` accepts whatever is there and discards the entire definition —
+      columns, constraints, defaults. Healing constraints was the same mistake one layer down
+
+- [x] `pg_temp.ensure_table(table, columns, ddl)` now decides: a table with the columns this
+      migration defines is accepted; an empty table without them is replaced (no code in this
+      application has ever written these tables, so nothing can be lost); a table with rows stops the
+      migration naming the table, every missing column and the row count. Silently adopting an
+      unknown table is how one schema becomes two. Both branches are tested against a reproduction of
+      the failing database — the empty one heals, and the one holding a row refuses with its row
+      still there
+
+- [x] The variant image foreign key dropped `ON DELETE SET NULL (image_media_id)`. The column-list
+      form reads better but needs PostgreSQL 15, and a migration that runs on a database it cannot
+      inspect should not carry a version floor it cannot check
+
+- [x] **Version bumped** to 3.9.3
 
 Still open:
 - [ ] **Variants, steps 2–5.** Repoint the write paths (`inventory_levels`, `inventory_holds`,
