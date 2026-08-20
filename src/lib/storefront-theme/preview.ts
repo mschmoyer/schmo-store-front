@@ -21,8 +21,9 @@
  */
 
 import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { JWT_SECRET } from '@/lib/auth/jwt-secret';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+
 const ISSUER = 'rebelshops-storefront';
 const AUDIENCE = 'rebelshops-storefront-preview';
 const TOKEN_TYPE = 'storefront_preview';

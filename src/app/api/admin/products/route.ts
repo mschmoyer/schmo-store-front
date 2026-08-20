@@ -299,11 +299,39 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // Create the product directly with database query
+    // Create the product directly with database query.
+    //
+    // Three defects lived in this statement and between them meant **no
+    // merchant could ever create a product** — every POST 500'd, and the only
+    // way product rows appeared on this platform was a ShipStation sync or the
+    // demo seed:
+    //
+    //  1. `compare_price` is not a column. The table carries `sale_price`
+    //     (migration 001), so Postgres rejected the whole INSERT with
+    //     `column "compare_price" of relation "products" does not exist`.
+    //  2. The required-field check above validates `base_price`, but the values
+    //     list read `body.price` — so a request that passed validation inserted
+    //     `parseFloat(undefined)`, i.e. NaN, into a NOT NULL numeric column.
+    //     Both spellings are accepted now, with `base_price` winning.
+    //  3. `tags` and `gallery_images` are `TEXT[]`, not JSONB. `JSON.stringify`
+    //     handed them the string `["a","b"]`, which node-postgres passes as a
+    //     scalar and Postgres refuses to coerce to an array. Arrays go through
+    //     as arrays; the driver maps them to the array literal itself.
+    const toTextArray = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+
+    const basePrice = Number.parseFloat(String(body.base_price ?? body.price));
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'base_price must be a non-negative number'
+      }, { status: 400 });
+    }
+
     const insertResult = await db.query(`
       INSERT INTO products (
         store_id, sku, name, slug, short_description, long_description, 
-        base_price, compare_price, cost_price, track_inventory, stock_quantity,
+        base_price, sale_price, cost_price, track_inventory, stock_quantity,
         allow_backorder, weight, category_id, tags, featured_image_url, gallery_images,
         is_active, is_featured, published_at, created_at, updated_at
       ) VALUES (
@@ -316,17 +344,19 @@ export async function POST(request: NextRequest) {
       body.slug,
       body.short_description || null,
       body.long_description || body.description || null,
-      parseFloat(body.price),
-      body.compare_price ? parseFloat(body.compare_price) : null,
+      basePrice,
+      body.sale_price ?? body.compare_price
+        ? Number.parseFloat(String(body.sale_price ?? body.compare_price))
+        : null,
       body.cost_price ? parseFloat(body.cost_price) : null,
       body.track_inventory ?? true,
       body.inventory_quantity ? parseInt(body.inventory_quantity) : 0,
       body.allow_backorder ?? false,
       body.weight ? parseFloat(body.weight) : null,
       body.category_id || null,
-      JSON.stringify(body.tags || []),
+      toTextArray(body.tags),
       body.featured_image_url || null,
-      JSON.stringify(body.images || []),
+      toTextArray(body.images ?? body.gallery_images),
       body.is_active ?? false,
       body.is_featured ?? false,
       body.is_active ? new Date() : null,

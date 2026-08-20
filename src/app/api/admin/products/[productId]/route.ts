@@ -273,8 +273,19 @@ export async function PUT(
       updateValues.push(body.short_description);
       paramCount++;
     }
-    if (body.description !== undefined) {
-      updateFields.push(`description = $${paramCount}`);
+    // No `description` column exists on `products` — the table carries
+    // `short_description`, `long_description` and `description_html`
+    // (migration 001). This branch built `UPDATE products SET description = $n`
+    // and every request carrying the key 500'd on a Postgres "column does not
+    // exist" error. The bundled admin form never sends it, so it was latent,
+    // but any script or integration posting the obvious field name hit it.
+    //
+    // Treated as an alias for `long_description` rather than dropped: a caller
+    // sending `description` means the long copy, and silently discarding it
+    // would be the "wrote nothing, reported success" failure the working rules
+    // forbid. An explicit `long_description` in the same body still wins.
+    if (body.description !== undefined && body.long_description === undefined) {
+      updateFields.push(`long_description = $${paramCount}`);
       updateValues.push(body.description);
       paramCount++;
     }

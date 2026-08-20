@@ -1,11 +1,12 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { v4 as uuidv4 } from 'uuid';
+import { JWT_SECRET } from '@/lib/auth/jwt-secret';
 
 // The cookie name and its clearing helper live in `./session-cookie` so routes that only expire a
 // cookie need not pull `jose` in with them. Re-exported here because this is where callers look.
 export { SESSION_COOKIE, clearSessionCookie } from './session-cookie';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+
 const JWT_ISSUER = 'schmo-store';
 const JWT_AUDIENCE = 'schmo-store-users';
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds

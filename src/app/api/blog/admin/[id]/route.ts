@@ -198,3 +198,71 @@ export async function PUT(
     return NextResponse.json(response, { status: 500 });
   }
 }
+/**
+ * Delete a blog post.
+ *
+ * DELETE /api/blog/admin/[id] — session required.
+ *
+ * This handler exists because the one the admin UI used to call,
+ * `DELETE /api/blog/[id]`, took its `store_id` from a **query parameter** and
+ * only consulted the session when that parameter was absent. Supplying
+ * `?storeId=<victim>` therefore skipped authentication entirely, and store ids
+ * are publicly enumerable from `GET /api/stores/public`. Any unauthenticated
+ * caller could delete or rewrite any tenant's posts. Both write handlers on
+ * that route are gone; this is where the operation lives now.
+ *
+ * The store comes from the verified session and nowhere else, and it is in the
+ * `WHERE` clause, so a post id belonging to another tenant deletes nothing
+ * rather than being silently destroyed.
+ *
+ * @param request - Incoming request carrying the session
+ * @param params - Route params holding the post id
+ * @returns 200 on delete, 404 when the post is not this store's, 401 without a session
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await requireAuth(request);
+    const storeId = user.storeId;
+    const { id: blogId } = await params;
+
+    if (!storeId) {
+      return NextResponse.json(
+        { success: false, error: 'No store associated with user account' },
+        { status: 400 }
+      );
+    }
+
+    const result = await db.query(
+      'DELETE FROM blog_posts WHERE id = $1 AND store_id = $2 RETURNING id',
+      [blogId, storeId]
+    );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Blog post not found or unauthorized' },
+        { status: 404 }
+      );
+    }
+
+    const response: BlogAPIResponse<null> = {
+      success: true,
+      data: null,
+      message: 'Blog post deleted'
+    };
+
+    return NextResponse.json(response);
+  } catch (error) {
+    console.error('Error deleting admin blog post:', error);
+
+    const response: BlogAPIResponse<null> = {
+      success: false,
+      error: 'Failed to delete blog post',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+
+    return NextResponse.json(response, { status: 500 });
+  }
+}

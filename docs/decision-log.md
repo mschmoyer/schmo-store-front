@@ -2014,3 +2014,150 @@ Open:
       through it, but the in-form button does
 - [ ] The new `*/5` cron will drain a queue that has been accumulating; the first production run
       after deploy may process a backlog
+
+## Adversarial merchant review, and the defects it found (2026-08-20)
+
+**User request**: "We have the WORLDS BEST and most customizable e-commerce storefront builder…
+Aggressively spawn adversarial reviewers in a variety of simulated use cases and industries who
+attempt to build the best e-commerce storefront for their site using our site builder."
+
+Seven reviewers were run against the real code and a live server: an apparel boutique, a coffee
+roaster with subscriptions, a B2B industrial distributor, a solo digital-goods creator, a fine
+jewelry house, a neighbourhood bakery, and an application security audit. Each was told to verify
+every claim with `file:line` and that a confident false finding was worse than no finding.
+
+The findings converged hard. Ranked by how many independent reviewers hit them:
+
+| Gap | Reviewers |
+|---|---|
+| No product variants (size/colour/grind) | apparel, coffee, bakery, jewelry, B2B |
+| No way to create a product manually | coffee, bakery, creator |
+| No custom pages — the builder composes only the home page | all six merchants |
+| No navigation editor — the menu is hardcoded | apparel, bakery, creator, jewelry |
+| No media library / image upload | apparel, B2B, jewelry, creator |
+| No structured product attributes or specs | B2B, coffee, jewelry |
+| Shipping assumed — no pickup, local delivery, or digital-only checkout | bakery, creator |
+| No customer accounts | B2B, coffee |
+
+This entry covers the security work and the defects that made the product unusable. The
+capability gaps above are the next tranche.
+
+### Security: three real vulnerabilities, one of them critical
+
+- [x] **Unauthenticated cross-tenant blog write and delete.** `PUT`/`DELETE /api/blog/[id]` read
+      the tenant from a **query parameter** and consulted the session only when that parameter was
+      absent — so `?storeId=<any store>` skipped authentication entirely. Store ids are publicly
+      enumerable from `GET /api/stores/public` and post ids from `GET /api/blog?storeId=…`. The
+      auditor demonstrated it against a running server: a `PUT` with no credentials returned 200
+      and changed the row. Both handlers are deleted; the authenticated equivalents live in
+      `/api/blog/admin/[id]`, where a `DELETE` was added because none existed. The admin UI's
+      delete button was repointed. Verified closed: both verbs now 405, the public `GET` still 200s
+- [x] The SQL underneath was correctly store-scoped, which is exactly why it did not help.
+      **Scoping a query is only a boundary when the scope comes from something the caller cannot
+      choose.** Worth remembering the next time a route takes `storeId` from input
+- [x] **Stored XSS on every storefront blog.** `blog_posts.content` reached
+      `dangerouslySetInnerHTML` with no sanitiser anywhere in the path. `innerHTML` does not run
+      `<script>`, but it runs `<img src=x onerror=…>` and `<svg onload=…>` — and chained with the
+      finding above, any anonymous caller could plant one on any merchant's shop, same-origin with
+      `/admin`. Now sanitised through `sanitizeRichText` on **write** (`createBlogPost`,
+      `updateBlogPost`) and on **read** (`/api/blog/by-slug/…`). Both, deliberately: rows written
+      before the guard existed are already in the database, and only the read boundary protects
+      those. Verified by poisoning a row directly in Postgres and confirming the API serves it clean
+- [x] `blogUtils.sanitizeHTML` was a decoy — it had no call sites and **returned its input
+      unchanged whenever `window` was undefined**, i.e. on every server render and every write. A
+      reviewer grepping "is blog HTML sanitised?" found a function that looked like a yes. It now
+      delegates to `sanitizeRichText`
+- [x] **`JWT_SECRET` failed open to a literal published in this repository.** Both
+      `auth/session.ts` and `storefront-theme/preview.ts` did
+      `process.env.JWT_SECRET || 'your-secret-key-here'`, so any environment missing the variable
+      signed every session with a public string — forge a token for any `storeId` and the whole
+      multi-tenant boundary is gone. New `src/lib/auth/jwt-secret.ts` throws at module load on a
+      missing, short (<32 char) or known-placeholder value, including the one `.env.example` ships.
+      This is the documented second exception to "everything degrades", alongside
+      `SHIPSTATION_ENCRYPTION_KEY`: an app that cannot tell users apart must not boot
+
+### Defects that made the product unusable
+
+- [x] **No merchant could create a product.** `POST /api/admin/products` inserted into a
+      `compare_price` column that does not exist, so every request 500'd — the endpoint can never
+      have worked. Two more bugs in the same statement: the required-field check validated
+      `base_price` while the values list read `body.price` (inserting `NaN` into a NOT NULL
+      numeric), and `tags`/`gallery_images` are `TEXT[]` but were passed through `JSON.stringify`.
+      All three fixed and verified end to end against the live database
+- [x] `PUT /api/admin/products/[id]` built `UPDATE products SET description = $n` for a column that
+      does not exist. Latent, since the bundled form never sends that key, but any script posting
+      the obvious field name got an unexplained 500. Now treated as an alias for `long_description`
+
+### Custom pages and navigation
+
+Two of the three most-cited gaps, built on the observation that the section renderer was already
+generic — so pages needed a place to keep a list and a route, and no new rendering primitives.
+
+- [x] **Migration 025**: `store_pages` (one draft row and one published row per `(store, slug)`,
+      mirroring `storefront_themes`) and a `navigation` JSONB column on `storefront_themes`
+- [x] Navigation rides on the theme rather than getting its own table: it is small, there is one
+      per store, and it must publish in the same transaction as the sections that link to it —
+      publishing a menu pointing at an unpublished page is exactly the inconsistency a separate
+      table would have allowed
+- [x] `navigation.ts` — `isSafeNavHref` rejects `javascript:`, `data:` and protocol-relative
+      `//evil.example` (absolute despite looking relative, and the case a naive `startsWith('/')`
+      waves through). An unsafe href collapses to the store home rather than rendering
+- [x] **An absent menu means "derive from categories", and is distinct from an empty one.** A store
+      that has never opened the editor gets exactly the header it had before; a merchant who
+      deliberately empties their nav gets an empty nav. Collapsing the two would make turning the
+      nav off impossible
+- [x] `resetDraft` restores navigation too — restoring theme and sections while leaving an edited
+      menu in place hands the merchant a draft that is not what they asked to return to
+- [x] **Page templates** (`page-templates.ts`): About, Shipping & returns, Contact, FAQ, Size guide,
+      Campaign landing, Wholesale, Blank. Essentials first in picker order
+- [x] **The template copy is scaffolding and says so.** Every placeholder that would state a
+      *commitment* is a visible bracketed prompt — `[How many days do customers have to return an
+      item?]` — never a finished-looking sentence. A merchant in a hurry publishes unread, and an
+      invented 30-day window is a term of sale a customer can hold them to. A test enforces it:
+      no template may contain "30-day", "free returns", "next-day" or similar outside a bracket
+- [x] `page-templates.test.ts` validates every setting in every template against the section
+      registry's own schema. This caught two real bugs — `hero.layout: 'centered'` and
+      `rich-text.width: 'default'`, neither of which exists. Both typecheck cleanly, because
+      section settings are `Record<string, unknown>` by design, and both would have silently
+      rendered a fallback the merchant never chose
+- [x] 850 tests, `tsc` clean, lint 0 errors (75 pre-existing warnings). App boots clean
+
+Open — the capability tranche, in the order the reviewers ranked it:
+
+- [ ] **Product variants.** Named "the one thing" by two reviewers independently and blocking for
+      five. `product_options` / `product_variants` with per-variant price, SKU and stock, threaded
+      from the buy box through the cart to `order_items.variant_id` and the ShipStation push
+- [ ] `/admin/products/add` does not exist — the Add Product button routes to a dynamic segment
+      that 404s. The POST endpoint now works and no UI reaches it
+- [ ] The pages work is half-shipped: lib, migration and the collection API are in, but the
+      `[slug]` routes, the storefront route, the nav-aware header/footer and the editor UI are not
+- [ ] `is_digital` / `requires_shipping` are rendered as a switch in the product form and silently
+      dropped by the PUT allowlist — the "wrote nothing, reported success" failure the working
+      rules forbid, in the UI layer
+- [ ] Checkout hard-requires a US street address and 5-digit ZIP even when nothing in the cart
+      requires shipping. `cart-pricing.ts` already computes `requiresShipping` correctly; the
+      checkout UI never reads it
+- [ ] **Preset copy makes factual claims on the merchant's behalf.** Publishing Marquee puts "One
+      mill, nine years" and "We do not run sales" — a public pricing commitment — on a shop that
+      may sell Lightroom presets. `presets.ts` already disabled the announcement bar for precisely
+      this reason; the section copy did not get the same treatment
+- [ ] No media library. Every image field is a URL text box, and `featured_image_url` is missing
+      from the product PUT allowlist, so a merchant cannot set their own hero shot
+- [ ] No structured product attributes; no faceted filtering; storefront search is a triple `ILIKE`
+      that cannot match `HF0375SS` against `HF-0375-SS`. Two GIN `to_tsvector` indexes exist in
+      migration 002 and nothing has ever queried them
+- [ ] No fulfilment methods: pickup and local delivery are unrepresentable, and the shipping-address
+      columns on `orders` are `NOT NULL`
+- [ ] No customer accounts. `/store/[slug]/account` is a live, publicly-linked page that renders
+      "This is a placeholder account page" to shoppers
+- [ ] No merchant font upload; the type ramp is capped at 58.24px; every section is inside a
+      centred container so full-bleed art direction is impossible
+- [ ] Categories are read-only (`GET` only, no admin UI), single-valued per product, and there is
+      no `/collections` route — while `sections.ts:62` help text tells merchants to link to
+      `/collections/new`, which 404s
+- [ ] Dead buttons: `/api/admin/products/bulk`, `/api/admin/products/import` and
+      `/api/admin/products/export` are all called by the products page and none exist
+- [ ] No CSP on `/store/*` — the one surface rendering merchant-authored content. The header rule
+      excludes it (`next.config.ts`), and the CSP elsewhere is Report-Only with `unsafe-inline`
+- [ ] The customizer preview iframe is `allow-same-origin allow-scripts`, which is no isolation.
+      A separate origin for merchant-authored execution is the prerequisite for any custom scripting
