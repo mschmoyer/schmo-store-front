@@ -226,7 +226,15 @@ test.describe('Admin inventory', () => {
      * The assertion that matters is the pair of ledger entries, not the dialog: a transfer that
      * moved a number without recording both legs would leave the two locations unreconcilable.
      */
-    const name = `E2E Room ${Date.now().toString(36).toUpperCase()}`;
+    /*
+     * A fixed name, created only if it is not already there.
+     *
+     * A unique name per run accumulated a location every time the suite ran — and they cannot be
+     * cleaned up afterwards, because once stock has moved through a location its ledger rows
+     * reference it and deleting it is correctly refused. Eighteen "E2E Room" entries in the
+     * location picker is the suite damaging the data it runs against.
+     */
+    const name = 'E2E Location';
 
     await sortByMostStock(page);
 
@@ -234,8 +242,10 @@ test.describe('Admin inventory', () => {
     await page.getByRole('menuitem', { name: 'Locations' }).click();
     await expect(page.getByText('Stock locations')).toBeVisible();
 
-    await page.getByLabel('Add a location').fill(name);
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    if ((await page.getByText(name).count()) === 0) {
+      await page.getByLabel('Add a location').fill(name);
+      await page.getByRole('button', { name: 'Add', exact: true }).click();
+    }
     await expect(page.getByText(name).first()).toBeVisible({ timeout: 15000 });
 
     /* The default location cannot be removed, because it is where an unlocated movement goes. */
