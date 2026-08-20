@@ -10,6 +10,7 @@
  * arrived. Where a test cannot assert an outcome it does not exist.
  */
 
+const { deflateSync } = require('zlib');
 const { test, expect } = require('@playwright/test');
 const { AdminLoginPage } = require('../pages/admin/login-page');
 const { AdminProductsPage } = require('../pages/admin/products-page');
@@ -195,6 +196,67 @@ test.describe('Admin catalogue', () => {
     expect(focused).toBeTruthy();
   });
 
+  test('an uploaded image reaches the product and survives a reload', async ({ page }) => {
+    /*
+     * The upload handler never uploaded anything. It called URL.createObjectURL(file) — a blob:
+     * URL scoped to the tab that made it — wrote that string into the product's gallery, and
+     * reported "image(s) uploaded successfully". The thumbnail appeared, so it looked like it had
+     * worked; the image was gone on reload and had never resolved for any other visitor.
+     *
+     * So the assertion is not that a thumbnail appeared. It is that the URL the product now holds
+     * serves image bytes, from a fresh request, after the page that uploaded it is gone.
+     */
+    await page.click('table tbody tr:first-child a');
+    await page.waitForURL(/\/admin\/products\/[0-9a-f-]{36}/, { timeout: 20000 });
+
+    await page.getByRole('button', { name: 'Upload Images' }).click();
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles({ name: 'e2e-upload.png', mimeType: 'image/png', buffer: pngFixture() });
+    await page.getByRole('button', { name: /^Upload \(1\)/ }).click();
+
+    /* The URL is real and public — no session, no referer, a request the storefront would make. */
+    const src = await page
+      .locator('img[src^="/api/media/"]')
+      .first()
+      .getAttribute('src', { timeout: 20000 });
+    expect(src).toMatch(/^\/api\/media\/[0-9a-f-]{36}$/);
+
+    const served = await page.request.get(src);
+    expect(served.status()).toBe(200);
+    expect(served.headers()['content-type']).toBe('image/png');
+    expect((await served.body()).length).toBeGreaterThan(0);
+
+    /* And it is immutable rather than re-fetched on every storefront page view. */
+    expect(served.headers()['cache-control']).toContain('immutable');
+
+    /*
+     * Uploading stores the image; saving is what attaches it to the product. Both halves have to
+     * hold for the merchant's journey to work, and the second is where the old implementation's
+     * blob: URL was written into the database as though it meant something.
+     */
+    await page.getByRole('button', { name: 'Save Changes' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator(`img[src="${src}"]`).first()).toBeVisible({ timeout: 20000 });
+
+    /*
+     * Clean up through the delete path, which also asserts the thing that makes deletion safe:
+     * removing an image takes its URL off every product that used it, so the suite cannot leave a
+     * demo product pointing at a URL that now 404s.
+     */
+    const token = await page.evaluate(() => window.localStorage.getItem('admin_token'));
+    const deleted = await page.request.delete(`/api/admin/media/${src.split('/').pop()}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(deleted.status()).toBe(200);
+    expect((await deleted.json()).detached_from_products).toBe(1);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator(`img[src="${src}"]`)).toHaveCount(0);
+  });
+
   test('row checkboxes and action buttons are named', async ({ page }) => {
     /*
      * A screen-reader user used to hear "checkbox" twenty-five times with no way to tell which
@@ -210,3 +272,54 @@ test.describe('Admin catalogue', () => {
     await expect(firstMenu).toBeVisible();
   });
 });
+
+/**
+ * A genuine 8x8 PNG, assembled here rather than committed as a binary fixture.
+ *
+ * The upload route identifies a file from its own bytes, so a placeholder with a PNG extension
+ * would be rejected — correctly — and the test would prove nothing about the happy path.
+ *
+ * @returns The complete file.
+ */
+function pngFixture() {
+  const table = [];
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c;
+  }
+  const crc32 = (buf) => {
+    let crc = 0xffffffff;
+    for (const b of buf) crc = table[(crc ^ b) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const typed = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(typed));
+    return Buffer.concat([len, typed, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(8, 0);
+  ihdr.writeUInt32BE(8, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+
+  /* Pixel values derived from the clock so each run uploads distinct bytes. Content addressing
+   * means a fixed image would deduplicate against the previous run and this test would stop
+   * exercising the insert. */
+  const seed = Date.now() % 251;
+  const rows = Array.from({ length: 8 }, (_, y) =>
+    Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: 24 }, (_, i) => (seed + y * 8 + i) % 256))])
+  );
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(Buffer.concat(rows))),
+    chunk('IEND', Buffer.alloc(0))
+  ]);
+}

@@ -371,3 +371,43 @@ describe('the nav', () => {
     expect(source('src/app/admin/products/page.tsx')).toContain('/admin/coupons');
   });
 });
+
+describe('product images', () => {
+  const gallery = source('src/components/admin/ImageGalleryManager.tsx');
+
+  it('sends the file somewhere instead of minting a blob: URL', () => {
+    // The original handler ran URL.createObjectURL(file), pushed that string
+    // into the product's gallery, and reported "uploaded successfully". The URL
+    // was valid only inside the tab that made it, so the image was gone on
+    // reload and had never existed for any other visitor.
+    expect(gallery).not.toContain('createObjectURL');
+    expect(gallery).toContain("'/api/admin/media'");
+    expect(gallery).toContain('FormData');
+  });
+
+  it('reports success only when something was actually stored', () => {
+    const route = source('src/app/api/admin/media/route.ts');
+    expect(route).toContain('success: stored.length > 0');
+    // And names the files that did not make it rather than dropping them.
+    expect(route).toContain('failed');
+  });
+
+  it('identifies an upload by its bytes, not by the type the client claimed', () => {
+    const store = source('src/lib/media/store.ts');
+    expect(store).toContain('probeImage(bytes)');
+    // file.type is the uploader's claim; it must not reach the database.
+    expect(store).not.toMatch(/content_type[^\n]*file\.type/);
+  });
+
+  it('scopes every media read and write to a store', () => {
+    const store = source('src/lib/media/store.ts');
+    // readMedia is the single deliberate exception: the URL is rendered on a
+    // public storefront where there is no session to scope by, and the id is an
+    // unguessable v4 UUID. Every other statement carries store_id.
+    const statements = store.match(/(SELECT|UPDATE|DELETE FROM|INSERT INTO)[\s\S]*?`/g) ?? [];
+    const unscoped = statements.filter(
+      (sql) => !sql.includes('store_id') && !sql.includes('WHERE id = $1')
+    );
+    expect(unscoped).toEqual([]);
+  });
+});

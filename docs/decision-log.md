@@ -2144,8 +2144,7 @@ Open, in rough order of how much they matter:
 - [ ] **No variant model.** A product is one row with one SKU and one price. This is the largest
       structural gap against the "Shopify grade" bar, and it touches the storefront, checkout and
       the ShipStation mapping, so it is its own piece of work
-- [ ] **No media storage.** `ImageGalleryManager` mints `blob:` URLs, reports success, and the
-      images are gone on reload. Needs a real object store before the panel should exist
+- [x] ~~**No media storage.**~~ Done — see below
 - [ ] `src/lib/inventory-forecasting*.ts` is duplicated and its safety-stock maths is unsound; the
       grid deliberately does not read from it
 - [ ] Several routes outside these two still call `db.query('BEGIN')` on the pool, which does not
@@ -2155,3 +2154,50 @@ Open, in rough order of how much they matter:
       wires it by hand
 - [ ] Onboarding's import path base64-decodes what is actually an AES ciphertext
 - [ ] The retired `/admin/integrations/shipstation` page is still routable
+
+### Product images now have somewhere to live
+
+Following on from the entry above, the largest remaining lie on the Products screen.
+
+`ImageGalleryManager` has offered a file picker since it was written and has never stored a file.
+Its handler ran `URL.createObjectURL(file)` — a `blob:` URL valid only inside the tab that created
+it — pushed that string into `gallery_images`, and showed "image(s) uploaded successfully" over it.
+A comment reading *"In a real app, you would upload to your image service"* sat directly above.
+The thumbnail rendered, so the merchant believed it; the image was gone on reload and the row in
+the database pointed at a URL that had never resolved for anyone else and never would.
+
+- [x] `033_product_media.sql`: a `product_media` table, content-addressed by SHA-256, scoped to one
+      store, with dimensions read at upload so the storefront can reserve the right box
+- [x] Bytes go in Postgres rather than an object store, and the migration records why: catalogue
+      images are small and few, TOAST keeps them out of line so a listing that does not select
+      `bytes` does not read them, `DATABASE_URL` is the only variable here with no fallback, and a
+      bucket we cannot reach from a session container is a backend nobody can verify. The upgrade
+      path to an object store is a change to `src/lib/media/store.ts` and nothing else
+- [x] **A file is identified by its own bytes, never by the `Content-Type` the uploader claimed.**
+      `src/lib/media/image.ts` reads the magic number and the dimensions out of the header for
+      JPEG, PNG, GIF and WebP. Verified against a disguised SVG: uploaded as `evil.png` declaring
+      `image/png`, refused on its bytes
+- [x] **SVG is refused outright.** It is a document that can carry script, and serving one from the
+      platform's own origin would hand any merchant a stored XSS against their own admin. There is
+      no header check that makes it safe, so there is no accept path for it
+- [x] The JPEG probe walks the segment chain rather than assuming an offset, so progressive JPEGs —
+      what most phones and export pipelines emit — are read rather than rejected, and markers that
+      share the SOF range but are not frames (DHT, JPG, DAC) are not mistaken for one
+- [x] Uploads are reported per file. Twelve photographs, one of which is a PDF, gives eleven images
+      and a sentence about the twelfth — and `success` is false when nothing was stored
+- [x] Deleting an image takes its URL off every product that used it, in the same transaction.
+      Deleting only the row would leave storefronts rendering a broken image, which is worse than
+      the image the merchant meant to replace
+- [x] **`next.config.ts` had a blanket `no-store` on `/api/(.*)`.** Correct for API responses and
+      wrong for these: every storefront visitor would have re-downloaded every product image on
+      every page view. `/api/media/` is excluded and served `immutable` instead — which is honest
+      rather than optimistic, because the id is the hash of the content. It is also indexable: a
+      product photograph found in an image search is a route to the storefront
+- [x] 11 unit tests on the prober, including a truncation sweep over every prefix of a valid PNG,
+      and an e2e test that uploads, saves, reloads, fetches the URL with no session, and deletes —
+      asserting the delete detached it from the product. Suite: 850 passing
+- [x] **Version bumped** to 3.3.0
+
+Still open on media: no resizing or format conversion, so a merchant's 4 MB original is what the
+storefront serves; no library picker for reusing an image across products, though the rows are
+already shared and the endpoint lists them.

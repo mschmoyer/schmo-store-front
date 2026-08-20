@@ -239,8 +239,8 @@ prove the seed is idempotent.
 
 ### Admin Dashboard
 - **Store Management**: Create, configure, and manage stores
-- **Product Catalogue**: Saved views, inline editing, bulk actions, CSV import/export, and a
-  ShipStation sync that respects fields the merchant has edited
+- **Product Catalogue**: Saved views, inline editing, bulk actions, CSV import/export, real image
+  uploads, and a ShipStation sync that respects fields the merchant has edited
 - **Inventory**: On hand, committed, available, on order and days of cover shown apart from one
   another, backed by an append-only stock ledger with reasons
 - **Purchase Orders**: Create, manage, and receive inventory against that ledger
@@ -315,6 +315,7 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 - `/api/admin/products/bulk` - Bulk actions over a selection or a whole filter
 - `/api/admin/products/{export,import}` - CSV round trip; import previews before it writes
 - `/api/admin/categories` - Category tree: create, rename, re-nest, delete
+- `/api/admin/media` - Upload product images; `[mediaId]` for alt text and delete
 - `/api/admin/inventory` - Stock grid with the five quantities and cover
 - `/api/admin/inventory/[id]/adjust` - Post a stock movement with a required reason
 - `/api/admin/inventory/[id]/ledger` - Movement history for one product
@@ -334,6 +335,7 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 - `/api/orders` - Order creation and processing
 - `/api/blog` - Blog content management
 - `/api/stores` - Store information
+- `/api/media/[mediaId]` - Serves an uploaded product image; content-addressed and cacheable
 
 ### Payments
 - `/api/checkout/quote` - Server-authoritative pricing preview; creates nothing
@@ -367,6 +369,7 @@ The application uses PostgreSQL with a comprehensive schema including:
 - **Blog**: Content management system
 - **Coupons**: Discount and promotion system
 - **Purchase Orders**: Inventory management
+- **Product Media**: Uploaded images, content-addressed by SHA-256 and scoped to one store
 - **Sync Logs**: Integration monitoring
 
 ## Development Scripts
