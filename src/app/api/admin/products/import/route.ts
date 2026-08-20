@@ -1,0 +1,348 @@
+/**
+ * Catalogue CSV import.
+ *
+ * The admin has had an "Import Products" modal with a file picker since the catalogue page was
+ * written, pointed at a route that did not exist.
+ *
+ * A blind bulk import is a catastrophe generator, so this one is built around two rules.
+ *
+ * **Dry run first.** `?dry_run=true` validates the whole file and reports exactly what would happen
+ * — how many products created, how many updated, which rows would fail and why — without writing
+ * anything. The admin runs this before it runs the real thing, so a merchant sees the consequences
+ * before committing to them rather than discovering them afterwards.
+ *
+ * **A blank cell means "leave this alone".** Not "set it to empty". A merchant who exports 800
+ * products, edits one column and re-imports must not have every other field wiped because their
+ * spreadsheet dropped a column. Emptying a field deliberately is what the edit form is for.
+ *
+ * A row that fails does not fail the file. Each row's outcome is reported with its line number, so
+ * the merchant fixes eight rows rather than being told "import failed".
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/database/connection';
+import { requireAuth } from '@/lib/auth/session';
+import { adminErrorResponse, AdminApiError } from '@/lib/api/adminError';
+import { columnForHeader, parseCell, parseCsv, type CsvColumn } from '@/lib/catalog/csv';
+import { uniqueProductSlug, recordSlugChange, slugify } from '@/lib/catalog/slug';
+
+/** How many rows one file may carry. Beyond this the merchant should split the file. */
+const MAX_ROWS = 10_000;
+
+/** Largest upload accepted, before parsing. */
+const MAX_BYTES = 20 * 1024 * 1024;
+
+/** What happened to one row. */
+interface RowOutcome {
+  line: number;
+  sku: string;
+  handle: string;
+  action: 'create' | 'update' | 'skip' | 'error';
+  message?: string;
+  fields?: string[];
+}
+
+/**
+ * POST /api/admin/products/import
+ *
+ * Import or update products from a CSV.
+ *
+ * Accepts either a `multipart/form-data` upload with a `file` field, or a raw CSV body. Pass
+ * `?dry_run=true` to validate without writing.
+ *
+ * @param request - The incoming request.
+ * @returns A per-row report and a summary.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth(request);
+    if (!user.storeId) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
+    }
+    const storeId = user.storeId;
+
+    const dryRun = new URL(request.url).searchParams.get('dry_run') === 'true';
+
+    const text = await readUpload(request);
+    const rows = parseCsv(text);
+
+    if (rows.length < 2) {
+      throw new AdminApiError('That file has a header row but no products in it', 400);
+    }
+    if (rows.length - 1 > MAX_ROWS) {
+      throw new AdminApiError(
+        `That file has ${rows.length - 1} rows. Split it into files of ${MAX_ROWS} or fewer.`,
+        413
+      );
+    }
+
+    /*
+     * Map the file's headers onto columns once, up front.
+     *
+     * Unrecognised headers are reported rather than ignored: a merchant whose "Price" column is
+     * spelled in a way this importer does not know needs to be told, not left to discover that
+     * their prices did not change.
+     */
+    const headers = rows[0];
+    const mapping: Array<{ index: number; column: CsvColumn }> = [];
+    const unrecognised: string[] = [];
+
+    headers.forEach((header, index) => {
+      if (!header.trim()) return;
+      const column = columnForHeader(header);
+      if (!column) {
+        unrecognised.push(header.trim());
+      } else if (!column.readOnly) {
+        mapping.push({ index, column });
+      }
+    });
+
+    const identity = mapping.find((m) => m.column.column === 'sku');
+    const handleColumn = mapping.find((m) => m.column.column === 'slug');
+
+    if (!identity && !handleColumn) {
+      throw new AdminApiError(
+        'That file needs a "Variant SKU" or "Handle" column so each row can be matched to a product',
+        400
+      );
+    }
+
+    if (mapping.length === (identity ? 1 : 0) + (handleColumn ? 1 : 0)) {
+      throw new AdminApiError(
+        `Nothing in that file can be imported. Recognised no data columns${
+          unrecognised.length ? `; unrecognised: ${unrecognised.join(', ')}` : ''
+        }.`,
+        400
+      );
+    }
+
+    const outcomes: RowOutcome[] = [];
+
+    /*
+     * The whole import runs in one transaction, and a dry run rolls it back.
+     *
+     * This is what makes the preview trustworthy: it exercises the real inserts, the real
+     * constraints and the real uniqueness checks, rather than a simulation that could disagree with
+     * what actually happens. A row that would violate a constraint fails in the dry run too.
+     */
+    await db.transaction(async (tx) => {
+      for (let i = 1; i < rows.length; i++) {
+        const line = i + 1;
+        const cells = rows[i];
+
+        const sku = identity ? (cells[identity.index] ?? '').trim() : '';
+        const handle = handleColumn ? (cells[handleColumn.index] ?? '').trim() : '';
+
+        if (!sku && !handle) {
+          outcomes.push({ line, sku, handle, action: 'skip', message: 'No SKU or handle' });
+          continue;
+        }
+
+        try {
+          const existing = await tx.query<{ id: string; slug: string; sku: string }>(
+            `SELECT id, slug, sku FROM products
+              WHERE store_id = $1 AND ($2 <> '' AND sku = $2 OR $3 <> '' AND slug = $3)
+              LIMIT 1`,
+            [storeId, sku, handle]
+          );
+
+          const values: unknown[] = [];
+          const assignments: string[] = [];
+          const applied: string[] = [];
+          const locks: string[] = [];
+
+          for (const { index, column } of mapping) {
+            if (column.column === 'slug' || column.column === 'sku') continue;
+
+            const parsed = parseCell(cells[index] ?? '', column.type);
+            if (parsed === undefined) continue;
+
+            values.push(parsed);
+            assignments.push(`${column.column} = $${values.length}`);
+            applied.push(column.column!);
+            /* An imported value is a merchant's decision as much as a typed one, so it claims the
+             * field from ShipStation the same way an edit does. */
+            if (['name', 'short_description', 'base_price', 'featured_image_url', 'status'].includes(column.column!)) {
+              locks.push(column.column!);
+            }
+          }
+
+          if (existing.rows.length > 0) {
+            const product = existing.rows[0];
+
+            if (assignments.length === 0) {
+              outcomes.push({ line, sku, handle, action: 'skip', message: 'No changed fields' });
+              continue;
+            }
+
+            /* A handle change on an existing product retires the old slug so links keep working. */
+            let newSlug: string | null = null;
+            if (handle && handle !== product.slug) {
+              newSlug = await uniqueProductSlug(storeId, handle, product.id);
+              values.push(newSlug);
+              assignments.push(`slug = $${values.length}`);
+              applied.push('slug');
+            }
+
+            values.push(product.id, storeId);
+            await tx.query(
+              `UPDATE products SET ${assignments.join(', ')}, updated_at = NOW()
+                WHERE id = $${values.length - 1} AND store_id = $${values.length}`,
+              values
+            );
+
+            if (locks.length > 0) {
+              await tx.query('SELECT lock_product_fields($1, $2, $3::text[])', [
+                storeId,
+                product.id,
+                locks
+              ]);
+            }
+
+            if (newSlug) {
+              await recordSlugChange(storeId, product.id, product.slug, newSlug);
+            }
+
+            outcomes.push({ line, sku: product.sku, handle, action: 'update', fields: applied });
+            continue;
+          }
+
+          /* Creating. A new product needs an identity and a name; everything else may be filled in
+           * later, which is what draft status is for. */
+          const nameIndex = mapping.find((m) => m.column.column === 'name')?.index;
+          const name = nameIndex !== undefined ? (cells[nameIndex] ?? '').trim() : '';
+          if (!name) {
+            outcomes.push({
+              line,
+              sku,
+              handle,
+              action: 'error',
+              message: 'New products need a Title'
+            });
+            continue;
+          }
+
+          const newSku = sku || `${slugify(name).toUpperCase().slice(0, 20) || 'SKU'}-${line}`;
+          const slug = await uniqueProductSlug(storeId, handle || name);
+
+          const columns = ['store_id', 'sku', 'slug', 'field_locks'];
+          const insertValues: unknown[] = [storeId, newSku, slug, locks];
+          for (const { index, column } of mapping) {
+            if (column.column === 'slug' || column.column === 'sku') continue;
+            const parsed = parseCell(cells[index] ?? '', column.type);
+            if (parsed === undefined) continue;
+            columns.push(column.column!);
+            insertValues.push(parsed);
+          }
+
+          /* `base_price` is NOT NULL, so a row that did not carry a price still needs one. Zero and
+           * draft, rather than a guess: an unpriced product must not go on sale by accident. */
+          if (!columns.includes('base_price')) {
+            columns.push('base_price');
+            insertValues.push(0);
+          }
+          if (!columns.includes('status')) {
+            columns.push('status');
+            insertValues.push('draft');
+          }
+
+          await tx.query(
+            `INSERT INTO products (${columns.join(', ')})
+             VALUES (${insertValues.map((_, n) => `$${n + 1}`).join(', ')})`,
+            insertValues
+          );
+
+          outcomes.push({ line, sku: newSku, handle: slug, action: 'create', fields: columns });
+        } catch (error) {
+          /*
+           * One bad row does not fail the file. The message is the database's own where it is
+           * useful to a merchant — "duplicate key" on a SKU tells them exactly what to fix — and
+           * generic where it is not.
+           */
+          const message =
+            error instanceof AdminApiError
+              ? error.message
+              : error instanceof Error && /duplicate key/i.test(error.message)
+                ? 'A different product already uses that SKU or handle'
+                : error instanceof Error
+                  ? error.message.split('\n')[0].slice(0, 200)
+                  : 'Could not import this row';
+          outcomes.push({ line, sku, handle, action: 'error', message });
+        }
+      }
+
+      if (dryRun) {
+        /* Everything above ran against the real schema; none of it is kept. */
+        throw new DryRunComplete();
+      }
+    }).catch((error) => {
+      if (!(error instanceof DryRunComplete)) throw error;
+    });
+
+    const summary = {
+      rows: rows.length - 1,
+      created: outcomes.filter((o) => o.action === 'create').length,
+      updated: outcomes.filter((o) => o.action === 'update').length,
+      skipped: outcomes.filter((o) => o.action === 'skip').length,
+      failed: outcomes.filter((o) => o.action === 'error').length
+    };
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        dry_run: dryRun,
+        summary,
+        unrecognised_columns: unrecognised,
+        /* Errors first: they are the rows the merchant has to act on. */
+        results: [
+          ...outcomes.filter((o) => o.action === 'error'),
+          ...outcomes.filter((o) => o.action !== 'error')
+        ].slice(0, 500),
+        message: dryRun
+          ? `Preview only — nothing was saved. ${summary.created} would be created, ${summary.updated} updated${
+              summary.failed ? `, ${summary.failed} would fail` : ''
+            }.`
+          : `${summary.created} created, ${summary.updated} updated${
+              summary.failed ? `, ${summary.failed} failed` : ''
+            }.`
+      }
+    });
+  } catch (error) {
+    return adminErrorResponse(error, 'products.import');
+  }
+}
+
+/** Thrown to roll a dry run back once every row has been exercised. */
+class DryRunComplete extends Error {}
+
+/**
+ * Read the uploaded CSV, from either a form upload or a raw body.
+ *
+ * @param request - The incoming request.
+ * @returns The file's text.
+ * @throws AdminApiError when nothing usable was sent.
+ */
+async function readUpload(request: NextRequest): Promise<string> {
+  const contentType = request.headers.get('content-type') ?? '';
+
+  if (contentType.includes('multipart/form-data')) {
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      throw new AdminApiError('Choose a CSV file to import', 400);
+    }
+    if (file.size > MAX_BYTES) {
+      throw new AdminApiError('That file is larger than 20MB. Split it and import in parts.', 413);
+    }
+    return file.text();
+  }
+
+  const body = await request.text();
+  if (!body.trim()) {
+    throw new AdminApiError('Choose a CSV file to import', 400);
+  }
+  if (body.length > MAX_BYTES) {
+    throw new AdminApiError('That file is larger than 20MB. Split it and import in parts.', 413);
+  }
+  return body;
+}
