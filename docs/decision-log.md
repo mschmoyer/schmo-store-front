@@ -2789,3 +2789,43 @@ item below was reproduced against a running server before it was fixed.
 - [ ] **Collections CRUD** — `categories` API is GET-only, so "New In"/"Sale"
       cannot be created; **variant CSV import**; **customer accounts / re-download**;
       **per-variant restock from the inventory screen**
+
+## AI home-page builder: prompt in, a validated draft out (2026-08-20)
+
+The platform's goal named "using AI to help craft your site — prompt + fix up"
+as a headline feature. This is the prompt half, built so the fix-up half stays
+the merchant's: a merchant describes their shop in a sentence, a model proposes
+a home-page composition, and the result is saved as a **draft** they review in
+the customizer before anything goes live.
+
+- [x] **The model is never trusted.** Its output runs through `composeSections`
+      (`src/lib/storefront-theme/compose.ts`), which drops section types this
+      renderer cannot draw, coerces every setting against the registry schema via
+      `coerceSectionSettings`, rejects a `javascript:` image, honours per-type
+      instance caps, and clamps the page to one screen. What comes back satisfies
+      the same contract a hand-built page does — the goal's "LIMITED SECURE"
+      requirement made concrete. 10 tests pin the accept/reject decisions
+- [x] **`coerceSectionSettings`** was the load-bearing piece and is independently
+      tested (22 cases). `Section['settings']` is `Record<string, unknown>`, so
+      nothing typed catches `hero.layout: 'centered'` — a layout that does not
+      exist, which a model produces routinely and which shipped once in a
+      hand-written template. This is the one validator both the AI composer and,
+      later, any section import will share
+- [x] **It degrades, it does not crash.** `POST /api/admin/ai/compose-page`
+      returns a labelled 503 when `OPENAI_API_KEY` is unset — the same rule every
+      other integration follows, and what keeps CI's keyless build green. Verified
+      live: empty prompt 400, unconfigured 503 with a "not configured" message, no
+      auth 401
+- [x] **Rate limited and input capped.** A paid model call on a merchant's behalf
+      is a cost and a DoS surface. The prompt is capped at 2,000 characters and the
+      caller is limited per store (`src/lib/ai/rate-limit.ts`, time injected for
+      deterministic tests). The honest limitation — the limiter is per-instance —
+      is documented in the module rather than hidden
+- [x] **Saved as a draft, never published.** The route calls `saveDraft`, so the
+      AI proposes and the merchant disposes; the UI drops them into the customizer
+      to review and publish. Reachable from the AI admin page as "AI Home Page
+      Builder"
+- [ ] Follow-ups: a "regenerate this section" action (fix-up at section
+      granularity), and feeding the store's real categories and products into the
+      prompt so featured-collection and collection-grid sections point at things
+      that exist
