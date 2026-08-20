@@ -243,6 +243,8 @@ prove the seed is idempotent.
   uploads, and a ShipStation sync that respects fields the merchant has edited
 - **Inventory**: On hand, committed, available, on order and days of cover shown apart from one
   another, backed by an append-only stock ledger with reasons
+- **Multiple locations**: Stock counted per location, with transfers recorded as a paired movement
+- **Quarantine**: Units held back from sale without leaving the shelf
 - **Purchase Orders**: Create, manage, and receive inventory against that ledger
 - **Analytics**: Store performance and visitor tracking
 - **Coupon System**: Create and manage discount codes
@@ -319,6 +321,9 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 - `/api/admin/inventory` - Stock grid with the five quantities and cover
 - `/api/admin/inventory/[id]/adjust` - Post a stock movement with a required reason
 - `/api/admin/inventory/[id]/ledger` - Movement history for one product
+- `/api/admin/inventory/[id]/transfer` - Move stock between locations, as a paired ledger entry
+- `/api/admin/inventory/[id]/hold` - Hold units back from sale, or return them to it
+- `/api/admin/inventory/locations` - The places a store keeps stock; `[locationId]` to edit or close
 - `/api/admin/inventory/export` - CSV of the current view
 - `/api/admin/purchase-orders` - Purchase order management; `[id]/receive` posts receipts to the
   ledger, `[id]/pdf` renders the order document
@@ -362,7 +367,7 @@ The application uses PostgreSQL with a comprehensive schema including:
 - **Products**: Product information, pricing, and metadata
 - **Inventory**: `inventory_locations` and `inventory_levels` (with `available` as a generated
   column), plus the append-only `inventory_transactions` ledger every stock change is posted
-  through
+  through, and `inventory_holds` for units present but not sellable
 - **Orders**: Order processing and tracking
 - **Stores**: Multi-tenant store configuration
 - **Users**: Authentication and authorization

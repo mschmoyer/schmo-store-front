@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Title,
@@ -120,6 +120,8 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
   // State management
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  /* Identifies one delivery across retries, so a double-click cannot book it twice. */
+  const receiptKeyRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -308,8 +310,8 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     const itemsToReceive = Object.entries(receivingData)
       .filter(([, quantity]) => quantity > 0)
       .map(([itemId, quantity]) => ({
-        item_id: itemId,
-        received_quantity: quantity
+        purchase_order_item_id: itemId,
+        quantity_received: quantity
       }));
     
     if (itemsToReceive.length === 0) {
@@ -326,33 +328,57 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}`, {
-        method: 'PATCH',
+      /*
+       * The real receive endpoint, which posts to the stock ledger.
+       *
+       * This posted `action: 'receive_items'` to the PATCH handler, which referenced a column named
+       * `received_quantity` that does not exist — the column is `quantity_received` — so the button
+       * returned 500 for every shape of request, including an empty one. That dead path also wrote
+       * `stock_quantity` directly, outside the ledger, and ran `BEGIN` on the pool rather than on a
+       * checked-out client. It has been deleted; this is the endpoint the receiving modal already
+       * used.
+       */
+      if (!receiptKeyRef.current) {
+        receiptKeyRef.current = `${purchaseOrder.id}-${crypto.randomUUID()}`;
+      }
+
+      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}/receive`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({
-          action: 'receive_items',
-          items: itemsToReceive
+          items: itemsToReceive,
+          idempotency_key: receiptKeyRef.current
         })
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to receive items');
-      }
-      
+
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to receive items');
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || `Could not receive the delivery (${response.status})`);
       }
       
+      /* The endpoint's own sentence, which says whether the order is now complete and how many
+       * units are still outstanding. */
       notifications.show({
-        title: 'Success',
-        message: 'Items received and inventory updated',
+        title: result.replayed ? 'Already recorded' : 'Received',
+        message: result.message ?? result.data?.message ?? 'The delivery was recorded.',
         color: 'green'
       });
+
+      const warnings: string[] = result.data?.warnings ?? [];
+      if (warnings.length > 0) {
+        notifications.show({
+          title: 'Worth checking',
+          message: warnings.join('. '),
+          color: 'yellow',
+          autoClose: 12000
+        });
+      }
+
+      receiptKeyRef.current = null;
       
       // Reset receiving data
       const resetReceivingData: Record<string, number> = {};
@@ -368,8 +394,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     } catch (err) {
       console.error('Error receiving items:', err);
       notifications.show({
-        title: 'Error',
-        message: 'Failed to receive items',
+        title: 'Could not receive',
+        /* The reason, not a generic sentence: an over-receipt refusal and a lost connection need
+         * different responses from the merchant. */
+        message: err instanceof Error ? err.message : 'Failed to receive items',
         color: 'red'
       });
     }

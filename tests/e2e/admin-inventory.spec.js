@@ -32,6 +32,35 @@ async function viewCount(page, label) {
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * Put a row with stock in it at the top.
+ *
+ * The default sort is by name, and the first product alphabetically may well have nothing on the
+ * shelf — transferring or holding zero units is correctly refused, so a test that reaches for row
+ * zero is testing the refusal. Sorting by on hand, descending, makes "the first row" mean "a row
+ * this operation can actually be performed on".
+ */
+async function sortByMostStock(page) {
+  const heading = page.getByRole('button', { name: /^On hand/ }).first();
+
+  /* Clicked until the header reports descending. Asserting the state rather than counting clicks:
+   * the first click on a column that is not the active sort sets ascending, and a fixed number of
+   * clicks would depend on where the page happened to start. */
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const sorted = await page
+      .locator('th[aria-sort="descending"]')
+      .filter({ hasText: 'On hand' })
+      .count();
+    if (sorted > 0) break;
+    await heading.click();
+    await page.waitForTimeout(800);
+  }
+
+  await expect(
+    page.locator('th[aria-sort="descending"]').filter({ hasText: 'On hand' })
+  ).toHaveCount(1);
+}
+
 /** Read one row's numeric cell by column position. */
 async function cellValue(page, rowIndex, columnIndex) {
   const text = await page
@@ -97,7 +126,10 @@ test.describe('Admin inventory', () => {
     await page.getByRole('textbox', { name: 'How many units' }).fill('2');
 
     /* The consequence is stated in words before it happens, not encoded in a colour. */
-    await expect(page.getByText(/On hand becomes/)).toBeVisible();
+    /* "On hand at Back Room becomes 12" in a multi-location store, "On hand becomes 12" in a
+     * single-location one — the location is named only when there is more than one, because it is
+     * ambiguous only then. */
+    await expect(page.getByText(/On hand.*becomes/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Record adjustment' }).click();
     await page.waitForTimeout(2000);
@@ -182,6 +214,107 @@ test.describe('Admin inventory', () => {
     await page.getByRole('button', { name: 'More' }).first().click();
     await page.getByRole('menuitem', { name: 'Purchase orders' }).click();
     await page.waitForURL(/\/admin\/purchase-orders/);
+  });
+
+  test('a second location can be created, and stock moved into it', async ({ page }) => {
+    /*
+     * Multi-location was presented throughout the product and implemented nowhere: the table, the
+     * levels, the grid filter and the ledger's location column all existed, `transferStock` was
+     * exported and never called, and nothing could create a second row — so every store had exactly
+     * the one its trigger made and the adjustment dialog's location picker had one option.
+     *
+     * The assertion that matters is the pair of ledger entries, not the dialog: a transfer that
+     * moved a number without recording both legs would leave the two locations unreconcilable.
+     */
+    const name = `E2E Room ${Date.now().toString(36).toUpperCase()}`;
+
+    await sortByMostStock(page);
+
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: 'Locations' }).click();
+    await expect(page.getByText('Stock locations')).toBeVisible();
+
+    await page.getByLabel('Add a location').fill(name);
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByText(name).first()).toBeVisible({ timeout: 15000 });
+
+    /* The default location cannot be removed, because it is where an unlocated movement goes. */
+    await expect(page.getByRole('button', { name: /Remove Main/ })).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+
+    const onHandBefore = await cellValue(page, 0, 1);
+
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Move between locations' }).click();
+    await expect(page.getByText('Move stock between locations')).toBeVisible();
+
+    await page.getByRole('textbox', { name: 'From', exact: true }).click();
+    await page.getByRole('option').first().click();
+    await page.getByRole('textbox', { name: 'To', exact: true }).click();
+    await page.getByRole('option', { name: new RegExp(name) }).click();
+    await page.getByRole('textbox', { name: 'How many units', exact: true }).fill('3');
+    await page.getByRole('button', { name: 'Move stock' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+
+    /* The store-wide total is unchanged: a transfer moves stock, it does not create or destroy it.
+     * That is the property the two-legged ledger entry exists to guarantee. */
+    expect(await cellValue(page, 0, 1)).toBe(onHandBefore);
+
+    /* And both legs are in the history. */
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Stock history' }).click();
+    /* Both legs are in the history — the badge and the per-reason summary — which is exactly what
+     * makes a transfer readable from either end. */
+    await expect(page.getByText('Transferred out').first()).toBeVisible({ timeout: 15000 });
+  });
+
+  test('stock can be held back from sale without leaving the shelf', async ({ page }) => {
+    /*
+     * `inventory_levels.unavailable` was in the grid, the CSV, the detail page and a statistics
+     * tile, and no code path ever wrote it — so "present but not saleable" was displayed throughout
+     * and could not happen, and this view could never match a row.
+     *
+     * The distinction is the whole point, so it is what this asserts: on hand unchanged, available
+     * down.
+     */
+    await sortByMostStock(page);
+
+    const onHandBefore = await cellValue(page, 0, 1);
+    const availableBefore = await cellValue(page, 0, 3);
+    expect(onHandBefore).toBeGreaterThan(2);
+
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
+    await page.getByRole('radio', { name: 'Hold stock back' }).click();
+
+    await page.getByRole('textbox', { name: 'How many units' }).fill('2');
+    /* The label reads "Note (required)" for a quarantine, which is the point — somebody eventually
+     * has to know what these units are waiting on. */
+    await page.getByRole('textbox', { name: /^Note/ }).fill('E2E: awaiting inspection');
+    await expect(page.getByText(/stay on the shelf but stop being sellable/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+
+    expect(await cellValue(page, 0, 1)).toBe(onHandBefore);
+    expect(await cellValue(page, 0, 3)).toBe(availableBefore - 2);
+
+    /* Put them back, so the suite can run twice. */
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
+    await page.getByRole('radio', { name: 'Hold stock back' }).click();
+    await page.getByRole('radio', { name: 'Return to sale' }).click();
+    await page.getByRole('textbox', { name: 'How many units' }).fill('2');
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await page.waitForTimeout(2000);
   });
 
   test('reports an error rather than an empty table', async ({ page }) => {

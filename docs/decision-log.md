@@ -2401,3 +2401,101 @@ Still open, and reported by the reviewers rather than found by me:
 - [ ] Still no variants, no collections or metafields, no scheduled publishing (`publish_at` is a
       dead column with a dedicated index), no category on CSV import, and 10 of the 19 bulk actions
       have no UI
+
+### Making the parts that were only advertised actually work
+
+The reviewers' remaining findings, which the previous entry listed as open. Each of these was a
+capability the product presented — in the schema, the grid, the CSV, a menu — and did not have.
+
+#### Multi-location was schema-only
+
+`inventory_locations` has existed since the ledger was built, `inventory_levels` is keyed on it, the
+grid filters by it, every movement records one, and `transferStock` sat in the ledger library,
+correct and tested, with **no caller anywhere**. Nothing could create a second location, so every
+store had exactly the one its trigger made. A merchant with a shop and a stockroom had to pretend
+they were the same place.
+
+- [x] `POST/GET /api/admin/inventory/locations` and `PATCH/DELETE .../[locationId]`, with a
+      Locations dialog on the inventory page — reachable where a merchant needs it, which is while
+      looking at stock, not three screens away under a gear icon
+- [x] `POST /api/admin/inventory/[id]/transfer`, the caller `transferStock` never had. A transfer is
+      two ledger entries rather than two adjustments that happen to cancel, so it nets to zero across
+      the store and reads correctly from either end. Verified: 5 units moved, levels 37/5, projection
+      unchanged at 42, ledger pair `transfer_out -5, transfer_in +5`
+- [x] Deleting a location that still holds stock is refused with what is in it, and one with movement
+      history is closed rather than deleted — the rows naming it are the record of where units used
+      to be and have to keep resolving
+- [x] The default location cannot be deleted or deactivated, and demoting it requires promoting
+      another, so there is always somewhere for an unlocated movement to go
+- [x] **The adjustment dialog ignored the grid's location filter**, defaulting to the store default
+      — so counting a shelf while filtered to the back room posted against the shop floor. It now
+      opens on the location whose numbers are on screen, fetches that location's balances, and names
+      the location in the "on hand becomes" sentence. In count mode this was worse than cosmetic:
+      `recountTo` computes its delta against one location's balance, so a count entered against the
+      roll-up posted a wildly wrong correction
+- [x] A derived location code that collides is made unique rather than refused — the merchant never
+      typed it, so a 409 naming a code they have not seen is not an error they can act on
+- [x] **Verified the migration 034 lost-update fix with two real locations**, which is the only way
+      to reproduce it: −3 at one and −2 at the other, concurrently, now leaves levels and projection
+      both at 37. Before it, levels said 37 and the projection said 39
+
+#### `unavailable` was a column nothing ever wrote
+
+It participates in the generated `available` column, is selected by the grid, exported in the CSV,
+shown on the detail page and counted in a statistics tile — and no code path in the application, the
+scripts or the database ever set it to anything but zero. The "Unavailable" view could never match a
+row.
+
+- [x] `038` adds `inventory_holds` and `post_inventory_hold`. A hold is deliberately **not** a ledger
+      entry: `on_hand` does not change, because nothing left the building, and admitting rows that
+      break `balance_after = previous + delta` would cost the one property that makes the ledger
+      worth having
+- [x] `damage` keeps meaning what it always has — units gone, written off on discovery. Rewriting the
+      meaning of a reason already recorded against historical rows would falsify the ledger this
+      whole branch exists to make trustworthy. Holding is a separate thing that can happen to stock
+- [x] Holds are append-only for the same reason movements are, refuse to hold more than is available,
+      and require a note on a quarantine — somebody eventually has to decide what those units are,
+      and the note is what tells them
+- [x] A third mode in the adjustment dialog, because "the units are still there and I cannot sell
+      them" is a thing that happens as often as a count. Verified: on hand unchanged at 34,
+      unavailable 4, available 30, and the Unavailable view matching one row for the first time
+
+#### The purchase-order receive button was 500ing in production
+
+- [x] `PATCH .../[id]` with `action: 'receive_items'` referenced a column named `received_quantity`
+      in two places; the column is `quantity_received`. It returned 500 for every shape of request,
+      including an empty one. Nobody noticed because its only caller — the **Receive button on the
+      purchase-order detail page** — reported every failure as "Failed to receive items"
+- [x] Deleted rather than repaired: it wrote `stock_quantity` directly, outside the ledger, ran
+      `BEGIN` on the pool rather than a checked-out client, skipped malformed lines while reporting
+      success, and echoed raw Postgres messages. The page now posts to the real receive endpoint,
+      with the idempotency key, and reports that endpoint's own sentence
+- [x] The same wrong column name broke the PUT handler's item replacement, and both remaining
+      `db.query('BEGIN')` sites in that file are now `db.transaction`
+
+#### Two bugs found while building the above
+
+- [x] **`SELECT (f(...)).*` calls `f` once per output column.** A request to hold four units posted
+      four, then four again, thirteen times over, until one hit the "only N available" guard — which
+      is the only reason it was noticed. It is silent whenever the function is idempotent, which is
+      the dangerous half. `SELECT * FROM f(...)` throughout
+- [x] **Every `RAISE EXCEPTION` this codebase writes was masked as a generic 500.** "Only 3 units are
+      available to hold at that location" arrived as "Something went wrong on our end", which is both
+      untrue and unactionable. `adminErrorResponse` now passes `P0001` through — those messages are
+      ours, written for a person, and the check that produces them lives in the database precisely so
+      no route can skip it. Every other SQLSTATE stays generic, because those messages are Postgres's
+      and leak schema
+
+- [x] **Version bumped** to 3.5.0
+
+Still open:
+- [ ] **No variants.** One SKU, one price, one weight per product. Still the largest structural gap,
+      and still its own piece of work: it touches the storefront, the cart, checkout, the ShipStation
+      mapping and the CSV in one go
+- [ ] `reserved` is now the only quantity nothing writes. The writer it wants is a checkout
+      reservation, which is also what would close the oversell race
+- [ ] No collections or metafields; `publish_at` is still a dead column with a dedicated index and no
+      cron to sweep it; `Category` is still export-only in the CSV; 10 of the 19 bulk actions still
+      have no UI
+- [ ] The ShipStation inventory sync still reconciles account-wide figures against one location —
+      now genuinely reachable, since a store can have more than one

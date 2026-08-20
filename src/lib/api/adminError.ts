@@ -74,6 +74,32 @@ export function adminErrorResponse(error: unknown, context: string): NextRespons
     return NextResponse.json({ success: false, error: known.message }, { status: known.status });
   }
 
+  /*
+   * `P0001` is `RAISE EXCEPTION` — a message this codebase wrote, in its own function, for a person
+   * to read: "Only 3 units of BCA-AUD-1001 are available to hold at that location". The rule about
+   * never echoing `error.message` is about *database* messages, which leak schema and turn an error
+   * page into a reconnaissance tool. These are the opposite: they are the only place the reason
+   * exists, because the check that produced them lives in the database precisely so no route can
+   * skip it.
+   *
+   * Masking them cost a real feature. Every guard in `post_inventory_movement` and
+   * `post_inventory_hold` — not enough available, no stock at that location, no default location —
+   * arrived at the merchant as "Something went wrong on our end", which is both untrue and
+   * unactionable.
+   *
+   * Only `P0001` passes through. A constraint violation, a type error or a syntax error carries a
+   * message Postgres wrote, and those stay generic.
+   */
+  if (code === 'P0001') {
+    const message =
+      typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : '';
+    if (message) {
+      return NextResponse.json({ success: false, error: message }, { status: 409 });
+    }
+  }
+
   return NextResponse.json(
     {
       success: false,

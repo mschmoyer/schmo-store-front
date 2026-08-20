@@ -47,6 +47,7 @@ import {
   TextInput,
   Tooltip
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
   IconAlertTriangle,
@@ -54,6 +55,8 @@ import {
   IconClipboardList,
   IconDots,
   IconFileExport,
+  IconArrowsExchange,
+  IconBuildingWarehouse,
   IconHistory,
   IconSearch,
   IconShoppingCart,
@@ -70,6 +73,11 @@ import { SortableTh } from '@/components/admin/catalog/SortableTh';
 import { InlineEdit } from '@/components/admin/catalog/InlineEdit';
 import { downloadWithAuth } from '@/components/admin/catalog/download';
 import { AdjustStockModal, type AdjustTarget } from '@/components/admin/inventory/AdjustStockModal';
+import {
+  TransferStockModal,
+  type TransferTarget
+} from '@/components/admin/inventory/TransferStockModal';
+import { LocationsModal } from '@/components/admin/inventory/LocationsModal';
 import { LedgerDrawer } from '@/components/admin/inventory/LedgerDrawer';
 import {
   INVENTORY_VIEWS,
@@ -164,6 +172,8 @@ export default function InventoryPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
 
   const [adjusting, setAdjusting] = useState<AdjustTarget | null>(null);
+  const [transferring, setTransferring] = useState<TransferTarget | null>(null);
+  const [locationsOpen, { open: openLocations, close: closeLocations }] = useDisclosure(false);
   const [viewingHistory, setViewingHistory] = useState<InventoryRow | null>(null);
 
   const [searchDraft, setSearchDraft] = useState(params.search);
@@ -362,6 +372,12 @@ export default function InventoryPage(): React.ReactElement {
                   href="/admin/suppliers"
                 >
                   Suppliers
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconBuildingWarehouse size={14} />}
+                  onClick={openLocations}
+                >
+                  Locations
                 </Menu.Item>
                 <Menu.Item
                   leftSection={<IconClipboardList size={14} />}
@@ -795,6 +811,23 @@ export default function InventoryPage(): React.ReactElement {
                           >
                             Adjust stock
                           </Menu.Item>
+                          {/* Only offered when there is somewhere to move stock to. A transfer
+                              action in a single-location store is a dead end dressed as a
+                              feature. */}
+                          {locationOptions.length > 1 && (
+                            <Menu.Item
+                              leftSection={<IconArrowsExchange size={14} />}
+                              onClick={() =>
+                                setTransferring({
+                                  product_id: row.product_id,
+                                  sku: row.sku,
+                                  name: row.name
+                                })
+                              }
+                            >
+                              Move between locations
+                            </Menu.Item>
+                          )}
                           <Menu.Item
                             leftSection={<IconHistory size={14} />}
                             onClick={() => setViewingHistory(row)}
@@ -842,8 +875,25 @@ export default function InventoryPage(): React.ReactElement {
         target={adjusting}
         onClose={() => setAdjusting(null)}
         locations={locationOptions}
+        activeLocationId={params.locationId || null}
         token={token}
         onAdjusted={load}
+      />
+
+      <LocationsModal
+        opened={locationsOpen}
+        onClose={closeLocations}
+        token={token}
+        onChanged={load}
+      />
+
+      <TransferStockModal
+        target={transferring}
+        onClose={() => setTransferring(null)}
+        locations={locationOptions}
+        activeLocationId={params.locationId || null}
+        token={token}
+        onTransferred={load}
       />
 
       <LedgerDrawer

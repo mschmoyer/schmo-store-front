@@ -196,10 +196,9 @@ export async function PUT(
 
     // Purchase order exists, proceeding with update
 
-    // Start transaction
-    await db.query('BEGIN');
-
-    try {
+    /* One connection for the whole update. See the note on the DELETE handler below: `BEGIN` on
+     * the pool does not make the statements after it a transaction. */
+    const updatedOrder = await db.transaction(async (tx) => {
       // Update purchase order basic info
       const updateFields = [];
       const updateValues = [];
@@ -246,7 +245,7 @@ export async function PUT(
         let subtotal = 0;
         
         // Delete existing items
-        await db.query(
+        await tx.query(
           'DELETE FROM purchase_order_items WHERE purchase_order_id = $1',
           [purchaseOrderId]
         );
@@ -254,7 +253,7 @@ export async function PUT(
         // Add new items
         for (const item of body.items) {
           // Get product details
-          const productResult = await db.query(
+          const productResult = await tx.query(
             'SELECT id, name, sku FROM products WHERE id = $1 AND store_id = $2',
             [item.product_id, user.storeId]
           );
@@ -267,10 +266,10 @@ export async function PUT(
           const totalCost = item.quantity * item.unit_cost;
           subtotal += totalCost;
 
-          await db.query(`
+          await tx.query(`
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, product_name, product_sku,
-              quantity, unit_cost, total_cost, received_quantity
+              quantity, unit_cost, total_cost, quantity_received
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           `, [
             purchaseOrderId,
@@ -310,17 +309,15 @@ export async function PUT(
           RETURNING *
         `;
 
-        const updateResult = await db.query(updateQuery, updateValues);
+        const updateResult = await tx.query(updateQuery, updateValues);
         
         if (updateResult.rows.length === 0) {
           throw new Error('Failed to update purchase order');
         }
       }
 
-      await db.query('COMMIT');
-
       // Get updated purchase order with items
-      const updatedPOResult = await db.query(`
+      const updatedPOResult = await tx.query(`
         SELECT 
           po.*,
           json_agg(
@@ -332,7 +329,7 @@ export async function PUT(
               'quantity', poi.quantity,
               'unit_cost', poi.unit_cost,
               'total_cost', poi.total_cost,
-              'received_quantity', poi.received_quantity
+              'received_quantity', poi.quantity_received
             )
           ) as items
         FROM purchase_orders po
@@ -341,20 +338,16 @@ export async function PUT(
         GROUP BY po.id
       `, [purchaseOrderId, user.storeId]);
 
-      const updatedPO = updatedPOResult.rows[0];
+      return updatedPOResult.rows[0];
+    });
 
-      return NextResponse.json({
-        success: true,
-        data: {
-          purchase_order: updatedPO,
-          message: 'Purchase order updated successfully'
-        }
-      });
-
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
-    }
+    return NextResponse.json({
+      success: true,
+      data: {
+        purchase_order: updatedOrder,
+        message: 'Purchase order updated successfully'
+      }
+    });
 
   } catch (error) {
     console.error('Admin purchase order PUT error:', error);
@@ -416,18 +409,24 @@ export async function DELETE(
       }, { status: 400 });
     }
 
-    // Start transaction
-    await db.query('BEGIN');
+    /*
+     * `db.transaction` checks out one connection and runs everything on it.
+     *
+     * `db.query('BEGIN')` on the *pool* begins a transaction on whichever connection that
+     * particular call happens to get, and the statements after it go to whichever connections
+     * *they* get — so the "transaction" was decorative, and the `ROLLBACK` could roll back an empty
+     * one on a third connection while the deletes stayed committed.
+     */
+    await db.transaction(async (tx) => {
+      /* Explicit rather than relying on the cascade, so the receipts go with them. */
+      await tx.query('DELETE FROM purchase_order_receiving WHERE purchase_order_id = $1', [
+        purchaseOrderId
+      ]);
+      await tx.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [
+        purchaseOrderId
+      ]);
 
-    try {
-      // Delete purchase order items first (cascade should handle this, but being explicit)
-      await db.query(
-        'DELETE FROM purchase_order_items WHERE purchase_order_id = $1',
-        [purchaseOrderId]
-      );
-
-      // Delete purchase order
-      const deleteResult = await db.query(
+      const deleteResult = await tx.query(
         'DELETE FROM purchase_orders WHERE id = $1 AND store_id = $2 RETURNING *',
         [purchaseOrderId, user.storeId]
       );
@@ -435,20 +434,14 @@ export async function DELETE(
       if (deleteResult.rows.length === 0) {
         throw new Error('Failed to delete purchase order');
       }
+    });
 
-      await db.query('COMMIT');
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          message: 'Purchase order deleted successfully'
-        }
-      });
-
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
-    }
+    return NextResponse.json({
+      success: true,
+      data: {
+        message: 'Purchase order deleted successfully'
+      }
+    });
 
   } catch (error) {
     console.error('Admin purchase order DELETE error:', error);
@@ -501,101 +494,35 @@ export async function PATCH(
       }, { status: 404 });
     }
 
-    // Handle special actions
+    /*
+     * `receive_items` is gone, not repaired.
+     *
+     * It referenced a column called `received_quantity` in two places; the column is
+     * `quantity_received`. So it returned 500 for every shape of request, including `{"items":[]}`
+     * — the failure was in its trailing status query, so no input ever reached a working path. It
+     * went unnoticed because its only caller, the purchase-order detail page, reported every
+     * failure as a generic "Failed to receive items".
+     *
+     * Repairing it would have been worse than removing it. It wrote `stock_quantity` directly,
+     * which is the projection the ledger owns; it ran `BEGIN`/`COMMIT` on the *pool* rather than a
+     * checked-out client, so the statements between them were not reliably one transaction; it
+     * skipped malformed lines and still reported "Items received and inventory updated
+     * successfully"; and it echoed raw Postgres messages to the client. All of that already exists,
+     * correctly and tested, at `POST /api/admin/purchase-orders/[id]/receive`.
+     *
+     * 410 rather than 404: the route is here, this way of using it is not, and saying so is what
+     * stops someone reimplementing it.
+     */
     if (body.action === 'receive_items') {
-      // Handle receiving items and updating inventory
-      const { items } = body;
-      
-      if (!items || !Array.isArray(items)) {
-        return NextResponse.json({
+      return NextResponse.json(
+        {
           success: false,
-          error: 'Items array is required for receive_items action'
-        }, { status: 400 });
-      }
-
-      await db.query('BEGIN');
-
-      try {
-        for (const item of items) {
-          if (!item.item_id || !item.received_quantity) {
-            continue;
-          }
-
-          // Update received quantity in purchase order item
-          const updateResult = await db.query(`
-            UPDATE purchase_order_items 
-            SET received_quantity = $1 
-            WHERE id = $2 AND purchase_order_id = $3
-            RETURNING product_id, quantity, received_quantity
-          `, [item.received_quantity, item.item_id, purchaseOrderId]);
-
-          if (updateResult.rows.length === 0) {
-            continue;
-          }
-
-          const updatedItem = updateResult.rows[0];
-          const productId = updatedItem.product_id;
-
-          // Update product inventory
-          await db.query(`
-            UPDATE products 
-            SET stock_quantity = stock_quantity + $1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND store_id = $3
-          `, [item.received_quantity, productId, user.storeId]);
-
-          // Log inventory change
-          await db.query(`
-            INSERT INTO inventory_logs (
-              store_id, product_id, change_type, quantity_change, 
-              quantity_after, reference_type, reference_id, notes
-            ) VALUES ($1, $2, $3, $4, 
-              (SELECT stock_quantity FROM products WHERE id = $2), 
-              $5, $6, $7)
-          `, [
-            user.storeId,
-            productId,
-            'restock',
-            item.received_quantity,
-            'purchase_order',
-            purchaseOrderId,
-            `Received ${item.received_quantity} units from purchase order`
-          ]);
-        }
-
-        // Check if all items are fully received and update PO status
-        const allItemsResult = await db.query(`
-          SELECT 
-            COUNT(*) as total_items,
-            COUNT(CASE WHEN received_quantity >= quantity THEN 1 END) as fully_received
-          FROM purchase_order_items 
-          WHERE purchase_order_id = $1
-        `, [purchaseOrderId]);
-
-        const itemStats = allItemsResult.rows[0];
-        if (itemStats.total_items === itemStats.fully_received) {
-          await db.query(`
-            UPDATE purchase_orders 
-            SET status = 'delivered', 
-                actual_delivery = CURRENT_DATE,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $1 AND store_id = $2
-          `, [purchaseOrderId, user.storeId]);
-        }
-
-        await db.query('COMMIT');
-
-        return NextResponse.json({
-          success: true,
-          data: {
-            message: 'Items received and inventory updated successfully'
-          }
-        });
-
-      } catch (error) {
-        await db.query('ROLLBACK');
-        throw error;
-      }
+          error:
+            'Receiving moved to POST /api/admin/purchase-orders/{id}/receive, which posts to the ' +
+            'stock ledger. Send { items: [{ purchase_order_item_id, quantity_received }] } there.'
+        },
+        { status: 410 }
+      );
     }
 
     // Handle regular PATCH updates
