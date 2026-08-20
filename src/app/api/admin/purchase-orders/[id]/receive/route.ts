@@ -79,6 +79,47 @@ export async function POST(
         ? body.received_date
         : null;
 
+    /*
+     * The key that makes a retry a no-op instead of a second delivery.
+     *
+     * `FOR UPDATE` below serialises two people receiving the same delivery from two devices, but
+     * serialising is not deduplicating: submitting the same receipt twice booked it twice, and
+     * because the phantom units stayed inside the ordered quantity the response reported
+     * `over_received: 0` and no warnings at all. A warehouse tablet on a bad connection does this
+     * routinely.
+     *
+     * Optional, because an older client that does not send one must keep working — but the UI
+     * always sends it, and a caller that omits it is told in the response that its retries are not
+     * protected rather than being left to assume they are.
+     */
+    const idempotencyKey =
+      typeof body.idempotency_key === 'string' && body.idempotency_key.trim()
+        ? body.idempotency_key.trim().slice(0, 100)
+        : request.headers.get('idempotency-key')?.slice(0, 100) || null;
+
+    /*
+     * A replay is a success with nothing written, not an error: the caller asked for the delivery
+     * to be booked and it is booked. Reporting it as a conflict would send a warehouse to
+     * investigate a discrepancy that does not exist.
+     */
+    if (idempotencyKey) {
+      const seen = await db.query<{ n: string }>(
+        `SELECT COUNT(*) AS n
+           FROM purchase_order_receiving r
+           JOIN purchase_orders po ON po.id = r.purchase_order_id
+          WHERE po.id = $1 AND po.store_id = $2
+            AND r.idempotency_key LIKE $3 || ':%'`,
+        [id, storeId, idempotencyKey]
+      );
+      if (Number(seen.rows[0]?.n ?? 0) > 0) {
+        return NextResponse.json({
+          success: true,
+          replayed: true,
+          message: 'This delivery was already recorded. Nothing was received twice.'
+        });
+      }
+    }
+
     const result = await db.transaction(async (tx) => {
       /*
        * Ownership and lock in one statement. `FOR UPDATE` on the order serialises two people
@@ -164,24 +205,28 @@ export async function POST(
         const overReceived = Math.max(0, quantity - outstanding);
 
         const updated = await tx.query<{ quantity_received: number; quantity_pending: number }>(
+          /*
+           * `unit_cost` is deliberately not touched. It is what the supplier quoted, and the gap
+           * between it and what they invoiced is price variance — the evidence a
+           * supplier-performance conversation is made of. Overwriting it also left `total_cost`,
+           * `subtotal` and the order total at the ordered figures, so a line receiving 5 at 25.00
+           * against 10 ordered at 10.00 rendered as "10 x 25.00 = 100.00" on the PDF the merchant
+           * emails out. The invoiced cost goes on the receipt row instead (migration 035).
+           */
           `UPDATE purchase_order_items
               SET quantity_received = quantity_received + $1,
-                  unit_cost = COALESCE($2::numeric, unit_cost),
                   updated_at = NOW()
-            WHERE id = $3
+            WHERE id = $2
             RETURNING quantity_received, quantity_pending`,
-          [
-            quantity,
-            entry.unit_cost === undefined || entry.unit_cost === null ? null : Number(entry.unit_cost),
-            line.id
-          ]
+          [quantity, line.id]
         );
 
         await tx.query(
           `INSERT INTO purchase_order_receiving (
              purchase_order_id, purchase_order_item_id, received_date, quantity_received,
-             quality_status, quality_notes, received_by, damaged_quantity, damage_notes
-           ) VALUES ($1, $2, COALESCE($3::date, CURRENT_DATE), $4, $5, $6, $7, $8, $9)`,
+             quality_status, quality_notes, received_by, damaged_quantity, damage_notes,
+             unit_cost, idempotency_key
+           ) VALUES ($1, $2, COALESCE($3::date, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             id,
             line.id,
@@ -193,7 +238,13 @@ export async function POST(
             entry.quality_notes ?? null,
             user.userId,
             damaged,
-            entry.damage_notes ?? null
+            entry.damage_notes ?? null,
+            entry.unit_cost === undefined || entry.unit_cost === null
+              ? null
+              : Number(entry.unit_cost),
+            /* Per line, so one retried request replays every line it carried rather than the first.
+             * A unique index makes the second attempt a 23505, caught below. */
+            idempotencyKey ? `${idempotencyKey}:${line.id}` : null
           ]
         );
 
@@ -235,14 +286,30 @@ export async function POST(
           /*
            * Cost is updated from the receipt's own balance, before the damage entry is posted.
            *
-           * The prior balance has to be `balance_after - quantity` from the receipt movement, not
-           * a fresh SUM taken later: posting the damage first drops on-hand again, and deriving the
-           * prior by subtracting the received quantity from *that* attributes the damaged units to
-           * the old cost layer. On a receipt of 60 at 40.00 against 27 on hand at 64.50 it gave
-           * 46.57 where the answer is 47.60 — small, and wrong in the same direction every time.
+           * The prior balance is taken before the damage entry, not from a fresh SUM afterwards:
+           * posting the damage first drops on-hand again, and deriving the prior by subtracting the
+           * received quantity from *that* attributes the damaged units to the old cost layer. On a
+           * receipt of 60 at 40.00 against 27 on hand at 64.50 it gave 46.57 where the answer is
+           * 47.60 — small, and wrong in the same direction every time.
+           *
+           * It is also the *product's* prior on-hand, not the receiving location's.
+           * `movement.balance_after` is per location while `cost_price` is per product, so a
+           * receipt into one of two stocked locations averaged the new cost against only that
+           * location's units: 127 on hand at 64.50 receiving 60 at 40.00 gave 47.60 where the
+           * answer is 56.64, a $1,690 understatement of that SKU's valuation from one delivery.
+           * `products.stock_quantity` is the ledger's own cross-location projection and the
+           * projection trigger has already run inside this transaction, so it is the total
+           * including this receipt — hence subtracting the received quantity to recover the prior.
            */
           if (Number.isFinite(unitCost) && unitCost > 0) {
-            const priorOnHand = movement.balance_after - quantity;
+            const productTotal = await tx.query<{ stock_quantity: number }>(
+              'SELECT stock_quantity FROM products WHERE id = $1 AND store_id = $2',
+              [line.product_id, storeId]
+            );
+            const priorOnHand = Math.max(
+              0,
+              Number(productTotal.rows[0]?.stock_quantity ?? movement.balance_after) - quantity
+            );
             await tx.query(
               `UPDATE products
                   SET cost_price = CASE

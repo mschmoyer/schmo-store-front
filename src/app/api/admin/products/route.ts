@@ -299,7 +299,7 @@ export async function POST(request: NextRequest) {
      * a draft is friction for no benefit — they can refine it on the detail page. A SKU is
      * generated from the name only when one was not supplied, so imports keep their identifiers.
      */
-    const sku =
+    let sku =
       (typeof body.sku === 'string' && body.sku.trim()) ||
       `${slugify(name).toUpperCase().slice(0, 20) || 'SKU'}-${Date.now().toString(36).toUpperCase()}`;
 
@@ -340,15 +340,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const skuConflict = await db.query('SELECT id FROM products WHERE sku = $1 AND store_id = $2', [
-      sku,
-      user.storeId
-    ]);
-    if (skuConflict.rows.length > 0) {
-      return NextResponse.json(
-        { success: false, error: `SKU "${sku}" is already used by another product` },
-        { status: 409 }
-      );
+    /*
+     * A SKU a merchant typed is theirs, and a collision is theirs to resolve — so this refuses
+     * rather than quietly renaming. `unique_sku` is the one exception, sent by Duplicate: there is
+     * no merchant intent behind "SKU-COPY" to protect, and without it duplicating the same product
+     * twice always failed on the second attempt with a conflict on a SKU the merchant never chose.
+     */
+    if (body.unique_sku === true) {
+      sku = await freeSku(user.storeId, sku);
+    } else {
+      const skuConflict = await db.query('SELECT id FROM products WHERE sku = $1 AND store_id = $2', [
+        sku,
+        user.storeId
+      ]);
+      if (skuConflict.rows.length > 0) {
+        return NextResponse.json(
+          { success: false, error: `SKU "${sku}" is already used by another product` },
+          { status: 409 }
+        );
+      }
     }
 
     const slug = await uniqueProductSlug(user.storeId, body.slug || name);
@@ -371,7 +381,13 @@ export async function POST(request: NextRequest) {
         category_id, supplier_id, tags, featured_image_url, gallery_images,
         meta_title, meta_description,
         requires_shipping, is_digital, is_featured, country_of_origin,
-        status, published_at
+        status, published_at,
+        /* Six columns the INSERT did not carry, so Duplicate silently dropped them from every copy
+         * — under a green "Duplicated" toast — and none of them could be set at creation at all.
+         * A copy of a product that loses its HS code, its shipping class and its whole reorder
+         * policy is not a copy; a merchant duplicating their second-through-thousandth product had
+         * to re-enter them by hand, if they noticed. */
+        hs_code, shipping_class, reorder_point, reorder_quantity, lead_time_days, safety_stock
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10,
@@ -381,7 +397,8 @@ export async function POST(request: NextRequest) {
         $24, $25, $26, $27, $28,
         $29, $30,
         $31, $32, $33, $34,
-        $35, $36
+        $35, $36,
+        $37, $38, $39, $40, $41, $42
       ) RETURNING *
       `,
       [
@@ -420,7 +437,13 @@ export async function POST(request: NextRequest) {
         body.is_featured ?? false,
         body.country_of_origin?.trim()?.toUpperCase()?.slice(0, 2) || null,
         status,
-        status === 'active' ? new Date() : null
+        status === 'active' ? new Date() : null,
+        body.hs_code?.trim()?.slice(0, 16) || null,
+        body.shipping_class?.trim()?.slice(0, 100) || null,
+        intOrNull(body.reorder_point),
+        intOrNull(body.reorder_quantity),
+        intOrNull(body.lead_time_days),
+        intOrNull(body.safety_stock)
       ]
     );
 
@@ -439,4 +462,45 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return adminErrorResponse(error, 'products.create');
   }
+}
+
+/**
+ * A non-negative integer, or null when the field was not supplied.
+ *
+ * Distinguishing "not supplied" from zero matters for the reorder policy: a reorder point of 0 is a
+ * decision ("never reorder this"), and a missing one means the platform should suggest.
+ *
+ * @param value - The raw body field.
+ * @returns The integer, or null.
+ */
+function intOrNull(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * Find a SKU that is free in this store, appending `-2`, `-3`, … until one is.
+ *
+ * The whole family is fetched in one query and the suffix chosen in memory, the same shape
+ * `uniqueProductSlug` uses — a probe per candidate is a round trip per candidate.
+ *
+ * @param storeId - The tenant.
+ * @param desired - The preferred SKU.
+ * @returns A SKU free in this store at the time of the call.
+ */
+async function freeSku(storeId: string, desired: string): Promise<string> {
+  const taken = await db.query<{ sku: string }>(
+    `SELECT sku FROM products
+      WHERE store_id = $1 AND (sku = $2 OR sku LIKE $2 || '-%')`,
+    [storeId, desired]
+  );
+  const used = new Set(taken.rows.map((r) => r.sku));
+  if (!used.has(desired)) return desired;
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${desired}-${suffix}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `${desired}-${Date.now().toString(36)}`;
 }

@@ -8,7 +8,32 @@
  * old slug in `product_slug_history` so the storefront can answer with a 301 instead.
  */
 
+import type { PoolClient } from 'pg';
 import { db } from '@/lib/database/connection';
+
+/**
+ * Something that can run a query: the pool, or a client already inside a transaction.
+ *
+ * Every function here takes one, and callers inside `db.transaction` MUST pass the client. Using
+ * the pool from inside a transaction takes a second connection, and a second connection cannot see
+ * — or wait politely for — the row locks the first one is holding.
+ */
+export interface SlugExecutor {
+  query<T extends Record<string, unknown>>(
+    text: string,
+    params?: unknown[]
+  ): Promise<{ rows: T[] }>;
+}
+
+/**
+ * Narrow the pool or a transaction client to the shape these queries need.
+ *
+ * @param executor - A transaction client, or nothing to use the pool.
+ * @returns Something with a `query` method.
+ */
+function runner(executor?: PoolClient | SlugExecutor): SlugExecutor {
+  return (executor as SlugExecutor) ?? (db as unknown as SlugExecutor);
+}
 
 /**
  * Convert arbitrary text into a URL-safe slug.
@@ -39,12 +64,14 @@ export function slugify(input: string): string {
  * @param storeId - The tenant to check within.
  * @param desired - The preferred slug or the text to derive one from.
  * @param excludeProductId - A product allowed to keep its own current slug, when renaming.
+ * @param executor - The transaction client, when called inside one. See {@link SlugExecutor}.
  * @returns A slug guaranteed free in this store at the time of the call.
  */
 export async function uniqueProductSlug(
   storeId: string,
   desired: string,
-  excludeProductId?: string
+  excludeProductId?: string,
+  executor?: PoolClient | SlugExecutor
 ): Promise<string> {
   const base = slugify(desired) || 'product';
 
@@ -53,7 +80,7 @@ export async function uniqueProductSlug(
    * `base-2`, `base-17`) lets the suffix be chosen in memory, which matters when a merchant
    * bulk-imports two hundred products all called "T-Shirt".
    */
-  const taken = await db.query<{ slug: string }>(
+  const taken = await runner(executor).query<{ slug: string }>(
     `SELECT slug FROM (
        SELECT slug, id AS product_id FROM products WHERE store_id = $1
        UNION ALL
@@ -86,16 +113,29 @@ export async function uniqueProductSlug(
  * @param productId - The product whose slug is being replaced.
  * @param previousSlug - The slug that is going out of service.
  * @param newSlug - The slug replacing it. Equal values make this a no-op.
+ * @param executor - The transaction client, when called inside one.
+ *
+ *   Not optional in practice. Both callers change `products.slug` inside a transaction, and running
+ *   this on the pool instead deadlocked the request in a way Postgres cannot detect and cannot
+ *   break: the transaction's `UPDATE products` holds a row lock, this `INSERT` needs `FOR KEY SHARE`
+ *   on that same row through its foreign key, and the two are on different connections — so the
+ *   application waits on the database while the database waits on the application. The client
+ *   giving up frees nothing; the connection stays idle-in-transaction holding the lock until the
+ *   process dies, and a handful of renamed products exhausts the pool and stops every catalogue
+ *   write in the store.
  */
 export async function recordSlugChange(
   storeId: string,
   productId: string,
   previousSlug: string | null | undefined,
-  newSlug: string
+  newSlug: string,
+  executor?: PoolClient | SlugExecutor
 ): Promise<void> {
   if (!previousSlug || previousSlug === newSlug) return;
 
-  await db.query(
+  const run = runner(executor);
+
+  await run.query(
     `INSERT INTO product_slug_history (store_id, product_id, slug)
      VALUES ($1, $2, $3)
      ON CONFLICT (store_id, slug) DO NOTHING`,
@@ -104,7 +144,7 @@ export async function recordSlugChange(
 
   /* The new slug may itself be a retired one being reclaimed by the same product. Clearing it
    * keeps the storefront from redirecting a live URL to itself. */
-  await db.query('DELETE FROM product_slug_history WHERE store_id = $1 AND slug = $2', [
+  await run.query('DELETE FROM product_slug_history WHERE store_id = $1 AND slug = $2', [
     storeId,
     newSlug
   ]);
@@ -115,10 +155,15 @@ export async function recordSlugChange(
  *
  * @param storeId - The tenant.
  * @param slug - The slug from the incoming URL.
+ * @param executor - The transaction client, when called inside one.
  * @returns The current slug to redirect to, or null when the slug is live or unknown.
  */
-export async function resolveRetiredSlug(storeId: string, slug: string): Promise<string | null> {
-  const result = await db.query<{ slug: string }>(
+export async function resolveRetiredSlug(
+  storeId: string,
+  slug: string,
+  executor?: PoolClient | SlugExecutor
+): Promise<string | null> {
+  const result = await runner(executor).query<{ slug: string }>(
     `SELECT p.slug
        FROM product_slug_history h
        JOIN products p ON p.id = h.product_id AND p.store_id = h.store_id

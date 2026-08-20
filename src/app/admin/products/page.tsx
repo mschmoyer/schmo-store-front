@@ -948,6 +948,11 @@ export default function ProductsAdminPage(): React.ReactElement {
           id: undefined,
           name: `${source.name} (copy)`,
           sku: `${source.sku}-COPY`,
+          /* Lets the server pick `-COPY-2` when `-COPY` is taken. Without it, duplicating the same
+           * product a second time always failed with a conflict on a SKU the merchant never
+           * chose — and duplicating is how a merchant creates their second through thousandth
+           * product. */
+          unique_sku: true,
           slug: undefined,
           status: 'draft',
           stock_quantity: 0

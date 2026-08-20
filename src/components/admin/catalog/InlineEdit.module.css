@@ -102,3 +102,22 @@
 .input:focus {
   outline: none;
 }
+
+/*
+ * Available to assistive technology, invisible on screen.
+ *
+ * For meaning that a sighted user reads from an icon — the field-lock tick — and that a screen
+ * reader would otherwise get nothing for. Clip rather than `display: none`, which removes an
+ * element from the accessibility tree along with the layout.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

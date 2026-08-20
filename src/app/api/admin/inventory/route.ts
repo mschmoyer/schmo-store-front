@@ -20,7 +20,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
 import { adminErrorResponse } from '@/lib/api/adminError';
+import { suggestReorderPoint } from '@/lib/inventory/reorder';
 import {
+  INVENTORY_STATE_SQL,
   INVENTORY_SELECT,
   buildInventoryOrderBy,
   buildInventoryWhere,
@@ -96,23 +98,21 @@ export async function GET(request: NextRequest) {
      * the reports multiplied retail by 0.6 to fill the gap; a number a merchant takes to an insurer
      * must not be invented.
      */
+    /*
+     * Every state count is generated from `INVENTORY_STATE_SQL`, the same map the `state` filter
+     * uses, so a badge and the list it opens cannot disagree. They used to: this query carried
+     * `p.track_inventory` guards the filter predicates lacked, so untracked products (whose
+     * `available` is 0) were counted out of "Out of stock" and listed into it. An adversarial
+     * review reproduced a badge of 3 over a list of 5.
+     */
+    const stateCounts = Object.entries(INVENTORY_STATE_SQL)
+      .map(([state, predicate]) => `COUNT(*) FILTER (WHERE ${predicate})::int AS ${state}`)
+      .join(',\n        ');
+
     const statsSql = `
       SELECT
-        COUNT(*)::int                                                            AS total,
-        COUNT(*) FILTER (WHERE lv.available < 0)::int                            AS oversold,
-        COUNT(*) FILTER (WHERE p.track_inventory AND lv.available = 0)::int       AS out_of_stock,
-        COUNT(*) FILTER (WHERE p.track_inventory AND lv.available > 0
-                           AND lv.available <= COALESCE(p.reorder_point, p.low_stock_threshold, 0))::int AS low_stock,
-        COUNT(*) FILTER (WHERE p.track_inventory
-                           AND lv.available <= COALESCE(p.reorder_point, p.low_stock_threshold, 0)
-                           AND lv.incoming = 0)::int                              AS needs_reorder,
-        COUNT(*) FILTER (WHERE lv.incoming > 0)::int                              AS incoming,
-        COUNT(*) FILTER (WHERE lv.unavailable > 0)::int                           AS unavailable,
-        COUNT(*) FILTER (WHERE lv.on_hand > 0
-                           AND (sv.last_sale_date IS NULL
-                                OR sv.last_sale_date < NOW() - INTERVAL '90 days'))::int AS dead_stock,
-        COUNT(*) FILTER (WHERE lv.on_hand > 0
-                           AND (p.cost_price IS NULL OR p.cost_price <= 0))::int  AS uncosted,
+        COUNT(*)::int AS total,
+        ${stateCounts},
         COALESCE(SUM(lv.on_hand), 0)::int                                         AS total_units,
         COALESCE(SUM(lv.on_hand * COALESCE(p.cost_price, 0)), 0)::numeric         AS value_at_cost,
         COALESCE(SUM(lv.on_hand * COALESCE(p.sale_price, p.base_price)), 0)::numeric AS value_at_retail,
@@ -152,7 +152,11 @@ export async function GET(request: NextRequest) {
       /* The suggested reorder point, shown *beside* the merchant's own figure rather than instead
        * of it. Demand over the lead time plus safety stock — the textbook formula, using the
        * store's own lead time where one is recorded and a fortnight where it is not. */
-      suggested_reorder_point: suggestReorderPoint(row)
+      suggested_reorder_point: suggestReorderPoint({
+      dailyDemand: Number(row.daily_demand) || 0,
+      leadTimeDays: Number(row.lead_time_days) || null,
+      safetyStock: Number(row.safety_stock) || null
+    })
     }));
 
     return NextResponse.json({
@@ -168,6 +172,15 @@ export async function GET(request: NextRequest) {
           hasPrev: page > 1
         },
         statistics: {
+          /*
+           * Every state the grid can filter to, keyed by the same name the `state` parameter takes,
+           * generated from `INVENTORY_STATE_SQL`. The camelCase keys below are what the page reads
+           * today and are kept; these are what make the whole vocabulary available without a third
+           * hand-written copy of the list.
+           */
+          ...Object.fromEntries(
+            Object.keys(INVENTORY_STATE_SQL).map((state) => [state, Number(stats[state]) || 0])
+          ),
           total: Number(stats.total) || 0,
           oversold: Number(stats.oversold) || 0,
           outOfStock: Number(stats.out_of_stock) || 0,
@@ -191,31 +204,4 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return adminErrorResponse(error, 'inventory.list');
   }
-}
-
-/** Default lead time when neither the product nor its supplier records one. */
-const DEFAULT_LEAD_TIME_DAYS = 14;
-
-/**
- * Suggest a reorder point from measured demand.
- *
- * `demand over the lead time + safety stock`. The figure this replaces was `forecast30 + 5`, which
- * hardcoded a thirty-day lead time for every product from every supplier and a flat five-unit
- * buffer — and, worse, was used *as* the reorder point rather than as a suggestion, overriding
- * whatever the merchant had set.
- *
- * Returns null when nothing has sold: a suggestion derived from no demand data is a guess wearing
- * a number's clothes, and the grid says "not enough sales history" instead.
- *
- * @param row - A grid row carrying `daily_demand`, `lead_time_days` and `safety_stock`.
- * @returns The suggested reorder point in units, or null when there is no demand signal.
- */
-function suggestReorderPoint(row: Record<string, unknown>): number | null {
-  const dailyDemand = Number(row.daily_demand) || 0;
-  if (dailyDemand <= 0) return null;
-
-  const leadTime = Number(row.lead_time_days) || DEFAULT_LEAD_TIME_DAYS;
-  const safetyStock = Number(row.safety_stock) || Math.ceil(dailyDemand * 7);
-
-  return Math.ceil(dailyDemand * leadTime + safetyStock);
 }

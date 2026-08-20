@@ -65,18 +65,27 @@ export function resolveDirection(
   return upper === 'ASC' ? 'ASC' : upper === 'DESC' ? 'DESC' : fallback;
 }
 
-/** The states the grid can filter to, as SQL predicates over the joined level row. */
+/**
+ * The states the grid can filter to, as SQL predicates over the joined level row.
+ *
+ * The tab badges are built from this same map (see `route.ts`), so a badge cannot disagree with the
+ * list it opens. They did: the statistics query carried `p.track_inventory` guards that these
+ * predicates lacked, so every untracked product — `available` is 0 for all of them — fell into
+ * "Out of stock", "Low" and "Needs reordering" in the list while the badge excluded it. An
+ * adversarial review reproduced "tab count 3, rows returned 5". Two hand-written copies of one
+ * definition drift; one definition read twice cannot.
+ */
 export const INVENTORY_STATE_SQL = {
   /* Sold more than we hold. Previously impossible to see, because the balance was clamped at 0. */
   oversold: 'lv.available < 0',
-  out_of_stock: 'lv.available = 0',
+  out_of_stock: 'p.track_inventory AND lv.available = 0',
   low_stock:
-    'lv.available > 0 AND lv.available <= COALESCE(p.reorder_point, p.low_stock_threshold, 0)',
+    'p.track_inventory AND lv.available > 0 AND lv.available <= COALESCE(p.reorder_point, p.low_stock_threshold, 0)',
   in_stock:
-    'lv.available > COALESCE(p.reorder_point, p.low_stock_threshold, 0)',
+    'p.track_inventory AND lv.available > COALESCE(p.reorder_point, p.low_stock_threshold, 0)',
   /* Below the reorder point with nothing on order — the actual restock worklist. */
   needs_reorder:
-    'lv.available <= COALESCE(p.reorder_point, p.low_stock_threshold, 0) AND lv.incoming = 0',
+    'p.track_inventory AND lv.available <= COALESCE(p.reorder_point, p.low_stock_threshold, 0) AND lv.incoming = 0',
   /* Held stock that has not sold in three months. Cash sitting on a shelf. */
   dead_stock:
     "lv.on_hand > 0 AND (sv.last_sale_date IS NULL OR sv.last_sale_date < NOW() - INTERVAL '90 days')",
@@ -194,7 +203,7 @@ export function buildInventoryWhere(storeId: string, filters: InventoryFilters):
   const next = () => `$${params.length + 1}`;
 
   if (filters.search) {
-    const term = `%${filters.search.trim()}%`;
+    const term = `%${escapeLike(filters.search.trim())}%`;
     /* Bound once and referenced three times — see the note in the catalogue's builder for why
      * calling `next()` per column silently produces unreferenced parameters. */
     params.push(term);
@@ -303,3 +312,20 @@ export const INVENTORY_SELECT = `
     ELSE 'in_stock'
   END                                             AS state
 `;
+
+/**
+ * Escape the characters `LIKE` treats as wildcards.
+ *
+ * The values were always parameterised, so this was never an injection — but `%` and `_` are
+ * wildcards to the *pattern*, not to the parser, and parameterising does not change that. Searching
+ * for `%` matched all seventeen products; searching for a SKU pasted as `BCA_AUD_1001` matched
+ * `BCA-AUD-1001` because `_` matched the hyphen. Both are things a merchant does with a scanner or
+ * a paste, and the same filter also scopes bulk actions and export — so a false match is not just a
+ * confusing list, it is a bulk edit hitting rows the merchant never saw.
+ *
+ * @param term - The raw search term.
+ * @returns The term with wildcards neutralised, for use inside a `%…%` pattern.
+ */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (c) => `\\${c}`);
+}

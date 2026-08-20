@@ -2201,3 +2201,203 @@ the database pointed at a URL that had never resolved for anyone else and never 
 Still open on media: no resizing or format conversion, so a merchant's 4 MB original is what the
 storefront serves; no library picker for reusing an image across products, though the rows are
 already shared and the endpoint lists them.
+
+### Adversarial review of both features, and what it found
+
+**User Request**: "Aggressively spawn subagent adversarial reviewers to review our UX, our
+workflows, an IMS expert, a product catalog expert, e-commerce expert, and make these two features
+best in class!"
+
+Two reviewers went at the finished work with database access and a running server, instructed to
+reproduce rather than speculate. They found thirty-odd defects between them, most of them mine from
+this same branch. The order below is severity, and everything listed was reproduced before it was
+fixed and verified after.
+
+#### A deadlock that leaked a connection permanently
+
+- [x] **Renaming a product's slug hung the request forever and never released the lock.**
+      `recordSlugChange` and `uniqueProductSlug` used the module-level pool while both callers were
+      inside `db.transaction`, i.e. on a *different connection*. The transaction's
+      `UPDATE products SET slug` held a row lock; the pooled `INSERT INTO product_slug_history`
+      needed `FOR KEY SHARE` on that same row through its foreign key. The application waited on
+      the database while the database waited on the application, and Postgres's deadlock detector
+      cannot see across two connections. The client giving up freed nothing — the connection stayed
+      `idle in transaction` holding the lock — so a handful of renamed products would exhaust the
+      pool and stop every catalogue write in the store. Both functions now take the transaction
+      client. Verified: 0.71s, history recorded, no connection left behind
+
+#### The ledger did not have a defined order
+
+- [x] Migration 027 claims the ledger "always replays". It does not, because the only ordering was
+      `created_at`, and `NOW()` is *transaction* start time — identical for every row a transaction
+      writes. Receiving a purchase order writes the arrival and the damage found on it in one
+      transaction, so both got the same timestamp and the tiebreak fell to a random UUID.
+      Reproduced on demo data: the stock history drawer showed a most-recent movement claiming a
+      balance of 63 when the balance was 58. `034` adds a `sequence` identity column, reconstructs
+      the order of existing rows from the balance chain, and **asserts the replay inside the
+      migration** so a wrong ordering fails the deploy instead of reaching a merchant
+- [x] The first attempt at that backfill sorted collided rows by `balance_after`, which is exactly
+      backwards — a receipt of +60 onto 3 lands at 63 and the damage of −5 after it lands at 58, so
+      the earlier row has the *higher* balance. Balances also repeat within a history, so no sort on
+      them is a total order at all. Recovered from the chain instead
+
+#### Stock that moved with no ledger entry
+
+- [x] **`track_inventory: false` bypassed the ledger, and turning tracking on never reconciled.**
+      Create a product untracked with 50 units, then turn tracking on: the grid reported "out of
+      stock, 0 available" while the catalogue and the storefront sold it with 50 in hand, and the
+      ledger could not replay to the number the cart checks against. Reproduced entirely through
+      public admin routes. `034` opens a balance when tracking is enabled
+- [x] **The projection lost updates across locations.** `project_stock_quantity` recomputed
+      `SUM(on_hand)` in both the SET and the `IS DISTINCT FROM` guard; under READ COMMITTED a
+      blocked UPDATE re-checks its WHERE against the new row version but evaluates subqueries
+      against the *original* snapshot, so the second of two concurrent movements found the total
+      "unchanged" and skipped its write. Now takes the product's row lock first. Applying a delta
+      instead was tried and is wrong — it breaks the termination of the cycle with
+      `translate_direct_stock_write` and recurses until the stack runs out, which the seed catches
+      immediately
+
+#### Every product created without an explicit status was silently a draft
+
+- [x] `is_active` defaults `true`, `status` defaults `'draft'`, and `sync_product_status_flags`
+      resolved every insert in favour of `status` — through a `IF NEW.status IS NULL` guard that is
+      unreachable, because a column default fires before a BEFORE trigger sees the row. So any
+      caller publishing a product the way this codebase has always published one, by setting
+      `is_active`, got a draft. That is the demo seed, which produced a catalogue of twelve drafts
+      and an empty storefront — and, far worse, the **ShipStation sync's insert path**, so a
+      merchant connecting their account imported their entire catalogue as unpublished with nothing
+      saying why. `036` makes the defaults agree and resolves an insert in favour of whichever field
+      the caller actually set
+
+#### Receiving
+
+- [x] **The invoiced cost overwrote the ordered cost** and left `total_cost`, `subtotal` and the
+      order total at the ordered figures — so a line receiving 5 at 25.00 against 10 ordered at
+      10.00 rendered as "10 × 25.00 = 100.00" on the PDF the merchant emails their supplier. It also
+      destroyed the price-variance evidence. The received cost goes on the receipt row now (`035`)
+- [x] **A retried receipt booked a second delivery.** `FOR UPDATE` serialised concurrent callers and
+      deduplicated nothing. Two identical POSTs took a 10-unit line from 5 received to 10, with
+      `over_received: 0` and no warnings, because the phantom units stayed inside the ordered
+      quantity. Now keyed on a client-supplied idempotency key, the way the sales path already was
+- [x] **Moving-average cost averaged against one location's on-hand** while `cost_price` is
+      per-product: 127 on hand at 64.50 receiving 60 at 40.00 gave 47.60 where the answer is 56.64,
+      a $1,690 understatement from one delivery. Verified fixed at exactly 92.40 on a two-location
+      product where the old code gives 70.69
+- [x] **A purchase order could be marked `delivered` with nothing received against it**, and its
+      units then counted as `incoming` forever — which, because `needs_reorder` requires
+      `incoming = 0`, hid that SKU from the restock worklist permanently. Refused at the database
+
+#### Two screens that disagreed about the same numbers
+
+- [x] **Tab badges did not match the lists they opened.** The statistics query carried
+      `p.track_inventory` guards the filter predicates lacked, so untracked products fell into "Out
+      of stock", "Low" and "Needs reordering" in the list but not in the count — reproduced as
+      "badge 3, rows 5". Both are now generated from one map, so they cannot diverge again
+- [x] **The reorder recommendations screen ignored every replenishment setting the merchant can
+      set.** It recomputed the reorder point as `forecast30 + 5` — the exact formula the inventory
+      grid documents as wrong and replaced — never read `reorder_point`, `lead_time_days` or
+      `safety_stock`, and used on-hand where the grid uses available. So the grid flagged a SKU for
+      reorder and the screen that turns that into a purchase order decided it was fine and never
+      mentioned it. One shared `src/lib/inventory/reorder.ts` now, and the merchant's own setting
+      wins over anything computed
+- [x] `?limit=abc` returned zero recommendations beside a summary saying there were three
+      (`slice(0, NaN)`), and `estimated_cost` was summed over the returned page rather than the
+      whole list
+
+#### CSV: the round trip was not lossless and Shopify files did not import
+
+- [x] **One bad row failed the file from that point on.** All rows ran in a single transaction with
+      no `SAVEPOINT`, so the per-row `catch` recorded an outcome while the transaction was already
+      aborted and every later row came back "current transaction is aborted". A 10,000-row file with
+      one duplicate SKU at row 12 discarded rows 13 to 10,000 — the exact opposite of the promise in
+      that file's own header. Per-row savepoints now
+- [x] **A genuine Shopify export could not be imported at all.** Real exports carry both `Published`
+      and `Status`; both mapped to `status`, producing `column "status" specified more than once` on
+      every row. `mapColumns` now uses each field at most once and reports what it dropped
+- [x] **Shopify's price columns mean the opposite of ours.** `Variant Price` is what the shopper
+      pays and `Compare At` is the struck-through higher price, so mapping them one-for-one inverted
+      every discounted product and, importing, violated `products_sale_price_not_above_base` on
+      every row. Resolved crosswise in both directions
+- [x] **Unparseable numbers silently became 0.** `Number(''.replace(/[^0-9.-]/g,''))` on "TBC" is
+      `0`, which is finite and non-negative, so every guard passed: a merchant with "TBC" in a price
+      column had those products saved at zero under a green "1 updated"
+- [x] **The formula guard was never undone on import.** A product named "-40% Cable Bundle" came
+      back from its own export as "'-40% Cable Bundle", and that is what the storefront rendered
+- [x] `Variant Grams` was stored as pounds — 250 g became 250 lb, which drives shipping rates and
+      the customs value on a commercial invoice
+- [x] **A no-op round trip severed the whole catalogue from the sync.** The import claimed a field
+      lock for every non-blank mapped cell with no comparison against the stored value, so exporting
+      and re-importing an untouched catalogue permanently disconnected name, description, price,
+      image and status on every product. It now compares first — and the bug behind the first
+      attempt at the fix is worth recording: the row it compared against was `SELECT id, slug, sku`,
+      so every comparison was against `undefined` and locked everything anyway. Verified: 0 of 12
+      products gain a lock from a no-op round trip
+
+#### Bulk actions
+
+- [x] **Every bulk write bypassed field ownership**, so re-pricing three hundred SKUs from the grid
+      was reverted by the next sync — migration 032's defect, reintroduced by the faster path to the
+      same edit
+- [x] **Bulk publish bypassed the "set a price before publishing" guard** that both other write
+      paths enforce. Selecting the "Needs attention" view, which is largely missing-price rows, and
+      pressing Publish put buyable $0.00 listings on the storefront
+- [x] **The whole-catalogue guard was bypassable with an empty-string filter.** `{ search: '' }` set
+      "has narrowing" true while the WHERE builder skipped the predicate as falsy, so
+      `{"action":"delete","filter":{"search":""}}` would have deleted the entire catalogue with the
+      guard reporting itself satisfied
+- [x] `add_tags` hash-aggregated through `SELECT DISTINCT` and scrambled the merchant's tag order,
+      under a comment claiming order was preserved. `set_track_inventory` ignored the generic `value`
+      parameter and read both `true` and `false` as "on". `set_sale_price` reported a substantive
+      rejection as "No change needed"
+
+#### The rest
+
+- [x] **Alt text was never saved and said it was.** The gallery updated local state and reported
+      success; `ProductEditForm` then reduced the gallery to `images.map(img => img.url)` on save,
+      and the one endpoint that persists alt text had no caller. Gone on reload, on a field labelled
+      "for accessibility". It now writes to the image, and says plainly when an image added by URL
+      has nowhere to keep one
+- [x] **The retired-slug redirect did not exist.** `resolveRetiredSlug`, the table, the unique
+      index and the writes from two routes were all there and nothing called any of it, so every old
+      link 404'd — the entire loss migration 025 built the table to prevent. Verified: a renamed
+      product's old URL now answers with a permanent redirect
+- [x] **`hs_code VARCHAR(6)`** cannot hold a real tariff code (`8517.62` is eight characters), and
+      `coerceValue` validated type but never length — so an over-long value failed the whole
+      statement and discarded every other field in the same save, under a generic "Something went
+      wrong on our end". Column widened, lengths checked before writing
+- [x] **Duplicate silently dropped six fields** — HS code, shipping class and the entire reorder
+      policy — because the create route's INSERT had no columns for them, which also meant they
+      could not be set at creation at all. And duplicating the same product twice always failed,
+      because `sku + '-COPY'` was not made unique
+- [x] **Search did not escape `LIKE` wildcards.** Searching `%` returned every product; a SKU pasted
+      as `BCA_AUD_1001` matched `BCA-AUD-1001`. Never an injection — values were parameterised —
+      but the same filter scopes bulk actions and export, so a false match is a bulk edit hitting
+      rows the merchant never saw
+- [x] **Accessibility in the grid**: inline-edit cells opened on *focus*, so tabbing across the grid
+      turned every price and cost cell into an input — a change of context on focus, WCAG 3.2.1
+      Level A, and it made keyboard traversal impossible. Save failures were never announced (no
+      `role="status"`), locked cells were focusable and still said "Select to edit", and the
+      field-lock tick's meaning lived only in a hover-only `title`
+
+Verified after: 868 unit tests across 52 files, `tsc` clean, lint 0 errors, 22 admin e2e, migrations
+and seed both idempotent from an empty database, ledger replaying exactly to every balance and the
+projection matching the levels.
+
+- [x] **Version bumped** to 3.4.0
+
+Still open, and reported by the reviewers rather than found by me:
+- [ ] **Multi-location is schema-only.** `transferStock` is exported and never called; nothing
+      creates a second `inventory_locations` row beyond the default. `AdjustStockModal` defaults to
+      the store default rather than the grid's active location filter, and mixes the cross-location
+      roll-up with a single-location movement in its projection. The schema, the API and the grid
+      filter all present multi-location as supported
+- [ ] **`reserved` and `unavailable` are never written by any path**, and are surfaced in the grid,
+      the CSV and the detail page as permanent zeros. "Present but not saleable" has no
+      implementation — `damage` removes units from `on_hand` outright
+- [ ] `PATCH /api/admin/purchase-orders/[id]` with `action: "receive_items"` is dead code that 500s
+      on a column name that does not exist, writes stock outside the ledger, and runs
+      `db.query('BEGIN')` on the pool. It should be deleted in favour of the real receive route
+- [ ] The ShipStation inventory sync reconciles account-wide figures against one location
+- [ ] Still no variants, no collections or metafields, no scheduled publishing (`publish_at` is a
+      dead column with a dedicated index), no category on CSV import, and 10 of the 19 bulk actions
+      have no UI

@@ -25,7 +25,7 @@ import {
   resolveStockStatus,
   type ProductListFilters
 } from '../_lib/query';
-import { CATALOG_CSV_COLUMNS, csvRow } from '@/lib/catalog/csv';
+import { EXPORT_CSV_COLUMNS, csvRow, shopifyPricePair } from '@/lib/catalog/csv';
 
 /** Rows fetched per round trip while streaming. Large enough to be efficient, small enough to
  * keep memory flat regardless of catalogue size. */
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       async start(controller) {
         try {
           controller.enqueue(
-            encoder.encode(`${csvRow(CATALOG_CSV_COLUMNS.map((c) => c.header))}\n`)
+            encoder.encode(`${csvRow(EXPORT_CSV_COLUMNS.map((c) => c.header))}\n`)
           );
 
           let offset = 0;
@@ -206,7 +206,18 @@ function cellsFor(row: Record<string, unknown>): unknown[] {
     'Variant Inventory Qty': row.stock_quantity
   };
 
-  return CATALOG_CSV_COLUMNS.map((col) => {
+  /* Written in Shopify's terms: `Variant Price` is what the shopper pays and
+   * `Variant Compare At Price` is the struck-through comparison. Writing our `base_price` and
+   * `sale_price` straight into those two headers inverted every discounted product — a file that
+   * said "was 199, now 249" — and, re-imported anywhere, sold it at the higher price. */
+  const { price: shopifyPrice, compareAt } = shopifyPricePair(
+    (row.base_price ?? null) as number | string | null,
+    (row.sale_price ?? null) as number | string | null
+  );
+
+  return EXPORT_CSV_COLUMNS.map((col) => {
+    if (col.header === 'Variant Price') return shopifyPrice ?? '';
+    if (col.header === 'Variant Compare At Price') return compareAt ?? '';
     if (col.column === null) return computed[col.header] ?? '';
     const value = row[col.column];
     if (col.type === 'boolean') return value ? 'TRUE' : 'FALSE';

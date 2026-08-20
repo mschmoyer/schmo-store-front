@@ -304,11 +304,49 @@ export default function ImageGalleryManager({
   /**
    * Handle image edit
    */
-  const handleImageEdit = () => {
+  const handleImageEdit = async () => {
     if (!selectedImage) return;
 
-    const updatedImages = images.map(img => 
-      img.id === selectedImage.id 
+    /*
+     * Alt text is saved to the image, not to the form.
+     *
+     * This used to update local state and report "Image updated successfully" — then
+     * `ProductEditForm` reduced the gallery to `images.map(img => img.url)` on save, discarding
+     * `alt` and `title` entirely, and the one endpoint that persists alt text had no caller. So the
+     * text was gone on reload, under a green toast, on a field labelled "for accessibility". A
+     * screen-reader user got nothing and the merchant believed they had provided it.
+     *
+     * It goes to the image rather than the product because that is where it belongs: written once,
+     * correct everywhere the image is used.
+     */
+    const mediaId = mediaIdFromUrl(selectedImage.url);
+
+    if (mediaId && session?.sessionToken) {
+      try {
+        const response = await fetch(`/api/admin/media/${mediaId}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${session.sessionToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ alt_text: imageAlt })
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload?.error ?? `Could not save (${response.status})`);
+        }
+      } catch (error) {
+        notifications.show({
+          title: 'Alt text not saved',
+          message: error instanceof Error ? error.message : 'Could not save the description.',
+          color: 'red'
+        });
+        return;
+      }
+    }
+
+    const updatedImages = images.map(img =>
+      img.id === selectedImage.id
         ? { ...img, title: imageTitle, alt: imageAlt }
         : img
     );
@@ -320,9 +358,14 @@ export default function ImageGalleryManager({
     closeEditModal();
 
     notifications.show({
-      title: 'Success',
-      message: 'Image updated successfully',
-      color: 'green'
+      title: 'Saved',
+      /* Says which half was stored and which was not, rather than one word covering both. An
+       * image added by URL has no row here to attach the description to. */
+      message: mediaId
+        ? 'Description saved to this image.'
+        : 'Updated for this product. Images added by URL cannot store a description — upload the '
+          + 'file to keep one with it.',
+      color: mediaId ? 'green' : 'yellow'
     });
   };
 
@@ -644,4 +687,16 @@ export default function ImageGalleryManager({
 function stripExtension(filename: string | null): string | undefined {
   if (!filename) return undefined;
   return filename.replace(/\.[^.]+$/, '') || undefined;
+}
+
+/**
+ * The media id inside one of this platform's own image URLs.
+ *
+ * @param url - An image URL, which may point anywhere.
+ * @returns The id, or null when the image is not one we store — a URL the merchant pasted, or one
+ *   that came from ShipStation.
+ */
+function mediaIdFromUrl(url: string): string | null {
+  const match = /^\/api\/media\/([0-9a-f-]{36})/i.exec(url);
+  return match ? match[1] : null;
 }

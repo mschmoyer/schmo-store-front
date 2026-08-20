@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   Stack,
@@ -69,6 +69,10 @@ export default function ReceivingModal({
   onSuccess 
 }: ReceivingModalProps) {
   const [loading, setLoading] = useState(false);
+
+  /* Identifies this delivery across retries. Cleared once the receipt is confirmed, so the next
+   * delivery against the same order gets its own key. */
+  const receiptKeyRef = useRef<string | null>(null);
   const [items, setItems] = useState<ReceivingItem[]>([]);
   const [warehouseLocation, setWarehouseLocation] = useState('MAIN');
   const [notes, setNotes] = useState('');
@@ -155,6 +159,18 @@ export default function ReceivingModal({
     setLoading(true);
     try {
       const token = localStorage.getItem('admin_token');
+
+      /*
+       * One key per delivery being recorded, held across retries.
+       *
+       * Without it a second submit — a double-click, or a retry after a timeout that actually
+       * succeeded — booked the delivery twice, and because the phantom units stayed inside the
+       * ordered quantity the response reported no over-receipt and no warning. Generated once and
+       * kept until the receipt is confirmed, so a retry replays rather than repeats.
+       */
+      if (!receiptKeyRef.current) {
+        receiptKeyRef.current = `${purchaseOrder.id}-${crypto.randomUUID()}`;
+      }
       const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}/receive`, {
         method: 'POST',
         headers: {
@@ -171,20 +187,43 @@ export default function ReceivingModal({
             damage_notes: item.damage_notes
           })),
           warehouse_location: warehouseLocation,
-          notes
+          notes,
+          idempotency_key: receiptKeyRef.current
         })
       });
 
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
+          /*
+           * The endpoint's own sentence, not one composed here. It reports what actually happened —
+           * fully received, or how many units are still outstanding — where this used to read
+           * `result.data.received_items`, a field the route does not return, so every successful
+           * receipt announced "Successfully received undefined items".
+           */
+          const warnings: string[] = result.data?.warnings ?? [];
           notifications.show({
-            title: 'Success',
-            message: `Successfully received ${result.data.received_items} items`,
+            title: result.replayed ? 'Already recorded' : 'Received',
+            message:
+              result.message ?? result.data?.message ?? 'The delivery was recorded.',
             color: 'green',
             icon: <IconCheck size="1rem" />
           });
-          
+
+          /* Over-receipt and lines that could not move stock are stated rather than folded into the
+           * green toast, because both are things the merchant has to act on. */
+          if (warnings.length > 0) {
+            notifications.show({
+              title: 'Worth checking',
+              message: warnings.join('. '),
+              color: 'yellow',
+              autoClose: 12000
+            });
+          }
+
+          /* The delivery is confirmed, so the next one against this order gets a fresh key. */
+          receiptKeyRef.current = null;
+
           if (onSuccess) {
             onSuccess();
           }

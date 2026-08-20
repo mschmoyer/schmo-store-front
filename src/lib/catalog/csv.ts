@@ -19,11 +19,20 @@ export interface CsvColumn {
   /** The database column, or null for a computed column that export writes and import ignores. */
   column: string | null;
   /** How an imported value is converted before it reaches the column. */
-  type: 'text' | 'number' | 'integer' | 'boolean' | 'list' | 'status';
+  type: 'text' | 'number' | 'integer' | 'boolean' | 'list' | 'status' | 'grams';
   /** Alternative headers accepted on import, for files from elsewhere. */
   aliases?: string[];
   /** Computed columns are informational: export writes them, import must not try to store them. */
   readOnly?: boolean;
+  /**
+   * Accepted on import, never written on export.
+   *
+   * For headers other platforms use for a field this one already exports under its own name —
+   * Shopify's `Published` beside its `Status`, or a plain `Weight` beside `Variant Grams`. Emitting
+   * both would put two columns for one field in our own file, and re-importing it would then report
+   * one of them as a dropped duplicate.
+   */
+  importOnly?: boolean;
 }
 
 /**
@@ -40,11 +49,32 @@ export const CATALOG_CSV_COLUMNS: CsvColumn[] = [
   { header: 'Vendor', column: 'vendor', type: 'text', aliases: ['brand', 'manufacturer'] },
   { header: 'Type', column: 'product_type', type: 'text', aliases: ['product type', 'product_type'] },
   { header: 'Tags', column: 'tags', type: 'list', aliases: ['tag'] },
-  { header: 'Status', column: 'status', type: 'status', aliases: ['published', 'active'] },
+  /* `published` is deliberately NOT an alias. A genuine Shopify export carries *both* a `Published`
+   * (TRUE/FALSE) column and a `Status` (active/draft) column; mapping both here put `status` in the
+   * generated UPDATE twice and every row failed with `column "status" specified more than once`.
+   * `mapColumns` also refuses a second header for a column that is already mapped, so an export
+   * from somewhere else that uses a different pair cannot reintroduce it. */
+  { header: 'Status', column: 'status', type: 'status', aliases: ['active'] },
+  { header: 'Published', column: 'status', type: 'status', importOnly: true },
 
   { header: 'Body (Short)', column: 'short_description', type: 'text', aliases: ['short description'] },
   { header: 'Body (HTML)', column: 'long_description', type: 'text', aliases: ['description', 'body'] },
 
+  /*
+   * Shopify's two price columns mean the opposite of the two here, and mapping them across
+   * one-for-one inverted every product.
+   *
+   * In a Shopify file `Variant Price` is what the shopper pays and `Variant Compare At Price` is
+   * the struck-through higher price. Here `base_price` is the regular price and `sale_price` is the
+   * discount, so `effective_price` is `COALESCE(sale_price, base_price)`. Mapping Price→base and
+   * Compare→sale therefore sold a 19.99 product for 29.99 in one direction, and in the other hit
+   * `products_sale_price_not_above_base` and failed every row of a genuine Shopify export.
+   *
+   * `reconcilePrices` handles the pair on import and the export writes them back in Shopify's
+   * terms, so a file leaves and returns meaning the same thing on both platforms. The `column`
+   * fields below are the ones the pair resolves to, and are what `mapColumns` uses to keep each
+   * field mapped once.
+   */
   { header: 'Variant Price', column: 'base_price', type: 'number', aliases: ['price', 'base price'] },
   { header: 'Variant Compare At Price', column: 'sale_price', type: 'number', aliases: ['sale price', 'compare at price'] },
   { header: 'Cost per item', column: 'cost_price', type: 'number', aliases: ['cost', 'cost price', 'unit cost'] },
@@ -59,7 +89,11 @@ export const CATALOG_CSV_COLUMNS: CsvColumn[] = [
   { header: 'Lead Time Days', column: 'lead_time_days', type: 'integer', aliases: ['lead time'] },
   { header: 'Variant Requires Shipping', column: 'requires_shipping', type: 'boolean' },
 
-  { header: 'Variant Grams', column: 'weight', type: 'number', aliases: ['weight'] },
+  /* Shopify's column is grams; a product here defaults to `weight_unit = 'lb'`. Importing 250 as
+   * 250 lb then drives shipping rates and the customs value on a commercial invoice, so the header
+   * carries its unit and the import converts. `Weight` with no unit is taken at face value. */
+  { header: 'Variant Grams', column: 'weight', type: 'grams' },
+  { header: 'Weight', column: 'weight', type: 'number', aliases: ['variant weight'], importOnly: true },
   { header: 'Variant Weight Unit', column: 'weight_unit', type: 'text' },
   { header: 'Length', column: 'length', type: 'number' },
   { header: 'Width', column: 'width', type: 'number' },
@@ -89,9 +123,15 @@ export const CATALOG_CSV_COLUMNS: CsvColumn[] = [
 /** Headers an import will accept, mapped to the column they write. */
 const HEADER_LOOKUP = new Map<string, CsvColumn>();
 for (const col of CATALOG_CSV_COLUMNS) {
+  /* Exact headers win over aliases: `Published` is its own column here *and* would be a plausible
+   * alias for `Status`, and the exact header must not be shadowed by whichever was registered
+   * last. */
   HEADER_LOOKUP.set(normaliseHeader(col.header), col);
+}
+for (const col of CATALOG_CSV_COLUMNS) {
   for (const alias of col.aliases ?? []) {
-    HEADER_LOOKUP.set(normaliseHeader(alias), col);
+    const key = normaliseHeader(alias);
+    if (!HEADER_LOOKUP.has(key)) HEADER_LOOKUP.set(key, col);
   }
 }
 
@@ -238,20 +278,14 @@ export function parseCell(raw: string, type: CsvColumn['type']): unknown {
   if (text === '') return undefined;
 
   switch (type) {
-    case 'number': {
-      const value = Number(text.replace(/[^0-9.\-]/g, ''));
-      if (!Number.isFinite(value) || value < 0) {
-        throw new Error(`"${text}" is not a price or measurement`);
-      }
-      return value;
-    }
-    case 'integer': {
-      const value = Math.trunc(Number(text.replace(/[^0-9.\-]/g, '')));
-      if (!Number.isFinite(value) || value < 0) {
-        throw new Error(`"${text}" is not a whole number of 0 or more`);
-      }
-      return value;
-    }
+    case 'number':
+      return parseNumber(text);
+    case 'grams':
+      /* To pounds, the unit this platform stores. Rounded to four places because a 5 g accessory is
+       * 0.011 lb and rounding to two would make it weightless. */
+      return Math.round((parseNumber(text) / 453.59237) * 10000) / 10000;
+    case 'integer':
+      return Math.trunc(parseNumber(text));
     case 'boolean': {
       const lower = text.toLowerCase();
       if (['true', 'yes', 'y', '1', 'shopify', 'tracked'].includes(lower)) return true;
@@ -272,6 +306,170 @@ export function parseCell(raw: string, type: CsvColumn['type']): unknown {
         .filter(Boolean);
     case 'text':
     default:
-      return text;
+      /* Undo the export's formula guard. `csvCell` prefixes an apostrophe to any value starting
+       * `= + - @` so a spreadsheet does not evaluate it, and nothing here removed it — so a product
+       * called "-40% Cable Bundle" came back from its own export as "'-40% Cable Bundle" and that
+       * is what the storefront rendered. Names beginning with a hyphen are common ("-40% off",
+       * "—Clearance"), and a round trip that is documented as lossless has to be lossless. */
+      return text.startsWith("'") && /^'[=+\-@]/.test(text) ? text.slice(1) : text;
   }
+}
+
+/**
+ * Read a number from a spreadsheet cell, refusing anything that is not one.
+ *
+ * The strip-then-`Number` idiom this replaces was silently catastrophic: stripping everything but
+ * digits from "TBC" leaves the empty string, `Number('')` is `0`, and `0` is finite and
+ * non-negative — so every guard passed and the product was saved at a price of zero, under a green
+ * "1 updated" message. A merchant with "TBC", "N/A" or "ask Dave" anywhere in a price column gave
+ * their catalogue away.
+ *
+ * Currency symbols, thousands separators and surrounding whitespace are still tolerated, because
+ * they are what real exports contain. Parentheses are read as the accounting negative so that
+ * "(5.00)" fails the non-negative check rather than being read as 5.
+ *
+ * @param text - The raw cell, already trimmed and known non-empty.
+ * @returns The value.
+ * @throws When the cell is not a number, or is negative.
+ */
+function parseNumber(text: string): number {
+  const negative = /^\(.*\)$/.test(text);
+  const cleaned = text
+    .replace(/^\(|\)$/g, '')
+    .replace(/[$£€¥\s]/g, '')
+    .replace(/,/g, '');
+
+  /* An explicit shape, so nothing is inferred from a partial match: "12abc" is not 12. */
+  if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(cleaned)) {
+    throw new Error(`"${text}" is not a number`);
+  }
+
+  const value = Number(cleaned) * (negative ? -1 : 1);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`"${text}" is not a number of 0 or more`);
+  }
+  return value;
+}
+
+/**
+ * The columns an exported file carries.
+ *
+ * Import-only headers are excluded: they exist so a file from another platform is understood, not
+ * so our own export contains two columns meaning the same thing.
+ */
+export const EXPORT_CSV_COLUMNS: CsvColumn[] = CATALOG_CSV_COLUMNS.filter((c) => !c.importOnly);
+
+/** One header from an uploaded file, resolved. */
+export interface MappedColumn {
+  index: number;
+  column: CsvColumn;
+}
+
+/** What `mapColumns` made of a file's header row. */
+export interface ColumnMapping {
+  mapping: MappedColumn[];
+  /** Headers this platform does not know. Reported so a merchant can see what was ignored. */
+  unrecognised: string[];
+  /** Headers dropped because an earlier column already writes the same field. */
+  duplicates: string[];
+}
+
+/**
+ * Resolve a file's header row, using each database column at most once.
+ *
+ * The "at most once" is the whole point. A real Shopify export carries `Published` (TRUE/FALSE) and
+ * `Status` (active/draft) side by side, and both describe the same field here — so mapping both put
+ * `status` into the generated `UPDATE` twice and Postgres rejected every row with
+ * `column "status" specified more than once`. Because the import ran in a single transaction, the
+ * first failure poisoned it and the entire file died at row one, on the exact migration path the
+ * header of this module says is supported.
+ *
+ * Later duplicates are dropped rather than the file being refused: two columns agreeing about a
+ * product's status is not an error a merchant can act on, and taking the first is the same rule a
+ * spreadsheet applies.
+ *
+ * @param headers - The file's header row.
+ * @returns The usable mapping, plus what was ignored and why.
+ */
+export function mapColumns(headers: string[]): ColumnMapping {
+  const mapping: MappedColumn[] = [];
+  const unrecognised: string[] = [];
+  const duplicates: string[] = [];
+  const claimed = new Set<string>();
+
+  headers.forEach((header, index) => {
+    const raw = String(header ?? '').trim();
+    if (!raw) return;
+
+    const column = columnForHeader(raw);
+    if (!column) {
+      unrecognised.push(raw);
+      return;
+    }
+    if (column.readOnly || !column.column) {
+      /* Computed columns are exported for reference. Silently ignored rather than reported as
+       * unknown, because the merchant got them from us. */
+      return;
+    }
+    if (claimed.has(column.column)) {
+      duplicates.push(raw);
+      return;
+    }
+
+    claimed.add(column.column);
+    mapping.push({ index, column });
+  });
+
+  return { mapping, unrecognised, duplicates };
+}
+
+/**
+ * Turn a Shopify-shaped price pair into this platform's `base_price` and `sale_price`.
+ *
+ * `Variant Price` is what the shopper pays; `Variant Compare At Price` is the higher price it is
+ * being compared against. So a compare-at above the price means the product is on sale, and the two
+ * map crosswise. A compare-at that is not above the price is not a sale — Shopify itself ignores
+ * one — and is dropped rather than stored as a discount the constraint would reject.
+ *
+ * Blank cells keep meaning "leave this alone", which is why the return omits keys rather than
+ * setting them to null.
+ *
+ * @param price - The parsed `Variant Price` cell, or undefined when blank or absent.
+ * @param compareAt - The parsed `Variant Compare At Price` cell, or undefined.
+ * @returns The columns to write.
+ */
+export function reconcilePrices(
+  price: number | undefined,
+  compareAt: number | undefined
+): { base_price?: number; sale_price?: number | null } {
+  if (price === undefined && compareAt === undefined) return {};
+
+  /* Only a compare-at: it is the regular price, and whatever sale is on stays as it is. */
+  if (price === undefined) return { base_price: compareAt };
+
+  if (compareAt !== undefined && compareAt > price) {
+    return { base_price: compareAt, sale_price: price };
+  }
+
+  /* No sale. Explicitly clearing `sale_price` rather than leaving it: a file that says this product
+   * costs 19.99 and names no comparison price is saying it is not discounted, and leaving a stale
+   * sale price behind would keep selling it at the old discount. */
+  return { base_price: price, sale_price: null };
+}
+
+/**
+ * The two price cells as Shopify writes them.
+ *
+ * @param basePrice - This product's regular price.
+ * @param salePrice - This product's sale price, when it has one.
+ * @returns `{ price, compareAt }` — what the shopper pays, and the comparison price if any.
+ */
+export function shopifyPricePair(
+  basePrice: number | string | null,
+  salePrice: number | string | null
+): { price: number | string | null; compareAt: number | string | null } {
+  const sale = salePrice === null || salePrice === undefined || salePrice === '' ? null : salePrice;
+  return sale === null
+    ? { price: basePrice, compareAt: null }
+    : { price: sale, compareAt: basePrice };
 }

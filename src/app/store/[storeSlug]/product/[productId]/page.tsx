@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { IconRuler2, IconTruck, IconWeight } from '@tabler/icons-react';
 
 import { ProductSchema } from '@/components/product/ProductSchema';
@@ -21,6 +21,7 @@ import {
 
 import { loadStorefront, type SearchParams } from '../../../_lib/load';
 import { getProduct, getRelatedProducts, getStoreBySlug } from '../../../_lib/queries';
+import { resolveRetiredSlug } from '@/lib/catalog/slug';
 import { sanitizeRichText, toParagraphs } from '../../../_lib/html';
 import {
   formatDimensions,
@@ -89,7 +90,22 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   const { store, theme } = result.data;
   const product = await getProduct(store.id, productId);
-  if (!product) notFound();
+  if (!product) {
+    /*
+     * Before giving up, check whether this URL used to belong to a product.
+     *
+     * `product_slug_history`, the unique index on it, the writes from the edit and import routes,
+     * and `resolveRetiredSlug` itself all existed and nothing called any of it — so renaming a
+     * product still 404'd every link, bookmark and search result pointing at the old URL, which is
+     * the entire loss migration 025 built the table to prevent. A 301 is what tells a search engine
+     * to move its ranking across rather than drop the page.
+     */
+    const currentSlug = await resolveRetiredSlug(store.id, productId);
+    if (currentSlug) {
+      permanentRedirect(`/store/${storeSlug}/product/${currentSlug}`);
+    }
+    notFound();
+  }
 
   const related = await getRelatedProducts(product, 4);
 

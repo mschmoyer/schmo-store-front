@@ -152,7 +152,7 @@ export async function GET(
            JOIN inventory_locations l ON l.id = t.location_id
            LEFT JOIN users u ON u.id = t.actor_user_id
           WHERE t.store_id = $1 AND t.product_id = $2
-          ORDER BY t.created_at DESC, t.id DESC
+          ORDER BY t.sequence DESC   -- never created_at: NOW() is transaction start time (migration 034)
           LIMIT 20`,
         [user.storeId, id]
       )

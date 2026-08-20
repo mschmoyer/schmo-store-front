@@ -13,8 +13,15 @@ type RecommendationProductRow = {
   base_price: string;
   is_active: boolean | null;
   category: string | null;
+  reorder_point: number | null;
+  reorder_quantity: number | null;
+  lead_time_days: number | null;
+  safety_stock: number | null;
+  available: number | null;
+  incoming: number | null;
 };
 
+import { effectiveReorderPoint } from '@/lib/inventory/reorder';
 import { requireAuth } from '@/lib/auth/session';
 
 interface RecommendationItem {
@@ -62,7 +69,13 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '10');
+    /* `parseInt('abc')` is NaN, and `slice(0, NaN)` is an empty array — so `?limit=abc` returned
+     * zero recommendations beside a summary saying there were three. Clamped rather than rejected:
+     * a bad limit is not worth failing a read over, but it must not silently mean "none". */
+    const requestedLimit = Number.parseInt(searchParams.get('limit') || '', 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 200)
+      : 10;
     
     // Get inventory data with sales velocity
     const inventoryQuery = `
@@ -72,12 +85,36 @@ export async function GET(request: NextRequest) {
         p.sku,
         p.stock_quantity,
         p.low_stock_threshold,
+        -- The merchant's own replenishment policy, which this route used to ignore entirely.
+        p.reorder_point,
+        p.reorder_quantity,
+        p.lead_time_days,
+        p.safety_stock,
         p.cost_price as unit_cost,
         p.base_price,
         p.is_active,
+        -- Available, not on hand. This screen turns a shortage into a purchase order, and units
+        -- already promised to a customer cannot also cover the next one. The inventory grid has
+        -- always used available; this used stock_quantity and so under-ordered by exactly the
+        -- committed quantity.
+        COALESCE(lv.available, p.stock_quantity, 0) AS available,
+        COALESCE(lv.incoming, 0) AS incoming,
         c.name as category
       FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN categories c ON p.category_id = c.id AND c.store_id = p.store_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(l.available)::int AS available,
+               COALESCE((
+                 SELECT SUM(GREATEST(poi.quantity - poi.quantity_received, 0))::int
+                   FROM purchase_order_items poi
+                   JOIN purchase_orders po ON po.id = poi.purchase_order_id
+                  WHERE poi.product_id = p.id
+                    AND po.store_id = p.store_id
+                    AND po.status NOT IN ('cancelled', 'closed', 'draft')
+               ), 0) AS incoming
+          FROM inventory_levels l
+         WHERE l.product_id = p.id AND l.store_id = p.store_id
+      ) lv ON TRUE
       WHERE p.store_id = $1 AND p.is_active = true
       ORDER BY p.name
     `;
@@ -199,7 +236,8 @@ export async function GET(request: NextRequest) {
         avg_monthly_sales: 0
       };
 
-      const stockQuantity = Number(product.stock_quantity) || 0;
+      const stockQuantity = Number(product.available) || 0;
+      const incoming = Number(product.incoming) || 0;
       const lowStockThreshold = Number(product.low_stock_threshold) || 10;
       const unitCost = Number(product.unit_cost) || 0;
 
@@ -241,8 +279,29 @@ export async function GET(request: NextRequest) {
       const forecast30Days = Math.round(dailyVelocity * 30);
       const forecast90Days = Math.round(dailyVelocity * 90);
 
-      // Calculate reorder point (30 days of sales + buffer)
-      const reorderPoint = Math.max(forecast30Days + 5, lowStockThreshold);
+      /*
+       * THE REORDER POINT THE MERCHANT SET, WHEN THEY SET ONE.
+       *
+       * This was `Math.max(forecast30Days + 5, lowStockThreshold)` — the exact formula the
+       * inventory grid documents as wrong and replaced, running side by side with it and
+       * disagreeing. `p.reorder_point`, `p.lead_time_days` and `p.safety_stock` are all editable in
+       * the grid and none of them were read here, so a merchant who set a 60-day lead time and a
+       * reorder point of 50 watched the grid flag the SKU for reorder while the screen that turns
+       * that into a purchase order recomputed the point as `max(3 + 5, 8) = 8` and never mentioned
+       * it. The 60-day lead time was discarded for a hardcoded 30-day horizon.
+       *
+       * An explicit policy wins. Otherwise the point is what the grid suggests: demand over the
+       * lead time, plus safety stock — because the question a reorder point answers is "will this
+       * run out before a replacement can arrive", and that cannot be answered without the lead
+       * time.
+       */
+      const reorderPoint = effectiveReorderPoint({
+        dailyDemand: dailyVelocity,
+        reorderPoint: Number(product.reorder_point) || null,
+        leadTimeDays: Number(product.lead_time_days) || null,
+        safetyStock: Number(product.safety_stock) || null,
+        lowStockThreshold
+      });
 
       /*
        * THE HARDCODED FLOOR OF 20.
@@ -259,7 +318,16 @@ export async function GET(request: NextRequest) {
        * no demand produces no quantity, and the guard below stops it being
        * recommended at all.
        */
-      const reorderQuantity = Math.max(0, Math.round(forecast90Days + reorderPoint - stockQuantity));
+      /* An explicit reorder quantity is an order size the merchant has agreed with their supplier —
+       * a case, a pallet, a minimum. It is not ours to recalculate. */
+      const explicitQuantity = Number(product.reorder_quantity);
+      const reorderQuantity =
+        Number.isFinite(explicitQuantity) && explicitQuantity > 0
+          ? explicitQuantity
+          /* Otherwise: cover the forecast and the reorder buffer, less what is on the shelf *and*
+           * what is already on its way. Ignoring `incoming` is how a merchant orders the same
+           * pallet twice. */
+          : Math.max(0, Math.round(forecast90Days + reorderPoint - stockQuantity - incoming));
 
       // Calculate days until stockout
       const daysUntilStockout = dailyVelocity > 0 ? Math.floor(stockQuantity / dailyVelocity) : 999;
@@ -372,7 +440,13 @@ export async function GET(request: NextRequest) {
     // Calculate summary statistics
     const urgentCount = recommendations.filter(r => r.priority === 'urgent').length;
     const highCount = recommendations.filter(r => r.priority === 'high').length;
-    const estimatedCost = filteredRecommendations.reduce((sum, r) => sum + (r.recommended_quantity * r.unit_cost), 0);
+    /* Over every recommendation, not the page of them being returned. The summary says
+     * "total_recommendations: 47" beside a cost, and a cost covering only the first ten of those
+     * is a budget figure that is wrong by however much the caller happened to paginate. */
+    const estimatedCost = recommendations.reduce(
+      (sum, r) => sum + r.recommended_quantity * r.unit_cost,
+      0
+    );
 
     return NextResponse.json({
       success: true,
@@ -382,7 +456,9 @@ export async function GET(request: NextRequest) {
           total_recommendations: recommendations.length,
           urgent_items: urgentCount,
           high_priority_items: highCount,
-          estimated_cost: estimatedCost
+          estimated_cost: estimatedCost,
+          /* So a caller can tell a page from the whole list. */
+          returned: filteredRecommendations.length
         }
       }
     });

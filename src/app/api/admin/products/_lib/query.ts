@@ -190,7 +190,7 @@ export function buildProductWhere(storeId: string, filters: ProductListFilters):
   const next = () => `$${params.length + 1}`;
 
   if (filters.search) {
-    const term = `%${filters.search.trim()}%`;
+    const term = `%${escapeLike(filters.search.trim())}%`;
     /*
      * One placeholder, referenced six times, rather than six placeholders holding the same value.
      * The obvious version — calling `next()` once per column inside a template literal — is a trap:
@@ -255,4 +255,21 @@ export function buildProductWhere(storeId: string, filters: ProductListFilters):
   }
 
   return { sql: `WHERE ${conditions.join(' AND ')}`, params };
+}
+
+/**
+ * Escape the characters `LIKE` treats as wildcards.
+ *
+ * The values were always parameterised, so this was never an injection — but `%` and `_` are
+ * wildcards to the *pattern*, not to the parser, and parameterising does not change that. Searching
+ * for `%` matched all seventeen products; searching for a SKU pasted as `BCA_AUD_1001` matched
+ * `BCA-AUD-1001` because `_` matched the hyphen. Both are things a merchant does with a scanner or
+ * a paste, and the same filter also scopes bulk actions and export — so a false match is not just a
+ * confusing list, it is a bulk edit hitting rows the merchant never saw.
+ *
+ * @param term - The raw search term.
+ * @returns The term with wildcards neutralised, for use inside a `%…%` pattern.
+ */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (c) => `\\${c}`);
 }

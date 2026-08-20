@@ -169,15 +169,26 @@ export function InlineEdit({
           .filter(Boolean)
           .join(' ')}
         onClick={begin}
-        onFocus={(event) => {
-          /* Tabbing into the cell opens it, so a keyboard user moves through a column of prices
-           * the same way a mouse user clicks down it. A click focuses first, and `begin` is
-           * idempotent, so this does not double-open. */
-          if (event.target === event.currentTarget && !disabled) begin();
-        }}
+        /*
+         * Deliberately no `onFocus` handler.
+         *
+         * There was one, opening the editor as soon as the cell took focus, so that a keyboard user
+         * "moved down a column the way a mouse user clicks down it". The effect was the opposite:
+         * tabbing across the grid swapped every price and cost cell into an input, which is a
+         * change of context on focus (WCAG 3.2.1, Level A) and made it impossible to traverse the
+         * grid without entering edit mode on each numeric column. This is a `<button>`, so Enter and
+         * Space already open it — the keyboard path exists without hijacking focus.
+         */
         disabled={disabled && !disabledReason}
+        /* `aria-disabled` rather than `disabled` when there is a reason to convey: a genuinely
+         * disabled button is removed from the tab order, so the reason could never be read. */
+        aria-disabled={disabled || undefined}
         aria-label={
-          error ? `${label}: ${error}. Select to try again.` : `${label}. Select to edit.`
+          disabled && disabledReason
+            ? `${label}. ${disabledReason}`
+            : error
+              ? `${label}: ${error}. Select to try again.`
+              : `${label}. Select to edit.`
         }
         title={disabled ? disabledReason : undefined}
       >
@@ -190,12 +201,21 @@ export function InlineEdit({
         </span>
         {locked && (
           <span className={styles.lock} title="You have edited this — ShipStation will not overwrite it">
-            ✓
+            <span aria-hidden="true">✓</span>
+            {/* The tick's meaning was in a `title` attribute, which is hover-only: a keyboard or
+                screen-reader user got a bare checkmark with no explanation of what it marked. */}
+            <span className={styles.srOnly}>Edited by you. ShipStation will not overwrite it.</span>
           </span>
         )}
         {/* The error is text, not a colour: a red cell alone says something is wrong but not
-            what, and says nothing at all to a screen reader or to anyone who cannot see red. */}
-        {error && <span className={styles.errorText}>{error}</span>}
+            what, and says nothing at all to a screen reader or to anyone who cannot see red.
+            `role="status"` is what makes it *announced* — the optimistic value reverts silently
+            otherwise, so a screen-reader user is left believing a save succeeded. */}
+        {error && (
+          <span className={styles.errorText} role="status" aria-live="polite">
+            {error}
+          </span>
+        )}
       </button>
     );
   }

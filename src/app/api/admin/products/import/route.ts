@@ -23,7 +23,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
 import { adminErrorResponse, AdminApiError } from '@/lib/api/adminError';
-import { columnForHeader, parseCell, parseCsv, type CsvColumn } from '@/lib/catalog/csv';
+import { mapColumns, parseCell, parseCsv, reconcilePrices } from '@/lib/catalog/csv';
 import { uniqueProductSlug, recordSlugChange, slugify } from '@/lib/catalog/slug';
 
 /** How many rows one file may carry. Beyond this the merchant should split the file. */
@@ -84,18 +84,7 @@ export async function POST(request: NextRequest) {
      * their prices did not change.
      */
     const headers = rows[0];
-    const mapping: Array<{ index: number; column: CsvColumn }> = [];
-    const unrecognised: string[] = [];
-
-    headers.forEach((header, index) => {
-      if (!header.trim()) return;
-      const column = columnForHeader(header);
-      if (!column) {
-        unrecognised.push(header.trim());
-      } else if (!column.readOnly) {
-        mapping.push({ index, column });
-      }
-    });
+    const { mapping, unrecognised, duplicates } = mapColumns(headers);
 
     const identity = mapping.find((m) => m.column.column === 'sku');
     const handleColumn = mapping.find((m) => m.column.column === 'slug');
@@ -138,9 +127,26 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        /*
+         * Each row gets a savepoint.
+         *
+         * Without one, the per-row `catch` below recorded an outcome and carried on while the
+         * Postgres transaction was already aborted, so every subsequent statement came back
+         * `current transaction is aborted, commands ignored until end of transaction block`. A
+         * 10,000-row file with one duplicate SKU at row 12 discarded rows 13 to 10,000 and reported
+         * each of them with that message — which is both useless to a merchant and the exact
+         * opposite of the promise in this file's header, that one bad row does not fail the file.
+         */
+        await tx.query(`SAVEPOINT row_${i}`);
+
         try {
-          const existing = await tx.query<{ id: string; slug: string; sku: string }>(
-            `SELECT id, slug, sku FROM products
+          /* The whole row, because the lock decision below compares each incoming cell against
+           * what is stored. Selecting three columns and comparing against the rest made every
+           * comparison "different" and claimed every field on every row. */
+          const existing = await tx.query<
+            Record<string, unknown> & { id: string; slug: string; sku: string }
+          >(
+            `SELECT * FROM products
               WHERE store_id = $1 AND ($2 <> '' AND sku = $2 OR $3 <> '' AND slug = $3)
               LIMIT 1`,
             [storeId, sku, handle]
@@ -150,9 +156,40 @@ export async function POST(request: NextRequest) {
           const assignments: string[] = [];
           const applied: string[] = [];
           const locks: string[] = [];
+          const current = existing.rows[0] as Record<string, unknown> | undefined;
+
+          /*
+           * The price pair is resolved together before the per-column loop, because Shopify's two
+           * price columns mean the opposite of this platform's two and neither can be interpreted
+           * without the other. Straight mapping made a genuine Shopify export fail every row on
+           * `products_sale_price_not_above_base`.
+           */
+          const priceCell = cellFor(mapping, cells, 'base_price');
+          const compareCell = cellFor(mapping, cells, 'sale_price');
+          const prices = reconcilePrices(
+            priceCell as number | undefined,
+            compareCell as number | undefined
+          );
+
+          for (const [priceColumn, priceValue] of Object.entries(prices)) {
+            values.push(priceValue);
+            assignments.push(`${priceColumn} = $${values.length}`);
+            applied.push(priceColumn);
+            if (
+              current !== undefined &&
+              !sameStoredValue(current[priceColumn], priceValue) &&
+              SYNCED_FIELDS.includes(priceColumn)
+            ) {
+              locks.push(priceColumn);
+            } else if (current === undefined && SYNCED_FIELDS.includes(priceColumn)) {
+              locks.push(priceColumn);
+            }
+          }
 
           for (const { index, column } of mapping) {
             if (column.column === 'slug' || column.column === 'sku') continue;
+            /* Handled above, as a pair. */
+            if (column.column === 'base_price' || column.column === 'sale_price') continue;
 
             const parsed = parseCell(cells[index] ?? '', column.type);
             if (parsed === undefined) continue;
@@ -160,9 +197,26 @@ export async function POST(request: NextRequest) {
             values.push(parsed);
             assignments.push(`${column.column} = $${values.length}`);
             applied.push(column.column!);
-            /* An imported value is a merchant's decision as much as a typed one, so it claims the
-             * field from ShipStation the same way an edit does. */
-            if (['name', 'short_description', 'base_price', 'featured_image_url', 'status'].includes(column.column!)) {
+
+            /*
+             * An imported value claims the field from ShipStation the same way a typed one does —
+             * but only when it actually differs from what is stored.
+             *
+             * Locking every non-blank mapped cell meant exporting a catalogue and re-importing it
+             * unchanged severed name, description, price, image and status on *every* product from
+             * upstream forever. A no-op round trip is a thing merchants do routinely, to check a
+             * file opens, and it must not be a destructive operation. The single-edit route
+             * compares before locking for exactly this reason.
+             */
+            if (
+              SYNCED_FIELDS.includes(column.column!) &&
+              current !== undefined &&
+              !sameStoredValue(current[column.column!], parsed)
+            ) {
+              locks.push(column.column!);
+            } else if (SYNCED_FIELDS.includes(column.column!) && current === undefined) {
+              /* A newly created product has nothing to compare against, and every value in the file
+               * is the merchant's. */
               locks.push(column.column!);
             }
           }
@@ -178,7 +232,7 @@ export async function POST(request: NextRequest) {
             /* A handle change on an existing product retires the old slug so links keep working. */
             let newSlug: string | null = null;
             if (handle && handle !== product.slug) {
-              newSlug = await uniqueProductSlug(storeId, handle, product.id);
+              newSlug = await uniqueProductSlug(storeId, handle, product.id, tx);
               values.push(newSlug);
               assignments.push(`slug = $${values.length}`);
               applied.push('slug');
@@ -200,7 +254,7 @@ export async function POST(request: NextRequest) {
             }
 
             if (newSlug) {
-              await recordSlugChange(storeId, product.id, product.slug, newSlug);
+              await recordSlugChange(storeId, product.id, product.slug, newSlug, tx);
             }
 
             outcomes.push({ line, sku: product.sku, handle, action: 'update', fields: applied });
@@ -223,12 +277,23 @@ export async function POST(request: NextRequest) {
           }
 
           const newSku = sku || `${slugify(name).toUpperCase().slice(0, 20) || 'SKU'}-${line}`;
-          const slug = await uniqueProductSlug(storeId, handle || name);
+          const slug = await uniqueProductSlug(storeId, handle || name, undefined, tx);
 
           const columns = ['store_id', 'sku', 'slug', 'field_locks'];
           const insertValues: unknown[] = [storeId, newSku, slug, locks];
+
+          /* The same crosswise price resolution the update path uses. Applied here too because a
+           * Shopify export's first import is a *create*, which is precisely the case that failed
+           * every row on `products_sale_price_not_above_base`. */
+          for (const [priceColumn, priceValue] of Object.entries(prices)) {
+            if (priceValue === null || priceValue === undefined) continue;
+            columns.push(priceColumn);
+            insertValues.push(priceValue);
+          }
+
           for (const { index, column } of mapping) {
             if (column.column === 'slug' || column.column === 'sku') continue;
+            if (column.column === 'base_price' || column.column === 'sale_price') continue;
             const parsed = parseCell(cells[index] ?? '', column.type);
             if (parsed === undefined) continue;
             columns.push(column.column!);
@@ -253,7 +318,10 @@ export async function POST(request: NextRequest) {
           );
 
           outcomes.push({ line, sku: newSku, handle: slug, action: 'create', fields: columns });
+          await tx.query(`RELEASE SAVEPOINT row_${i}`);
         } catch (error) {
+          /* Undo just this row, leaving the transaction usable for the next one. */
+          await tx.query(`ROLLBACK TO SAVEPOINT row_${i}`);
           /*
            * One bad row does not fail the file. The message is the database's own where it is
            * useful to a merchant — "duplicate key" on a SKU tells them exactly what to fix — and
@@ -293,6 +361,10 @@ export async function POST(request: NextRequest) {
         dry_run: dryRun,
         summary,
         unrecognised_columns: unrecognised,
+        /* Headers dropped because an earlier column already writes that field — a Shopify export's
+         * `Published` beside its `Status`, for instance. Said out loud so a merchant is not left
+         * wondering why one of their columns had no effect. */
+        duplicate_columns: duplicates,
         /* Errors first: they are the rows the merchant has to act on. */
         results: [
           ...outcomes.filter((o) => o.action === 'error'),
@@ -345,4 +417,69 @@ async function readUpload(request: NextRequest): Promise<string> {
     throw new AdminApiError('That file is larger than 20MB. Split it and import in parts.', 413);
   }
   return body;
+}
+
+/** The fields the ShipStation sync also writes, and so the only ones worth claiming. */
+const SYNCED_FIELDS = [
+  'name',
+  'short_description',
+  'base_price',
+  'featured_image_url',
+  'status',
+  'category_id',
+  'sku'
+];
+
+/**
+ * Whether an imported cell matches what is already stored.
+ *
+ * Compared loosely on purpose. A price arrives from Postgres as the string `"249.00"` and from the
+ * file as the number `249`; a strict comparison would call those different and claim the field,
+ * which is the defect this exists to prevent. Arrays compare element-wise so tag order is
+ * significant — reordering tags *is* an edit.
+ *
+ * @param stored - The value currently in the database.
+ * @param incoming - The parsed cell.
+ * @returns Whether they mean the same thing.
+ */
+function sameStoredValue(stored: unknown, incoming: unknown): boolean {
+  if (stored === null || stored === undefined) {
+    return incoming === null || incoming === undefined || incoming === '';
+  }
+
+  if (Array.isArray(stored) || Array.isArray(incoming)) {
+    const a = Array.isArray(stored) ? stored.map(String) : [String(stored)];
+    const b = Array.isArray(incoming) ? incoming.map(String) : [String(incoming)];
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+
+  if (typeof incoming === 'number' || typeof stored === 'number') {
+    const a = Number(stored);
+    const b = Number(incoming);
+    if (Number.isFinite(a) && Number.isFinite(b)) return a === b;
+  }
+
+  if (typeof incoming === 'boolean' || typeof stored === 'boolean') {
+    return Boolean(stored) === Boolean(incoming);
+  }
+
+  return String(stored).trim() === String(incoming).trim();
+}
+
+/**
+ * Parse the cell a given column is mapped to, if the file has one.
+ *
+ * @param mapping - The resolved header mapping.
+ * @param cells - One row.
+ * @param column - The database column wanted.
+ * @returns The parsed value, or undefined when the column is absent or the cell is blank.
+ */
+function cellFor(
+  mapping: Array<{ index: number; column: { column: string | null; type: string } }>,
+  cells: string[],
+  column: string
+): unknown {
+  const found = mapping.find((m) => m.column.column === column);
+  if (!found) return undefined;
+  return parseCell(cells[found.index] ?? '', found.column.type as Parameters<typeof parseCell>[1]);
 }

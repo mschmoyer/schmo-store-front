@@ -160,10 +160,52 @@ function coerceValue(value: unknown, coerce: Coercion, field: string): unknown {
     case 'html':
       return String(value);
     case 'text':
-    default:
-      return String(value).trim() || null;
+    default: {
+      const text = String(value).trim();
+      if (!text) return null;
+
+      /*
+       * Length is checked here rather than left to Postgres.
+       *
+       * `coerceValue` validated type and never length, so an over-long value reached the database,
+       * raised `value too long for type character varying(n)`, and failed the whole statement —
+       * taking every other field in the same save with it, under a generic "Something went wrong on
+       * our end. The details have been logged." A merchant typing a 600-character product name lost
+       * the price they changed at the same time and was told nothing about why.
+       */
+      const limit = TEXT_LIMITS[field];
+      if (limit && text.length > limit) {
+        throw new AdminApiError(
+          `${label} is ${text.length} characters. The most it can hold is ${limit}.`,
+          400
+        );
+      }
+      return text;
+    }
   }
 }
+
+/**
+ * How much each text column can hold, matching the schema.
+ *
+ * Only the columns that are narrower than the values a merchant plausibly types. `TEXT` columns —
+ * descriptions, notes — have no limit worth enforcing and are absent.
+ */
+const TEXT_LIMITS: Record<string, number> = {
+  sku: 255,
+  name: 500,
+  slug: 255,
+  barcode: 100,
+  vendor: 255,
+  product_type: 255,
+  short_description: 1000,
+  meta_title: 255,
+  meta_description: 500,
+  shipping_class: 100,
+  weight_unit: 10,
+  dimension_unit: 10,
+  hs_code: 16
+};
 
 /**
  * GET /api/admin/products/[productId]
@@ -493,7 +535,7 @@ async function applyUpdate(request: NextRequest, productId: string): Promise<Nex
     }
 
     if (retiredSlug) {
-      await recordSlugChange(storeId, productId, retiredSlug, result.rows[0].slug);
+      await recordSlugChange(storeId, productId, retiredSlug, result.rows[0].slug, tx);
     }
 
     return result.rows[0];

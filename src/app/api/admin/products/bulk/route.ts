@@ -16,6 +16,7 @@
  * renders the grid resolves the selection server-side, so what the merchant saw is what changes.
  */
 
+import type { PoolClient } from 'pg';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
@@ -53,6 +54,28 @@ const ACTIONS: BulkAction[] = [
   'set_supplier', 'adjust_price', 'set_sale_price', 'clear_sale_price',
   'set_low_stock_threshold', 'set_reorder_point', 'set_track_inventory', 'delete'
 ];
+
+/**
+ * Which column each action writes, for the fields the ShipStation sync also writes.
+ *
+ * Editing one of these claims it from the sync (migration 032). The single-product route does this;
+ * this one did not, so a merchant who re-priced three hundred SKUs from the grid for a sale had
+ * every one of them reverted at the top of the next hour — the exact defect field ownership was
+ * built to eliminate, reintroduced by the faster path to the same edit.
+ *
+ * Actions absent from this map write columns the sync never touches, so there is nothing to claim.
+ */
+const LOCKS_BY_ACTION: Partial<Record<BulkAction, string[]>> = {
+  adjust_price: ['base_price'],
+  set_sale_price: ['sale_price'],
+  clear_sale_price: ['sale_price'],
+  set_category: ['category_id'],
+  /* Publishing is a merchandising decision with no upstream equivalent, and the sync must not
+   * republish something a merchant took down. */
+  publish: ['status'],
+  unpublish: ['status'],
+  archive: ['status']
+};
 
 /** One product's outcome. `skipped` carries a reason the merchant can act on. */
 interface RowResult {
@@ -103,12 +126,25 @@ async function resolveTargets(
     vendor: typeof rawFilter.vendor === 'string' ? rawFilter.vendor : undefined
   };
 
-  /* An empty filter would select the entire catalogue, which is never what a mis-click meant.
-   * Selecting everything on purpose requires saying so. */
-  const hasNarrowing = Object.values(filter).some((v) => v !== undefined);
+  /*
+   * An empty filter would select the entire catalogue, which is never what a mis-click meant.
+   * Selecting everything on purpose requires saying so.
+   *
+   * "Narrowing" means a value the WHERE builder will actually use, not merely a key that is
+   * present. `{ search: '' }` set this to true while `buildProductWhere` skipped the predicate as
+   * falsy, so `{"action":"delete","filter":{"search":""}}` deleted the whole catalogue with the
+   * guard reporting itself satisfied. Same for `{ tags: [] }` and `{ vendor: '' }`.
+   */
+  const hasNarrowing = Object.values(filter).some((value) => {
+    if (value === undefined || value === null) return false;
+    if (typeof value === 'string') return value.trim() !== '';
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  });
   if (!hasNarrowing && body.confirm_all !== true) {
     throw new AdminApiError(
-      'Select products, or pass confirm_all to apply this to the entire catalogue',
+      'This would apply to every product in the catalogue. Narrow the list first, or confirm that ' +
+        'is what you meant.',
       400
     );
   }
@@ -260,18 +296,27 @@ export async function POST(request: NextRequest) {
                   }
             );
           }
+          await claimFields(tx, action, storeId, [...changed], body.target === 'sale_price');
           return;
         }
 
         default: {
-          const { sql, params } = updateForAction(action, body, storeId, ids);
+          const { sql, params, skipReason } = updateForAction(action, body, storeId, ids);
           const updated = await tx.query<{ id: string }>(sql, params);
           const changed = new Set(updated.rows.map((r) => r.id));
+          await claimFields(tx, action, storeId, [...changed]);
           for (const id of ids) {
             results.push(
               changed.has(id)
                 ? { id, sku: skuById.get(id) ?? '', status: 'updated' }
-                : { id, sku: skuById.get(id) ?? '', status: 'skipped', reason: 'No change needed' }
+                : {
+                    id,
+                    sku: skuById.get(id) ?? '',
+                    status: 'skipped',
+                    /* Actions whose predicate can reject a row for a substantive reason say what it
+                     * was. "No change needed" is only true when the value already matched. */
+                    reason: skipReason ?? 'No change needed'
+                  }
             );
           }
         }
@@ -306,7 +351,7 @@ function updateForAction(
   body: Record<string, unknown>,
   storeId: string,
   ids: string[]
-): { sql: string; params: unknown[] } {
+): { sql: string; params: unknown[]; skipReason?: string } {
   const scope = 'WHERE store_id = $1 AND id = ANY($2::uuid[])';
   const base = [storeId, ids];
 
@@ -339,9 +384,20 @@ function updateForAction(
      * changes and a no-op run does not bump `updated_at` on the whole catalogue. */
     case 'publish':
       return {
+        /*
+         * The price guard, which the single-product route enforces and this one did not — so
+         * `PATCH {"status":"active"}` was refused with "Set a price before publishing this product"
+         * while selecting the same rows and pressing Publish put $0.00 listings on the storefront.
+         * The "Needs attention" view is largely missing-price rows, which makes selecting all of
+         * them and publishing an entirely natural thing to do.
+         *
+         * Rows without a price are simply not updated, and the per-row reporting below says why.
+         */
         sql: `UPDATE products SET status = 'active', published_at = COALESCE(published_at, NOW()), updated_at = NOW()
-              ${scope} AND status <> 'active' RETURNING id`,
-        params: base
+              ${scope} AND status <> 'active'
+              AND COALESCE(sale_price, base_price, 0) > 0 RETURNING id`,
+        params: base,
+        skipReason: 'Set a price before publishing this product'
       };
     case 'unpublish':
       return {
@@ -370,9 +426,23 @@ function updateForAction(
       };
     case 'add_tags':
       return {
-        /* Union without duplicates, order preserved by the array constructor's subquery. */
+        /*
+         * Union without duplicates, keeping first-appearance order.
+         *
+         * This was `ARRAY(SELECT DISTINCT unnest(...))` under a comment claiming the array
+         * constructor preserved order. It does not: `SELECT DISTINCT` hash-aggregates, so adding
+         * one tag to {alpha,beta,gamma,delta} returned {epsilon,beta,delta,alpha,gamma}. Tag order
+         * drives badge and facet order on the storefront, so the merchant's arrangement is theirs
+         * to keep. `WITH ORDINALITY` plus `MIN(ord)` dedupes on first occurrence and orders by it.
+         */
         sql: `UPDATE products
-                 SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $3::text[])),
+                 SET tags = ARRAY(
+                       SELECT d.tag FROM (
+                         SELECT u.tag, MIN(u.ord) AS ord
+                           FROM unnest(COALESCE(tags, '{}') || $3::text[]) WITH ORDINALITY AS u(tag, ord)
+                          GROUP BY u.tag
+                       ) d ORDER BY d.ord
+                     ),
                      updated_at = NOW()
                ${scope} AND NOT (COALESCE(tags, '{}') @> $3::text[]) RETURNING id`,
         params: [...base, requireTags()]
@@ -413,7 +483,10 @@ function updateForAction(
          * predicate and are reported as skipped. */
         sql: `UPDATE products SET sale_price = $3::numeric, updated_at = NOW()
               ${scope} AND $3::numeric <= base_price RETURNING id`,
-        params: [...base, requireNumber('sale_price')]
+        params: [...base, requireNumber('sale_price')],
+        /* Not "No change needed", which is what the shared handler said and which a merchant reads
+         * as "already at that price". */
+        skipReason: 'That sale price is above the product\'s regular price'
       };
     case 'clear_sale_price':
       return {
@@ -432,13 +505,59 @@ function updateForAction(
               ${scope} AND reorder_point IS DISTINCT FROM $3::int RETURNING id`,
         params: [...base, Math.max(0, Math.round(requireNumber('reorder_point')))]
       };
-    case 'set_track_inventory':
+    case 'set_track_inventory': {
+      /*
+       * Every other action accepts `body[field] ?? body.value`; this one read only
+       * `body.track_inventory !== false`, so `{"value": false}` and `{"value": true}` both meant
+       * "on" and the generic parameter silently did nothing. A bulk action whose off switch turns
+       * things on is worse than one that does not exist.
+       */
+      const raw = body.track_inventory ?? body.value;
+      if (typeof raw !== 'boolean') {
+        throw new AdminApiError('Say whether stock tracking should be on or off', 400);
+      }
       return {
         sql: `UPDATE products SET track_inventory = $3, updated_at = NOW()
               ${scope} AND track_inventory IS DISTINCT FROM $3 RETURNING id`,
-        params: [...base, body.track_inventory !== false]
+        params: [...base, raw]
       };
+    }
     default:
       throw new AdminApiError(`"${action}" has no update defined`, 500);
   }
+}
+
+/**
+ * Claim the fields a bulk action wrote, so the ShipStation sync stops overwriting them.
+ *
+ * Only rows that actually changed are claimed — the same rule the single-product route follows.
+ * Locking a row the update skipped would sever a product from upstream on the strength of an edit
+ * that did not happen.
+ *
+ * @param tx - The transaction the update ran in.
+ * @param action - Which bulk action ran.
+ * @param storeId - The tenant.
+ * @param ids - The products the update actually changed.
+ * @param saleTarget - For `adjust_price`, whether the sale price was the target rather than base.
+ * @returns Nothing.
+ */
+async function claimFields(
+  tx: PoolClient,
+  action: BulkAction,
+  storeId: string,
+  ids: string[],
+  saleTarget = false
+): Promise<void> {
+  if (ids.length === 0) return;
+
+  const fields =
+    action === 'adjust_price'
+      ? [saleTarget ? 'sale_price' : 'base_price']
+      : LOCKS_BY_ACTION[action];
+  if (!fields || fields.length === 0) return;
+
+  await tx.query(
+    `SELECT lock_product_fields($1, id, $3::text[]) FROM unnest($2::uuid[]) AS id`,
+    [storeId, ids, fields]
+  );
 }
