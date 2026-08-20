@@ -163,6 +163,7 @@ createdb rebelshops
 cp .env.example .env.local          # then set DATABASE_URL and JWT_SECRET
 npm run db:migrate
 npm run db:seed-demo
+npm run db:verify                   # optional: prove the trigger-backed schema rules still hold
 npm run dev
 ```
 

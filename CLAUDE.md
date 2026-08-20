@@ -73,6 +73,7 @@ npm run test:e2e -- --project=chromium   # note the `--`
 npm run db:migrate         # apply migrations
 npm run db:status          # what is pending
 npm run db:seed-demo       # demo stores and users (idempotent)
+npm run db:verify          # run the trigger-backed schema invariants as behaviour
 
 npm run shipstation:probe  # SHIPSTATION_API_KEY=<key> — live endpoint + response-shape check
 npm run sync:background    # ShipStation sync CLI entry point

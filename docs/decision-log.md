@@ -2782,3 +2782,80 @@ Still open:
 - [ ] Nothing links "on order" back to the purchase order that created it
 - [ ] No skip-to-content link; every page costs 13 tab stops through the sidebar
 - [ ] No collections or metafields; `publish_at` remains a dead column
+
+## Variants, step 1: the schema (3.9.0)
+
+The largest structural gap in the catalogue starts closing. This is the first of the five steps the
+catalogue reviewer specced, and it is deliberately additive — the tables exist, every product has a
+variant, and nothing reads any of it yet. That is what makes it shippable and reversible alone.
+
+- [x] **`039_variants.sql`** creates `product_options`, `product_option_values`, `product_variants`
+      and `variant_option_values`, all with the `UNIQUE (id, store_id)` composite-FK targets that
+      migration 026 established, and backfills one `Default Title` variant per existing product
+      carrying its SKU, prices, weight, shipping fields and stock policy. 36 products, 36 variants,
+      0 orphans, asserted by the migration itself rather than by a comment
+
+- [x] **`product_media` gained its composite key.** It predates the 026 convention, so a variant
+      image reference had nothing store-scoped to point at. Without it the variant could have
+      borrowed another merchant's photograph — the exact hole 026 closed for categories
+
+- [x] Three invariants live in the schema rather than in a route: every product has at least one
+      variant; a variant's option combination is unique within its product; an option value belongs
+      to the option it is filed under. The third is a composite foreign key, so attaching "Large" to
+      the Colour axis is a constraint violation rather than a validation someone forgets to write
+
+- [x] **The uniqueness constraint had to be deferred, and finding out why took building a grid.**
+      `option_key` is maintained by a trigger on `variant_option_values`, so a variant necessarily
+      exists before the rows that give it its identity. Every variant in a four-row grid therefore
+      holds the empty key for the length of one statement — and so does the auto-created default it
+      is replacing. Checked immediately, *creating any multi-variant product is a unique violation
+      against itself*. The trade is that the constraint cannot serve as an `ON CONFLICT` arbiter;
+      upserts key on the SKU
+
+- [x] **The deferred existence check fired on products that had been deleted.** Because the
+      "≥ 1 variant" guard is deferred, its INSERT arm runs at commit — long after a transaction that
+      created a product and then deleted it again has done both. An import rolling a row back by
+      hand, or an admin discarding a draft, would have failed at `COMMIT` citing an invariant
+      neither had violated. Both arms now check the product still exists first
+
+- [x] **The bridge triggers are what make step 2 safe.** `create_default_variant()` gives every new
+      product its variant from *any* path — admin form, CSV import, ShipStation sync, seed script,
+      psql — which is why invariant 1 holds without one line of application code changing in this
+      step. `sync_default_variant_from_product()` mirrors edits onto the single optionless variant
+      and becomes a no-op the moment real options appear. Without it, a price edit landing between
+      this migration and step 2 would leave the variant stale, and step 2 would silently repoint
+      reads at the stale value
+
+- [x] **SKU uniqueness is deliberately *not* enforced.** `products.sku` has only ever had a
+      non-unique index, so a store may already hold duplicates; promoting that to a UNIQUE index
+      here would turn an existing data condition into a failed deploy, and silently renaming a
+      merchant's SKU to make the index build is worse than the duplicate
+
+- [x] **`database/verify-schema-invariants.js`**, wired into CI after the seed and available as
+      `npm run db:verify`. A migration's `DO` block proves the state it left behind; nothing proved
+      that state was still true three migrations later, and trigger-backed rules are exactly what a
+      later `CASCADE` disarms by accident. Ten cases run the rules as behaviour — each does the
+      thing that should be refused and fails if it was allowed — inside transactions that always
+      roll back
+
+- [x] **The verifier was mutation-tested against a deliberately disarmed schema**, and two cases
+      failed to fail. Re-deferring the constraint, disabling each trigger in turn: "a product cannot
+      commit with no variants left" stayed green with its trigger off, because the *insert*-side
+      guard raised instead and the case could not tell the difference. It now asserts its own
+      precondition, and a second case borrows an already-committed product so the delete-side
+      trigger is the only thing that can refuse
+
+- [x] **Version bumped** to 3.9.0
+
+Still open:
+- [ ] **Variants, steps 2–5.** Repoint the write paths (`inventory_levels`, `inventory_holds`,
+      `inventory_transactions`, `inventory_logs`, `order_items` with a `variant_title` snapshot,
+      `purchase_order_items`); import/export; the admin variant editor; the storefront picker, cart
+      keying and checkout
+- [ ] Deleting a whole option axis collapses its variants onto colliding keys. Deferred uniqueness
+      turns that into a clean failure at commit rather than corruption, but the message is cryptic —
+      step 4's editor has to decide which variants survive before it issues the delete
+- [ ] `reserved` has no writer; a checkout reservation is what would close the oversell race
+- [ ] Nothing links "on order" back to the purchase order that created it
+- [ ] No skip-to-content link; every page costs 13 tab stops through the sidebar
+- [ ] No collections or metafields; `publish_at` remains a dead column
