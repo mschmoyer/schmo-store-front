@@ -34,20 +34,14 @@ const PG_MESSAGES: Record<string, { status: number; message: string }> = {
   '40P01': { status: 409, message: 'That change collided with another one. Try again.' }
 };
 
-/** An error a route raises deliberately, whose message is safe to show the caller. */
-export class AdminApiError extends Error {
-  readonly status: number;
+/*
+ * `AdminApiError` itself lives in `./AdminApiError`, which has no framework import, so validation
+ * code can throw one without dragging `next/server` along. Re-exported here for callers that need
+ * both it and the response builder.
+ */
+export { AdminApiError } from './AdminApiError';
 
-  /**
-   * @param message - Text written for a merchant to read. Never interpolate database output here.
-   * @param status - The HTTP status to answer with.
-   */
-  constructor(message: string, status = 400) {
-    super(message);
-    this.name = 'AdminApiError';
-    this.status = status;
-  }
-}
+import { AdminApiError } from './AdminApiError';
 
 /**
  * Turn a thrown value into a response, logging the detail rather than sending it.

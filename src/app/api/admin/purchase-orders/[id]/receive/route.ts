@@ -1,30 +1,385 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth/session';
+/**
+ * Receiving goods against a purchase order.
+ *
+ * This route was twenty-nine lines: a `console.log`, and `success: true`. The modal above it
+ * reported "Successfully received N items". Stock never moved, `quantity_received` never advanced,
+ * and the order stayed open — so the next reorder recommendation told the merchant to buy the
+ * pallet they had just unloaded. Of everything the reviews turned up, this was the most expensive
+ * lie in the product: a merchant acts on it with real money.
+ *
+ * The schema for doing it properly has existed since migration 009 and had never been written to.
+ * `purchase_order_receiving` records each delivery separately — which is what makes a partial
+ * receipt legible three weeks later — and `quantity_pending` is a generated column that keeps
+ * itself right once `quantity_received` is correct.
+ *
+ * Receipts are strictly incremental. The other half-built receive path set `quantity_received` to
+ * an absolute value while separately *adding* the same units to stock, so a second delivery against
+ * one line overwrote the receipt count and double-counted the units.
+ */
 
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/database/connection';
+import { requireAuth } from '@/lib/auth/session';
+import { adminErrorResponse, AdminApiError } from '@/lib/api/adminError';
+import { postMovement } from '@/lib/inventory/ledger';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** One line being received, as the client sends it. */
+interface IncomingReceipt {
+  purchase_order_item_id?: string;
+  item_id?: string;
+  quantity_received?: number;
+  quantity?: number;
+  damaged_quantity?: number;
+  damage_notes?: string | null;
+  quality_status?: string;
+  quality_notes?: string | null;
+  location_id?: string | null;
+  /** The cost actually invoiced, when it differs from what was ordered at. */
+  unit_cost?: number;
+}
+
+/**
+ * POST /api/admin/purchase-orders/[id]/receive
+ *
+ * Record a delivery: advance the received quantities, move the stock, and update the order's state.
+ *
+ * Body: `{ items: [{ purchase_order_item_id, quantity_received, damaged_quantity?, ... }],
+ * received_date?, note? }`.
+ *
+ * @param request - The incoming request.
+ * @param context - Route params carrying the purchase order id.
+ * @returns What was received per line, the order's new status, and the resulting stock positions.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth(request);
+    const user = await requireAuth(request);
+    if (!user.storeId) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
+    }
+    const storeId = user.storeId;
+
+    const { id } = await params;
+    if (!UUID.test(id)) {
+      return NextResponse.json({ success: false, error: 'Purchase order not found' }, { status: 404 });
+    }
 
     const body = await request.json();
-    const { items } = body;
+    const incoming: IncomingReceipt[] = Array.isArray(body.items) ? body.items : [];
+    if (incoming.length === 0) {
+      throw new AdminApiError('Choose at least one line to receive', 400);
+    }
 
-    // Mock implementation - in production this would update the database
-    const { id } = await params;
-    console.log('Receiving items for PO:', id, items);
+    const receivedDate =
+      typeof body.received_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.received_date)
+        ? body.received_date
+        : null;
+
+    const result = await db.transaction(async (tx) => {
+      /*
+       * Ownership and lock in one statement. `FOR UPDATE` on the order serialises two people
+       * receiving the same delivery from two devices, which is a real warehouse situation and
+       * would otherwise let both post the units.
+       */
+      const orderResult = await tx.query<{
+        id: string;
+        po_number: string;
+        status: string;
+        supplier_name: string;
+      }>(
+        `SELECT id, po_number, status, supplier_name
+           FROM purchase_orders
+          WHERE id = $1 AND store_id = $2
+          FOR UPDATE`,
+        [id, storeId]
+      );
+
+      const order = orderResult.rows[0];
+      if (!order) {
+        throw new AdminApiError('That purchase order is not in this store', 404);
+      }
+      if (order.status === 'cancelled') {
+        throw new AdminApiError('This purchase order was cancelled', 409);
+      }
+      if (order.status === 'closed') {
+        throw new AdminApiError('This purchase order is closed', 409);
+      }
+
+      const lines = await tx.query<{
+        id: string;
+        product_id: string | null;
+        product_sku: string;
+        product_name: string;
+        quantity: number;
+        quantity_received: number;
+        unit_cost: string;
+        location_id: string | null;
+      }>(
+        `SELECT id, product_id, product_sku, product_name, quantity, quantity_received, unit_cost, location_id
+           FROM purchase_order_items
+          WHERE purchase_order_id = $1
+          FOR UPDATE`,
+        [id]
+      );
+
+      const lineById = new Map(lines.rows.map((l) => [l.id, l]));
+      const applied: Array<Record<string, unknown>> = [];
+
+      for (const [index, entry] of incoming.entries()) {
+        const lineId = entry.purchase_order_item_id ?? entry.item_id ?? '';
+        const line = lineById.get(lineId);
+        if (!line) {
+          throw new AdminApiError(
+            `Line ${index + 1} is not part of purchase order ${order.po_number}`,
+            400
+          );
+        }
+
+        const quantity = Math.trunc(Number(entry.quantity_received ?? entry.quantity ?? 0));
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new AdminApiError(
+            `${line.product_sku}: enter how many units arrived`,
+            400
+          );
+        }
+
+        const damaged = Math.max(0, Math.trunc(Number(entry.damaged_quantity ?? 0)) || 0);
+        if (damaged > quantity) {
+          throw new AdminApiError(
+            `${line.product_sku}: more units marked damaged than were received`,
+            400
+          );
+        }
+
+        /*
+         * Over-receipt is allowed but never silent. Suppliers really do ship extra, and refusing
+         * the receipt would leave the merchant with units on the shelf and no record of them —
+         * which is worse than a discrepancy they can see. It is reported back per line.
+         */
+        const outstanding = line.quantity - line.quantity_received;
+        const overReceived = Math.max(0, quantity - outstanding);
+
+        const updated = await tx.query<{ quantity_received: number; quantity_pending: number }>(
+          `UPDATE purchase_order_items
+              SET quantity_received = quantity_received + $1,
+                  unit_cost = COALESCE($2::numeric, unit_cost),
+                  updated_at = NOW()
+            WHERE id = $3
+            RETURNING quantity_received, quantity_pending`,
+          [
+            quantity,
+            entry.unit_cost === undefined || entry.unit_cost === null ? null : Number(entry.unit_cost),
+            line.id
+          ]
+        );
+
+        await tx.query(
+          `INSERT INTO purchase_order_receiving (
+             purchase_order_id, purchase_order_item_id, received_date, quantity_received,
+             quality_status, quality_notes, received_by, damaged_quantity, damage_notes
+           ) VALUES ($1, $2, COALESCE($3::date, CURRENT_DATE), $4, $5, $6, $7, $8, $9)`,
+          [
+            id,
+            line.id,
+            receivedDate,
+            quantity,
+            ['pending', 'approved', 'rejected'].includes(String(entry.quality_status))
+              ? entry.quality_status
+              : 'approved',
+            entry.quality_notes ?? null,
+            user.userId,
+            damaged,
+            entry.damage_notes ?? null
+          ]
+        );
+
+        const locationId = entry.location_id ?? line.location_id ?? null;
+        const unitCost =
+          entry.unit_cost === undefined || entry.unit_cost === null
+            ? Number(line.unit_cost)
+            : Number(entry.unit_cost);
+
+        let movement = null;
+        let damageMovement = null;
+
+        /*
+         * Stock only moves for lines that resolve to a product we hold. A purchase order line can
+         * legitimately name a SKU that is not in the catalogue — packaging, a sample, something not
+         * yet listed — and the receipt is still a real business record. Posting a movement for a
+         * product that does not exist would fail; skipping it silently would lose the receipt. The
+         * receipt row is written either way and the response says which lines moved stock.
+         */
+        if (line.product_id) {
+          movement = await postMovement(
+            {
+              storeId,
+              productId: line.product_id,
+              locationId,
+              delta: quantity,
+              reason: 'po_receipt',
+              referenceType: 'purchase_order',
+              referenceId: id,
+              actorUserId: user.userId,
+              note: `Received against ${order.po_number}${overReceived > 0 ? ` (${overReceived} over)` : ''}`,
+              /* Cost at receipt, not today's cost price. This is what makes a valuation as of a
+               * past date answerable. */
+              unitCost
+            },
+            tx
+          );
+
+          /*
+           * Cost is updated from the receipt's own balance, before the damage entry is posted.
+           *
+           * The prior balance has to be `balance_after - quantity` from the receipt movement, not
+           * a fresh SUM taken later: posting the damage first drops on-hand again, and deriving the
+           * prior by subtracting the received quantity from *that* attributes the damaged units to
+           * the old cost layer. On a receipt of 60 at 40.00 against 27 on hand at 64.50 it gave
+           * 46.57 where the answer is 47.60 — small, and wrong in the same direction every time.
+           */
+          if (Number.isFinite(unitCost) && unitCost > 0) {
+            const priorOnHand = movement.balance_after - quantity;
+            await tx.query(
+              `UPDATE products
+                  SET cost_price = CASE
+                        WHEN cost_price IS NULL OR cost_price <= 0 THEN $3::numeric
+                        WHEN $4::int <= 0 THEN $3::numeric
+                        ELSE ROUND(
+                          (($4::int * cost_price) + ($5::int * $3::numeric))
+                          / NULLIF($4::int + $5::int, 0), 2)
+                      END,
+                      updated_at = NOW()
+                WHERE id = $2 AND store_id = $1`,
+              [storeId, line.product_id, unitCost, priorOnHand, quantity]
+            );
+          }
+
+          /* Damaged units arrive and then immediately leave, as two entries rather than one netted
+           * one. The merchant received them — the supplier will be invoicing for them — and the
+           * damage is its own reportable event. Netting the two would hide both. */
+          if (damaged > 0) {
+            damageMovement = await postMovement(
+              {
+                storeId,
+                productId: line.product_id,
+                locationId,
+                delta: -damaged,
+                reason: 'damage',
+                referenceType: 'purchase_order',
+                referenceId: id,
+                actorUserId: user.userId,
+                note: entry.damage_notes || `Damaged on arrival against ${order.po_number}`,
+                unitCost
+              },
+              tx
+            );
+          }
+        }
+
+        applied.push({
+          purchase_order_item_id: line.id,
+          sku: line.product_sku,
+          name: line.product_name,
+          quantity_received: quantity,
+          damaged_quantity: damaged,
+          over_received: overReceived,
+          total_received: updated.rows[0]?.quantity_received ?? 0,
+          still_pending: updated.rows[0]?.quantity_pending ?? 0,
+          stock_moved: Boolean(line.product_id),
+          balance_after: movement?.balance_after ?? null,
+          damage_balance_after: damageMovement?.balance_after ?? null
+        });
+      }
+
+      /*
+       * The order's state, derived from the lines rather than assumed. `partially_received` is the
+       * state that did not exist before, which is why an order with three of a hundred units in
+       * looked exactly like one nobody had touched.
+       */
+      const totals = await tx.query<{ outstanding: number; received: number }>(
+        `SELECT COALESCE(SUM(quantity_pending), 0)::int AS outstanding,
+                COALESCE(SUM(quantity_received), 0)::int AS received
+           FROM purchase_order_items WHERE purchase_order_id = $1`,
+        [id]
+      );
+
+      const outstanding = totals.rows[0]?.outstanding ?? 0;
+      const nextStatus = outstanding === 0 ? 'delivered' : 'partially_received';
+
+      const statusChanged = nextStatus !== order.status;
+      if (statusChanged) {
+        await tx.query(
+          /* `$1` is cast at both sites: used once as an assigned value and once in a comparison,
+           * an untyped parameter makes Postgres deduce two different types for it and refuse. */
+          `UPDATE purchase_orders
+              SET status = $1::varchar,
+                  actual_delivery = CASE WHEN $1::varchar = 'delivered'
+                                         THEN COALESCE(actual_delivery, COALESCE($3::date, CURRENT_DATE))
+                                         ELSE actual_delivery END,
+                  updated_at = NOW(), updated_by = $4
+            WHERE id = $2`,
+          [nextStatus, id, receivedDate, user.userId]
+        );
+
+        /* The status history table has existed since migration 009 and nothing had ever written to
+         * it, so a purchase order's own past was unreadable. */
+        await tx.query(
+          `INSERT INTO purchase_order_status_history
+             (purchase_order_id, old_status, new_status, changed_by, notes)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            id,
+            order.status,
+            nextStatus,
+            user.userId,
+            body.note ?? `Goods received against ${order.po_number}`
+          ]
+        );
+      }
+
+      return {
+        purchase_order_id: id,
+        po_number: order.po_number,
+        status: nextStatus,
+        status_changed: statusChanged,
+        units_outstanding: outstanding,
+        lines: applied
+      };
+    });
+
+    const overReceipts = result.lines.filter((l) => Number(l.over_received) > 0);
+    const unmatched = result.lines.filter((l) => !l.stock_moved);
+
+    /* The message reports what actually happened, including the parts the merchant would otherwise
+     * only find out later. */
+    const notes: string[] = [];
+    if (overReceipts.length > 0) {
+      notes.push(
+        `${overReceipts.length} line${overReceipts.length === 1 ? '' : 's'} received more than ordered`
+      );
+    }
+    if (unmatched.length > 0) {
+      notes.push(
+        `${unmatched.length} line${unmatched.length === 1 ? '' : 's'} recorded but not added to stock — no matching product`
+      );
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        received_items: items?.length || 0,
-        receiving_records: items || []
+        ...result,
+        message:
+          result.units_outstanding === 0
+            ? `${result.po_number} is fully received.`
+            : `${result.po_number} received in part — ${result.units_outstanding} units still outstanding.`,
+        warnings: notes
       }
     });
-
   } catch (error) {
-    console.error('Error in receiving API:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return adminErrorResponse(error, 'purchase-orders.receive');
   }
 }

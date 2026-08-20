@@ -297,7 +297,12 @@ export async function POST(request: NextRequest) {
           item.quantity,
           item.unitCost
         );
-        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, 0, $${base + 7}, $${base + 6} * $${base + 7})`;
+        /* The placeholders carry explicit casts: `$6 * $7` with two untyped parameters is
+         * `unknown * unknown`, which Postgres refuses as ambiguous rather than guessing. */
+        return (
+          `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, ` +
+          `$${base + 6}::int, 0, $${base + 7}::numeric, $${base + 6}::int * $${base + 7}::numeric)`
+        );
       });
 
       /* `quantity_pending` is a GENERATED column; Postgres rejects an explicit value for it. */

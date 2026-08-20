@@ -103,7 +103,14 @@ describe('dashboard', () => {
 });
 
 describe('inventory statistics', () => {
+  /*
+   * The grid's SQL moved out of the route and into `_lib/query`, shared with the CSV export so the
+   * file a merchant downloads is the view they were looking at. The defects guarded here are
+   * properties of that SQL wherever it lives, so both files are checked.
+   */
   const route = source('src/app/api/admin/inventory/route.ts');
+  const query = source('src/app/api/admin/inventory/_lib/query.ts');
+  const both = `${route}\n${query}`;
 
   it('does not aggregate products across a join to inventory_logs', () => {
     /*
@@ -111,20 +118,46 @@ describe('inventory statistics', () => {
      *   products 45 (true 12), value $77,755.47 (true $22,275.99),
      *   low stock 4 (true 2), out of stock 4 (true 1).
      */
-    expect(route).not.toMatch(/FROM products p\s*\n\s*LEFT JOIN inventory_logs/);
+    expect(both).not.toMatch(/FROM products p\s*\n\s*LEFT JOIN inventory_logs/);
+  });
+
+  it('aggregates stock per product before joining, so multi-location does not fan out', () => {
+    /*
+     * The same class of defect one table over. `inventory` is keyed
+     * (store_id, sku, warehouse_id), so joining it directly put a product held in three locations
+     * into the grid three times and inflated every total. The levels join is a lateral aggregate.
+     */
+    expect(both).not.toMatch(/LEFT JOIN inventory i ON p\.sku = i\.sku/);
+    expect(query).toContain('SUM(l.on_hand)');
   });
 
   it('keys sales velocity off the order date, not the line insert timestamp', () => {
     // All 119 order_items rows carry one insert timestamp, so every velocity
     // window returned the same number for every SKU.
-    expect(route).not.toContain('oi.created_at >=');
-    expect(route).toContain("o.created_at >= NOW() - INTERVAL '7 days'");
-    expect(route).toContain("o.created_at >= NOW() - INTERVAL '90 days'");
+    expect(both).not.toContain('oi.created_at >=');
+    expect(query).toContain("o.created_at >= NOW() - INTERVAL '30 days'");
+    expect(query).toContain("o.created_at >= NOW() - INTERVAL '90 days'");
   });
 
   it('counts a shipped order as a sale', () => {
-    expect(route).not.toContain("o.status IN ('completed', 'processing')");
-    expect(route).toContain("o.status <> 'cancelled'");
+    expect(both).not.toContain("o.status IN ('completed', 'processing')");
+    expect(query).toContain("o.status <> 'cancelled'");
+  });
+
+  it('reports uncosted stock rather than imputing a cost for it', () => {
+    /*
+     * The valuation reports filled a missing `cost_price` with `base_price * 0.6` — a 40% margin
+     * invented for a figure the merchant takes to an insurer or a lender. The grid counts what it
+     * cannot value and says so instead.
+     */
+    expect(route).not.toMatch(/base_price\s*\*\s*0\.6/);
+    expect(route).toContain('uncosted');
+  });
+
+  it('does not hardcode a supplier name', () => {
+    // Every row reported `supplier: 'ShipStation'`, which made the supplier filter a dropdown
+    // with exactly one option.
+    expect(both).not.toMatch(/supplier:\s*'ShipStation'/);
   });
 });
 

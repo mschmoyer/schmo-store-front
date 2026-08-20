@@ -181,15 +181,21 @@ export function buildProductWhere(storeId: string, filters: ProductListFilters):
 
   if (filters.search) {
     const term = `%${filters.search.trim()}%`;
+    /*
+     * One placeholder, referenced six times, rather than six placeholders holding the same value.
+     * The obvious version — calling `next()` once per column inside a template literal — is a trap:
+     * every call is evaluated before any value is pushed, so all six render as the *same* number
+     * while six values go into the array. Postgres then reports "could not determine data type of
+     * parameter $4" for the ones nothing references. Binding once is both correct and cheaper.
+     */
+    params.push(term);
+    const t = `$${params.length}`;
     conditions.push(
-      `(p.name ILIKE ${next()} OR p.sku ILIKE ${next()} OR COALESCE(p.barcode, '') ILIKE ${next()}` +
-        ` OR COALESCE(p.short_description, '') ILIKE ${next()}` +
-        ` OR COALESCE(p.long_description, '') ILIKE ${next()}` +
-        ` OR EXISTS (SELECT 1 FROM unnest(COALESCE(p.tags, '{}')) t WHERE t ILIKE ${next()}))`
+      `(p.name ILIKE ${t} OR p.sku ILIKE ${t} OR COALESCE(p.barcode, '') ILIKE ${t}` +
+        ` OR COALESCE(p.short_description, '') ILIKE ${t}` +
+        ` OR COALESCE(p.long_description, '') ILIKE ${t}` +
+        ` OR EXISTS (SELECT 1 FROM unnest(COALESCE(p.tags, '{}')) t WHERE t ILIKE ${t}))`
     );
-    /* Six placeholders, one value: pg numbers placeholders positionally, so each needs its own
-     * entry even though they all hold the same term. */
-    params.push(term, term, term, term, term, term);
   }
 
   if (filters.categoryId) {
