@@ -19,6 +19,8 @@ export const INVENTORY_SORT_SQL = {
   /* What the shelf is worth at cost — the number that goes on an insurance schedule. */
   value_at_cost: 'lv.on_hand * COALESCE(p.cost_price, 0)',
   unit_cost: 'p.cost_price',
+  /* NULLS grouped by the direction, so "which have no reorder policy" is one click. */
+  reorder_point: 'COALESCE(p.reorder_point, p.low_stock_threshold)',
   /* Demand over the last 90 days, the basis for everything downstream. */
   velocity: 'sv.units_90d',
   /* How long the shelf lasts at that rate. The single most useful ordering on this screen: it puts

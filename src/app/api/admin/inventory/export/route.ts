@@ -1,211 +1,206 @@
+/**
+ * Inventory CSV export.
+ *
+ * Shares the grid's query builder, so the file a merchant downloads is the view they were looking
+ * at. The previous version ran its own copy of the query, which had already drifted from the
+ * grid's — different columns, a different definition of a sale, and its own fan-out bug from
+ * joining `inventory` on SKU with no location predicate, which put a product held in three
+ * warehouses into the file three times.
+ *
+ * The columns are chosen for what a merchant does with the file: a stocktake sheet to print, a
+ * reorder list to send to a buyer, and a valuation to hand an accountant. Products with no cost on
+ * file carry an empty value column rather than a zero — a zero would silently understate the
+ * valuation, which is the class of quiet error this whole change set exists to remove.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
-import {
-  InventoryProductRow,
-  LastRestockRow,
-  ProductSalesVelocityRow
-} from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
-import { 
-  convertInventoryToCSV, 
-  generateCSVFilename, 
-  createCSVDownloadResponse, 
-  validateInventoryData, 
-  formatInventoryForCSV,
-  type InventoryCSVData 
-} from '@/lib/utils/csv-export';
+import { adminErrorResponse } from '@/lib/api/adminError';
+import {
+  INVENTORY_SELECT,
+  buildInventoryOrderBy,
+  buildInventoryWhere,
+  inventoryFrom,
+  resolveDirection,
+  resolveInventorySort,
+  resolveInventoryState,
+  type InventoryFilters
+} from '../_lib/query';
+import { csvRow } from '@/lib/catalog/csv';
+
+/** Rows per round trip while streaming. */
+const BATCH = 500;
+
+/** The exported columns, in order. */
+const COLUMNS = [
+  'SKU',
+  'Product',
+  'Category',
+  'Supplier',
+  'Location count',
+  'On hand',
+  'Committed',
+  'Reserved',
+  'Unavailable',
+  'Available',
+  'On order',
+  'Unit cost',
+  'Stock value at cost',
+  'Retail price',
+  'Stock value at retail',
+  'Units sold 30d',
+  'Units sold 90d',
+  'Daily demand',
+  'Days of cover',
+  'Reorder point',
+  'Suggested reorder point',
+  'Low stock threshold',
+  'Lead time days',
+  'State',
+  'Last sold',
+  'Last movement'
+] as const;
+
+/** Lead time assumed when neither the product nor its supplier records one. */
+const DEFAULT_LEAD_TIME_DAYS = 14;
 
 /**
  * GET /api/admin/inventory/export
- * Export inventory data as CSV file
+ *
+ * Stream the current inventory view as CSV. Accepts the same query parameters as the grid.
+ *
+ * @param request - The incoming request.
+ * @returns A streaming CSV download.
  */
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
     const { searchParams } = new URL(request.url);
-    const format = searchParams.get('format') || 'csv';
 
-    // Only support CSV format for now
-    if (format !== 'csv') {
-      return NextResponse.json({
-        success: false,
-        error: 'Only CSV format is supported'
-      }, { status: 400 });
-    }
+    const filters: InventoryFilters = {
+      search: searchParams.get('search')?.trim() || undefined,
+      state: resolveInventoryState(searchParams.get('state')),
+      categoryId: searchParams.get('category_id') || undefined,
+      supplierId: searchParams.get('supplier_id') || undefined,
+      locationId: searchParams.get('location_id') || undefined,
+      vendor: searchParams.get('vendor') || undefined
+    };
 
-    // Get all products with their inventory data
-    const inventoryQuery = `
-      SELECT 
-        p.id as product_id,
-        p.name,
-        p.sku,
-        p.stock_quantity,
-        p.low_stock_threshold,
-        p.cost_price as unit_cost,
-        p.base_price,
-        p.featured_image_url,
-        c.name as category,
-        p.created_at,
-        p.updated_at,
-        p.is_active,
-        i.available as shipstation_available,
-        i.on_hand as shipstation_on_hand,
-        i.allocated as shipstation_allocated,
-        i.warehouse_id,
-        i.warehouse_name,
-        i.updated_at as inventory_updated_at
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      LEFT JOIN inventory i ON p.sku = i.sku AND p.store_id = i.store_id
-      WHERE p.store_id = $1
-      ORDER BY p.name
+    const where = buildInventoryWhere(user.storeId, filters);
+    const from = inventoryFrom(where.locationParam);
+    const orderBy = buildInventoryOrderBy(
+      resolveInventorySort(searchParams.get('sort_by'), 'sku'),
+      resolveDirection(searchParams.get('sort_order'), 'ASC')
+    );
+
+    const sql = `
+      SELECT ${INVENTORY_SELECT}
+      ${from}
+      ${where.sql}
+      ${orderBy}
+      LIMIT $${where.params.length + 1} OFFSET $${where.params.length + 2}
     `;
 
-    const inventoryResult = await db.query<InventoryProductRow>(inventoryQuery, [user.storeId]);
-    const products = inventoryResult.rows;
+    const encoder = new TextEncoder();
 
-    // Get sales data for forecasting
-    const salesQuery = `
-      SELECT 
-        oi.product_id,
-        oi.product_sku,
-        SUM(oi.quantity) as total_sales,
-        COUNT(DISTINCT oi.order_id) as total_orders,
-        AVG(oi.quantity) as avg_order_quantity,
-        MAX(oi.created_at) as last_sale_date,
-        COUNT(CASE WHEN oi.created_at >= NOW() - INTERVAL '30 days' THEN 1 END) as sales_last_30_days,
-        COUNT(CASE WHEN oi.created_at >= NOW() - INTERVAL '90 days' THEN 1 END) as sales_last_90_days,
-        AVG(CASE WHEN oi.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity END) as avg_monthly_sales
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      WHERE o.store_id = $1 AND o.status IN ('completed', 'processing')
-      GROUP BY oi.product_id, oi.product_sku
-    `;
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          controller.enqueue(encoder.encode(`${csvRow([...COLUMNS])}\n`));
 
-    const salesResult = await db.query<ProductSalesVelocityRow>(salesQuery, [user.storeId]);
-    const salesData = salesResult.rows.reduce<Record<string, ProductSalesVelocityRow>>((acc, row) => {
-      acc[row.product_id] = row;
-      return acc;
-    }, {});
+          let offset = 0;
+          for (;;) {
+            const page = await db.query(sql, [...where.params, BATCH, offset]);
+            if (page.rows.length === 0) break;
 
-    // Get recent inventory changes for last restocked dates
-    const inventoryLogsQuery = `
-      SELECT DISTINCT ON (product_id) 
-        product_id,
-        created_at as last_restocked,
-        change_type,
-        quantity_change
-      FROM inventory_logs
-      WHERE store_id = $1 AND change_type IN ('restock', 'adjustment', 'initial_stock')
-      ORDER BY product_id, created_at DESC
-    `;
+            controller.enqueue(
+              encoder.encode(`${page.rows.map((row) => csvRow(cellsFor(row))).join('\n')}\n`)
+            );
 
-    const inventoryLogsResult = await db.query<LastRestockRow>(inventoryLogsQuery, [user.storeId]);
-    const inventoryLogs = inventoryLogsResult.rows.reduce<Record<string, LastRestockRow>>((acc, row) => {
-      acc[row.product_id] = row;
-      return acc;
-    }, {});
-
-    // Transform data into inventory items
-    const inventoryItems: InventoryCSVData[] = products.map(product => {
-      const sales: Partial<ProductSalesVelocityRow> = salesData[product.product_id] ?? {};
-      const lastRestock = inventoryLogs[product.product_id];
-      
-      // Calculate stock status
-      const stockQuantity = Number(product.stock_quantity) || 0;
-      const lowStockThreshold = Number(product.low_stock_threshold) || 10;
-      
-      let status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued';
-      if (!product.is_active) {
-        status = 'discontinued';
-      } else if (stockQuantity === 0) {
-        status = 'out_of_stock';
-      } else if (stockQuantity <= lowStockThreshold) {
-        status = 'low_stock';
-      } else {
-        status = 'in_stock';
+            if (page.rows.length < BATCH) break;
+            offset += BATCH;
+          }
+          controller.close();
+        } catch (error) {
+          /* The response has already begun and the browser is writing a file, so this cannot become
+           * a 500. Saying the file is truncated is the only honest ending available. */
+          console.error('[api:inventory.export] stream failed', error);
+          controller.enqueue(
+            encoder.encode('\n"EXPORT INCOMPLETE — this file was truncated by an error."\n')
+          );
+          controller.close();
+        }
       }
-
-      // Calculate forecasts based on sales history
-      const avgMonthlySales = Number(sales.avg_monthly_sales) || 0;
-      const salesLast30Days = Number(sales.sales_last_30_days) || 0;
-      const salesLast90Days = Number(sales.sales_last_90_days) || 0;
-      
-      // Simple forecast calculation: recent sales trend
-      const forecast30Days = Math.max(salesLast30Days, avgMonthlySales);
-      const forecast90Days = Math.max(salesLast90Days, avgMonthlySales * 3);
-
-      // Calculate reorder point (30 days of sales + buffer)
-      const reorderPoint = Math.max(forecast30Days + 5, lowStockThreshold);
-      const reorderQuantity = Math.max(forecast90Days, 20);
-
-      return {
-        id: product.product_id,
-        product_id: product.product_id,
-        name: product.name,
-        sku: product.sku,
-        stock_quantity: stockQuantity,
-        low_stock_threshold: lowStockThreshold,
-        unit_cost: Number(product.unit_cost) || 0,
-        base_price: Number(product.base_price) || 0,
-        featured_image_url: product.featured_image_url,
-        category: product.category || 'Uncategorized',
-        supplier: 'ShipStation', // Default supplier
-        last_restocked: lastRestock?.last_restocked?.toISOString() ?? null,
-        forecast_30_days: forecast30Days,
-        forecast_90_days: forecast90Days,
-        avg_monthly_sales: avgMonthlySales,
-        reorder_point: reorderPoint,
-        reorder_quantity: reorderQuantity,
-        status,
-        warehouse_id: product.warehouse_id,
-        warehouse_name: product.warehouse_name,
-        shipstation_inventory: product.shipstation_available !== null ? {
-          available: Number(product.shipstation_available) || 0,
-          on_hand: Number(product.shipstation_on_hand) || 0,
-          allocated: Number(product.shipstation_allocated) || 0
-        } : undefined
-      };
     });
 
-    // Validate inventory data
-    const validation = validateInventoryData(inventoryItems);
-    if (!validation.isValid) {
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid inventory data',
-        details: validation.errors
-      }, { status: 400 });
-    }
-
-    // Format and convert to CSV
-    const formattedData = formatInventoryForCSV(inventoryItems);
-    const csvContent = convertInventoryToCSV(formattedData);
-    const filename = generateCSVFilename('inventory');
-    
-    return createCSVDownloadResponse(csvContent, filename);
-
+    const stamp = new Date().toISOString().slice(0, 10);
+    return new NextResponse(stream, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="inventory-${stamp}.csv"`,
+        'Cache-Control': 'private, no-store'
+      }
+    });
   } catch (error) {
-    console.error('Admin inventory export error:', error);
-    
-    if (error instanceof Error && error.message === 'Authentication required') {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 });
-    }
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return adminErrorResponse(error, 'inventory.export');
   }
+}
+
+/**
+ * Build one CSV record from an inventory row.
+ *
+ * @param row - A row from the export query.
+ * @returns Cell values in column order.
+ */
+function cellsFor(row: Record<string, unknown>): unknown[] {
+  const unitCost = row.unit_cost === null ? null : Number(row.unit_cost);
+  const onHand = Number(row.on_hand) || 0;
+  const dailyDemand = Number(row.daily_demand) || 0;
+
+  const suggested =
+    dailyDemand > 0
+      ? Math.ceil(
+          dailyDemand * (Number(row.lead_time_days) || DEFAULT_LEAD_TIME_DAYS) +
+            (Number(row.safety_stock) || Math.ceil(dailyDemand * 7))
+        )
+      : '';
+
+  const date = (value: unknown): string =>
+    value ? new Date(String(value)).toISOString().slice(0, 10) : '';
+
+  return [
+    row.sku,
+    row.name,
+    row.category_name ?? '',
+    row.supplier_name ?? '',
+    row.location_count,
+    onHand,
+    row.committed,
+    row.reserved,
+    row.unavailable,
+    row.available,
+    row.incoming,
+    /* Blank, not zero. A zero cost reads as free and would understate a valuation a merchant may
+     * be handing to an insurer. */
+    unitCost ?? '',
+    unitCost === null ? '' : Number(row.value_at_cost) || 0,
+    Number(row.sale_price ?? row.base_price) || 0,
+    Number(row.value_at_retail) || 0,
+    row.units_30d,
+    row.units_90d,
+    dailyDemand,
+    row.days_of_cover ?? '',
+    row.reorder_point ?? '',
+    suggested,
+    row.low_stock_threshold ?? '',
+    row.lead_time_days ?? '',
+    row.state,
+    date(row.last_sale_date),
+    date(row.last_movement_at)
+  ];
 }
