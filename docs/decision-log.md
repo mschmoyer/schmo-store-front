@@ -2845,7 +2845,26 @@ variant, and nothing reads any of it yet. That is what makes it shippable and re
       precondition, and a second case borrows an already-committed product so the delete-side
       trigger is the only thing that can refuse
 
-- [x] **Version bumped** to 3.9.0
+- [x] **The first push of this failed the Vercel deploy, and the cause is worth writing down.**
+      Four of the variant table's CHECK constraints were stricter than the ones on `products`:
+      a non-blank SKU, and non-negative `weight` and `sale_price`. `products` constrains neither
+      `weight` nor blank SKUs, so both are bad data *and legal*. Because `create_default_variant()`
+      fires on every product insert, a constraint the child has and the parent does not does not
+      reject the bad value — it rejects the **product write**, at creation, at ShipStation sync, and
+      at this migration's own backfill against any database holding such a row. The rule now stated
+      at the top of the migration: a generated child may never be stricter than its source.
+      `base_price >= 0`, `cost_price >= 0` and `sale_price <= base_price` survive only because
+      `products` carries exactly those three
+
+- [x] Finding that also corrected a factual error in the migration's header: `products` *does* carry
+      `products_store_id_sku_key UNIQUE (store_id, sku)`, and has since migration 001 — the earlier
+      claim that it had "only ever had a non-unique index" came from reading a truncated `\d`. The
+      backfill is 1:1, so the same uniqueness is provably safe on the variant table and is now
+      enforced there, where the sellable unit actually lives
+
+- [x] Two new invariant cases cover both, and both fail against the schema that broke the deploy
+
+- [x] **Version bumped** to 3.9.1
 
 Still open:
 - [ ] **Variants, steps 2–5.** Repoint the write paths (`inventory_levels`, `inventory_holds`,

@@ -180,6 +180,51 @@ const CASES = [
     },
   },
   {
+    name: 'a variant is no stricter than the product it is generated from',
+    async run(client) {
+      /*
+       * `create_default_variant()` fires on every product insert, so a CHECK the variant table has
+       * and `products` does not converts a write the catalogue has always accepted into a hard
+       * failure — at product creation, at ShipStation sync, and at the backfill. A blank SKU and a
+       * negative weight are both bad data and both legal in `products`; each of them broke a deploy
+       * before this case existed.
+       */
+      const storeId = await FIXTURE.store(client);
+      const legalButUgly = [
+        { sku: '', weight: 1.0, why: 'a blank SKU' },
+        { sku: '   ', weight: 1.0, why: 'a whitespace SKU' },
+        { sku: 'INV-NEGW', weight: -2.5, why: 'a negative weight' },
+        { sku: 'INV-ZERO', weight: null, why: 'a zero price and no weight' },
+      ];
+      for (const row of legalButUgly) {
+        try {
+          await client.query(
+            `INSERT INTO products (store_id, sku, name, slug, base_price, weight)
+             VALUES ($1::uuid, $2, 'Invariant Fixture', 'invariant-' || gen_random_uuid(), 0.00, $3)`,
+            [storeId, row.sku, row.weight],
+          );
+        } catch (error) {
+          throw new Error(`${row.why} is legal in products but the variant table refused it: ${error.message}`);
+        }
+      }
+    },
+  },
+  {
+    name: 'a SKU names one sellable unit per store',
+    async run(client) {
+      const storeId = await FIXTURE.store(client);
+      await FIXTURE.product(client, storeId, 'INV-UNIQ');
+      const other = await FIXTURE.product(client, storeId, 'INV-UNIQ-OTHER');
+      await mustRefuse(client, 'two variants sharing a SKU in one store', ['23505'], async () => {
+        await client.query(
+          `UPDATE product_variants SET sku = 'INV-UNIQ'
+            WHERE product_id = $1::uuid AND store_id = $2::uuid`,
+          [other, storeId],
+        );
+      });
+    },
+  },
+  {
     name: 'a product cannot commit with no variants left',
     async run(client) {
       const storeId = await FIXTURE.store(client);

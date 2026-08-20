@@ -24,11 +24,13 @@
 --      attaching the "Large" value to the "Colour" option is not a validation rule someone can
 --      forget to write — it is a constraint violation.
 --
--- SKU uniqueness is *not* enforced here. `products.sku` has only ever had a non-unique index, so a
--- store may already hold two products with the same SKU; promoting that to a UNIQUE index in this
--- migration would turn an existing data condition into a failed deploy, and silently renaming a
--- merchant's SKU to make the index build is worse than the duplicate. Deduplication is its own
--- migration with its own merchant-facing report.
+-- One rule governs every constraint below: **a variant may not be stricter than the product it is
+-- generated from.** `create_default_variant()` fires on every product insert, so a CHECK the variant
+-- table has and `products` does not turns a write the catalogue has always accepted into a hard
+-- failure — at product creation, at ShipStation sync, and at this migration's own backfill. Blank
+-- SKUs and negative weights are both bad data and both currently legal, and this migration is not
+-- the place to start rejecting them. `base_price >= 0`, `cost_price >= 0` and
+-- `sale_price <= base_price` appear here only because `products` carries exactly those three.
 
 BEGIN;
 
@@ -106,9 +108,11 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   sku                    VARCHAR(255) NOT NULL,
   barcode                VARCHAR(255),
   base_price             NUMERIC(10,2) NOT NULL CHECK (base_price >= 0),
-  sale_price             NUMERIC(10,2) CHECK (sale_price IS NULL OR sale_price >= 0),
+  sale_price             NUMERIC(10,2),
   cost_price             NUMERIC(10,2) CHECK (cost_price IS NULL OR cost_price >= 0),
-  weight                 NUMERIC(8,2) CHECK (weight IS NULL OR weight >= 0),
+  -- No non-negative check: `products.weight` has none, and adding one here would refuse the
+  -- product write rather than the bad weight.
+  weight                 NUMERIC(8,2),
   weight_unit            VARCHAR(10) NOT NULL DEFAULT 'lb',
   requires_shipping      BOOLEAN NOT NULL DEFAULT TRUE,
   hs_code                VARCHAR(16),
@@ -127,7 +131,13 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-  CONSTRAINT product_variants_sku_not_blank CHECK (btrim(sku) <> ''),
+  -- Mirrored from `products_sale_price_not_above_base`, and no stricter than it.
+  CONSTRAINT product_variants_sale_price_not_above_base
+    CHECK (sale_price IS NULL OR sale_price <= base_price),
+  -- `products_store_id_sku_key` has enforced this since migration 001, and the backfill is 1:1, so
+  -- the index is guaranteed to build. A SKU names one sellable unit per store; with variants that
+  -- unit is the variant, which is why the constraint has to exist on this table too.
+  CONSTRAINT product_variants_store_id_sku_key UNIQUE (store_id, sku),
   CONSTRAINT product_variants_id_store_id_key UNIQUE (id, store_id),
   CONSTRAINT product_variants_product_id_store_id_fkey
     FOREIGN KEY (product_id, store_id) REFERENCES public.products(id, store_id) ON DELETE CASCADE,
@@ -152,8 +162,6 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON public.product_variants (store_id, product_id, position);
--- Non-unique, for the reason in the header.
-CREATE INDEX IF NOT EXISTS idx_product_variants_sku ON public.product_variants (store_id, sku);
 -- Per store, matching migration 026: a ShipStation product id is unique to one merchant's account.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variants_shipstation
   ON public.product_variants (store_id, shipstation_product_id)
