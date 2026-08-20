@@ -210,6 +210,9 @@ export async function listPublicStores(): Promise<StoreRecord[]> {
  * ------------------------------------------------------------------ */
 
 interface ProductRow extends Record<string, unknown> {
+  variant_count: number | string | null;
+  variant_min_price: string | number | null;
+  variant_max_price: string | number | null;
   id: string;
   store_id: string;
   sku: string;
@@ -285,6 +288,12 @@ function toProduct(row: ProductRow): ProductRecord {
     descriptionHtml: row.description_html,
     price,
     compareAtPrice,
+    variantCount: Number(row.variant_count ?? 0),
+    // Both ends of the range, so a card can say "from $54" rather than naming
+    // one price for a product that has four. Null when the product has no
+    // variants, which is the common case.
+    variantMinPrice: toNumber(row.variant_min_price),
+    variantMaxPrice: toNumber(row.variant_max_price),
     trackInventory: row.track_inventory !== false,
     stockQuantity: Number(row.stock_quantity ?? 0),
     lowStockThreshold: Number(row.low_stock_threshold ?? 0),
@@ -314,9 +323,38 @@ const PRODUCT_COLUMNS = `p.id, p.store_id, p.sku, p.name, p.slug, p.short_descri
   p.allow_backorder, p.weight, p.weight_unit, p.length, p.width, p.height,
   p.dimension_unit, p.category_id, c.name AS category_name, c.slug AS category_slug,
   p.tags, p.featured_image_url, p.gallery_images, p.is_featured, p.requires_shipping,
-  p.meta_title, p.meta_description`;
+  p.meta_title, p.meta_description,
+  p.variant_count, vr.variant_min_price, vr.variant_max_price`;
 
-const PRODUCT_FROM = `FROM products p LEFT JOIN categories c ON c.id = p.category_id`;
+/**
+ * Effective price bounds across a product's active variants.
+ *
+ * A card showing one price for a product whose variants run $54 to $96 is
+ * misleading in the direction that costs trust at checkout, so the grid needs
+ * both ends. It is a lateral join rather than a per-card query because the
+ * listing page renders up to 48 cards and the N+1 is the thing this query
+ * exists to avoid; `products.variant_count` is 0 for the overwhelming majority
+ * of rows, which short-circuits the join for them.
+ *
+ * The arithmetic mirrors `resolveVariant`: a variant with no price of its own
+ * inherits the product's effective price, and a sale price counts only when it
+ * is genuinely below the regular one.
+ */
+const VARIANT_PRICE_JOIN = `LEFT JOIN LATERAL (
+  SELECT MIN(effective) AS variant_min_price, MAX(effective) AS variant_max_price
+    FROM (
+      SELECT CASE
+               WHEN v.sale_price IS NOT NULL
+                AND v.sale_price < COALESCE(v.price, COALESCE(NULLIF(p.override_price, 0), NULLIF(p.sale_price, 0), p.base_price))
+               THEN v.sale_price
+               ELSE COALESCE(v.price, COALESCE(NULLIF(p.override_price, 0), NULLIF(p.sale_price, 0), p.base_price))
+             END AS effective
+        FROM product_variants v
+       WHERE v.product_id = p.id AND v.is_active
+    ) AS priced
+) AS vr ON p.variant_count > 0`;
+
+const PRODUCT_FROM = `FROM products p LEFT JOIN categories c ON c.id = p.category_id ${VARIANT_PRICE_JOIN}`;
 
 /** `ORDER BY` fragments, keyed by sort id. Never interpolate user input here. */
 const SORT_SQL: Record<SortKey, string> = {

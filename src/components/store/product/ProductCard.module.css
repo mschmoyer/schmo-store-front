@@ -279,3 +279,19 @@
   opacity: 1;
   transform: none;
 }
+
+/*
+ * "from $54" on a product with options. The prefix is deliberately quieter
+ * than the figure — it is a qualifier, not the number the shopper is scanning
+ * for.
+ */
+.priceRange {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.priceFrom {
+  font-size: var(--st-small);
+  color: var(--st-text-muted);
+}

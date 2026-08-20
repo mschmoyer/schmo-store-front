@@ -89,13 +89,24 @@ adminAuthFixture.describe('Admin Products Page - Core Functionality', () => {
   });
 
   adminAuthFixture('should handle add product functionality', async ({ adminPage }) => {
-    // Test add product navigation
+    // This used to assert navigation to `/admin/products/add`, a route that has
+    // never existed -- so the test passed while the button led to a page
+    // reading "Product not found". It now asserts the destination renders a
+    // usable form, which is the thing the merchant actually needs.
     await productsPage.clickAddProduct();
-    await adminPage.waitForURL('/admin/products/add');
-    
+    await adminPage.waitForURL('/admin/products/new');
+
+    await expect(adminPage.getByLabel('Product name')).toBeVisible();
+    await expect(adminPage.getByLabel('SKU')).toBeVisible();
+    await expect(adminPage.getByRole('button', { name: /create product/i })).toBeVisible();
+
+    // The slug is proposed from the name and must stop proposing once edited.
+    await adminPage.getByLabel('Product name').fill('Alpine Wool Overshirt');
+    await expect(adminPage.getByLabel('URL slug')).toHaveValue('alpine-wool-overshirt');
+
     // Navigate back to products page
     await productsPage.goto();
-    
+
     console.log('✓ Add Product navigation works');
   });
 

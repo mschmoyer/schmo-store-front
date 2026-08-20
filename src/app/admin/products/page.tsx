@@ -663,7 +663,7 @@ export default function ProductsAdminPage() {
           
           <Button 
             leftSection={<IconPlus size={16} />}
-            onClick={() => router.push('/admin/products/add')}
+            onClick={() => router.push('/admin/products/new')}
           >
             Add Product
           </Button>
@@ -1029,7 +1029,7 @@ export default function ProductsAdminPage() {
                 ) : (
                   <Button
                     leftSection={<IconPlus size={16} />}
-                    onClick={() => router.push('/admin/products/add')}
+                    onClick={() => router.push('/admin/products/new')}
                   >
                     Add your first product
                   </Button>

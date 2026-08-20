@@ -2329,3 +2329,59 @@ Still open on variants:
 - [ ] ShipStation sync neither creates nor updates variants
 - [ ] `/admin/products/add` still does not exist, so a merchant can create
       variants on a product they cannot create
+
+## Creating a product, and cards that stop naming one price (2026-08-20)
+
+- [x] **`/admin/products/new`.** The Add Product button pointed at
+      `/admin/products/add`, a route that has never existed: it fell through to
+      the `[productId]` segment, fetched `/api/admin/products/add`, got a 404 and
+      rendered "Product not found". Three reviewers hit it independently. With
+      the `compare_price` bug fixed earlier, the POST worked and no UI reached
+      it — so the only way a product entered this platform was a ShipStation
+      sync or the demo seed
+- [x] The page asks for the six things a product cannot exist without and then
+      hands the merchant to the full editor, where images, SEO and variants
+      live. A single form carrying every field is a wall on the one screen where
+      a new merchant most needs momentum
+- [x] The slug is proposed from the name and **stops proposing the moment the
+      merchant edits it** — a slug that keeps overwriting itself after you have
+      corrected it is the most irritating thing a form like this can do
+- [x] Found while testing: `<Textarea autosize>` blanked the whole page with
+      "This page couldn't load". The admin theme sets `minHeight` on the
+      textarea input and `react-textarea-autosize` throws on a style
+      `minHeight` rather than ignoring it — `rebel-theme.ts:380` documents
+      exactly this, which is why `autosize` cannot be used with this theme
+- [x] Driven in a browser from the products list: the button navigates, the slug
+      auto-fills, the product saves with every field, the page redirects to the
+      full editor, and the product renders on the storefront
+
+- [x] **Catalogue cards quote a range.** `priceRange` was written and tested when
+      variants landed and nothing called it, so a card read one price for a
+      kettlebell whose variants run $54 to $96 — misleading in the direction
+      that costs trust at checkout, since the shopper finds out on the product
+      page after they have decided
+- [x] Implemented as a `LEFT JOIN LATERAL` on the listing query, gated on
+      `products.variant_count > 0`. The listing renders up to 48 cards and the
+      N+1 is the thing that query exists to avoid; the gate short-circuits the
+      join for the single-SKU majority
+- [x] The SQL mirrors `resolveVariant`: a variant with no price inherits the
+      product's effective price, and a sale price counts only when genuinely
+      below the regular one
+- [x] **"from" appears only when the range actually spans.** Every glaze of the
+      demo mug costs the same, so that card shows one figure; the kettlebell
+      shows "from $54.00". "from $54" on a product with one price is noise, and
+      slightly evasive noise
+- [x] Verified on the running site: exactly one "from" prefix in the fitness
+      store, none in the craft store
+
+Noted while running the suite, not caused by this work and not fixed here:
+`admin-products.spec.js` → "should test product preview functionality" fails on
+the unmodified branch too. `isProductActive()` uses `text=Listed`, which matches
+more than one node and trips Playwright's strict mode. CI does not run the e2e
+suite (lint, typecheck, unit, migrations and build only), so it is not going
+red on anything — but it is a broken test sitting in the repo.
+
+The add-product e2e test **was asserting the bug**: it waited for
+`/admin/products/add` and passed while that route rendered "Product not found".
+It now asserts the destination renders a usable form and that the slug proposal
+works, which is the thing a merchant actually needs.
