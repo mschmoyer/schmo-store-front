@@ -55,6 +55,7 @@ import {
 } from '@tabler/icons-react';
 
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { NavigationEditor } from '@/components/admin/NavigationEditor';
 import {
   isUsablePageSlug,
   pageTemplateSections,
@@ -103,6 +104,7 @@ function TemplateIcon({ name }: { name: string }): React.ReactElement {
 export default function AdminPagesScreen() {
   const [storeSlug, setStoreSlug] = useState('');
   const [pages, setPages] = useState<StorePageSummary[]>([]);
+  const [categories, setCategories] = useState<{ slug: string; name: string }[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -126,6 +128,26 @@ export default function AdminPagesScreen() {
       setTemplates(payload.data.templates ?? []);
       setStoreSlug(payload.data.storeSlug ?? '');
       setError(null);
+
+      // For the menu editor's link picker. A store with no categories yet is
+      // ordinary, so a failure here is silent rather than fatal.
+      try {
+        const catResponse = await fetch('/api/admin/categories/simple');
+        const catPayload = await catResponse.json();
+        if (catPayload?.success) {
+          // `data` is the array itself on this endpoint, not `{ categories }`.
+          const rows: { slug?: string; name?: string }[] = Array.isArray(catPayload.data)
+            ? catPayload.data
+            : (catPayload.data?.categories ?? []);
+          setCategories(
+            rows
+              .filter((row) => Boolean(row.slug) && Boolean(row.name))
+              .map((row) => ({ slug: row.slug as string, name: row.name as string })),
+          );
+        }
+      } catch {
+        // No categories offered in the picker; typing a link still works.
+      }
     } catch {
       setError('Could not load your pages.');
     } finally {
@@ -362,6 +384,20 @@ export default function AdminPagesScreen() {
               ))}
             </Stack>
           ) : null}
+
+          {/*
+            The menu editor lives here rather than in the customizer because
+            this is where a merchant has just created a page and is looking for
+            somewhere to link it. Splitting the two would mean creating a page
+            on one screen and making it reachable on another.
+          */}
+          <NavigationEditor
+            pages={pages.filter((page) => page.published).map((page) => ({
+              slug: page.slug,
+              title: page.title,
+            }))}
+            categories={categories}
+          />
 
           <Stack gap="sm">
             <div>

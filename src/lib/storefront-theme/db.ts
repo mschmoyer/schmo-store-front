@@ -12,7 +12,7 @@
 import { db } from '@/lib/database';
 
 import type { StoreNavigation } from './navigation';
-import { presetSections } from './presets';
+import { presetSections, themeFromLegacyName } from './presets';
 import { defaultSections, normalizeSections } from './sections';
 import { resolveTheme } from './resolve';
 import type { ResolvedTheme, Section, StorefrontTheme, StorefrontThemeInput } from './types';
@@ -273,8 +273,40 @@ export async function saveDraft(
 
   const themeJson = theme === undefined ? null : JSON.stringify(theme);
   const sectionsJson = resolvedSections === undefined ? null : JSON.stringify(resolvedSections);
-  const fallbackSections = JSON.stringify(presetSections(theme?.preset));
   const navigationJson = navigation === undefined ? null : JSON.stringify(navigation);
+
+  // Which composition a *brand new* draft row starts from.
+  //
+  // This only applies on INSERT — an existing row keeps its own sections
+  // through the COALESCE below. It matters because a store that has never
+  // saved a draft renders from the legacy `stores.theme_name` mapping, and
+  // `presetSections(undefined)` is the generic starter page, not that store's
+  // preset composition.
+  //
+  // The symptom was real and silent: saving *navigation* on such a store
+  // created its first draft row and, in doing so, replaced the shop's actual
+  // home page with the generic one. A merchant renaming a menu item would have
+  // lost their layout. Reading the legacy name costs one query, once, on the
+  // first save a store ever makes.
+  let fallbackPreset = theme?.preset;
+  if (fallbackPreset === undefined) {
+    const existing = await db.query<{ theme_name: string | null }>(
+      `SELECT s.theme_name
+         FROM stores s
+        WHERE s.id = $1
+          AND NOT EXISTS (
+                SELECT 1 FROM storefront_themes t
+                 WHERE t.store_id = s.id AND t.status = 'draft'
+              )
+        LIMIT 1`,
+      [storeId],
+    );
+    // A row means there is no draft yet, so this insert is the store's first.
+    if (existing.rows.length > 0) {
+      fallbackPreset = themeFromLegacyName(existing.rows[0].theme_name).preset;
+    }
+  }
+  const fallbackSections = JSON.stringify(presetSections(fallbackPreset));
 
   const result = await db.query<ThemeRow>(
     `INSERT INTO storefront_themes (store_id, status, theme, sections, navigation, version)

@@ -2582,3 +2582,52 @@ Open:
       can compose the home page and only the home page; adding a page switcher
       to its rail is the next step, and its preview iframe is hardcoded to the
       home URL
+
+## The navigation editor, and a silent home-page wipe (2026-08-20)
+
+Navigation rendered from stored data but nothing could store any, so every menu
+was still the derived default. `NavigationEditor` closes that, and it lives on
+the Pages screen rather than in the customizer because that is where a merchant
+has just written a page and is looking for somewhere to link it.
+
+- [x] **"Use the automatic menu" is a real state, not an empty list.** Taking
+      over seeds the editor with the derived menu, so a merchant edits what they
+      already had rather than starting from nothing and losing their category
+      links. "Back to the automatic menu" returns to deriving, and the copy says
+      that a hand-built menu is one they will maintain by hand
+- [x] Link targets are offered as a picker — all products, each category, each
+      published page, cart, account — and a free-text field alongside for
+      anything else. Everything is stored **store-relative**, so a shop moving to
+      a custom domain does not take its menu down with it
+- [x] Save writes to the *draft*; the toast says to publish from Page Design
+      rather than implying the change is already live
+
+### Two defects, both found by using it
+
+- [x] **`/api/admin/categories/simple` returned no `slug`.** The storefront
+      links categories by slug, so a category picker built on that endpoint
+      could not produce a working link. Added — and the response shape is `data`
+      as a bare array, not `{ categories }`, which the first version of the
+      caller got wrong too
+- [x] **Saving navigation replaced the shop's home page.** A store that has
+      never saved a draft renders from the legacy `theme_name` mapping and has
+      no `storefront_themes` row. Saving *only navigation* created that row, and
+      the INSERT's fallback composition was `presetSections(undefined)` — the
+      generic starter page, not the store's own preset composition. So renaming
+      a menu item silently swapped the merchant's home page for a different one.
+      Nothing errored. `saveDraft` now reads the store's legacy theme name when
+      it is about to insert a first draft, and seeds from that preset instead.
+      One extra query, once, on the first save a store ever makes
+- [x] `save-draft-composition.test.ts` pins all of it, including that
+      `navigation` stays `null` when a caller does not send one — sending `{}`
+      would wipe a merchant's menus on every unrelated theme save
+- [x] Verified end to end in a browser: take over the menu, get five derived
+      items, add "Our story" pointing at `/pages/about`, save, publish, and see
+      it in the live header at the correctly-mounted URL
+
+Worth recording: the categories fix appeared not to work for several minutes.
+The file was right and the dev server was serving a stale bundle; restarting it
+fixed it. Not a code problem, but half an hour of confusion is worth one line
+in a log.
+
+- [x] 936 tests, 23/23 e2e, `tsc` clean, lint 0 errors
