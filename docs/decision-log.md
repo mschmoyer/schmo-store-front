@@ -2489,3 +2489,56 @@ preview pane ship is not one to leave open once it has been demonstrated.
 - [x] All 23 `admin-products` specs pass now, where two failed before
 - [x] The build job's comment about `JWT_SECRET` throwing "at module load" was
       left stale by the lazy fix. Corrected
+
+## Custom pages reach the storefront (2026-08-20)
+
+The half-shipped pages work from earlier is now a whole feature for everything
+except the editor UI: a merchant can create, edit, publish, unpublish and delete
+a page through the API, and it renders in their theme with their chrome.
+
+- [x] `GET`/`PUT`/`DELETE /api/admin/pages/[slug]` and
+      `POST`/`DELETE /api/admin/pages/[slug]/publish`. Unpublishing is
+      deliberately **not** deletion — taking a page off the shop and throwing it
+      away are different decisions, and conflating them loses copy somebody wrote
+- [x] `/store/[storeSlug]/pages/[pageSlug]` renders the page's `Section[]`
+      through the **same registry** the home page uses. That was the whole
+      design: the section engine was already generic, so this needed a table and
+      a route rather than any new rendering primitive
+- [x] Behind a valid preview token the **draft** is served, matching the home
+      page's contract. Without one an unpublished page is a 404, not a hidden
+      page a guessed URL could reach
+- [x] `noindex` honoured, for thank-you and campaign pages that should not
+      compete with the shop in search
+- [x] **Navigation is live.** The header renders the merchant's menu when they
+      have set one and derives the old hardcoded list otherwise; the footer's
+      Shop column does the same. `resolveNavHref` mounts store-relative paths
+      and collapses anything unsafe rather than emitting it
+- [x] The footer lists published pages, so a returns policy is reachable from
+      every page — Stripe asks for that URL during Connect onboarding, and an
+      unlinked page satisfies neither Stripe nor a shopper
+
+### Two defects found by using it rather than by testing it
+
+- [x] **Publishing a page 404'd for up to a minute.** `pages.db.ts` had copied
+      `db.ts`'s in-process cache, and an in-process cache **cannot be
+      invalidated across instances** — the invalidate call reaches the module
+      registry it runs in, which on a serverless platform is one lambda out of
+      many. It was reproducible: publish, open the URL, get a 404. Cache
+      removed. Serving a stale theme is cosmetic for a minute; serving a 404 for
+      a page that exists is a broken shop at exactly the moment the merchant is
+      looking at it. The cost is one indexed lookup per render, on a page that
+      already queries the store, theme, categories and catalogue
+- [x] **The minimal footer layout skipped the page list entirely.** Voltage —
+      the preset the demo electronics store uses — has `footer.layout:
+      'minimal'`, and the Information column was only in the columns branch. So
+      a merchant on a minimal footer had no route to their own returns policy,
+      which is the exact problem the list exists to solve. The layout must not
+      be what decides whether it is solved
+
+Open on pages and navigation:
+
+- [ ] **No editor UI yet.** Both are API-only, so the feature is reachable by a
+      developer and not by a merchant — the same criticism the review made of
+      other half-built surfaces, and the next thing to close
+- [ ] The customizer's preview iframe is still hardcoded to the home page URL,
+      so a merchant cannot preview a custom page inside the editor

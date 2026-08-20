@@ -1,10 +1,22 @@
 /**
  * Persistence for custom storefront pages.
  *
- * Mirrors `db.ts` deliberately: one row per (store, slug, status), draft and
- * published coexisting, published reads cached in-process and drafts never
- * cached. A merchant who has learned how publishing works on their home page
- * already knows how it works on every other page.
+ * Mirrors `db.ts` deliberately: one row per (store, slug, status), with draft
+ * and published coexisting. A merchant who has learned how publishing works on
+ * their home page already knows how it works on every other page.
+ *
+ * **Unlike `db.ts`, nothing here is cached, and that is deliberate.** An
+ * in-process cache cannot be invalidated across instances — the invalidate call
+ * only reaches the module registry it runs in, which on a serverless platform
+ * is one lambda out of many. The symptom was reproducible and bad: publish a
+ * page, open its URL, and get a 404; publish a policy page and watch the footer
+ * not list it. Serving a stale *theme* is a cosmetic problem for a minute;
+ * serving a 404 for a page that exists is a broken shop, at exactly the moment
+ * the merchant is looking at it.
+ *
+ * What it buys instead is one indexed lookup per storefront render, on a page
+ * that already queries the store, the theme, the categories and the catalogue.
+ * Correctness is worth more than that query.
  *
  * **Every query in this file carries `store_id`.** Pages are addressed by a
  * merchant-chosen slug, which is the most guessable identifier on the platform:
@@ -42,30 +54,6 @@ interface PageRow extends Record<string, unknown> {
 
 const SELECT_COLUMNS =
   'store_id, slug, status, title, sections, seo, version, updated_at, published_at';
-
-/* ------------------------------------------------------------------ *
- * Cache
- * ------------------------------------------------------------------ */
-
-interface CacheEntry {
-  pages: StorePageRecord[];
-  expiresAt: number;
-}
-
-/** Matches the published-theme TTL, so a publish settles everywhere at the same rate. */
-const PUBLISHED_CACHE_TTL_MS = 60_000;
-
-/** Keyed by store: a storefront render needs the whole published set for its nav anyway. */
-const publishedCache = new Map<string, CacheEntry>();
-
-/**
- * Drop a store's cached published pages.
- * @param storeId - Store to invalidate, or omit to clear the whole cache
- */
-export function invalidatePageCache(storeId?: string): void {
-  if (storeId) publishedCache.delete(storeId);
-  else publishedCache.clear();
-}
 
 /* ------------------------------------------------------------------ *
  * Row mapping
@@ -129,9 +117,6 @@ function toRecord(row: PageRow): StorePageRecord {
 export async function getPublishedPages(storeId: string): Promise<StorePageRecord[]> {
   if (!storeId) return [];
 
-  const cached = publishedCache.get(storeId);
-  if (cached && cached.expiresAt > Date.now()) return cached.pages;
-
   const result = await db.query<PageRow>(
     `SELECT ${SELECT_COLUMNS}
        FROM store_pages
@@ -139,18 +124,11 @@ export async function getPublishedPages(storeId: string): Promise<StorePageRecor
       ORDER BY slug ASC`,
     [storeId],
   );
-
-  const pages = result.rows.map(toRecord);
-  publishedCache.set(storeId, { pages, expiresAt: Date.now() + PUBLISHED_CACHE_TTL_MS });
-  return pages;
+  return result.rows.map(toRecord);
 }
 
 /**
  * One published page by slug.
- *
- * Served from the same cached set as {@link getPublishedPages} rather than its
- * own query: a storefront request that renders a page also renders the footer,
- * which needs the whole list, so the second query would be pure waste.
  *
  * @param storeId - Store UUID
  * @param slug - Page slug
@@ -161,8 +139,15 @@ export async function getPublishedPage(
   slug: string,
 ): Promise<StorePageRecord | null> {
   if (!storeId || !slug) return null;
-  const pages = await getPublishedPages(storeId);
-  return pages.find((page) => page.slug === slug) ?? null;
+
+  const result = await db.query<PageRow>(
+    `SELECT ${SELECT_COLUMNS}
+       FROM store_pages
+      WHERE store_id = $1 AND slug = $2 AND status = 'published'
+      LIMIT 1`,
+    [storeId, slug],
+  );
+  return result.rows[0] ? toRecord(result.rows[0]) : null;
 }
 
 /**
@@ -350,7 +335,6 @@ export async function publishPage(
     [storeId, slug],
   );
 
-  invalidatePageCache(storeId);
   return result.rows[0] ? toRecord(result.rows[0]) : null;
 }
 
@@ -370,7 +354,6 @@ export async function unpublishPage(storeId: string, slug: string): Promise<bool
     `DELETE FROM store_pages WHERE store_id = $1 AND slug = $2 AND status = 'published'`,
     [storeId, slug],
   );
-  invalidatePageCache(storeId);
   return (result.rowCount ?? 0) > 0;
 }
 
@@ -387,7 +370,6 @@ export async function deletePage(storeId: string, slug: string): Promise<boolean
     `DELETE FROM store_pages WHERE store_id = $1 AND slug = $2`,
     [storeId, slug],
   );
-  invalidatePageCache(storeId);
   return (result.rowCount ?? 0) > 0;
 }
 
