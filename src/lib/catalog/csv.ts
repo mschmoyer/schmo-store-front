@@ -19,7 +19,7 @@ export interface CsvColumn {
   /** The database column, or null for a computed column that export writes and import ignores. */
   column: string | null;
   /** How an imported value is converted before it reaches the column. */
-  type: 'text' | 'number' | 'integer' | 'boolean' | 'list' | 'status' | 'grams';
+  type: 'text' | 'number' | 'integer' | 'boolean' | 'list' | 'status' | 'grams' | 'category';
   /** Alternative headers accepted on import, for files from elsewhere. */
   aliases?: string[];
   /** Computed columns are informational: export writes them, import must not try to store them. */
@@ -108,7 +108,20 @@ export const CATALOG_CSV_COLUMNS: CsvColumn[] = [
 
   /* Computed. Present so an exported file answers the questions a merchant opens it to ask, and
    * ignored on import because nothing can be written to them. */
-  { header: 'Category', column: null, type: 'text', readOnly: true },
+  /*
+   * Writable, by name.
+   *
+   * This was `readOnly`, and `mapColumns` drops read-only columns without even listing them as
+   * unrecognised — on the reasoning that the merchant got them from our own export. The effect was
+   * that a merchant who exported 800 products, filled in the Category column in a spreadsheet
+   * (the single most obvious use of a catalogue export) and re-imported got "800 updated" and zero
+   * categorisation, with no diagnostic anywhere. The only ways to set a category were the edit
+   * form, one product at a time, and a bulk action taking a raw UUID.
+   *
+   * Resolved by name, creating the category when it does not exist — the same rule
+   * `resolveCategoryId` already applies on the ShipStation sync path.
+   */
+  { header: 'Category', column: 'category_id', type: 'category' },
   { header: 'Supplier', column: null, type: 'text', readOnly: true },
   { header: 'Available', column: null, type: 'integer', readOnly: true },
   { header: 'Committed', column: null, type: 'integer', readOnly: true },
@@ -281,9 +294,11 @@ export function parseCell(raw: string, type: CsvColumn['type']): unknown {
     case 'number':
       return parseNumber(text);
     case 'grams':
-      /* To pounds, the unit this platform stores. Rounded to four places because a 5 g accessory is
-       * 0.011 lb and rounding to two would make it weightless. */
-      return Math.round((parseNumber(text) / 453.59237) * 10000) / 10000;
+      return gramsToPounds(parseNumber(text));
+    case 'category':
+      /* The name, as typed. Turning it into a category id needs the database, so the import route
+       * resolves it; this only trims. */
+      return text;
     case 'integer':
       return Math.trunc(parseNumber(text));
     case 'boolean': {
@@ -395,7 +410,8 @@ export function mapColumns(headers: string[]): ColumnMapping {
   const mapping: MappedColumn[] = [];
   const unrecognised: string[] = [];
   const duplicates: string[] = [];
-  const claimed = new Set<string>();
+  /* Position in `mapping`, so a later header can replace an earlier one for the same field. */
+  const claimed = new Map<string, number>();
 
   headers.forEach((header, index) => {
     const raw = String(header ?? '').trim();
@@ -411,12 +427,29 @@ export function mapColumns(headers: string[]): ColumnMapping {
        * unknown, because the merchant got them from us. */
       return;
     }
-    if (claimed.has(column.column)) {
-      duplicates.push(raw);
+    const already = claimed.get(column.column);
+    if (already !== undefined) {
+      /*
+       * Two headers for one field: the more expressive one wins, not the earlier one.
+       *
+       * A genuine Shopify export puts `Published` (TRUE/FALSE) at column 8 and `Status`
+       * (active/draft/archived) last, so first-wins meant `Status` was *always* discarded. An
+       * archived product then imported as a draft — landing in the merchant's working queue — and
+       * an archived-but-published-flag product imported as active and went straight onto the
+       * storefront. `Status` strictly dominates `Published`: three values against two, and the
+       * archived state exists only in the first.
+       */
+      const incumbent = mapping[already].column;
+      if (incumbent.importOnly && !column.importOnly) {
+        duplicates.push(incumbent.header);
+        mapping[already] = { index, column };
+      } else {
+        duplicates.push(raw);
+      }
       return;
     }
 
-    claimed.add(column.column);
+    claimed.set(column.column, mapping.length);
     mapping.push({ index, column });
   });
 
@@ -472,4 +505,54 @@ export function shopifyPricePair(
   return sale === null
     ? { price: basePrice, compareAt: null }
     : { price: sale, compareAt: basePrice };
+}
+
+/** Grams in one pound, exactly, per the international avoirdupois definition. */
+const GRAMS_PER_POUND = 453.59237;
+
+/**
+ * Convert grams to the pounds this platform stores.
+ *
+ * Four decimal places because a 5 g accessory is 0.011 lb, and rounding to two would make it
+ * weightless.
+ *
+ * @param grams - A weight in grams.
+ * @returns The weight in pounds.
+ */
+export function gramsToPounds(grams: number): number {
+  return Math.round((grams / GRAMS_PER_POUND) * 10000) / 10000;
+}
+
+/**
+ * Convert this platform's stored weight to the grams a `Variant Grams` column means.
+ *
+ * This exists because its absence destroyed data. The export wrote the raw `weight` column — pounds
+ * — under a header named `Variant Grams`, and the import dutifully divided it by 453.59237 on the
+ * way back. A merchant exporting a catalogue and re-importing it unchanged, which both the export
+ * and import modules document as a supported round trip, turned every 2.50 lb product into 0.01 lb.
+ * Weight drives shipping quotes and the customs value on a commercial invoice, so the whole
+ * catalogue became weightless under a green "12 updated".
+ *
+ * @param pounds - The stored weight, or null.
+ * @param unit - The stored `weight_unit`, since not every product records pounds.
+ * @returns The weight in whole grams, or an empty string when there is none.
+ */
+export function weightToGrams(
+  pounds: number | string | null | undefined,
+  unit: string | null | undefined
+): number | '' {
+  if (pounds === null || pounds === undefined || pounds === '') return '';
+  const value = Number(pounds);
+  if (!Number.isFinite(value)) return '';
+
+  const grams =
+    unit === 'g'
+      ? value
+      : unit === 'kg'
+        ? value * 1000
+        : unit === 'oz'
+          ? (value / 16) * GRAMS_PER_POUND
+          : value * GRAMS_PER_POUND;
+
+  return Math.round(grams);
 }

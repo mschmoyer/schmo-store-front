@@ -224,6 +224,8 @@ interface ProductRow extends Record<string, unknown> {
   override_name: string | null;
   track_inventory: boolean | null;
   stock_quantity: number | null;
+  vendor: string | null;
+  barcode: string | null;
   low_stock_threshold: number | null;
   allow_backorder: boolean | null;
   weight: string | number | null;
@@ -287,6 +289,8 @@ function toProduct(row: ProductRow): ProductRecord {
     compareAtPrice,
     trackInventory: row.track_inventory !== false,
     stockQuantity: Number(row.stock_quantity ?? 0),
+    vendor: row.vendor ?? null,
+    barcode: row.barcode ?? null,
     lowStockThreshold: Number(row.low_stock_threshold ?? 0),
     allowBackorder: row.allow_backorder === true,
     weight: toNumber(row.weight),
@@ -310,13 +314,42 @@ function toProduct(row: ProductRow): ProductRecord {
 
 const PRODUCT_COLUMNS = `p.id, p.store_id, p.sku, p.name, p.slug, p.short_description,
   p.long_description, p.description_html, p.base_price, p.sale_price, p.override_price,
-  p.override_name, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
+  p.override_name, p.track_inventory, p.low_stock_threshold,
+  -- What a shopper can actually buy, not what is physically in the building.
+  --
+  -- This was p.stock_quantity, the sum of on_hand across every location, which subtracts neither
+  -- the units committed to orders already placed nor the units held back as damaged or awaiting
+  -- inspection, and counts stock sitting in a location the merchant has marked unfulfillable or
+  -- closed. So migration 038 made quarantine real for the admin while the storefront went on
+  -- selling the quarantined units: 157 on hand with 100 quarantined showed the admin 53 available
+  -- and offered the customer 157.
+  --
+  -- COALESCE to stock_quantity covers a product with no levels rows at all, which is what an
+  -- untracked product looks like.
+  COALESCE(lv.sellable, p.stock_quantity) AS stock_quantity,
   p.allow_backorder, p.weight, p.weight_unit, p.length, p.width, p.height,
   p.dimension_unit, p.category_id, c.name AS category_name, c.slug AS category_slug,
   p.tags, p.featured_image_url, p.gallery_images, p.is_featured, p.requires_shipping,
+  -- Brand and a product identifier. Both are populated and neither reached the storefront, so the
+  -- schema.org Product carried no brand and no gtin, without which a Product rich result is not
+  -- eligible and a Merchant Center feed built from the page is rejected.
+  p.vendor, p.barcode,
   p.meta_title, p.meta_description`;
 
-const PRODUCT_FROM = `FROM products p LEFT JOIN categories c ON c.id = p.category_id`;
+const PRODUCT_FROM = `FROM products p
+  LEFT JOIN categories c ON c.id = p.category_id
+  LEFT JOIN LATERAL (
+    SELECT SUM(l.available)::int AS sellable
+      FROM inventory_levels l
+      JOIN inventory_locations loc
+        ON loc.id = l.location_id AND loc.store_id = l.store_id
+     WHERE l.product_id = p.id
+       AND l.store_id = p.store_id
+       -- A returns bay, a quarantine shelf or a closed location holds real stock that cannot be
+       -- sold from. Counting it is how a storefront promises what it cannot ship.
+       AND loc.is_fulfillable
+       AND loc.is_active
+  ) lv ON TRUE`;
 
 /** `ORDER BY` fragments, keyed by sort id. Never interpolate user input here. */
 const SORT_SQL: Record<SortKey, string> = {

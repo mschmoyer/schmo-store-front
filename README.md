@@ -341,6 +341,7 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 - `/api/blog` - Blog content management
 - `/api/stores` - Store information
 - `/api/media/[mediaId]` - Serves an uploaded product image; content-addressed and cacheable
+- `/sitemap.xml`, `/robots.txt` - Every live storefront and published product, announced to crawlers
 
 ### Payments
 - `/api/checkout/quote` - Server-authoritative pricing preview; creates nothing

@@ -22,6 +22,7 @@ import {
 import { loadStorefront, type SearchParams } from '../../../_lib/load';
 import { getProduct, getRelatedProducts, getStoreBySlug } from '../../../_lib/queries';
 import { resolveRetiredSlug } from '@/lib/catalog/slug';
+import { absoluteUrl, storefrontUrl } from '@/lib/seo/siteUrl';
 import { sanitizeRichText, toParagraphs } from '../../../_lib/html';
 import {
   formatDimensions,
@@ -54,14 +55,28 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
   const description =
     product.metaDescription || product.shortDescription || product.longDescription || '';
 
+  const canonical = storefrontUrl(storeSlug, `/product/${product.slug}`);
+
   return {
     title: product.metaTitle || product.name,
     description: description.slice(0, 300),
+    /*
+     * Its own URL, not the platform's marketing homepage.
+     *
+     * The root layout sets `alternates.canonical` to the site root and Next inherits `alternates`
+     * down the tree, so without this every product page on every merchant's storefront declared
+     * itself a duplicate of rebelshops.com.
+     *
+     * Built from `product.slug` rather than the incoming `productId`, so the id form of the URL and
+     * a retired slug both point at the one canonical address.
+     */
+    alternates: { canonical },
     openGraph: {
       title: product.name,
       description: description.slice(0, 300),
       type: 'website',
-      ...(product.featuredImageUrl ? { images: [product.featuredImageUrl] } : {}),
+      url: canonical,
+      ...(product.featuredImageUrl ? { images: [absoluteUrl(product.featuredImageUrl)] } : {}),
     },
   };
 }

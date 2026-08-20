@@ -19,6 +19,7 @@
  * the merchant fixes eight rows rather than being told "import failed".
  */
 
+import type { PoolClient } from 'pg';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
@@ -114,6 +115,12 @@ export async function POST(request: NextRequest) {
      * constraints and the real uniqueness checks, rather than a simulation that could disagree with
      * what actually happens. A row that would violate a constraint fails in the dry run too.
      */
+    /* Line number where each handle was first seen, so a repeat can name it. */
+    const handlesSeen = new Map<string, number>();
+
+    /* Category name to id, so a 5,000-row file resolves "Audio" once rather than 5,000 times. */
+    const categoryCache = new Map<string, string>();
+
     await db.transaction(async (tx) => {
       for (let i = 1; i < rows.length; i++) {
         const line = i + 1;
@@ -125,6 +132,35 @@ export async function POST(request: NextRequest) {
         if (!sku && !handle) {
           outcomes.push({ line, sku, handle, action: 'skip', message: 'No SKU or handle' });
           continue;
+        }
+
+        /*
+         * A second row for a handle already seen is a variant, and this platform has no variants.
+         *
+         * Refusing it loudly is the only honest answer available until the variant model lands.
+         * Overwriting the first row — what used to happen — produced a product with one variant's
+         * SKU and another's price and barcode, which is a mis-pick in the warehouse. Creating three
+         * unrelated products instead would silently restructure the merchant's catalogue. Saying
+         * "this file describes variants and I cannot store them" is the one response that leaves
+         * the merchant able to decide.
+         */
+        if (handle) {
+          const seenAt = handlesSeen.get(handle);
+          if (seenAt !== undefined) {
+            outcomes.push({
+              line,
+              sku,
+              handle,
+              action: 'error',
+              message:
+                `Line ${line} is another variant of "${handle}" (first seen on line ${seenAt}). `
+                + 'This platform stores one SKU per product and cannot yet hold variants, so this '
+                + 'row was not imported. Give each variant its own Handle to import them as '
+                + 'separate products.'
+            });
+            continue;
+          }
+          handlesSeen.set(handle, line);
         }
 
         /*
@@ -146,8 +182,25 @@ export async function POST(request: NextRequest) {
           const existing = await tx.query<
             Record<string, unknown> & { id: string; slug: string; sku: string }
           >(
+            /*
+             * SKU is the identity when the row has one; the handle only when it does not.
+             *
+             * This read `($2 <> '' AND sku = $2 OR $3 <> '' AND slug = $3)`, and `AND` binds
+             * tighter than `OR`, so it meant `sku = $2 OR slug = $3` — either one matching was
+             * enough. In a genuine Shopify export every variant row after the first carries the
+             * *same Handle* and a *different SKU*, which is the format's whole premise, so every
+             * variant matched the product created by row 1 and overwrote it. A three-variant tee
+             * imported as one row holding the SKU of variant 1 and the price, barcode, cost and
+             * weight of variant 3, reported as "2 created, 2 updated".
+             *
+             * The parentheses make SKU authoritative. `variantRowsForHandle` below then refuses the
+             * extra rows outright rather than letting them create three unrelated products, because
+             * silently splitting a merchant's variants into separate listings is its own kind of
+             * wrong answer.
+             */
             `SELECT * FROM products
-              WHERE store_id = $1 AND ($2 <> '' AND sku = $2 OR $3 <> '' AND slug = $3)
+              WHERE store_id = $1
+                AND CASE WHEN $2 <> '' THEN sku = $2 ELSE $3 <> '' AND slug = $3 END
               LIMIT 1`,
             [storeId, sku, handle]
           );
@@ -171,6 +224,24 @@ export async function POST(request: NextRequest) {
             compareCell as number | undefined
           );
 
+          /*
+           * A weight read from `Variant Grams` has already been converted to pounds, so the file's
+           * own `Variant Weight Unit` must not be written beside it.
+           *
+           * It was. A 340 g mug imported as `weight = 0.75, weight_unit = 'g'` — a record saying
+           * the mug weighs three quarters of a gram, which the storefront prints, the schema.org
+           * `QuantitativeValue` publishes, and the public product API returns.
+           */
+          const gramsSupplied = mapping.some(
+            (m) => m.column.type === 'grams' && (cells[m.index] ?? '').trim() !== ''
+          );
+
+          if (gramsSupplied) {
+            values.push('lb');
+            assignments.push(`weight_unit = $${values.length}`);
+            applied.push('weight_unit');
+          }
+
           for (const [priceColumn, priceValue] of Object.entries(prices)) {
             values.push(priceValue);
             assignments.push(`${priceColumn} = $${values.length}`);
@@ -190,9 +261,17 @@ export async function POST(request: NextRequest) {
             if (column.column === 'slug' || column.column === 'sku') continue;
             /* Handled above, as a pair. */
             if (column.column === 'base_price' || column.column === 'sale_price') continue;
+            if (column.column === 'weight_unit' && gramsSupplied) continue;
 
-            const parsed = parseCell(cells[index] ?? '', column.type);
+            let parsed = parseCell(cells[index] ?? '', column.type);
             if (parsed === undefined) continue;
+
+            /* A category arrives as a name and has to become an id. Created when it does not
+             * exist, matching what the ShipStation sync already does. */
+            if (column.type === 'category') {
+              parsed = await resolveCategoryByName(tx, storeId, String(parsed), categoryCache);
+              if (parsed === undefined) continue;
+            }
 
             values.push(parsed);
             assignments.push(`${column.column} = $${values.length}`);
@@ -282,6 +361,13 @@ export async function POST(request: NextRequest) {
           const columns = ['store_id', 'sku', 'slug', 'field_locks'];
           const insertValues: unknown[] = [storeId, newSku, slug, locks];
 
+          /* A grams column has already been converted to pounds; the file's own unit must not be
+           * written beside it. Same reasoning as the update path above. */
+          if (gramsSupplied) {
+            columns.push('weight_unit');
+            insertValues.push('lb');
+          }
+
           /* The same crosswise price resolution the update path uses. Applied here too because a
            * Shopify export's first import is a *create*, which is precisely the case that failed
            * every row on `products_sale_price_not_above_base`. */
@@ -294,8 +380,13 @@ export async function POST(request: NextRequest) {
           for (const { index, column } of mapping) {
             if (column.column === 'slug' || column.column === 'sku') continue;
             if (column.column === 'base_price' || column.column === 'sale_price') continue;
-            const parsed = parseCell(cells[index] ?? '', column.type);
+            if (column.column === 'weight_unit' && gramsSupplied) continue;
+            let parsed = parseCell(cells[index] ?? '', column.type);
             if (parsed === undefined) continue;
+            if (column.type === 'category') {
+              parsed = await resolveCategoryByName(tx, storeId, String(parsed), categoryCache);
+              if (parsed === undefined) continue;
+            }
             columns.push(column.column!);
             insertValues.push(parsed);
           }
@@ -482,4 +573,79 @@ function cellFor(
   const found = mapping.find((m) => m.column.column === column);
   if (!found) return undefined;
   return parseCell(cells[found.index] ?? '', found.column.type as Parameters<typeof parseCell>[1]);
+}
+
+/**
+ * Turn a category name from a spreadsheet into a category id, creating it when it is new.
+ *
+ * Matching is case-insensitive on the trimmed name: a merchant who types "audio" where the
+ * catalogue says "Audio" means the same category, and creating a near-duplicate would fragment
+ * their taxonomy silently.
+ *
+ * @param tx - The transaction client, so a rolled-back dry run does not leave categories behind.
+ * @param storeId - The tenant.
+ * @param name - The name from the file.
+ * @param cache - Name-to-id memo for the duration of one import.
+ * @returns The category id, or undefined when the cell was blank.
+ */
+async function resolveCategoryByName(
+  tx: PoolClient,
+  storeId: string,
+  name: string,
+  cache: Map<string, string>
+): Promise<string | undefined> {
+  const clean = name.trim();
+  if (!clean) return undefined;
+
+  const key = clean.toLowerCase();
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const existing = await tx.query<{ id: string }>(
+    'SELECT id FROM categories WHERE store_id = $1 AND LOWER(name) = $2 LIMIT 1',
+    [storeId, key]
+  );
+
+  let id = existing.rows[0]?.id;
+  if (!id) {
+    const created = await tx.query<{ id: string }>(
+      `INSERT INTO categories (store_id, name, slug, is_active)
+       VALUES ($1, $2, $3, true)
+       RETURNING id`,
+      [storeId, clean, await uniqueCategorySlug(tx, storeId, clean)]
+    );
+    id = created.rows[0].id;
+  }
+
+  cache.set(key, id);
+  return id;
+}
+
+/**
+ * A category slug free within the store.
+ *
+ * `categories` has a unique slug per store, and two differently-named categories can normalise to
+ * the same slug ("Home & Garden" and "Home and Garden"). Without this the second one fails the row.
+ *
+ * @param tx - The transaction client.
+ * @param storeId - The tenant.
+ * @param name - The category name.
+ * @returns A free slug.
+ */
+async function uniqueCategorySlug(
+  tx: PoolClient,
+  storeId: string,
+  name: string
+): Promise<string> {
+  const base = slugify(name) || 'category';
+  const taken = await tx.query<{ slug: string }>(
+    `SELECT slug FROM categories WHERE store_id = $1 AND (slug = $2 OR slug LIKE $2 || '-%')`,
+    [storeId, base]
+  );
+  const used = new Set(taken.rows.map((r) => r.slug));
+  if (!used.has(base)) return base;
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    if (!used.has(`${base}-${suffix}`)) return `${base}-${suffix}`;
+  }
+  return `${base}-${Date.now().toString(36)}`;
 }

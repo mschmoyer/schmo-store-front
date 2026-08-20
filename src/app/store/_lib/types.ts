@@ -58,6 +58,10 @@ export interface ProductRecord {
   compareAtPrice: number | null;
   trackInventory: boolean;
   stockQuantity: number;
+  /** Brand, for `schema.org` and Merchant Center. */
+  vendor: string | null;
+  /** GTIN/EAN/UPC, the product identifier a shopping feed needs. */
+  barcode: string | null;
   lowStockThreshold: number;
   allowBackorder: boolean;
   weight: number | null;

@@ -360,8 +360,36 @@ export async function syncInventoryPage(
 
       const locationId = await resolveDefaultLocationId(client, storeId);
 
+      /*
+       * The comparison is against the product's total across every location, not the default
+       * location's balance.
+       *
+       * ShipStation reports one on-hand figure per SKU for the whole account. This compared it
+       * against a single location's balance and posted the difference as an authoritative-looking
+       * `sync_correction`, so every unit a merchant had moved to a second location was invented
+       * again on the next pass. Reproduced: 77 at Main plus 40 at Back Room, ShipStation correctly
+       * reporting 117, produced a +40 correction and a total of 157.
+       *
+       * This was unreachable until multi-location became real, which is exactly why it is being
+       * fixed in the same breath as building it.
+       *
+       * The correction still lands at the default location, because ShipStation does not tell us
+       * which of our locations the units are in — `shipstation_warehouse_id` is never populated on
+       * `inventory_locations`, so there is no mapping to reason with. Landing the whole drift on
+       * one location is a known approximation and is stated in the movement's own note rather than
+       * left for someone to infer.
+       */
       const current = await client.query<{ on_hand: number }>(
-        `SELECT on_hand FROM inventory_levels
+        `SELECT COALESCE(SUM(on_hand), 0)::int AS on_hand
+           FROM inventory_levels
+          WHERE store_id = $1 AND product_id = $2`,
+        [storeId, productId]
+      );
+
+      /* The default location's row is what the correction is posted against, so it is the row that
+       * has to be locked. */
+      await client.query(
+        `SELECT 1 FROM inventory_levels
           WHERE store_id = $1 AND product_id = $2 AND location_id = $3
           FOR UPDATE`,
         [storeId, productId, locationId]
@@ -379,15 +407,26 @@ export async function syncInventoryPage(
             productId,
             drift,
             locationId,
-            `ShipStation reported ${reportedOnHand} on hand; our balance was ${
-              current.rows[0]?.on_hand ?? 0
-            }`
+            `ShipStation reported ${reportedOnHand} on hand across the account; our balance across `
+              + `all locations was ${current.rows[0]?.on_hand ?? 0}. Difference applied here, `
+              + `because ShipStation does not say which location its units are in.`
           ]
         );
       }
 
-      /* Allocation is a fact about ShipStation's open orders, not a movement of stock, so it is
-       * assigned rather than posted. */
+      /*
+       * Allocation is a fact about ShipStation's open orders, not a movement of stock, so it is
+       * assigned rather than posted.
+       *
+       * It is account-wide, like the on-hand figure, so it is cleared from every other location
+       * before being set here. Without that, moving stock to a second location left a stale
+       * `committed` behind on the old one and the store counted the same allocation twice.
+       */
+      await client.query(
+        `UPDATE inventory_levels SET committed = 0, updated_at = NOW()
+          WHERE store_id = $1 AND product_id = $2 AND location_id <> $3 AND committed <> 0`,
+        [storeId, productId, locationId]
+      );
       await client.query(
         `INSERT INTO inventory_levels (store_id, product_id, location_id, committed)
          VALUES ($1, $2, $3, $4)

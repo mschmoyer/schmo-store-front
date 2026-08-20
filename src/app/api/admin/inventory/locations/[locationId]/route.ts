@@ -59,8 +59,22 @@ export async function PATCH(
       }
       if (body.is_default === true) assignments.push('is_default = true');
       if (typeof body.is_active === 'boolean') {
-        if (!body.is_active && owned.rows[0].is_default) {
-          throw new AdminApiError('The default location cannot be deactivated', 400);
+        /*
+         * Guarded on the state this request would leave behind, not on the row as it stands.
+         *
+         * Testing `owned.rows[0].is_default` alone let `{"is_default": true, "is_active": false}`
+         * through: the location was not yet the default when the check ran, and was both default
+         * and closed by the time it finished. Every unlocated movement — sales, PO receipts, sync
+         * corrections — then defaulted into a location the merchant had closed, and transfers
+         * explicitly refuse to move stock into one.
+         */
+        const willBeDefault = body.is_default === true || owned.rows[0].is_default;
+        if (!body.is_active && willBeDefault) {
+          throw new AdminApiError(
+            'The default location cannot be closed — it is where stock goes when no location is '
+              + 'named. Make another location the default first.',
+            400
+          );
         }
         values.push(body.is_active);
         assignments.push(`is_active = $${values.length}`);

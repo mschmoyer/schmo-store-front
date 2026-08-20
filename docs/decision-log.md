@@ -2499,3 +2499,133 @@ Still open:
       have no UI
 - [ ] The ShipStation inventory sync still reconciles account-wide figures against one location —
       now genuinely reachable, since a store can have more than one
+
+### Second adversarial pass: an unauthenticated hole, and the cost of building multi-location
+
+Three reviewers went at the current state — UX/workflows, an IMS re-review, and a catalogue and
+e-commerce architect. Two of the three fixes verified as holding; what follows is what they found.
+
+#### The worst thing in this branch, and it predates it
+
+- [x] **`/api/admin/integrations/monitoring` had no authentication at all.** Its docblock said
+      "Requires admin authentication" and the file called `requireAuth` nowhere. It read `store_id`
+      from the request body, and one of its actions destroyed stock:
+
+          curl -X POST /api/admin/integrations/monitoring \
+            -d '{"action":"sync-inventory","store_id":"<any store>","products":["FWG-WD-2012"]}'
+          -> {"success":true,"data":{"synced":1}}      and that SKU went from 31 units to 0
+
+      With no token, against any store, from anywhere. It reached
+      `syncInventoryWithExternalSystem` with `available_quantity: 0` under a comment reading "Will
+      be updated during sync" — it was not, and could not be, because nothing in the call had the
+      real quantities. It was the only route under `/api/admin/**` that mutated without a session.
+      Both handlers now require one and take the store from it; the `sync-inventory` action is
+      removed rather than authenticated, because a destructive button only the merchant can press
+      is not an improvement
+- [x] `inventoryService` still clamped with `Math.max(0, newQuantity)` while logging the unclamped
+      figure — the behaviour migration 029's header describes removing, alive on another path. Gone,
+      and the write is `stock_quantity + $1` rather than a read-then-write
+- [x] `InventoryAdjustment` now carries `store_id` as a required field. Two of the three services
+      building it were writing stock addressed by bare product id; making the field required turned
+      that into a compile error at every call site, which is how they were found
+
+#### What building multi-location broke
+
+- [x] **The ShipStation sync invented stock the moment a store had two locations.** ShipStation
+      reports one account-wide on-hand per SKU; the sync compared it against the *default location's*
+      balance and posted the difference as an authoritative-looking `sync_correction`. Reproduced:
+      77 at Main plus 40 at Back Room, ShipStation correctly reporting 117, produced a +40
+      correction and a total of 157. Every transfer would have been undone by the next hourly pass.
+      It now compares against the product's total. `committed` is cleared from other locations
+      before being set, for the same reason
+- [x] **Opposite-direction transfers deadlocked deterministically** — 6 failures in 6 rounds, not a
+      rare race. Both level rows are now locked up front in a fixed order (by location id), so one
+      waits instead of both dying. Verified 8/8 succeeding with an empty deadlock log
+- [x] **The default location could be closed** by promoting and deactivating in one PATCH, because
+      the guard tested the pre-update row. Every unlocated movement then defaulted into a closed
+      location. Guarded on the resulting state now
+- [x] The route's location-type allowlist disagreed with the database CHECK: `quarantine` — the type
+      migration 038 exists for — was silently stored as `warehouse`, and `supplier` produced an
+      opaque constraint error. One list now
+
+#### The other things I got wrong this session
+
+- [x] **The receipt idempotency check used `LIKE` on a client-supplied key.** `%` and `_` in it were
+      wildcards, so a genuine delivery whose key happened to match a stored one — `AUDIT_KEY_1`
+      against `AUDIT-KEY-1` — was reported `replayed: true` with nothing written. That is the
+      "never report success for work that wrote nothing" rule failing inside the endpoint whose own
+      header calls the previous version the most expensive lie in the product. `starts_with` now
+- [x] **The truly concurrent duplicate returned an opaque 409**, not a replay — and a comment
+      claimed the 23505 was "caught below" when it was not. Caught now, returning the same answer as
+      the sequential retry
+- [x] **The CSV export wrote pounds under a header named `Variant Grams`**, while the importer
+      correctly divided by 453.59237 on the way back. Twelve of twelve products lost their weight in
+      one unmodified round trip, under a green "12 updated" — and weight is what carriers quote
+      against and what a customs declaration values. Verified lossless now: 0.65 lb → 295 g → 0.65 lb
+- [x] The storefront still sold quarantined and committed stock: `cart/validate` capped lines at
+      `stock_quantity`, which is total on-hand. Migration 038 made quarantine real for the admin and
+      stopped at the customer boundary. It now reads `available` summed over fulfillable, active
+      locations. Verified: 82 on hand, 60 quarantined, storefront offers 22
+
+#### The catalogue
+
+- [x] **A multi-variant Shopify product imported as one corrupted product, reported as success.**
+      The identity predicate read `(sku = $2) OR (slug = $3)` — `AND` binds tighter than `OR` — and
+      in a Shopify export every variant row after the first carries the same Handle and a different
+      SKU. So each variant overwrote the product row 1 created. A three-variant tee became one row
+      with the SKU of variant 1 and the price, barcode, cost and weight of variant 3, reported as
+      "2 created, 2 updated". SKU is authoritative now, and a repeated handle is refused with a
+      sentence naming the first row — refusing loudly is the only honest answer until variants exist
+- [x] **`Status` was always discarded** in favour of `Published`, because first-header-wins and a
+      real Shopify export puts `Published` at column 8 and `Status` last. Archived products imported
+      as drafts into the merchant's working queue, and an archived-but-published-flag product went
+      live. `Status` wins now, whatever the order
+- [x] **`Variant Weight Unit` was stored verbatim beside an already-converted weight**, so a 340 g
+      mug was recorded as weighing 0.75 *grams* — printed on the storefront, published in the
+      schema.org `QuantitativeValue`, and returned by the public API
+- [x] **`Category` was silently discarded on import** and reported as a successful update. A
+      merchant who exports 800 products, fills in the Category column and re-imports got "800
+      updated" and zero categorisation with no diagnostic anywhere. It resolves by name now,
+      creating the category when new, the same rule the ShipStation sync already applied
+- [x] **Two dead routes deleted.** `/api/products/[productId]` had no auth, no tenancy and read a
+      platform-wide `SHIPSTATION_API_KEY` — set that variable and it becomes an unauthenticated
+      proxy serving any product and its inventory from that account to anyone. Its sibling
+      base64-decoded an AES-GCM ciphertext and sent the resulting garbage to api.shipstation.com as
+      an API key. Nothing rendered either; the legacy component tree behind them went too
+
+#### Search engines
+
+- [x] **Every storefront page declared itself a duplicate of the platform's marketing homepage.**
+      The root layout spreads `generateLandingPageMeta()`, which sets `alternates.canonical` to the
+      site root, and Next inherits `alternates` down the tree. Nothing overrode it, so every
+      merchant's every product and collection page sent the strongest de-indexing signal a page can
+      send about itself — on a platform whose merchants are found through organic search
+- [x] `robots.txt` and `sitemap.xml` both 404'd, while `BlogSEO` emitted a `<link rel="sitemap">`
+      pointing at the missing one. Both exist now; the sitemap carries every live storefront, its
+      listing and its published products with `lastModified`
+- [x] `ProductSchema` was rendered with no `baseUrl`, so its own `absolute()` helper was a no-op and
+      every product shipped **relative** URLs in JSON-LD — unresolvable, so the offer, the
+      breadcrumbs and the images were all discarded. It defaults to the deployment origin now
+- [x] `brand` and `gtin` were absent while `vendor` and `barcode` sat populated in the database.
+      Without them a Product rich result is not eligible and a Merchant Center feed is rejected —
+      the difference between appearing in shopping results and not
+- [x] `?sort=` variants of a listing were indexable duplicates of each other, and canonicalised to
+      the platform homepage. They are `noindex, follow` and canonicalise to the clean listing
+
+- [x] **Version bumped** to 3.6.0
+
+Still open, and now with a design:
+- [ ] **Variants.** The catalogue reviewer specced the schema — `product_options`,
+      `product_option_values`, `product_variants`, `variant_option_values`, with the variant as the
+      stock-keeping and priced unit — plus the repointing of `inventory_levels`, `inventory_holds`,
+      `inventory_transactions`, `order_items` and `purchase_order_items`, and a five-step sequence
+      that keeps each step shippable. It is the next piece of work
+- [ ] `reserved` is the last quantity nothing writes. Its writer is a checkout reservation, which is
+      also what closes the oversell race
+- [ ] No collections or metafields; `publish_at` remains a dead column with a dedicated index; 10 of
+      the 19 bulk actions still have no UI
+- [ ] The import's `RELEASE SAVEPOINT` is only issued on the create path, so a large update file
+      accumulates live subtransactions — no measurable cost at 1,000 rows, but Postgres degrades
+      other backends' visibility checks past 64
+- [ ] `resolveRetiredSlug` does not check `is_active`, so a renamed-then-unpublished product
+      redirects into a 404 rather than 404ing directly

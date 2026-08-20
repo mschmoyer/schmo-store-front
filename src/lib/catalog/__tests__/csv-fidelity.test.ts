@@ -104,7 +104,27 @@ describe('mapColumns', () => {
 
     const columns = mapping.map((m) => m.column.column);
     expect(columns.filter((c) => c === 'status')).toHaveLength(1);
-    expect(duplicates).toEqual(['Status']);
+    /* `Published` is the one dropped, whichever order the file lists them in — see below. */
+    expect(duplicates).toEqual(['Published']);
+  });
+
+  it('keeps Status over Published whatever the column order', () => {
+    /*
+     * A real Shopify export puts `Published` at column 8 and `Status` last, so first-wins meant
+     * `Status` was always the one discarded. An archived product then imported as a draft, landing
+     * in the merchant's working queue; and an archived product whose `Published` flag was TRUE
+     * imported as active and went onto the storefront. `Status` carries three states and
+     * `Published` two, and only `Status` can say "archived".
+     */
+    for (const headers of [
+      ['Variant SKU', 'Published', 'Status'],
+      ['Variant SKU', 'Status', 'Published']
+    ]) {
+      const { mapping, duplicates } = mapColumns(headers);
+      const chosen = mapping.find((m) => m.column.column === 'status');
+      expect(chosen?.column.header).toBe('Status');
+      expect(duplicates).toEqual(['Published']);
+    }
   });
 
   it('reports headers it does not know rather than ignoring them', () => {

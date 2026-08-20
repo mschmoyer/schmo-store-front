@@ -203,10 +203,39 @@ export async function transferStock(params: {
   }
 
   return db.transaction(async (tx) => {
+    /*
+     * Both level rows are locked up front, in a fixed order, before either leg is posted.
+     *
+     * Locking them in *transfer* order deadlocks deterministically. Two staff moving the same SKU
+     * in opposite directions between the shop and the stockroom — an ordinary shift, not a race
+     * you have to engineer — take the same two rows in opposite orders, and the projection
+     * trigger's `products … FOR UPDATE` sits between them. Measured 6 failures in 6 rounds: one
+     * request succeeded and the other came back 409 "That change collided with another one" every
+     * single time.
+     *
+     * Ordering by location id makes the order the same for both directions, so one waits instead
+     * of both dying. `ORDER BY` inside `FOR UPDATE` is what guarantees it — Postgres locks rows in
+     * the order the query returns them.
+     *
+     * A row that does not exist yet cannot be locked; `post_inventory_movement` creates it under
+     * its own upsert, and a location with no row has nothing to transfer out of anyway, so the
+     * origin check below still catches that case.
+     */
+    await tx.query(
+      `SELECT 1 FROM inventory_levels
+        WHERE store_id = $1 AND product_id = $2 AND location_id = ANY($3::uuid[])
+        ORDER BY location_id
+        FOR UPDATE`,
+      [
+        params.storeId,
+        params.productId,
+        [params.fromLocationId, params.toLocationId].sort()
+      ]
+    );
+
     const available = await tx.query<{ available: number }>(
       `SELECT available FROM inventory_levels
-        WHERE store_id = $1 AND product_id = $2 AND location_id = $3
-        FOR UPDATE`,
+        WHERE store_id = $1 AND product_id = $2 AND location_id = $3`,
       [params.storeId, params.productId, params.fromLocationId]
     );
 

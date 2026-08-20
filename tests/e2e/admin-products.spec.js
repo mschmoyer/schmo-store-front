@@ -80,12 +80,35 @@ test.describe('Admin catalogue', () => {
     await products.selectView('Low stock');
     expect(page.url()).toContain('view=low_stock');
 
-    const rows = await products.rowCountValue();
+    const linked = page.url();
 
-    /* The point of URL state: a colleague opening the link sees the same list. */
-    await page.goto(page.url());
+    /*
+     * The claim is that the URL carries the view, so a colleague opening the link sees the same
+     * *list* — not the same number of rows.
+     *
+     * This compared `rowCountValue()` before and against after the reload, which fails whenever
+     * another spec adds or removes a product in between. It did, once in a full parallel run, and
+     * passed in isolation — the same flakiness class the badge assertions elsewhere in this file
+     * were rewritten to avoid. A count is the wrong evidence for a claim about filters.
+     *
+     * So: the view survives the round trip, the tab is still the selected one, and the badge still
+     * agrees with the rows — which is the invariant that would actually be false if the URL did not
+     * carry the filter.
+     */
+    await page.goto(linked);
     await page.waitForSelector('table tbody tr');
-    expect(await products.rowCountValue()).toBe(rows);
+
+    expect(page.url()).toContain('view=low_stock');
+    await expect(
+      page.locator('[role=tab][aria-selected="true"]').filter({ hasText: 'Low stock' })
+    ).toHaveCount(1);
+
+    await expect
+      .poll(async () => ((await products.badgeMatchesRows('Low stock')) ? 'match' : 'mismatch'), {
+        message: 'the linked view should show the rows its badge counts',
+        timeout: 8000
+      })
+      .toBe('match');
   });
 
   test('column headings sort, and say so to assistive technology', async ({ page }) => {

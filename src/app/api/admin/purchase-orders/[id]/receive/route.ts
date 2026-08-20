@@ -103,12 +103,23 @@ export async function POST(
      * investigate a discrepancy that does not exist.
      */
     if (idempotencyKey) {
+      /*
+       * `starts_with`, not `LIKE`.
+       *
+       * The key is supplied by the client and was being interpolated into a `LIKE` *pattern*, so
+       * `%` and `_` in it were wildcards. A genuine, never-seen delivery whose key happened to
+       * wildcard-match a stored one — `AUDIT_KEY_1` against `AUDIT-KEY-1`, or anything containing
+       * `%` — was reported `replayed: true` with nothing written and no stock moved. That is the
+       * "never return success for work that wrote nothing" rule failing inside the endpoint whose
+       * own header calls the previous version of it the most expensive lie in the product.
+       * Underscores in an idempotency key are entirely ordinary.
+       */
       const seen = await db.query<{ n: string }>(
         `SELECT COUNT(*) AS n
            FROM purchase_order_receiving r
            JOIN purchase_orders po ON po.id = r.purchase_order_id
           WHERE po.id = $1 AND po.store_id = $2
-            AND r.idempotency_key LIKE $3 || ':%'`,
+            AND starts_with(r.idempotency_key, $3 || ':')`,
         [id, storeId, idempotencyKey]
       );
       if (Number(seen.rows[0]?.n ?? 0) > 0) {
@@ -447,6 +458,30 @@ export async function POST(
       }
     });
   } catch (error) {
+    /*
+     * The genuinely concurrent duplicate.
+     *
+     * The check above catches a retry that arrives after the first one committed. Two requests in
+     * flight at once both pass it, and the loser hits the unique index on
+     * `(purchase_order_id, idempotency_key)`. A comment here claimed that was "caught below"; it
+     * was not, so it fell through to the generic SQLSTATE map and the warehouse tablet got "That
+     * value is already used by another record" — with no indication that the delivery had in fact
+     * been booked, and the same answer on every further retry.
+     *
+     * It is the same fact as the sequential retry, so it gets the same answer.
+     */
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code: unknown }).code)
+        : '';
+    if (code === '23505') {
+      return NextResponse.json({
+        success: true,
+        replayed: true,
+        message: 'This delivery was already recorded. Nothing was received twice.'
+      });
+    }
+
     return adminErrorResponse(error, 'purchase-orders.receive');
   }
 }

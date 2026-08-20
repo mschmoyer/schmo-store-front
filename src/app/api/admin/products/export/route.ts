@@ -25,7 +25,7 @@ import {
   resolveStockStatus,
   type ProductListFilters
 } from '../_lib/query';
-import { EXPORT_CSV_COLUMNS, csvRow, shopifyPricePair } from '@/lib/catalog/csv';
+import { EXPORT_CSV_COLUMNS, csvRow, shopifyPricePair, weightToGrams } from '@/lib/catalog/csv';
 
 /** Rows fetched per round trip while streaming. Large enough to be efficient, small enough to
  * keep memory flat regardless of catalogue size. */
@@ -218,8 +218,30 @@ function cellsFor(row: Record<string, unknown>): unknown[] {
   return EXPORT_CSV_COLUMNS.map((col) => {
     if (col.header === 'Variant Price') return shopifyPrice ?? '';
     if (col.header === 'Variant Compare At Price') return compareAt ?? '';
+
+    /* The category's *name*, not its id. The column is writable now — the import resolves a name
+     * back to an id, creating it when new — but a merchant editing a spreadsheet types "Audio",
+     * not a UUID, and a file full of UUIDs is not one they can work with. */
+    if (col.type === 'category') return row.category_name ?? '';
+
     if (col.column === null) return computed[col.header] ?? '';
+
     const value = row[col.column];
+
+    /*
+     * A column whose header names a unit has to be written in that unit.
+     *
+     * This wrote the raw `weight` column — pounds — under a header reading `Variant Grams`, while
+     * the importer correctly divided that header by 453.59237 on the way back in. So exporting a
+     * catalogue and re-importing it unchanged, the round trip both modules document as supported,
+     * turned every 2.50 lb product into 0.01 lb. Twelve of twelve seeded products lost their weight
+     * in one pass, under a green "12 updated" — and weight is what carriers quote against and what
+     * a customs declaration values.
+     */
+    if (col.type === 'grams') {
+      return weightToGrams(value as number | string | null, row.weight_unit as string | null);
+    }
+
     if (col.type === 'boolean') return value ? 'TRUE' : 'FALSE';
     return value ?? '';
   });

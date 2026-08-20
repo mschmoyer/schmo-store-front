@@ -19,6 +19,20 @@ import { requireAuth } from '@/lib/auth/session';
 import { adminErrorResponse, AdminApiError } from '@/lib/api/adminError';
 
 /**
+ * The location types the database accepts.
+ *
+ * Kept in one place because two hand-written copies disagreed: the route allowed `supplier` and not
+ * `quarantine`, the CHECK constraint the reverse.
+ */
+export const LOCATION_TYPES = [
+  'warehouse',
+  'store',
+  'transit',
+  'quarantine',
+  'virtual'
+] as const;
+
+/**
  * GET /api/admin/inventory/locations
  *
  * Every location in the store, with how much is sitting in each.
@@ -91,11 +105,23 @@ export async function POST(request: NextRequest) {
           name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'LOC'
         );
 
-    const type = ['warehouse', 'store', 'supplier', 'transit', 'virtual'].includes(
-      String(body.location_type)
-    )
-      ? String(body.location_type)
-      : 'warehouse';
+    /*
+     * The same set the database CHECK allows, and no other.
+     *
+     * This list said `supplier` and omitted `quarantine`; the constraint says the opposite. So
+     * `quarantine` — the type migration 038 exists to serve — was silently stored as `warehouse`,
+     * a success reporting a different value than the one requested, and `supplier` produced an
+     * opaque constraint error. An unknown value is now refused with the list rather than quietly
+     * becoming something else.
+     */
+    const rawType = String(body.location_type ?? 'warehouse');
+    if (!LOCATION_TYPES.includes(rawType as (typeof LOCATION_TYPES)[number])) {
+      throw new AdminApiError(
+        `"${rawType}" is not a location type. Choose one of: ${LOCATION_TYPES.join(', ')}.`,
+        400
+      );
+    }
+    const type = rawType;
 
     const result = await db.query(
       `INSERT INTO inventory_locations

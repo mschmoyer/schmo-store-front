@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { storefrontUrl } from '@/lib/seo/siteUrl';
 import { notFound } from 'next/navigation';
 
 import { getStoreBySlug } from '../_lib/queries';
@@ -72,9 +73,26 @@ export async function generateMetadata({
   const description =
     store.metaDescription || store.storeDescription || `Shop ${store.storeName}.`;
 
+  const canonical = storefrontUrl(storeSlug);
+
   return {
     title: { default: title, template: `%s · ${store.storeName}` },
     description,
-    openGraph: { title, description, type: 'website', siteName: store.storeName },
+    /*
+     * The canonical has to be set here, and on every page beneath, because the root layout spreads
+     * `generateLandingPageMeta()` — which sets `alternates.canonical` to the platform's marketing
+     * homepage — and Next inherits `alternates` down the route tree. Nothing overrode it, so every
+     * merchant's every product and collection page told Google it was a duplicate of
+     * rebelshops.com. That is the strongest de-indexing signal a page can send about itself, on a
+     * platform whose merchants are found through organic search.
+     */
+    alternates: { canonical },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      siteName: store.storeName,
+      url: canonical,
+    },
   };
 }

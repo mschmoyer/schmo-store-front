@@ -544,9 +544,10 @@ export class OrderStatusService {
   private async processInventoryAdjustments(orderId: UUID, reason: string): Promise<void> {
     // Get order items
     const orderItems = await db.query<
-      Pick<OrderItemRow, 'product_id' | 'product_sku' | 'quantity'> & Pick<ProductRow, 'track_inventory'>
+      Pick<OrderItemRow, 'product_id' | 'product_sku' | 'quantity'> &
+        Pick<ProductRow, 'track_inventory' | 'store_id'>
     >(`
-      SELECT oi.product_id, oi.product_sku, oi.quantity, p.track_inventory
+      SELECT oi.product_id, oi.product_sku, oi.quantity, p.track_inventory, p.store_id
       FROM order_items oi
       JOIN products p ON oi.product_id = p.id
       WHERE oi.order_id = $1 AND p.track_inventory = true
@@ -555,6 +556,7 @@ export class OrderStatusService {
     // Process each item
     for (const item of orderItems.rows) {
       const adjustment: InventoryAdjustment = {
+        store_id: item.store_id,
         product_id: item.product_id,
         sku: item.product_sku,
         quantity_change: -item.quantity,
@@ -584,15 +586,17 @@ export class OrderStatusService {
       notes
     } = adjustment;
 
-    // Update product inventory
+    /* `store_id` in the predicate: every query touching tenant data carries one, and a stock write
+     * addressed by bare product id is a cross-tenant write waiting for a caller that passes an id
+     * from the wrong place. */
     const result = await db.query(`
-      UPDATE products 
-      SET 
-        stock_quantity = stock_quantity + $1,
+      UPDATE products
+      SET
+        stock_quantity = COALESCE(stock_quantity, 0) + $1,
         updated_at = $2
-      WHERE id = $3
+      WHERE id = $3 AND store_id = $4
       RETURNING stock_quantity
-    `, [quantity_change, new Date(), product_id]);
+    `, [quantity_change, new Date(), product_id, adjustment.store_id]);
 
     if (result.rows.length === 0) {
       throw new Error(`Product not found: ${product_id}`);
