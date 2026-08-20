@@ -39,11 +39,11 @@ function productRow(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 /**
- * Queue one result on the mocked `db.query`.
+ * Queue the product lookup result for the next `repriceCart` call.
  *
- * @param rows - Rows the query should return.
+ * @param rows - Rows the products query should return.
  */
-function mockRows(rows: Array<Record<string, unknown>>): void {
+function mockProducts(rows: Array<Record<string, unknown>>): void {
   query.mockResolvedValueOnce({
     rows,
     command: 'SELECT',
@@ -51,34 +51,6 @@ function mockRows(rows: Array<Record<string, unknown>>): void {
     oid: 0,
     fields: [],
   } as never);
-}
-
-/**
- * Queue the product lookup result for the next `repriceCart` call.
- *
- * `repriceCart` follows the product query with a variant query, so this queues
- * an empty variant result behind the products. Tests that exercise variants
- * queue their own rows with {@link mockVariants} instead.
- *
- * @param rows - Rows the products query should return.
- */
-function mockProducts(rows: Array<Record<string, unknown>>): void {
-  mockRows(rows);
-  mockRows([]);
-}
-
-/**
- * Queue a product lookup followed by a variant lookup.
- *
- * @param products - Rows the products query should return.
- * @param variants - Rows the variant query should return, each carrying `product_id`.
- */
-function mockProductsWithVariants(
-  products: Array<Record<string, unknown>>,
-  variants: Array<Record<string, unknown>>,
-): void {
-  mockRows(products);
-  mockRows(variants);
 }
 
 describe('unit price resolution', () => {
@@ -330,198 +302,5 @@ describe('server-side cart re-pricing', () => {
     expect(query).not.toHaveBeenCalled();
     expect(priced.items).toHaveLength(0);
     expect(priced.totals.totalCents).toBe(0);
-  });
-});
-
-describe('variant-aware re-pricing', () => {
-  const VARIANT_ID = '950e8400-e29b-41d4-a716-446655440001';
-  const OTHER_VARIANT_ID = '950e8400-e29b-41d4-a716-446655440002';
-
-  /**
-   * Build a variant row as `getVariantsForProducts` selects it.
-   * @param overrides - Fields to override
-   * @returns A raw variant row
-   */
-  function variantRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      id: VARIANT_ID,
-      product_id: LAPTOP_ID,
-      sku: 'LAP-GRN-M',
-      option1: 'Alpine Green',
-      option2: 'Medium',
-      option3: null,
-      price: null,
-      sale_price: null,
-      stock_quantity: 5,
-      track_inventory: null,
-      allow_backorder: null,
-      image_url: null,
-      position: 1,
-      is_active: true,
-      ...overrides,
-    };
-  }
-
-  it('charges the variant price when the variant overrides it', async () => {
-    mockProductsWithVariants(
-      [productRow({ base_price: '100.00' })],
-      [variantRow({ price: '140.00' })],
-    );
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID }],
-    });
-
-    expect(priced.items).toHaveLength(1);
-    expect(priced.items[0].unitPriceCents).toBe(14000);
-    expect(priced.items[0].variantId).toBe(VARIANT_ID);
-    expect(priced.items[0].variantTitle).toBe('Alpine Green / Medium');
-    // The warehouse picks by the variant's SKU.
-    expect(priced.items[0].sku).toBe('LAP-GRN-M');
-  });
-
-  it('inherits the product price when the variant sets none', async () => {
-    mockProductsWithVariants([productRow({ base_price: '100.00' })], [variantRow()]);
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID }],
-    });
-
-    expect(priced.items[0].unitPriceCents).toBe(10000);
-  });
-
-  it('rejects a variant id that belongs to a different product', async () => {
-    // Pairing a cheap variant id with an expensive product must not price the
-    // line at the variant. The variant row here belongs to CASE_ID.
-    mockProductsWithVariants(
-      [productRow({ base_price: '100.00' })],
-      [variantRow({ product_id: CASE_ID, price: '1.00' })],
-    );
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID }],
-    });
-
-    expect(priced.items).toHaveLength(0);
-    expect(priced.rejected[0].reason).toBe('not_found');
-  });
-
-  it('rejects a variant id this store does not have at all', async () => {
-    // A variant from another merchant is simply absent from the store-scoped
-    // query, so it can never price a line here.
-    mockProductsWithVariants([productRow()], []);
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID }],
-    });
-
-    expect(priced.items).toHaveLength(0);
-    expect(priced.rejected[0].reason).toBe('not_found');
-  });
-
-  it('refuses to guess when a product has options and none was chosen', async () => {
-    // Picking a variant on the shopper's behalf charges for something they did
-    // not select.
-    mockProductsWithVariants([productRow()], [variantRow()]);
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1 }],
-    });
-
-    expect(priced.items).toHaveLength(0);
-    expect(priced.rejected[0].message).toContain('Choose an option');
-  });
-
-  it('rejects an inactive variant', async () => {
-    mockProductsWithVariants([productRow()], [variantRow({ is_active: false })]);
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID }],
-    });
-
-    expect(priced.items).toHaveLength(0);
-    expect(priced.rejected[0].reason).toBe('inactive');
-  });
-
-  it('checks stock against the variant rather than the product', async () => {
-    // The product has plenty; this size has two.
-    mockProductsWithVariants(
-      [productRow({ stock_quantity: 99 })],
-      [variantRow({ stock_quantity: 2 })],
-    );
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 3, variant_id: VARIANT_ID }],
-    });
-
-    expect(priced.items).toHaveLength(0);
-    expect(priced.rejected[0].reason).toBe('insufficient_stock');
-    expect(priced.rejected[0].available).toBe(2);
-  });
-
-  it('keeps two sizes of one product as two lines', async () => {
-    // Collapsing them onto the product would check one size's stock against
-    // the other's quantity.
-    mockProductsWithVariants(
-      [productRow({ base_price: '100.00', stock_quantity: 99 })],
-      [
-        variantRow({ stock_quantity: 5 }),
-        variantRow({ id: OTHER_VARIANT_ID, sku: 'LAP-GRN-L', option2: 'Large', stock_quantity: 5 }),
-      ],
-    );
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [
-        { product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID },
-        { product_id: LAPTOP_ID, quantity: 2, variant_id: OTHER_VARIANT_ID },
-      ],
-    });
-
-    expect(priced.items).toHaveLength(2);
-    expect(priced.items.map((item) => item.variantTitle).sort()).toEqual([
-      'Alpine Green / Large',
-      'Alpine Green / Medium',
-    ]);
-    expect(priced.totals.subtotalCents).toBe(30000);
-  });
-
-  it('still collapses duplicate lines for the same variant', async () => {
-    mockProductsWithVariants(
-      [productRow({ base_price: '100.00', stock_quantity: 99 })],
-      [variantRow({ stock_quantity: 5 })],
-    );
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [
-        { product_id: LAPTOP_ID, quantity: 1, variant_id: VARIANT_ID },
-        { product_id: LAPTOP_ID, quantity: 2, variant_id: VARIANT_ID },
-      ],
-    });
-
-    expect(priced.items).toHaveLength(1);
-    expect(priced.items[0].quantity).toBe(3);
-  });
-
-  it('leaves a product with no variants completely unchanged', async () => {
-    mockProducts([productRow({ base_price: '100.00' })]);
-
-    const priced = await repriceCart({
-      storeId: STORE_ID,
-      items: [{ product_id: LAPTOP_ID, quantity: 1 }],
-    });
-
-    expect(priced.items).toHaveLength(1);
-    expect(priced.items[0].variantId).toBeNull();
-    expect(priced.items[0].variantTitle).toBeNull();
-    expect(priced.items[0].unitPriceCents).toBe(10000);
   });
 });

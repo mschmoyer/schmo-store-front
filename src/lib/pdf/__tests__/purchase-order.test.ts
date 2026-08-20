@@ -11,6 +11,7 @@ jest.mock('@react-pdf/renderer', () => ({
     create: (styles: Record<string, unknown>) => styles,
   },
   Font: {
+    registerHyphenationCallback: jest.fn(),
     register: jest.fn(),
   },
   // `toBuffer()` resolves to a readable stream, not a Buffer - mirror that here.

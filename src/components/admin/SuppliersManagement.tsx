@@ -181,14 +181,11 @@ export default function SuppliersManagement() {
 
   return (
     <Stack gap="md">
-      {/* Header */}
-      <Group justify="space-between">
-        <div>
-          <Text size="xl" fw={600}>Suppliers</Text>
-          <Text size="sm" c="dimmed">
-            Manage your suppliers and vendor relationships
-          </Text>
-        </div>
+      {/* No title here.
+          The page hosting this component already renders "Suppliers" and a description, so this
+          rendered a second heading saying the same thing directly beneath the first. A component
+          that can be embedded should not assume it owns the page's title. */}
+      <Group justify="flex-end">
         <Button 
           leftSection={<IconPlus size="1rem" />}
           onClick={handleAddSupplier}

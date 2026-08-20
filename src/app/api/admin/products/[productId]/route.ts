@@ -1,22 +1,221 @@
+/**
+ * One product: reading it, editing it, retiring it.
+ *
+ * The write half of this route was a ladder of twenty `if (body.x !== undefined)` branches, and the
+ * defect it produced is the reason it is now a table. The edit form collects roughly thirty fields;
+ * the ladder had branches for about half of them. Toggling "digital product", reordering the
+ * gallery, choosing a featured image, setting dimensions, a barcode, a low-stock threshold — all
+ * were sent, none were written, and the response said "Product updated successfully" regardless.
+ * One branch wrote a `description` column that does not exist, so a client sending an obvious field
+ * name got a 500 that discarded every other field in the same request.
+ *
+ * A declarative map fixes the class rather than the instances: a field cannot be accepted without
+ * naming the column it lands in, and the response echoes what was applied so a client can tell when
+ * something it sent was ignored.
+ *
+ * Editing a field also *locks* it, so the hourly ShipStation sync stops reverting the merchant's
+ * work. See migration 032 for the ownership model.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { requireAuth } from '@/lib/auth/session';
+import { adminErrorResponse, AdminApiError } from '@/lib/api/adminError';
+import { recordSlugChange, uniqueProductSlug } from '@/lib/catalog/slug';
 
 /**
  * A product id is a uuid. Anything else is a bad route, not a database error.
  *
- * Passing a non-uuid straight into `WHERE id = $1` made Postgres raise
- * `invalid input syntax for type uuid`, which surfaced as a 500. The
- * "Add Product" button navigates to `/admin/products/add`, so the most
- * ordinary action on the catalog page produced a stack trace in the server log
- * every time it was used.
+ * Passing a non-uuid straight into `WHERE id = $1` made Postgres raise `invalid input syntax for
+ * type uuid`, which surfaced as a 500 — and the catalogue's "Add product" button navigated to
+ * `/admin/products/new`, so the most ordinary action on the page produced a stack trace.
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** How a request field is coerced before it reaches its column. */
+type Coercion = 'text' | 'html' | 'number' | 'integer' | 'boolean' | 'array' | 'country';
+
+/** One editable field: which column it writes, how it is coerced, and who owns it. */
+interface FieldSpec {
+  column: string;
+  coerce: Coercion;
+  /**
+   * Whether editing this field takes it out of ShipStation's control. False for fields ShipStation
+   * has no equivalent of — locking those would be noise, since nothing upstream can overwrite them.
+   */
+  locks?: boolean;
+}
+
+/**
+ * Every field this route accepts.
+ *
+ * Adding a field to the edit form means adding it here. That is the point: the form and the writer
+ * cannot drift, because there is only one list.
+ */
+const FIELDS: Record<string, FieldSpec> = {
+  sku: { column: 'sku', coerce: 'text', locks: true },
+  name: { column: 'name', coerce: 'text', locks: true },
+  barcode: { column: 'barcode', coerce: 'text' },
+  vendor: { column: 'vendor', coerce: 'text' },
+  product_type: { column: 'product_type', coerce: 'text' },
+
+  short_description: { column: 'short_description', coerce: 'text', locks: true },
+  long_description: { column: 'long_description', coerce: 'text' },
+  description_html: { column: 'description_html', coerce: 'html' },
+
+  base_price: { column: 'base_price', coerce: 'number', locks: true },
+  sale_price: { column: 'sale_price', coerce: 'number' },
+  cost_price: { column: 'cost_price', coerce: 'number' },
+  override_price: { column: 'override_price', coerce: 'number' },
+
+  track_inventory: { column: 'track_inventory', coerce: 'boolean' },
+  low_stock_threshold: { column: 'low_stock_threshold', coerce: 'integer' },
+  allow_backorder: { column: 'allow_backorder', coerce: 'boolean' },
+  reorder_point: { column: 'reorder_point', coerce: 'integer' },
+  reorder_quantity: { column: 'reorder_quantity', coerce: 'integer' },
+  lead_time_days: { column: 'lead_time_days', coerce: 'integer' },
+  safety_stock: { column: 'safety_stock', coerce: 'integer' },
+
+  weight: { column: 'weight', coerce: 'number' },
+  weight_unit: { column: 'weight_unit', coerce: 'text' },
+  length: { column: 'length', coerce: 'number' },
+  width: { column: 'width', coerce: 'number' },
+  height: { column: 'height', coerce: 'number' },
+  dimension_unit: { column: 'dimension_unit', coerce: 'text' },
+  requires_shipping: { column: 'requires_shipping', coerce: 'boolean' },
+  shipping_class: { column: 'shipping_class', coerce: 'text' },
+  is_digital: { column: 'is_digital', coerce: 'boolean' },
+  hs_code: { column: 'hs_code', coerce: 'text' },
+  country_of_origin: { column: 'country_of_origin', coerce: 'country' },
+
+  category_id: { column: 'category_id', coerce: 'text', locks: true },
+  supplier_id: { column: 'supplier_id', coerce: 'text' },
+  tags: { column: 'tags', coerce: 'array' },
+
+  featured_image_url: { column: 'featured_image_url', coerce: 'text', locks: true },
+  gallery_images: { column: 'gallery_images', coerce: 'array' },
+
+  meta_title: { column: 'meta_title', coerce: 'text' },
+  meta_description: { column: 'meta_description', coerce: 'text' },
+
+  is_featured: { column: 'is_featured', coerce: 'boolean' }
+};
+
+/** Aliases a client may send instead of the canonical name. */
+const ALIASES: Record<string, string> = {
+  /* The edit form has always sent `images` while the column is `gallery_images`. */
+  images: 'gallery_images',
+  /* `description` matched no column at all and 500'd the whole request. */
+  description: 'long_description',
+  inventory_quantity: '__stock',
+  stock_quantity: '__stock',
+  price: 'base_price',
+  unit_cost: 'cost_price'
+};
+
+/**
+ * Coerce a request value for its column, rejecting what cannot be stored.
+ *
+ * @param value - The raw value from the request body.
+ * @param coerce - How this field is handled.
+ * @param field - The field name, for error messages a merchant will read.
+ * @returns The value to bind.
+ * @throws AdminApiError when the value cannot be stored in this column.
+ */
+function coerceValue(value: unknown, coerce: Coercion, field: string): unknown {
+  const label = field.replace(/_/g, ' ');
+
+  if (value === null || value === '') {
+    /* Arrays clear to empty rather than null: a `text[]` column with no tags is `{}`, and NULL
+     * there makes every `array_length` check downstream have to special-case it. */
+    return coerce === 'array' ? [] : null;
+  }
+
+  switch (coerce) {
+    case 'number': {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new AdminApiError(`${label} must be a number of 0 or more`, 400);
+      }
+      return parsed;
+    }
+    case 'integer': {
+      const parsed = Math.trunc(Number(value));
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new AdminApiError(`${label} must be a whole number of 0 or more`, 400);
+      }
+      return parsed;
+    }
+    case 'boolean':
+      return Boolean(value);
+    case 'array':
+      if (!Array.isArray(value)) {
+        throw new AdminApiError(`${label} must be a list`, 400);
+      }
+      /* Passed as a JS array. An earlier version `JSON.stringify`d these into `text[]` columns,
+       * which Postgres rejects as a malformed array literal. */
+      return value.map((v) => String(v).trim()).filter(Boolean);
+    case 'country':
+      return String(value).trim().toUpperCase().slice(0, 2) || null;
+    case 'html':
+      return String(value);
+    case 'text':
+    default: {
+      const text = String(value).trim();
+      if (!text) return null;
+
+      /*
+       * Length is checked here rather than left to Postgres.
+       *
+       * `coerceValue` validated type and never length, so an over-long value reached the database,
+       * raised `value too long for type character varying(n)`, and failed the whole statement —
+       * taking every other field in the same save with it, under a generic "Something went wrong on
+       * our end. The details have been logged." A merchant typing a 600-character product name lost
+       * the price they changed at the same time and was told nothing about why.
+       */
+      const limit = TEXT_LIMITS[field];
+      if (limit && text.length > limit) {
+        throw new AdminApiError(
+          `${label} is ${text.length} characters. The most it can hold is ${limit}.`,
+          400
+        );
+      }
+      return text;
+    }
+  }
+}
+
+/**
+ * How much each text column can hold, matching the schema.
+ *
+ * Only the columns that are narrower than the values a merchant plausibly types. `TEXT` columns —
+ * descriptions, notes — have no limit worth enforcing and are absent.
+ */
+const TEXT_LIMITS: Record<string, number> = {
+  sku: 255,
+  name: 500,
+  slug: 255,
+  barcode: 100,
+  vendor: 255,
+  product_type: 255,
+  short_description: 1000,
+  meta_title: 255,
+  meta_description: 500,
+  shipping_class: 100,
+  weight_unit: 10,
+  dimension_unit: 10,
+  hs_code: 16
+};
 
 /**
  * GET /api/admin/products/[productId]
- * Get detailed product information including all editable fields
+ *
+ * A product with the figures the detail page shows: lifetime and recent sales, margin, stock
+ * position, movement history, and what is still missing from the listing.
+ *
+ * @param request - The incoming request.
+ * @param context - Route params carrying the product id.
+ * @returns The product, or 404 when it is not in this store.
  */
 export async function GET(
   request: NextRequest,
@@ -25,473 +224,398 @@ export async function GET(
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
     const { productId } = await params;
-
     if (!UUID.test(productId)) {
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
-    // Get the product with validation that it belongs to the user's store
-    const productResult = await db.query(
-      'SELECT * FROM products WHERE id = $1 AND store_id = $2',
+    /*
+     * Sales count everything not cancelled, keyed off the order's date.
+     *
+     * This query previously filtered `o.status = 'completed'` and took `MAX(oi.created_at)` — the
+     * line item's insert timestamp — so a shipped order was not a sale and "last sold" was the
+     * import date for every product in a seeded catalogue. The catalogue list was fixed for both
+     * and this one was not, so the two screens disagreed about the same SKU.
+     */
+    const result = await db.query(
+      `SELECT
+         p.*,
+         c.name AS category_name, c.slug AS category_slug,
+         sup.name AS supplier_name,
+         COALESCE(lv.on_hand, 0)     AS on_hand,
+         COALESCE(lv.committed, 0)   AS committed,
+         COALESCE(lv.available, 0)   AS available,
+         COALESCE(s.units, 0)        AS units_sold,
+         COALESCE(s.revenue, 0)      AS total_revenue,
+         COALESCE(s.orders, 0)       AS total_orders,
+         s.first_sale_date, s.last_sale_date, s.avg_sale_price,
+         COALESCE(w.units_30d, 0)    AS units_30d,
+         COALESCE(w.units_90d, 0)    AS units_90d,
+         /* Margin against cost at the time of each sale, which order_items snapshots. Computing it
+          * against today's cost price would restate history every time a price changed. */
+         COALESCE(s.gross_profit, 0) AS gross_profit
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id AND c.store_id = p.store_id
+       LEFT JOIN suppliers sup ON sup.id = p.supplier_id AND sup.store_id = p.store_id
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(on_hand), 0) AS on_hand,
+                COALESCE(SUM(committed), 0) AS committed,
+                COALESCE(SUM(available), 0) AS available
+           FROM inventory_levels l WHERE l.product_id = p.id AND l.store_id = p.store_id
+       ) lv ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT SUM(oi.quantity)::int AS units,
+                SUM(oi.total_price)   AS revenue,
+                COUNT(DISTINCT oi.order_id)::int AS orders,
+                AVG(oi.unit_price)    AS avg_sale_price,
+                MIN(o.created_at)     AS first_sale_date,
+                MAX(o.created_at)     AS last_sale_date,
+                SUM(oi.quantity * (oi.unit_price - COALESCE(oi.unit_cost, 0))) AS gross_profit
+           FROM order_items oi JOIN orders o ON o.id = oi.order_id
+          WHERE oi.product_id = p.id AND o.store_id = p.store_id AND o.status <> 'cancelled'
+       ) s ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT SUM(oi.quantity) FILTER (WHERE o.created_at >= NOW() - INTERVAL '30 days')::int AS units_30d,
+                SUM(oi.quantity) FILTER (WHERE o.created_at >= NOW() - INTERVAL '90 days')::int AS units_90d
+           FROM order_items oi JOIN orders o ON o.id = oi.order_id
+          WHERE oi.product_id = p.id AND o.store_id = p.store_id AND o.status <> 'cancelled'
+       ) w ON TRUE
+       WHERE p.id = $1 AND p.store_id = $2`,
       [productId, user.storeId]
     );
-    
-    if (productResult.rows.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Product not found'
-      }, { status: 404 });
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
-    
-    const product = productResult.rows[0];
 
-    // Get enhanced product data with sales analytics, inventory history, and related data
-    const [salesData, inventoryHistory, productAnalytics, categoryInfo] = await Promise.all([
-      // Sales data
-      db.query(`
-        SELECT 
-          COALESCE(SUM(oi.quantity), 0) as total_sales,
-          COALESCE(SUM(oi.total_price), 0) as total_revenue,
-          COUNT(DISTINCT oi.order_id) as total_orders,
-          MAX(oi.created_at) as last_sale_date,
-          AVG(oi.unit_price) as avg_sale_price,
-          MIN(oi.created_at) as first_sale_date
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        WHERE oi.product_id = $1 AND o.store_id = $2 AND o.status = 'completed'
-      `, [productId, user.storeId]),
+    const product = result.rows[0];
 
-      // Inventory history
-      db.query(`
-        SELECT 
-          change_type,
-          quantity_change,
-          quantity_after,
-          reference_type,
-          reference_id,
-          notes,
-          created_at
-        FROM inventory_logs
-        WHERE product_id = $1 AND store_id = $2
-        ORDER BY created_at DESC
-        LIMIT 20
-      `, [productId, user.storeId]),
+    const movements = await db.query(
+      `SELECT t.id, t.reason, t.delta, t.balance_after, t.note, t.created_at,
+              l.name AS location_name,
+              NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), '') AS actor_name
+         FROM inventory_transactions t
+         JOIN inventory_locations l ON l.id = t.location_id
+         LEFT JOIN users u ON u.id = t.actor_user_id
+        WHERE t.store_id = $1 AND t.product_id = $2
+        ORDER BY t.created_at DESC, t.id DESC
+        LIMIT 20`,
+      [user.storeId, productId]
+    );
 
-      // Product analytics (views, cart adds, etc.) - TODO: Implement analytics
-      Promise.resolve({ rows: [] }),
-
-      // Category information if exists
-      product.category_id ? db.query(`
-        SELECT name, slug, description
-        FROM categories
-        WHERE id = $1 AND store_id = $2
-      `, [product.category_id, user.storeId]) : null
-    ]);
-
-    // Get related products - TODO: Implement related products logic
-    const relatedProducts: Array<{
-      id: string;
-      name: string;
-      slug: string;
-      base_price: number;
-      featured_image_url: string;
-      stock_quantity: number;
-    }> = [];
-
-    // Calculate stock status
-    const stockQuantity = Number(product.stock_quantity) || 0;
-    const lowStockThreshold = Number(product.low_stock_threshold) || 0;
-    const stockStatus = Boolean(product.track_inventory) ? 
-      (stockQuantity > lowStockThreshold ? 'in_stock' : 
-       stockQuantity > 0 ? 'low_stock' : 'out_of_stock') : 
-      'not_tracked';
-
-    // Check if product needs attention (low stock, no sales, etc.)
+    /*
+     * What is missing from this listing, as specific items rather than a score.
+     *
+     * The old version of this list omitted the most consequential check of all — a product with no
+     * price. `base_price` is NOT NULL and the sync defaults it to 0 when ShipStation sends nothing,
+     * and the cart treats zero as a deliberate giveaway, so an unpriced import became a live,
+     * buyable £0.00 listing with nothing flagging it.
+     */
     const needsAttention: string[] = [];
-    if (Boolean(product.track_inventory) && stockQuantity <= lowStockThreshold) {
-      needsAttention.push('low_stock');
-    }
-    if (!Boolean(product.is_active)) {
-      needsAttention.push('inactive');
-    }
-    if (!product.featured_image_url) {
-      needsAttention.push('no_image');
-    }
-    if (!product.short_description) {
-      needsAttention.push('no_description');
+    if (!Number(product.base_price)) needsAttention.push('no_price');
+    if (!product.featured_image_url) needsAttention.push('no_image');
+    if (!product.long_description && !product.short_description) needsAttention.push('no_description');
+    if (!product.category_id) needsAttention.push('no_category');
+    if (product.cost_price === null) needsAttention.push('no_cost');
+    if (!product.meta_title && !product.meta_description) needsAttention.push('no_seo');
+    if (product.track_inventory && Number(product.available) <= 0) needsAttention.push('out_of_stock');
+    if (
+      product.cost_price !== null &&
+      Number(product.sale_price ?? product.base_price) <= Number(product.cost_price)
+    ) {
+      needsAttention.push('negative_margin');
     }
 
-    const sales = salesData.rows[0] || {};
-    const enhancedProduct = {
-      ...product,
-      stock_status: stockStatus,
-      needs_attention: needsAttention,
-      sales_data: {
-        total_sales: parseInt(String(sales.total_sales || '0')),
-        total_revenue: parseFloat(String(sales.total_revenue || '0')),
-        total_orders: parseInt(String(sales.total_orders || '0')),
-        avg_sale_price: parseFloat(String(sales.avg_sale_price || '0')),
-        first_sale_date: sales.first_sale_date,
-        last_sale_date: sales.last_sale_date
-      },
-      analytics: productAnalytics,
-      inventory_history: inventoryHistory.rows,
-      category_info: categoryInfo?.rows[0] || null,
-      related_products: relatedProducts.map(p => ({
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        base_price: p.base_price,
-        featured_image_url: p.featured_image_url,
-        stock_quantity: p.stock_quantity
-      }))
-    };
+    const effectivePrice = Number(product.sale_price ?? product.base_price) || 0;
+    const cost = product.cost_price === null ? null : Number(product.cost_price);
 
     return NextResponse.json({
       success: true,
       data: {
-        product: enhancedProduct
+        product: {
+          ...product,
+          base_price: Number(product.base_price) || 0,
+          sale_price: product.sale_price === null ? null : Number(product.sale_price),
+          cost_price: cost,
+          effective_price: effectivePrice,
+          margin_percent:
+            cost !== null && effectivePrice > 0
+              ? Math.round(((effectivePrice - cost) / effectivePrice) * 1000) / 10
+              : null,
+          needs_attention: needsAttention,
+          /* Which fields the merchant owns, so the form can show it rather than leaving them to
+           * discover it when the next sync reverts something. */
+          field_locks: product.field_locks ?? [],
+          sales_data: {
+            total_sales: Number(product.units_sold) || 0,
+            total_revenue: Number(product.total_revenue) || 0,
+            total_orders: Number(product.total_orders) || 0,
+            gross_profit: Number(product.gross_profit) || 0,
+            avg_sale_price: Number(product.avg_sale_price) || 0,
+            units_30d: Number(product.units_30d) || 0,
+            units_90d: Number(product.units_90d) || 0,
+            first_sale_date: product.first_sale_date,
+            last_sale_date: product.last_sale_date
+          },
+          movements: movements.rows
+        }
       }
     });
-
   } catch (error) {
-    console.error('Admin product GET error:', error);
-    
-    if (error instanceof Error && error.message === 'Authentication required') {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 });
-    }
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return adminErrorResponse(error, 'products.detail');
   }
 }
 
 /**
+ * Apply a partial update to a product.
+ *
+ * Shared by PUT and PATCH, which differ only in what a client means by them — this route treats
+ * both as "change the fields I sent". PATCH exists because the catalogue list has always used it
+ * for the publish toggle against a route that had no PATCH handler, so the most common action on
+ * the busiest screen returned 405.
+ *
+ * @param request - The incoming request.
+ * @param productId - The product to change.
+ * @returns The updated product and the list of fields actually applied.
+ */
+async function applyUpdate(request: NextRequest, productId: string): Promise<NextResponse> {
+  const user = await requireAuth(request);
+  if (!user.storeId) {
+    return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
+  }
+  const storeId = user.storeId;
+
+  if (!UUID.test(productId)) {
+    return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+  }
+
+  const body = (await request.json()) as Record<string, unknown>;
+
+  /* The whole row, because locking has to compare the incoming value against the stored one. */
+  const existing = await db.query<Record<string, unknown>>(
+    'SELECT * FROM products WHERE id = $1 AND store_id = $2',
+    [productId, storeId]
+  );
+  if (existing.rows.length === 0) {
+    return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+  }
+  const before = existing.rows[0];
+
+  const assignments: string[] = [];
+  const values: unknown[] = [];
+  const applied: string[] = [];
+  const ignored: string[] = [];
+  const locks: string[] = [];
+
+  for (const [rawKey, rawValue] of Object.entries(body)) {
+    const key = ALIASES[rawKey] ?? rawKey;
+
+    /* Stock is not editable here. It moves through the ledger with a reason attached, and a route
+     * that quietly accepted a new quantity would put the projection ahead of the ledger. */
+    if (key === '__stock') {
+      ignored.push(rawKey);
+      continue;
+    }
+
+    const spec = FIELDS[key];
+    if (!spec) {
+      /* Reported rather than silently dropped — being told a field was ignored is the difference
+       * between noticing a mistake and shipping a broken form for a year. */
+      if (!['id', 'store_id', 'created_at', 'updated_at', 'slug', 'status'].includes(key)) {
+        ignored.push(rawKey);
+      }
+      continue;
+    }
+
+    const coerced = coerceValue(rawValue, spec.coerce, key);
+    values.push(coerced);
+    assignments.push(`${spec.column} = $${values.length}`);
+    applied.push(spec.column);
+
+    /*
+     * A field is claimed from ShipStation only when its value actually *changes*.
+     *
+     * The edit form posts every field it renders, so locking everything it sent would mean one
+     * save — of a single dimension, say — silently disconnected the product's name, price and
+     * image from upstream forever. "Editing a field claims it" has to mean editing, not saving.
+     */
+    if (spec.locks && !sameValue(before[spec.column], coerced)) {
+      locks.push(spec.column);
+    }
+  }
+
+  /* Lifecycle is its own field because it carries side effects: a publish stamps `published_at`,
+   * and taking a product down must survive the next sync. */
+  if (body.status !== undefined || body.is_active !== undefined) {
+    const nextStatus =
+      typeof body.status === 'string' && ['draft', 'active', 'archived'].includes(body.status)
+        ? body.status
+        : body.is_active
+          ? 'active'
+          : 'draft';
+
+    if (nextStatus === 'active' && !Number(body.base_price ?? before.base_price)) {
+      throw new AdminApiError('Set a price before publishing this product', 400);
+    }
+
+    values.push(nextStatus);
+    assignments.push(`status = $${values.length}`);
+    applied.push('status');
+    /* Publishing state is only claimed when it actually changes — otherwise every save would stop
+     * the sync ever reflecting a product being deactivated upstream. */
+    if (nextStatus !== before.status) locks.push('status');
+
+    if (nextStatus === 'active' && before.status !== 'active') {
+      assignments.push('published_at = COALESCE(published_at, NOW())');
+    }
+  }
+
+  /* A slug change retires the old one so the storefront can redirect instead of 404ing every link
+   * and search result that pointed at it. */
+  let retiredSlug: string | null = null;
+  if (typeof body.slug === 'string' && body.slug.trim()) {
+    const slug = await uniqueProductSlug(storeId, body.slug, productId);
+    if (slug !== before.slug) {
+      values.push(slug);
+      assignments.push(`slug = $${values.length}`);
+      applied.push('slug');
+      retiredSlug = String(before.slug);
+    }
+  }
+
+  if (assignments.length === 0) {
+    throw new AdminApiError(
+      ignored.length > 0
+        ? `Nothing was updated. This product has no ${ignored.join(', ')} field.`
+        : 'Nothing to update',
+      400
+    );
+  }
+
+  /* A referenced category or supplier must be in this store. The composite foreign keys from
+   * migration 026 would refuse a cross-tenant one anyway; checking here turns a constraint
+   * violation into a sentence a merchant can act on. */
+  for (const [field, table] of [
+    ['category_id', 'categories'],
+    ['supplier_id', 'suppliers']
+  ] as const) {
+    const value = body[field];
+    if (typeof value === 'string' && value) {
+      const owned = await db.query(`SELECT id FROM ${table} WHERE id = $1 AND store_id = $2`, [
+        value,
+        storeId
+      ]);
+      if (owned.rows.length === 0) {
+        throw new AdminApiError(`That ${field.replace('_id', '')} is not in this store`, 400);
+      }
+    }
+  }
+
+  const updated = await db.transaction(async (tx) => {
+    values.push(productId, storeId);
+    const result = await tx.query(
+      `UPDATE products SET ${assignments.join(', ')}, updated_at = NOW()
+        WHERE id = $${values.length - 1} AND store_id = $${values.length}
+        RETURNING *`,
+      values
+    );
+
+    /*
+     * Editing a field claims it from ShipStation.
+     *
+     * Without this the sync overwrites `name`, `short_description`, `base_price`,
+     * `featured_image_url` and `category_id` on its next pass — so a merchant's edits survive
+     * until the top of the hour and then quietly revert. See migration 032.
+     */
+    if (locks.length > 0) {
+      await tx.query('SELECT lock_product_fields($1, $2, $3::text[])', [storeId, productId, locks]);
+    }
+
+    if (retiredSlug) {
+      await recordSlugChange(storeId, productId, retiredSlug, result.rows[0].slug, tx);
+    }
+
+    return result.rows[0];
+  });
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      product: updated,
+      /* Both lists are returned so a client can verify what happened rather than trusting a
+       * blanket success message over a silent drop. */
+      applied,
+      ignored,
+      locked: locks,
+      message:
+        ignored.length > 0
+          ? `Saved. ${ignored.length} field${ignored.length === 1 ? '' : 's'} could not be stored: ${ignored.join(', ')}.`
+          : 'Saved.'
+    }
+  });
+}
+
+/**
  * PUT /api/admin/products/[productId]
- * Update product information (title, description, listing status, etc.)
+ *
+ * @param request - The incoming request.
+ * @param context - Route params carrying the product id.
+ * @returns The updated product.
  */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ productId: string }> }
 ) {
   try {
-    const user = await requireAuth(request);
-    if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
-    }
-
     const { productId } = await params;
-
-    if (!UUID.test(productId)) {
-      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
-    }
-
-    const body = await request.json();
-
-    // Verify product exists and belongs to user's store
-    const existingProductResult = await db.query(
-      'SELECT * FROM products WHERE id = $1 AND store_id = $2',
-      [productId, user.storeId]
-    );
-    
-    if (existingProductResult.rows.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Product not found'
-      }, { status: 404 });
-    }
-    
-    const existingProduct = existingProductResult.rows[0];
-
-    // If updating SKU, check for conflicts
-    if (body.sku && body.sku !== existingProduct.sku) {
-      const skuConflictResult = await db.query(
-        'SELECT id FROM products WHERE sku = $1 AND store_id = $2 AND id != $3',
-        [body.sku, user.storeId, productId]
-      );
-      if (skuConflictResult.rows.length > 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'A product with this SKU already exists'
-        }, { status: 409 });
-      }
-    }
-
-    // If updating slug, check for conflicts
-    if (body.slug && body.slug !== existingProduct.slug) {
-      const slugConflictResult = await db.query(
-        'SELECT id FROM products WHERE slug = $1 AND store_id = $2 AND id != $3',
-        [body.slug, user.storeId, productId]
-      );
-      if (slugConflictResult.rows.length > 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'A product with this slug already exists'
-        }, { status: 409 });
-      }
-    }
-
-    // Build dynamic update query
-    const updateFields: string[] = [];
-    const updateValues: unknown[] = [];
-    let paramCount = 1;
-
-    // Build dynamic update fields and values
-    if (body.sku !== undefined) {
-      updateFields.push(`sku = $${paramCount}`);
-      updateValues.push(body.sku);
-      paramCount++;
-    }
-    if (body.name !== undefined) {
-      updateFields.push(`name = $${paramCount}`);
-      updateValues.push(body.name);
-      paramCount++;
-    }
-    if (body.slug !== undefined) {
-      updateFields.push(`slug = $${paramCount}`);
-      updateValues.push(body.slug);
-      paramCount++;
-    }
-    if (body.short_description !== undefined) {
-      updateFields.push(`short_description = $${paramCount}`);
-      updateValues.push(body.short_description);
-      paramCount++;
-    }
-    // No `description` column exists on `products` — the table carries
-    // `short_description`, `long_description` and `description_html`
-    // (migration 001). This branch built `UPDATE products SET description = $n`
-    // and every request carrying the key 500'd on a Postgres "column does not
-    // exist" error. The bundled admin form never sends it, so it was latent,
-    // but any script or integration posting the obvious field name hit it.
-    //
-    // Treated as an alias for `long_description` rather than dropped: a caller
-    // sending `description` means the long copy, and silently discarding it
-    // would be the "wrote nothing, reported success" failure the working rules
-    // forbid. An explicit `long_description` in the same body still wins.
-    if (body.description !== undefined && body.long_description === undefined) {
-      updateFields.push(`long_description = $${paramCount}`);
-      updateValues.push(body.description);
-      paramCount++;
-    }
-    if (body.long_description !== undefined) {
-      updateFields.push(`long_description = $${paramCount}`);
-      updateValues.push(body.long_description);
-      paramCount++;
-    }
-    if (body.description_html !== undefined) {
-      updateFields.push(`description_html = $${paramCount}`);
-      updateValues.push(body.description_html);
-      paramCount++;
-    }
-    if (body.base_price !== undefined) {
-      updateFields.push(`base_price = $${paramCount}`);
-      updateValues.push(body.base_price ? parseFloat(body.base_price) : null);
-      paramCount++;
-    }
-    if (body.sale_price !== undefined) {
-      updateFields.push(`sale_price = $${paramCount}`);
-      updateValues.push(body.sale_price ? parseFloat(body.sale_price) : null);
-      paramCount++;
-    }
-    if (body.override_price !== undefined) {
-      updateFields.push(`override_price = $${paramCount}`);
-      updateValues.push(body.override_price ? parseFloat(body.override_price) : null);
-      paramCount++;
-    }
-    if (body.cost_price !== undefined) {
-      updateFields.push(`cost_price = $${paramCount}`);
-      updateValues.push(body.cost_price ? parseFloat(body.cost_price) : null);
-      paramCount++;
-    }
-    if (body.track_inventory !== undefined) {
-      updateFields.push(`track_inventory = $${paramCount}`);
-      updateValues.push(body.track_inventory);
-      paramCount++;
-    }
-    if (body.inventory_quantity !== undefined) {
-      updateFields.push(`stock_quantity = $${paramCount}`);
-      updateValues.push(parseInt(body.inventory_quantity));
-      paramCount++;
-    }
-    if (body.weight !== undefined) {
-      updateFields.push(`weight = $${paramCount}`);
-      updateValues.push(body.weight ? parseFloat(body.weight) : null);
-      paramCount++;
-    }
-    if (body.category_id !== undefined) {
-      updateFields.push(`category_id = $${paramCount}`);
-      updateValues.push(body.category_id);
-      paramCount++;
-    }
-    if (body.tags !== undefined) {
-      updateFields.push(`tags = $${paramCount}`);
-      updateValues.push(body.tags);
-      paramCount++;
-    }
-    if (body.meta_title !== undefined) {
-      updateFields.push(`meta_title = $${paramCount}`);
-      updateValues.push(body.meta_title);
-      paramCount++;
-    }
-    if (body.meta_description !== undefined) {
-      updateFields.push(`meta_description = $${paramCount}`);
-      updateValues.push(body.meta_description);
-      paramCount++;
-    }
-    if (body.images !== undefined) {
-      updateFields.push(`gallery_images = $${paramCount}`);
-      updateValues.push(body.images);
-      paramCount++;
-    }
-    // The hero shot. Absent from this allowlist until now, while the renderer
-    // prefers `featured_image_url || gallery[0]` — so whatever ShipStation set
-    // won permanently and a merchant's gallery edit could never override it.
-    // On apparel the hero shot is the conversion.
-    if (body.featured_image_url !== undefined) {
-      updateFields.push(`featured_image_url = $${paramCount}`);
-      updateValues.push(body.featured_image_url || null);
-      paramCount++;
-    }
-    // `is_digital` and `requires_shipping` are both rendered as switches in
-    // `ProductEditForm` and were both dropped here, so the form saved, returned
-    // `success: true` and showed a green toast while writing nothing. That is
-    // the "wrote nothing, reported success" failure the working rules forbid,
-    // and it is why a digital seller could not mark a product as digital.
-    //
-    // They move together when only one is sent: a digital product does not ship
-    // and a shipped product is not digital. An explicit value for both still
-    // wins, so a merchant can express the odd case (a digital licence bundled
-    // with a printed manual) if they mean to.
-    if (body.is_digital !== undefined) {
-      updateFields.push(`is_digital = $${paramCount}`);
-      updateValues.push(Boolean(body.is_digital));
-      paramCount++;
-
-      if (body.requires_shipping === undefined) {
-        updateFields.push(`requires_shipping = $${paramCount}`);
-        updateValues.push(!body.is_digital);
-        paramCount++;
-      }
-    }
-    if (body.requires_shipping !== undefined) {
-      updateFields.push(`requires_shipping = $${paramCount}`);
-      updateValues.push(Boolean(body.requires_shipping));
-      paramCount++;
-    }
-    if (body.is_active !== undefined) {
-      updateFields.push(`is_active = $${paramCount}`);
-      updateValues.push(body.is_active);
-      paramCount++;
-    }
-    if (body.is_featured !== undefined) {
-      updateFields.push(`is_featured = $${paramCount}`);
-      updateValues.push(body.is_featured);
-      paramCount++;
-    }
-
-    // Handle stock quantity changes with inventory logging
-    const existingStockQuantity = Number(existingProduct.stock_quantity) || 0;
-    if (body.inventory_quantity !== undefined && body.inventory_quantity !== existingStockQuantity) {
-      const quantityChange = parseInt(body.inventory_quantity) - existingStockQuantity;
-      const changeType = quantityChange > 0 ? 'adjustment' : 'adjustment';
-      const notes = body.stock_change_notes || `Stock updated via admin panel`;
-
-      // Log the inventory change
-      await db.query(`
-        INSERT INTO inventory_logs (
-          store_id, product_id, change_type, quantity_change, quantity_after, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-      `, [
-        user.storeId,
-        productId,
-        changeType,
-        quantityChange,
-        parseInt(body.inventory_quantity),
-        notes
-      ]);
-    }
-
-    // Handle listing/unlisting with published_at timestamp
-    if (body.is_active !== undefined) {
-      const existingIsActive = Boolean(existingProduct.is_active);
-      if (body.is_active && !existingIsActive) {
-        // Product is being listed
-        updateFields.push(`published_at = $${paramCount}`);
-        updateValues.push(new Date());
-        paramCount++;
-      } else if (!body.is_active && existingIsActive) {
-        // Product is being unlisted
-        updateFields.push(`published_at = $${paramCount}`);
-        updateValues.push(null);
-        paramCount++;
-      }
-    }
-
-    // Add updated_at timestamp
-    updateFields.push(`updated_at = $${paramCount}`);
-    updateValues.push(new Date());
-    paramCount++;
-
-    // Add WHERE clause values
-    updateValues.push(productId);
-    updateValues.push(user.storeId);
-
-    // Execute the update
-    const updateQuery = `
-      UPDATE products 
-      SET ${updateFields.join(', ')}
-      WHERE id = $${paramCount} AND store_id = $${paramCount + 1}
-      RETURNING *
-    `;
-    
-    const updateResult = await db.query(updateQuery, updateValues);
-    const updatedProduct = updateResult.rows[0];
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        product: updatedProduct,
-        message: 'Product updated successfully'
-      }
-    });
-
+    return await applyUpdate(request, productId);
   } catch (error) {
-    console.error('Admin product PUT error:', error);
-    
-    if (error instanceof Error && error.message === 'Authentication required') {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 });
-    }
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return adminErrorResponse(error, 'products.update');
+  }
+}
+
+/**
+ * PATCH /api/admin/products/[productId]
+ *
+ * The catalogue list's publish toggle has always used PATCH against a route that exported only
+ * GET, PUT and DELETE, so every list/unlist from the grid returned 405.
+ *
+ * @param request - The incoming request.
+ * @param context - Route params carrying the product id.
+ * @returns The updated product.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ productId: string }> }
+) {
+  try {
+    const { productId } = await params;
+    return await applyUpdate(request, productId);
+  } catch (error) {
+    return adminErrorResponse(error, 'products.patch');
   }
 }
 
 /**
  * DELETE /api/admin/products/[productId]
- * Remove product (with safety checks)
+ *
+ * Archive a product, or delete it outright when nothing references it.
+ *
+ * A product that appears on an order is never deleted. The old route refused those with a 400 and
+ * told the merchant to deactivate instead, then offered a `?force=true` escape hatch that was
+ * unreachable — the guard returned before the check that read it. Forcing it would have been worse
+ * than the dead code: `order_items.product_id` has no `ON DELETE` clause, so the delete either
+ * fails or takes the record of what a customer bought with it.
+ *
+ * Archiving is the right answer and is now what happens, rather than an instruction the merchant
+ * has to follow by hand.
+ *
+ * @param request - The incoming request.
+ * @param context - Route params carrying the product id.
+ * @returns What happened, and why, in terms a merchant can act on.
  */
 export async function DELETE(
   request: NextRequest,
@@ -500,99 +624,100 @@ export async function DELETE(
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
     const { productId } = await params;
-
     if (!UUID.test(productId)) {
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
-    // Verify product exists and belongs to user's store
-    const existingProductResult = await db.query(
-      'SELECT * FROM products WHERE id = $1 AND store_id = $2',
-      [productId, user.storeId]
-    );
-    
-    if (existingProductResult.rows.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Product not found'
-      }, { status: 404 });
+    const outcome = await db.transaction(async (tx) => {
+      const existing = await tx.query<{ id: string; name: string; sku: string; stock_quantity: number }>(
+        'SELECT id, name, sku, stock_quantity FROM products WHERE id = $1 AND store_id = $2 FOR UPDATE',
+        [productId, user.storeId]
+      );
+      if (existing.rows.length === 0) return null;
+      const product = existing.rows[0];
+
+      const orders = await tx.query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+          WHERE oi.product_id = $1 AND o.store_id = $2`,
+        [productId, user.storeId]
+      );
+      const orderCount = Number.parseInt(orders.rows[0]?.count ?? '0', 10);
+
+      if (orderCount > 0) {
+        await tx.query(
+          `UPDATE products SET status = 'archived', updated_at = NOW()
+            WHERE id = $1 AND store_id = $2`,
+          [productId, user.storeId]
+        );
+        return { product, orderCount, archived: true };
+      }
+
+      /* No order history: a genuine delete. The ledger rows cascade with it, which migration 031
+       * permits precisely because a movement record for a product that no longer exists audits
+       * nothing. */
+      await tx.query('DELETE FROM inventory_logs WHERE store_id = $1 AND product_id = $2', [
+        user.storeId,
+        productId
+      ]);
+      await tx.query('DELETE FROM products WHERE id = $1 AND store_id = $2', [
+        productId,
+        user.storeId
+      ]);
+      return { product, orderCount, archived: false };
+    });
+
+    if (!outcome) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
-    
-    const existingProduct = existingProductResult.rows[0];
-
-    // Check if product has any orders (safety check)
-    const orderCheck = await db.query(`
-      SELECT COUNT(*) as order_count
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      WHERE oi.product_id = $1 AND o.store_id = $2
-    `, [productId, user.storeId]);
-
-    const orderCount = parseInt(String(orderCheck.rows[0]?.order_count || '0'));
-    if (orderCount > 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Cannot delete product with existing orders. Consider deactivating it instead.',
-        details: {
-          order_count: orderCount,
-          suggestion: 'Use PUT /api/admin/products/' + productId + ' with is_active: false to deactivate'
-        }
-      }, { status: 400 });
-    }
-
-    // Optional: Check query parameter for force delete
-    const { searchParams } = new URL(request.url);
-    const forceDelete = searchParams.get('force') === 'true';
-    
-    if (orderCount > 0 && !forceDelete) {
-      return NextResponse.json({
-        success: false,
-        error: 'Product has order history. Use ?force=true to delete anyway.',
-        details: {
-          order_count: orderCount
-        }
-      }, { status: 400 });
-    }
-
-    // Delete the product (will cascade to inventory_logs due to foreign key constraints)
-    await db.query(
-      'DELETE FROM products WHERE id = $1 AND store_id = $2',
-      [productId, user.storeId]
-    );
 
     return NextResponse.json({
       success: true,
       data: {
-        message: 'Product deleted successfully',
-        deleted_product: {
-          id: productId,
-          name: existingProduct.name,
-          sku: existingProduct.sku
-        }
+        product: { id: outcome.product.id, name: outcome.product.name, sku: outcome.product.sku },
+        archived: outcome.archived,
+        order_count: outcome.orderCount,
+        message: outcome.archived
+          ? `${outcome.product.name} appears on ${outcome.orderCount} order${
+              outcome.orderCount === 1 ? '' : 's'
+            }, so it has been archived rather than deleted. It is off the storefront and its order history is intact.`
+          : `${outcome.product.name} has been deleted.`
       }
     });
-
   } catch (error) {
-    console.error('Admin product DELETE error:', error);
-    
-    if (error instanceof Error && error.message === 'Authentication required') {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 });
-    }
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return adminErrorResponse(error, 'products.delete');
   }
+}
+
+/**
+ * Whether a stored value and an incoming one are the same.
+ *
+ * Loose on representation and strict on meaning: `pg` returns NUMERIC as a string and DATE as a
+ * Date, and a form posts numbers, so `'249.00' !== 249` would report a change on every save and
+ * defeat the whole point of comparing.
+ *
+ * @param stored - The value currently in the database.
+ * @param incoming - The coerced value from the request.
+ * @returns True when the two mean the same thing.
+ */
+function sameValue(stored: unknown, incoming: unknown): boolean {
+  if (stored === incoming) return true;
+  if (stored === null || stored === undefined) return incoming === null || incoming === undefined;
+  if (incoming === null || incoming === undefined) return false;
+
+  if (Array.isArray(stored) && Array.isArray(incoming)) {
+    return stored.length === incoming.length && stored.every((v, i) => String(v) === String(incoming[i]));
+  }
+
+  const storedNumber = Number(stored);
+  const incomingNumber = Number(incoming);
+  if (Number.isFinite(storedNumber) && Number.isFinite(incomingNumber)) {
+    return storedNumber === incomingNumber;
+  }
+
+  return String(stored) === String(incoming);
 }

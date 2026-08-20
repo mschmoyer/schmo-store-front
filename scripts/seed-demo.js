@@ -126,27 +126,6 @@ const STORES = [
     metaDescription: 'Shop headphones, keyboards, smart speakers and desk accessories built to last. Free shipping over $75, two-year warranty on everything.',
     themeName: 'dark',
     skuPrefix: 'BCA',
-    // One product per store carries options, so the variant path is reachable
-    // in a seeded shop without hand-writing SQL. Case colour x band size, with
-    // one combination deliberately out of stock and one never made -- those are
-    // the two states the selector renders differently and the two that are
-    // easiest to get wrong.
-    variantProduct: {
-      slug: 'pulse-smartwatch',
-      options: [
-        { name: 'Case', position: 1, values: ['Graphite', 'Silver', 'Rose'],
-          valueMeta: { Graphite: { swatch: '#3b3f45' }, Silver: { swatch: '#c9ccd1' }, Rose: { swatch: '#c9a099' } } },
-        { name: 'Band', position: 2, values: ['Small', 'Large'] },
-      ],
-      variants: [
-        { sku: 'BCA-WEA-1012-GR-S', option1: 'Graphite', option2: 'Small', stock: 8 },
-        { sku: 'BCA-WEA-1012-GR-L', option1: 'Graphite', option2: 'Large', stock: 5 },
-        { sku: 'BCA-WEA-1012-SV-S', option1: 'Silver', option2: 'Small', stock: 0 },
-        { sku: 'BCA-WEA-1012-SV-L', option1: 'Silver', option2: 'Large', stock: 3 },
-        // Rose was only ever made in Small -- Rose/Large renders as unavailable.
-        { sku: 'BCA-WEA-1012-RS-S', option1: 'Rose', option2: 'Small', stock: 2 },
-      ],
-    },
     shippingFreeThreshold: 75,
     shippingFlatRate: 8.99,
     extraConfig: { warranty_years: ['2', 'number'], extended_warranty_available: ['true', 'boolean'] },
@@ -294,20 +273,6 @@ const STORES = [
     metaDescription: 'Small-batch ceramics, soy candles and woven textiles, handmade in our Asheville studio. Gift-ready packaging on request.',
     themeName: 'amber',
     skuPrefix: 'FWG',
-    // A single axis, and every glaze at the product's own price -- the case a
-    // merchant hits most often, where a null variant price inherits.
-    variantProduct: {
-      slug: 'hearth-ceramic-mug',
-      options: [
-        { name: 'Glaze', position: 1, values: ['Ash', 'Ember', 'Moss'],
-          valueMeta: { Ash: { swatch: '#d6d1c7' }, Ember: { swatch: '#b4552f' }, Moss: { swatch: '#5d6b4a' } } },
-      ],
-      variants: [
-        { sku: 'FWG-POT-2001-ASH', option1: 'Ash', stock: 14 },
-        { sku: 'FWG-POT-2001-EMB', option1: 'Ember', stock: 9 },
-        { sku: 'FWG-POT-2001-MOS', option1: 'Moss', stock: 0 },
-      ],
-    },
     shippingFreeThreshold: 50,
     shippingFlatRate: 6.99,
     extraConfig: { artisan_spotlight: ['true', 'boolean'], custom_packaging: ['true', 'boolean'] },
@@ -455,21 +420,6 @@ const STORES = [
     metaDescription: 'Dumbbells, kettlebells, benches and recovery gear built for daily use. Same-day shipping, extended warranty on strength equipment.',
     themeName: 'teal',
     skuPrefix: 'IFT',
-    // Per-variant pricing, which is the other half of the model: a 24kg
-    // kettlebell costs more than a 12kg one, and no single product price can
-    // express that.
-    variantProduct: {
-      slug: 'anchor-kettlebell',
-      options: [
-        { name: 'Weight', position: 1, values: ['12 kg', '16 kg', '20 kg', '24 kg'] },
-      ],
-      variants: [
-        { sku: 'IFT-STR-3004-12', option1: '12 kg', price: 54.0, stock: 11 },
-        { sku: 'IFT-STR-3004-16', option1: '16 kg', price: 68.0, stock: 7 },
-        { sku: 'IFT-STR-3004-20', option1: '20 kg', price: 82.0, stock: 4 },
-        { sku: 'IFT-STR-3004-24', option1: '24 kg', price: 96.0, stock: 0 },
-      ],
-    },
     shippingFreeThreshold: 100,
     shippingFlatRate: 14.99,
     extraConfig: { assembly_service: ['true', 'boolean'], warranty_extended: ['true', 'boolean'] },
@@ -827,58 +777,6 @@ async function seed() {
             [store.id, orderId, productIdBySlug[item.slug], item.sku, item.name,
               `/demo/products/${item.slug}.svg`, item.unitPrice, item.quantity, item.unitPrice * item.quantity]
           );
-        }
-      }
-
-      // ---- Options and variants on one product per store. ----
-      //
-      // One is enough. The point is that the variant path -- selector, swatches,
-      // per-variant price and stock, two lines in the cart for two sizes -- is
-      // reachable in a seeded store without anybody hand-writing SQL first. A
-      // catalogue where every product had options would make the single-SKU
-      // path, which is still the common case, harder to eyeball.
-      //
-      // Idempotent like the rest of the seed: the options and variants for this
-      // product are cleared before they are written, so re-running changes
-      // nothing. Deleting the variants also drives products.variant_count back
-      // through its trigger.
-      if (store.variantProduct) {
-        const target = productIdBySlug[store.variantProduct.slug];
-        if (target) {
-          await client.query(
-            'DELETE FROM public.product_variants WHERE store_id = $1 AND product_id = $2',
-            [store.id, target]
-          );
-          await client.query(
-            'DELETE FROM public.product_options WHERE store_id = $1 AND product_id = $2',
-            [store.id, target]
-          );
-
-          for (const option of store.variantProduct.options) {
-            await client.query(
-              `INSERT INTO public.product_options
-                 (store_id, product_id, name, position, values, value_meta)
-               VALUES ($1,$2,$3,$4,$5::text[],$6::jsonb)`,
-              [store.id, target, option.name, option.position, option.values,
-                JSON.stringify(option.valueMeta || {})]
-            );
-          }
-
-          let position = 1;
-          for (const variant of store.variantProduct.variants) {
-            await client.query(
-              `INSERT INTO public.product_variants
-                 (store_id, product_id, sku, option1, option2, option3,
-                  price, stock_quantity, position, is_active)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)`,
-              [store.id, target, variant.sku, variant.option1, variant.option2 || null, null,
-                // null price means "inherit the product", which is the common
-                // case and the one worth demonstrating.
-                variant.price === undefined ? null : variant.price,
-                variant.stock, position]
-            );
-            position += 1;
-          }
         }
       }
 

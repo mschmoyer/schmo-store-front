@@ -1,0 +1,94 @@
+/*
+ * The bulk action bar.
+ *
+ * Pinned to the bottom of the viewport so it is reachable from anywhere in a long grid without
+ * scrolling back to a toolbar, and so the rows it applies to stay visible above it — a merchant
+ * about to change three hundred prices should be able to see what they selected while deciding.
+ */
+
+.bar {
+  position: fixed;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 190;
+  /* Sized to its content up to the viewport, rather than to a fixed width: a fixed max squeezed
+   * the action row and truncated the labels to "Categor", "Publis", "Mor". */
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+  animation: rise 140ms ease-out;
+}
+
+/* Rises rather than fades so the eye is drawn to where it came from — the selection — instead of
+   a panel simply existing where none was. Respecting reduced motion is not optional for something
+   that appears under the pointer. */
+@keyframes rise {
+  from {
+    transform: translate(-50%, 12px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}
+
+.inner {
+  flex-wrap: nowrap;
+}
+
+.actions {
+  flex-wrap: nowrap;
+}
+
+/* Buttons keep their intrinsic width. Without this, flex shrinks them and the labels — which are
+   the only thing distinguishing one destructive action from a routine one — get clipped. */
+.actions > * {
+  flex: none;
+}
+
+/*
+ * Below the point where the buttons stop fitting, the bar spans the full width and its actions
+ * scroll horizontally rather than wrapping into a stack that would cover the grid. A merchant on a
+ * phone in a warehouse still gets every action, one swipe away.
+ */
+@media (max-width: 860px) {
+  .bar {
+    left: var(--space-3);
+    right: var(--space-3);
+    transform: none;
+    max-width: none;
+  }
+
+  @keyframes rise {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .inner {
+    flex-wrap: wrap;
+  }
+
+  .actions {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+  }
+}

@@ -60,22 +60,29 @@ export function ImageControl({
     try {
       const token = localStorage.getItem('admin_token');
       const body = new FormData();
-      body.append('file', file);
+      // The route takes a batch under `files`, and reports on each one. This
+      // control uploads a single image, so it reads the first result back.
+      body.append('files', file);
       const response = await fetch('/api/admin/media', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body,
       });
       const result = await response.json().catch(() => null);
-      if (response.status === 503) {
-        setUploadError('Uploads are not set up for this store yet — paste an image URL below instead.');
-        return;
-      }
       if (!response.ok || !result?.success) {
-        setUploadError(result?.error ?? 'That image could not be uploaded.');
+        // A rejected file is named individually in `failed`, which carries the
+        // reason worth showing — "Could not be read as an image" beats a
+        // generic failure the merchant cannot act on.
+        const reason: string | undefined = result?.failed?.[0]?.reason ?? result?.error;
+        setUploadError(reason ?? 'That image could not be uploaded.');
         return;
       }
-      onChange(result.data.url);
+      const uploaded: string | undefined = result?.media?.[0]?.url;
+      if (!uploaded) {
+        setUploadError('That image could not be uploaded.');
+        return;
+      }
+      onChange(uploaded);
     } catch {
       setUploadError('That image could not be uploaded.');
     } finally {

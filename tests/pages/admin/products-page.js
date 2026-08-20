@@ -1,424 +1,201 @@
 /**
- * Admin Products Page Object Model
- * Contains selectors and methods for interacting with the admin products page
+ * Page object for the admin catalogue.
+ *
+ * Rewritten alongside the page. The previous version was built around controls that no longer
+ * exist — a "Refresh" button beside the sync button, a sort `<Select>` in the filter bar, per-row
+ * Edit and View icons that both opened the same URL, and modals identified by `data-testid`
+ * attributes.
+ *
+ * It is also much smaller, deliberately. Most of what it used to expose were helpers for opening
+ * dialogs, which let the specs assert that a modal appeared and stop there — so three features
+ * whose endpoints did not exist passed their tests for as long as they existed. The helpers here
+ * are the ones a spec needs to assert an *outcome*: what the grid contains, what a cell says after
+ * an edit, what the URL holds after a filter.
  */
+
+const { expect } = require('@playwright/test');
+
 class AdminProductsPage {
   constructor(page) {
     this.page = page;
-    
-    // Main page selectors
-    this.pageTitle = 'h1:has-text("Products")';
-    this.addProductButton = 'text=Add Product';
-    this.refreshButton = 'text=Refresh';
-    this.actionsButton = 'text=Actions';
-    
-    /*
-     * Stat cards and the search box.
-     *
-     * These selectors were written against copy the page no longer uses —
-     * title-cased tile labels and a bare "Search products..." placeholder —
-     * so every test in this suite failed in `verifyPageElements` rather than
-     * on anything it was meant to check.
-     *
-     * The tiles now also carry a **Margin** column alongside them in the
-     * table: price and cost were already on every row, and one column turns
-     * the catalog into a pricing tool. It divides by retail, not by cost.
-     */
-    // Scoped to the stat card's own label element. A bare `text=Active` also
-    // matches the status filter's options and the per-row status badges.
-    // Scoped to the stat card's own label element. A bare `text=Active` also
-    // matches the status filter's options and the per-row status badges.
-    this.totalProductsCard = '[class*="StatCard-module"]:text-is("Total products")';
-    this.activeProductsCard = '[class*="StatCard-module"]:text-is("Active")';
-    this.inStockCard = '[class*="StatCard-module"]:text-is("In stock")';
-    this.outOfStockCard = '[class*="StatCard-module"]:text-is("Out of stock")';
-    this.inventoryValueCard = '[class*="StatCard-module"]:text-is("Inventory value")';
-    this.marginColumn = 'th:has-text("Margin")';
 
-    // Search and filters
-    this.searchInput = 'input[placeholder="Search products (min 3 characters)..."]';
-    this.statusFilter = 'select[data-testid="status-filter"]';
-    this.stockFilter = 'select[data-testid="stock-filter"]';
-    this.advancedFiltersButton = 'text=Advanced Filters';
-    this.sortSelect = 'select[data-testid="sort-select"]';
-    this.sortOrderToggle = 'button[data-testid="sort-order-toggle"]';
-    
-    // Table elements
+    this.pageTitle = 'h1:has-text("Products")';
+    this.addProductButton = 'a:has-text("Add product")';
+    this.searchInput = 'input[aria-label="Search products"]';
     this.productsTable = 'table';
-    this.tableHeaders = 'table thead tr';
     this.productRows = 'table tbody tr';
     this.selectAllCheckbox = 'table thead input[type="checkbox"]';
-    this.productCheckbox = 'table tbody tr input[type="checkbox"]';
-    
-    // Actions menu
-    this.exportProductsOption = 'text=Export Products';
-    this.importProductsOption = 'text=Import Products';
-    this.bulkActionsOption = 'text=Bulk Actions';
-    
-    // Modals
-    this.advancedFiltersModal = '[data-testid="advanced-filters-modal"]';
-    this.exportModal = '[data-testid="export-modal"]';
-    this.importModal = '[data-testid="import-modal"]';
-    this.bulkActionsModal = '[data-testid="bulk-actions-modal"]';
-    
-    // Pagination
-    this.pagination = 'nav[role="navigation"]';
-    this.nextPageButton = 'button:has-text("Next")';
-    this.prevPageButton = 'button:has-text("Previous")';
-    
-    // Empty state
-    this.emptyStateMessage = 'text=No products found';
-    this.addFirstProductButton = 'text=Add Your First Product';
+    this.rowCheckbox = 'table tbody tr input[type="checkbox"]';
+    this.bulkBar = '[role="region"][aria-label*="Bulk actions"]';
+    this.rowCount = 'text=/\\d+–\\d+ of \\d+/';
   }
 
   /**
-   * Navigate to products page
+   * Open the catalogue and wait for it to have rendered rows or an empty state.
+   *
+   * Waiting for one or the other rather than a fixed delay is what keeps these specs from being
+   * flaky on a cold dev server.
    */
   async goto() {
     await this.page.goto('/admin/products');
     await this.page.waitForLoadState('networkidle');
+    await Promise.race([
+      this.page.waitForSelector(this.productRows, { timeout: 20000 }),
+      this.page.waitForSelector('text=No products yet', { timeout: 20000 }),
+      this.page.waitForSelector('text=Nothing matches that', { timeout: 20000 })
+    ]);
+  }
+
+  /** @returns The number of rows currently rendered. */
+  async rowCountValue() {
+    return this.page.locator(this.productRows).count();
   }
 
   /**
-   * Wait for page to load
+   * Switch to a saved view by its visible label.
+   *
+   * @param label - The tab's label, such as "Low stock".
    */
-  async waitForPageLoad() {
-    await this.page.waitForSelector(this.pageTitle, { timeout: 10000 });
-    await this.page.waitForLoadState('networkidle');
+  async selectView(label) {
+    await this.page.locator('[role=tab]').filter({ hasText: label }).first().click();
+    await this.page.waitForTimeout(800);
   }
 
   /**
-   * Perform search
+   * Read a view tab's badge count.
+   *
+   * @param label - The tab's label.
+   * @returns The badge number, or null when the tab has none.
    */
-  async search(query) {
-    await this.page.fill(this.searchInput, query);
-    await this.page.waitForTimeout(600); // Wait for debounced search
-    await this.page.waitForLoadState('networkidle');
+  async viewCount(label) {
+    const text = await this.page.locator('[role=tab]').filter({ hasText: label }).first().textContent();
+    const match = /(\d+)$/.exec(text ?? '');
+    return match ? Number(match[1]) : null;
   }
 
   /**
-   * Clear search
+   * Read a view's badge and its rendered row count together.
+   *
+   * Both change at once when the catalogue is mutated, so they have to be sampled as a pair for
+   * the comparison to mean anything under concurrency.
+   *
+   * @param label - The tab's label.
+   * @returns Whether the badge and the row count agree.
    */
-  async clearSearch() {
-    await this.page.fill(this.searchInput, '');
+  async badgeMatchesRows(label) {
+    const badge = await this.viewCount(label);
+    const empty = await this.page.getByText('Nothing matches that').count();
+    const rows = empty ? 0 : await this.rowCountValue();
+    return badge === rows;
+  }
+
+  /**
+   * Type into the search box and wait for the debounced request to land.
+   *
+   * @param term - What to search for.
+   */
+  async search(term) {
+    const input = this.page.locator(this.searchInput);
+    await input.waitFor({ state: 'visible' });
+    await input.fill(term);
+
+    /*
+     * Wait for the term to reach the URL rather than for a fixed delay. The search is debounced and
+     * then navigates, so a timeout long enough on a warm server is not long enough on a cold one —
+     * and a fill that lands before hydration never registers at all, which shows up as the grid
+     * returning everything.
+     */
+    await this.page.waitForURL(new RegExp(`search=${encodeURIComponent(term)}`), { timeout: 15000 });
     await this.page.waitForTimeout(600);
-    await this.page.waitForLoadState('networkidle');
   }
 
-  /*
-   * The filters and the sort control are Mantine `Select`s, not native
-   * `<select>` elements — they render a text input plus a portalled option
-   * list — so `selectOption()` had nothing to act on and every filter and sort
-   * test timed out. They are driven the way a user drives them: click the
-   * control, click the option.
-   */
-
   /**
-   * Pick an option from one of the toolbar's Mantine Selects.
+   * Sort by clicking a column heading.
    *
-   * Two hazards are handled here, both of which produced intermittent red
-   * rather than honest failures:
+   * @param label - The heading's text, such as "Price".
+   */
+  async sortBy(label) {
+    await this.page.getByRole('button', { name: new RegExp(`^${label}`) }).first().click();
+    await this.page.waitForTimeout(800);
+  }
+
+  /**
+   * Edit a numeric cell in place.
    *
-   * - **The control is addressed by accessible name, not placeholder.** A
-   *   Select that already holds a value renders no placeholder, so a
-   *   placeholder locator worked on a pristine page and broke the moment a
-   *   workflow had set a filter.
-   * - **The dropdown detaches mid-click.** The products list re-renders when a
-   *   fetch resolves, and the search box debounces by 300ms — so the network
-   *   can be idle while a fetch is still queued, land during the click, and
-   *   tear the portalled option list out of the DOM. Settling past the
-   *   debounce and then to idle again makes the toolbar genuinely still; one
-   *   retry covers the rest.
+   * @param label - The cell's accessible name prefix, such as "Cost".
+   * @param rowIndex - Which row, zero-based.
+   * @param value - The value to type.
+   */
+  async editCell(label, rowIndex, value) {
+    const cell = this.page
+      .getByRole('button', { name: new RegExp(`^${label} for .*Select to edit`) })
+      .nth(rowIndex);
+    await cell.click();
+    const input = this.page.locator(`input[aria-label^="${label} for"]`);
+    await input.fill(String(value));
+    await input.press('Enter');
+    await this.page.waitForTimeout(1200);
+  }
+
+  /**
+   * Read a numeric cell's rendered text.
    *
-   * @param controlName - The Select's accessible name.
-   * @param optionLabel - The visible option label.
+   * @param label - The cell's accessible name prefix.
+   * @param rowIndex - Which row, zero-based.
+   * @returns The cell's text.
    */
-  async selectOption(controlName, optionLabel) {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        await this.page.waitForLoadState('networkidle');
-        await this.page.waitForTimeout(700);
-        await this.page.waitForLoadState('networkidle');
-
-        await this.page.getByRole('textbox', { name: controlName }).click();
-        const option = this.page.getByRole('option', { name: optionLabel, exact: true });
-        await option.waitFor({ state: 'visible', timeout: 5000 });
-        await option.click({ timeout: 5000 });
-        await this.page.waitForLoadState('networkidle');
-        return;
-      } catch (error) {
-        if (attempt === 2) throw error;
-        await this.page.keyboard.press('Escape');
-        await this.page.waitForTimeout(500);
-      }
-    }
+  async cellText(label, rowIndex) {
+    return (
+      await this.page
+        .getByRole('button', { name: new RegExp(`^${label} for .*Select to edit`) })
+        .nth(rowIndex)
+        .textContent()
+    )?.trim();
   }
 
   /**
-   * Filter by status.
+   * Tick a row's checkbox.
    *
-   * @param status - The visible option label, e.g. `Active`.
+   * @param rowIndex - Which row, zero-based.
    */
-  async filterByStatus(status) {
-    await this.selectOption('Filter by status', status);
+  async selectRow(rowIndex) {
+    await this.page.locator(this.rowCheckbox).nth(rowIndex).check();
+    await this.page.waitForTimeout(300);
+  }
+
+  /** @returns Whether the bulk action bar is showing. */
+  async bulkBarVisible() {
+    return this.page.locator(this.bulkBar).isVisible();
   }
 
   /**
-   * Filter by stock status.
+   * Open a row's action menu.
    *
-   * @param stockStatus - The visible option label, e.g. `In Stock`.
+   * @param rowIndex - Which row, zero-based.
    */
-  async filterByStock(stockStatus) {
-    await this.selectOption('Filter by stock', stockStatus);
+  async openRowMenu(rowIndex) {
+    await this.page
+      .locator(this.productRows)
+      .nth(rowIndex)
+      .getByRole('button', { name: /^Actions for/ })
+      .click();
+  }
+
+  /** @returns The SKUs rendered in the grid, in order. */
+  async visibleSkus() {
+    return this.page.locator('table tbody tr code, table tbody tr [class*="code"]').allTextContents();
   }
 
   /**
-   * Open advanced filters modal
-   */
-  async openAdvancedFilters() {
-    await this.page.click(this.advancedFiltersButton);
-    await this.page.waitForSelector('text=Advanced Filters', { timeout: 5000 });
-  }
-
-  /**
-   * Close advanced filters modal
-   */
-  async closeAdvancedFilters() {
-    const cancelBtn = this.page.locator('button:has-text("Cancel")');
-    if (await cancelBtn.isVisible()) {
-      await cancelBtn.click();
-    } else {
-      await this.page.keyboard.press('Escape');
-    }
-  }
-
-  /**
-   * Change sort order
-   */
-  /**
-   * Sort by a field.
+   * Assert the page's core furniture is present.
    *
-   * @param sortField - The visible option label, e.g. `Name`.
+   * Deliberately a short list: a spec that enumerates every control turns a layout change into a
+   * test failure without telling anyone whether the page still works.
    */
-  async sortBy(sortField) {
-    await this.selectOption('Sort by', sortField);
-  }
-
-  /**
-   * Toggle sort order (asc/desc)
-   */
-  async toggleSortOrder() {
-    // The control is icon-only; it now carries an aria-label, so it can be
-    // reached by role instead of by a text filter that matched nothing.
-    await this.page.getByRole('button', { name: /^Sort (ascending|descending)/ }).click();
-    await this.page.waitForLoadState('networkidle');
-  }
-
-  /**
-   * Click actions menu
-   */
-  async openActionsMenu() {
-    await this.page.click(this.actionsButton);
-  }
-
-  /**
-   * Open export modal
-   */
-  async openExportModal() {
-    await this.openActionsMenu();
-    await this.page.click(this.exportProductsOption);
-    await this.page.waitForSelector('text=Export Format', { timeout: 5000 });
-  }
-
-  /**
-   * Open import modal
-   */
-  async openImportModal() {
-    await this.openActionsMenu();
-    await this.page.click(this.importProductsOption);
-    await this.page.waitForSelector('text=Select file', { timeout: 5000 });
-  }
-
-  /**
-   * Open bulk actions modal
-   */
-  async openBulkActionsModal() {
-    await this.openActionsMenu();
-    await this.page.click(this.bulkActionsOption);
-    await this.page.waitForSelector('text=selected', { timeout: 5000 });
-  }
-
-  /**
-   * Close modal (generic)
-   */
-  async closeModal() {
-    const cancelBtn = this.page.locator('button:has-text("Cancel")');
-    if (await cancelBtn.isVisible()) {
-      await cancelBtn.click();
-    } else {
-      await this.page.keyboard.press('Escape');
-    }
-  }
-
-  /**
-   * Get product count
-   */
-  async getProductCount() {
-    const rows = this.page.locator(this.productRows);
-    return await rows.count();
-  }
-
-  /**
-   * Select product by index
-   */
-  async selectProduct(index) {
-    const checkbox = this.page.locator(this.productRows).nth(index).locator('input[type="checkbox"]');
-    await checkbox.check();
-  }
-
-  /**
-   * Select all products
-   */
-  async selectAllProducts() {
-    await this.page.click(this.selectAllCheckbox);
-  }
-
-  /**
-   * Click add product button
-   */
-  async clickAddProduct() {
-    await this.page.click(this.addProductButton);
-  }
-
-  /**
-   * Click refresh button
-   */
-  async clickRefresh() {
-    await this.page.click(this.refreshButton);
-    await this.page.waitForLoadState('networkidle');
-  }
-
-  /**
-   * Get first product's edit button and click it
-   */
-  async editFirstProduct() {
-    // Icon-only buttons carry no text, so `hasText: /edit/i` matched nothing.
-    // They now have aria-labels of the form `Edit <product name>`.
-    const firstRow = this.page.locator(this.productRows).first();
-    await firstRow.getByRole('button', { name: /^Edit / }).click();
-  }
-
-  /**
-   * Open product action menu for specific product
-   */
-  async openProductActionMenu(productIndex = 0) {
-    const productRow = this.page.locator(this.productRows).nth(productIndex);
-    await productRow.getByRole('button', { name: /^More actions for / }).click();
-  }
-
-  /**
-   * Toggle product status (list/unlist)
-   */
-  async toggleProductStatus(productIndex = 0) {
-    await this.openProductActionMenu(productIndex);
-    const toggleOption = this.page.locator('text=List Product, text=Unlist Product').first();
-    await toggleOption.click();
-    await this.page.waitForLoadState('networkidle');
-  }
-
-  /**
-   * Navigate to next page
-   */
-  async goToNextPage() {
-    const nextBtn = this.page.locator(this.nextPageButton);
-    if (await nextBtn.isVisible() && !(await nextBtn.isDisabled())) {
-      await nextBtn.click();
-      await this.page.waitForLoadState('networkidle');
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Navigate to previous page
-   */
-  async goToPrevPage() {
-    const prevBtn = this.page.locator(this.prevPageButton);
-    if (await prevBtn.isVisible() && !(await prevBtn.isDisabled())) {
-      await prevBtn.click();
-      await this.page.waitForLoadState('networkidle');
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Check if page is in empty state
-   */
-  async isEmptyState() {
-    return await this.page.locator(this.emptyStateMessage).isVisible();
-  }
-
-  /**
-   * Check if pagination exists
-   */
-  async hasPagination() {
-    return await this.page.locator(this.pagination).isVisible();
-  }
-
-  /**
-   * Get stats card values
-   */
-  async getStats() {
-    const stats = {};
-    
-    // This would need to be implemented based on the actual DOM structure
-    // For now, we'll return a placeholder
-    stats.total = await this.page.locator('text=Total Products').count();
-    stats.active = await this.page.locator('text=Active').count();
-    
-    return stats;
-  }
-
-  /**
-   * Verify all key elements are visible
-   */
-  async verifyPageElements() {
-    const elements = [
-      this.pageTitle,
-      this.addProductButton,
-      this.refreshButton,
-      this.actionsButton,
-      this.searchInput,
-      this.totalProductsCard,
-      this.activeProductsCard,
-      this.inStockCard,
-      this.outOfStockCard,
-      this.inventoryValueCard
-    ];
-
-    for (const element of elements) {
-      await this.page.waitForSelector(element, { timeout: 5000 });
-    }
-  }
-
-  /**
-   * Test all interactive elements
-   */
-  async testInteractiveElements() {
-    const interactiveElements = await this.page.locator('button, input, select, a[href]').all();
-    let accessibleCount = 0;
-    
-    for (const element of interactiveElements) {
-      if (await element.isVisible() && await element.isEnabled()) {
-        accessibleCount++;
-      }
-    }
-    
-    return {
-      total: interactiveElements.length,
-      accessible: accessibleCount
-    };
+  async expectLoaded() {
+    await expect(this.page.locator(this.pageTitle)).toBeVisible();
+    await expect(this.page.locator(this.searchInput)).toBeVisible();
+    await expect(this.page.locator('[role=tab]').first()).toBeVisible();
   }
 }
 

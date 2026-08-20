@@ -56,14 +56,12 @@ export interface ProductRecord {
   price: number;
   /** The struck-through was-price, or null when the item is not discounted. */
   compareAtPrice: number | null;
-  /** Active variants. 0 means the product is sold as a single SKU. */
-  variantCount: number;
-  /** Cheapest active variant, or null when the product has no variants. */
-  variantMinPrice: number | null;
-  /** Dearest active variant, or null when the product has no variants. */
-  variantMaxPrice: number | null;
   trackInventory: boolean;
   stockQuantity: number;
+  /** Brand, for `schema.org` and Merchant Center. */
+  vendor: string | null;
+  /** GTIN/EAN/UPC, the product identifier a shopping feed needs. */
+  barcode: string | null;
   lowStockThreshold: number;
   allowBackorder: boolean;
   weight: number | null;

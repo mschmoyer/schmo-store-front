@@ -1,315 +1,287 @@
 'use client';
 
 /**
- * Create a product.
+ * Adding a product by hand.
  *
- * The **Add Product** button pointed at `/admin/products/add`, a route that has
- * never existed. It fell through to the `[productId]` dynamic segment, which
- * fetched `/api/admin/products/add`, got a 404, and rendered "Product not
- * found". So the only way a product could enter this platform was a ShipStation
- * sync or the demo seed — which made RebelShops a ShipStation front-end rather
- * than a store builder, and blocked every merchant who does not ship through
- * ShipStation: a digital seller, a bakery, anyone with a spreadsheet.
+ * The catalogue has had an "Add product" button since it was written, and the empty state's only
+ * call to action was the same button. Both navigated to `/admin/products/add`, which no route
+ * served — the detail route caught it, refused a non-uuid, and rendered "Product not found". A
+ * brand-new store's very first click failed.
  *
- * This page is deliberately short. It asks for the six things a product cannot
- * exist without and then hands the merchant to the full editor, where images,
- * SEO, options and variants live. A single form carrying every field is a wall
- * on the one screen where a new merchant most needs momentum, and the fields it
- * omits are all ones that are easier to fill in against a saved product.
+ * `POST /api/admin/products` existed the whole time (though it had never worked; it inserted a
+ * column the schema does not have). Nothing in the UI called it. This is that page.
+ *
+ * The form is deliberately short. A merchant creating a product wants it to exist; everything else
+ * is editing, and editing has a better screen. Asking for thirty fields before the first save is
+ * how a create form becomes something people avoid — so this asks for a name, and lets the rest be
+ * optional.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Alert,
+  Anchor,
   Button,
-  Card,
-  Container,
-  Grid,
   Group,
   NumberInput,
+  Paper,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
   Textarea,
-  TextInput,
+  TextInput
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertTriangle, IconArrowLeft, IconDeviceFloppy } from '@tabler/icons-react';
-
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { IconAlertTriangle, IconArrowLeft } from '@tabler/icons-react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 
 /**
- * Turn a product name into a URL slug.
+ * The create-product page.
  *
- * Proposed, not imposed: it fills the slug field as the merchant types the
- * name, and stops the moment they edit the slug themselves. A slug that keeps
- * overwriting itself after you have corrected it is the single most irritating
- * behaviour a form like this can have.
- *
- * @param value - The product name
- * @returns A slug candidate
+ * @returns A short form that creates a draft product and opens it for editing.
  */
-function slugify(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 200)
-    .replace(/-+$/g, '');
-}
-
-interface CategoryOption {
-  id: string;
-  name: string;
-}
-
-/**
- * The new-product page.
- * @returns The creation form
- */
-export default function NewProductPage() {
+export default function NewProductPage(): React.ReactElement {
   const router = useRouter();
   const { session } = useAdmin();
+  const token = session?.sessionToken;
 
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [slugTouched, setSlugTouched] = useState(false);
   const [sku, setSku] = useState('');
   const [price, setPrice] = useState<number | string>('');
+  const [cost, setCost] = useState<number | string>('');
   const [stock, setStock] = useState<number | string>(0);
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [isActive, setIsActive] = useState(true);
+  const [publish, setPublish] = useState(false);
 
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [categories, setCategories] = useState<Array<{ value: string; label: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldError, setFieldError] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch('/api/admin/categories/simple', {
-          headers: session?.sessionToken
-            ? { Authorization: `Bearer ${session.sessionToken}` }
-            : undefined,
-        });
-        const payload = await response.json();
-        if (cancelled || !payload?.success) return;
-        const rows: CategoryOption[] = payload.data?.categories ?? payload.categories ?? [];
-        setCategories(rows);
-      } catch {
-        // A store with no categories yet is normal, and the field is optional.
+    if (!token) return;
+    fetch('/api/admin/categories', { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => response.json())
+      .then((payload) => setCategories(payload.options ?? []))
+      .catch(() => setCategories([]));
+  }, [token]);
+
+  const save = useCallback(
+    async (openAfter: boolean) => {
+      if (!name.trim()) {
+        setError('Give the product a name');
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.sessionToken]);
-
-  const effectiveSlug = useMemo(
-    () => (slugTouched ? slug : slugify(name)),
-    [slug, slugTouched, name],
-  );
-
-  const save = useCallback(async () => {
-    setError(null);
-    setFieldError({});
-
-    const problems: Record<string, string> = {};
-    if (!name.trim()) problems.name = 'A product needs a name';
-    if (!sku.trim()) problems.sku = 'A product needs a SKU';
-    if (!effectiveSlug) problems.slug = 'A product needs a URL slug';
-    const priceValue = Number(price);
-    if (!Number.isFinite(priceValue) || priceValue < 0) {
-      problems.price = 'Enter a price of 0 or more';
-    }
-    if (Object.keys(problems).length > 0) {
-      setFieldError(problems);
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const response = await fetch('/api/admin/products', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.sessionToken
-            ? { Authorization: `Bearer ${session.sessionToken}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          slug: effectiveSlug,
-          sku: sku.trim(),
-          base_price: priceValue,
-          inventory_quantity: Number(stock) || 0,
-          short_description: description.trim() || null,
-          category_id: categoryId,
-          is_active: isActive,
-        }),
-      });
-      const payload = await response.json();
-
-      if (!payload?.success) {
-        setError(payload?.error ?? 'The product could not be created.');
+      /* The same rule the API enforces, stated here so the merchant finds out before the round
+       * trip rather than after it. */
+      if (publish && !Number(price)) {
+        setError('Set a price before publishing, or save it as a draft');
         return;
       }
 
-      notifications.show({
-        title: 'Product created',
-        message: isActive
-          ? `${name.trim()} is live on your storefront.`
-          : `${name.trim()} was saved as a draft.`,
-        color: 'green',
-      });
+      setSaving(true);
+      setError(null);
 
-      // Straight into the full editor, which is where images, SEO and variants
-      // are. Creating a product is a step, not a destination.
-      const created = payload.data?.product;
-      router.push(created?.id ? `/admin/products/${created.id}` : '/admin/products');
-    } catch {
-      setError('The request failed. Check your connection and try again.');
-    } finally {
-      setSaving(false);
-    }
-  }, [name, sku, effectiveSlug, price, stock, description, categoryId, isActive, router, session]);
+      try {
+        const response = await fetch('/api/admin/products', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            name: name.trim(),
+            sku: sku.trim() || undefined,
+            base_price: price === '' ? 0 : Number(price),
+            cost_price: cost === '' ? null : Number(cost),
+            stock_quantity: Number(stock) || 0,
+            long_description: description.trim() || undefined,
+            category_id: categoryId || undefined,
+            status: publish ? 'active' : 'draft'
+          })
+        });
+
+        const payload = await response.json();
+        if (!response.ok || payload?.success === false) {
+          throw new Error(payload?.error ?? `Could not create the product (${response.status})`);
+        }
+
+        const product = payload.data.product;
+        notifications.show({
+          title: publish ? 'Product published' : 'Draft saved',
+          message: `${product.name} · ${product.sku}`,
+          color: 'green'
+        });
+
+        if (openAfter) {
+          router.push(`/admin/products/${product.id}`);
+        } else {
+          /* "Save and add another" keeps the merchant in the flow when they are entering a batch
+           * by hand, which is the only reason anyone uses this page more than once in a sitting. */
+          setName('');
+          setSku('');
+          setPrice('');
+          setCost('');
+          setStock(0);
+          setDescription('');
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Could not create the product');
+      } finally {
+        setSaving(false);
+      }
+    },
+    [categoryId, cost, description, name, price, publish, router, sku, stock, token]
+  );
 
   return (
-    <Container size="md" py="lg">
+    <Stack gap="lg" maw={760}>
       <AdminPageHeader
-        title="New product"
-        description="The essentials now — images, SEO, options and variants come next."
+        title="Add product"
+        description="Create a product that does not come from ShipStation."
+        actions={
+          <Button
+            variant="subtle"
+            leftSection={<IconArrowLeft size={16} />}
+            component={Link}
+            href="/admin/products?import=1"
+          >
+            Back to products
+          </Button>
+        }
       />
 
-      {error ? (
-        <Alert color="red" icon={<IconAlertTriangle size={16} />} mb="md" title="Not created">
+      {error && (
+        <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Could not save">
           {error}
         </Alert>
-      ) : null}
+      )}
 
-      <Card withBorder padding="lg">
+      <Paper withBorder radius="md" p="lg">
         <Stack gap="md">
           <TextInput
             label="Product name"
-            placeholder="Alpine Wool Overshirt"
+            placeholder="Aviator Headphones"
             required
             value={name}
-            error={fieldError.name}
             onChange={(event) => setName(event.currentTarget.value)}
+            data-autofocus
           />
 
-          <Grid>
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <TextInput
-                label="SKU"
-                description="What your warehouse picks by. Must be unique in your store."
-                placeholder="AWO-001"
-                required
-                value={sku}
-                error={fieldError.sku}
-                onChange={(event) => setSku(event.currentTarget.value)}
-              />
-            </Grid.Col>
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <TextInput
-                label="URL slug"
-                description="Where the product lives on your storefront."
-                required
-                value={effectiveSlug}
-                error={fieldError.slug}
-                onChange={(event) => {
-                  setSlugTouched(true);
-                  setSlug(event.currentTarget.value);
-                }}
-              />
-            </Grid.Col>
-          </Grid>
+          <TextInput
+            label="SKU"
+            description="Left blank, one is generated from the name. It has to be unique in your store."
+            placeholder="Generated automatically"
+            value={sku}
+            onChange={(event) => setSku(event.currentTarget.value)}
+          />
 
-          <Grid>
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <NumberInput
-                label="Price"
-                description="Before any sale price or discount."
-                prefix="$"
-                decimalScale={2}
-                min={0}
-                required
-                value={price}
-                error={fieldError.price}
-                onChange={setPrice}
-              />
-            </Grid.Col>
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <NumberInput
-                label="Stock on hand"
-                min={0}
-                value={stock}
-                onChange={setStock}
-              />
-            </Grid.Col>
-          </Grid>
-
-          {categories.length > 0 ? (
-            <Select
-              label="Category"
-              placeholder="Uncategorised"
-              clearable
-              data={categories.map((category) => ({ value: category.id, label: category.name }))}
-              value={categoryId}
-              onChange={setCategoryId}
+          <SimpleGrid cols={{ base: 1, sm: 3 }}>
+            <NumberInput
+              label="Price"
+              description="What a shopper pays"
+              prefix="$"
+              decimalScale={2}
+              min={0}
+              value={price}
+              onChange={setPrice}
             />
-          ) : null}
+            <NumberInput
+              label="Cost"
+              description="What you pay for it"
+              prefix="$"
+              decimalScale={2}
+              min={0}
+              value={cost}
+              onChange={setCost}
+            />
+            <NumberInput
+              label="Opening stock"
+              description="Recorded as an opening balance"
+              min={0}
+              value={stock}
+              onChange={setStock}
+            />
+          </SimpleGrid>
+
+          {/* Margin shown as it is typed, because pricing decisions are made against cost and
+              making someone open a calculator mid-form is how products get mispriced. */}
+          {Number(price) > 0 && Number(cost) > 0 && (
+            <Text size="sm" c={Number(price) <= Number(cost) ? 'red' : 'dimmed'}>
+              {Number(price) <= Number(cost)
+                ? `This sells at or below cost — you would lose ${formatMoney(Number(cost) - Number(price))} per unit.`
+                : `Margin: ${(((Number(price) - Number(cost)) / Number(price)) * 100).toFixed(1)}% · ${formatMoney(Number(price) - Number(cost))} per unit.`}
+            </Text>
+          )}
+
+          <Select
+            label="Category"
+            placeholder="Uncategorised"
+            data={categories}
+            value={categoryId}
+            onChange={setCategoryId}
+            searchable
+            clearable
+            nothingFoundMessage="No categories yet"
+          />
 
           <Textarea
-            label="Short description"
-            description="One or two sentences. Shown under the price on the product page."
-            // Not `autosize`: the admin theme sets a minHeight on the textarea
-            // input (rebel-theme.ts), and react-textarea-autosize throws on a
-            // style minHeight rather than ignoring it -- which blanked this
-            // whole page with "This page couldn't load".
-            rows={3}
+            label="Description"
+            placeholder="What it is, who it is for, and why it is worth the price."
+            /* Fixed rows rather than `autosize`: the autosizing textarea rejects the minimum height
+             * Mantine hands it and throws during render, taking the whole page with it. */
+            rows={4}
             value={description}
             onChange={(event) => setDescription(event.currentTarget.value)}
           />
 
           <Switch
-            label="Show on my storefront"
-            description="Turn this off to save it as a draft nobody can see yet."
-            checked={isActive}
-            onChange={(event) => setIsActive(event.currentTarget.checked)}
+            label="Publish to the storefront now"
+            description={
+              publish
+                ? 'It will be visible to shoppers as soon as it is saved.'
+                : 'Saved as a draft. You can add images and details, then publish.'
+            }
+            checked={publish}
+            onChange={(event) => setPublish(event.currentTarget.checked)}
           />
 
           <Text size="xs" c="dimmed">
-            Selling this in more than one size or colour? Save it first, then open
-            Options &amp; Variants.
+            Images, dimensions, SEO and stock settings are on the product page after it is created.{' '}
+            <Anchor component={Link} href="/admin/products?import=1" size="xs">
+              Or import a spreadsheet
+            </Anchor>{' '}
+            if you are adding many at once.
           </Text>
 
-          <Group justify="space-between" mt="sm">
-            <Button
-              variant="subtle"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => router.push('/admin/products')}
-            >
-              Back to products
+          <Group justify="flex-end">
+            <Button variant="default" component={Link} href="/admin/products?import=1">
+              Cancel
             </Button>
-            <Button
-              leftSection={<IconDeviceFloppy size={16} />}
-              loading={saving}
-              onClick={save}
-            >
-              Create product
+            <Button variant="default" loading={saving} onClick={() => void save(false)}>
+              Save and add another
+            </Button>
+            <Button loading={saving} onClick={() => void save(true)}>
+              Save and edit
             </Button>
           </Group>
         </Stack>
-      </Card>
-    </Container>
+      </Paper>
+    </Stack>
   );
+}
+
+/**
+ * Format an amount for the inline margin note.
+ *
+ * @param amount - A value in major units.
+ * @returns The amount as currency.
+ */
+function formatMoney(amount: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 }

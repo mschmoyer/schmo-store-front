@@ -1,464 +1,348 @@
-const { expect } = require('@playwright/test');
-const { adminAuthFixture } = require('../fixtures/admin-auth');
-const { AdminProductsPage } = require('../pages/admin/products-page');
-const { AdminProductEditPage } = require('../pages/admin/product-edit-page');
-
 /**
- * Admin Products Page Tests - Comprehensive E2E Testing
- * 
- * This test suite provides comprehensive coverage of the Products admin page including:
- * - Product listing with search, filtering, sorting, and pagination
- * - Product creation and editing workflows
- * - Bulk actions and status management
- * - Export/Import functionality
- * - Interactive element testing
- * - Form validation and error handling
- * - Responsive design testing
- * - Complete user workflows
+ * The admin catalogue, end to end.
+ *
+ * Rewritten with the page. The previous suite asserted that dialogs *opened* — `expect(locator('text=Export Format')).toBeVisible()` — and never pressed the button inside them. That is why
+ * three features whose API routes did not exist passed their tests for as long as they existed:
+ * bulk actions, CSV export and CSV import all 404'd, and nothing here noticed.
+ *
+ * So every test below asserts an outcome that would be false if the feature were broken: a row
+ * count that changed, a value that survived a reload, a URL that carries the view, a file that
+ * arrived. Where a test cannot assert an outcome it does not exist.
  */
 
-adminAuthFixture.describe('Admin Products Page - Core Functionality', () => {
-  let productsPage;
+const { deflateSync } = require('zlib');
+const { test, expect } = require('@playwright/test');
+const { AdminLoginPage } = require('../pages/admin/login-page');
+const { AdminProductsPage } = require('../pages/admin/products-page');
 
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    productsPage = new AdminProductsPage(adminPage);
-    await productsPage.goto();
-    await productsPage.waitForPageLoad();
+test.describe('Admin catalogue', () => {
+  let products;
+
+  test.beforeEach(async ({ page }) => {
+    const login = new AdminLoginPage(page);
+    await login.goto();
+    await login.login('demo@schmostore.com', 'rebeldev');
+    await login.waitForLoginSuccess();
+
+    products = new AdminProductsPage(page);
+    await products.goto();
   });
 
-  adminAuthFixture('should load products page with all key elements', async ({ adminPage }) => {
-    // Verify all page elements are present
-    await productsPage.verifyPageElements();
-    
-    // Verify specific critical elements
-    await expect(adminPage.locator(productsPage.pageTitle)).toBeVisible();
-    await expect(adminPage.locator(productsPage.addProductButton)).toBeVisible();
-    await expect(adminPage.locator(productsPage.searchInput)).toBeVisible();
-    
-    console.log('✓ Products page loaded with all key elements');
+  test('lists the store products', async () => {
+    await products.expectLoaded();
+    expect(await products.rowCountValue()).toBeGreaterThan(0);
   });
 
-  adminAuthFixture('should handle search functionality', async ({ adminPage }) => {
-    // Test search functionality
-    await productsPage.search('test product');
-    await expect(adminPage.locator(productsPage.searchInput)).toHaveValue('test product');
-    
-    // Clear search
-    await productsPage.clearSearch();
-    await expect(adminPage.locator(productsPage.searchInput)).toHaveValue('');
-    
-    console.log('✓ Search functionality works');
+  test('search narrows the grid and survives a reload', async ({ page }) => {
+    /* By SKU, which the old list query did not search at all — a merchant pasting a SKU from a
+     * packing slip got no results even though the SKU was rendered in every row. */
+    await products.search('BCA-AUD');
+
+    /*
+     * Asserting what came back rather than that the count fell. A before/after comparison races
+     * any other spec adding or removing a product, and "every row matches the term" is the
+     * stronger claim anyway.
+     */
+    const skus = await products.visibleSkus();
+    expect(skus.length).toBeGreaterThan(0);
+    for (const sku of skus) expect(sku).toContain('BCA-AUD');
+    expect(page.url()).toContain('search=BCA-AUD');
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+    expect(await products.visibleSkus()).toEqual(skus);
   });
 
-  adminAuthFixture('should handle filter functionality', async ({ adminPage }) => {
-    // The Mantine Selects are driven by their visible option labels, not by
-    // the underlying value strings a native <select> would take.
-    await productsPage.filterByStatus('Active');
-    await productsPage.filterByStock('In Stock');
-    
-    // Test advanced filters
-    await productsPage.openAdvancedFilters();
-    // Scoped to the modal heading: the button that opens it carries the same
-    // words and stays on screen behind it.
-    await expect(adminPage.getByRole('heading', { name: 'Advanced Filters' })).toBeVisible();
-    await productsPage.closeAdvancedFilters();
-    
-    console.log('✓ Filter functionality works');
-  });
+  test('every saved view badge matches the rows it opens', async () => {
+    /*
+     * The counts label the tabs, so a badge that disagrees with its own list is worse than no
+     * badge. "Needs attention" in particular used to count `completeness_score < 8` while the tab
+     * filtered on missing images.
+     */
+    for (const label of ['Low stock', 'Out of stock', 'Needs attention', 'No cost']) {
+      await products.selectView(label);
 
-  adminAuthFixture('should handle sorting functionality', async () => {
-    // Test sorting
-    await productsPage.sortBy('Name');
-    await productsPage.toggleSortOrder();
-    
-    console.log('✓ Sorting functionality works');
-  });
-
-  adminAuthFixture('should handle actions menu and modals', async ({ adminPage }) => {
-    // Test export modal
-    await productsPage.openExportModal();
-    await expect(adminPage.locator('text=Export Format')).toBeVisible();
-    await productsPage.closeModal();
-    
-    // Test import modal
-    await productsPage.openImportModal();
-    await expect(adminPage.locator('text=Select file')).toBeVisible();
-    await productsPage.closeModal();
-    
-    console.log('✓ Actions menu and modals work');
-  });
-
-  adminAuthFixture('should handle add product functionality', async ({ adminPage }) => {
-    // This used to assert navigation to `/admin/products/add`, a route that has
-    // never existed -- so the test passed while the button led to a page
-    // reading "Product not found". It now asserts the destination renders a
-    // usable form, which is the thing the merchant actually needs.
-    await productsPage.clickAddProduct();
-    await adminPage.waitForURL('/admin/products/new');
-
-    await expect(adminPage.getByLabel('Product name')).toBeVisible();
-    await expect(adminPage.getByLabel('SKU')).toBeVisible();
-    await expect(adminPage.getByRole('button', { name: /create product/i })).toBeVisible();
-
-    // The slug is proposed from the name and must stop proposing once edited.
-    await adminPage.getByLabel('Product name').fill('Alpine Wool Overshirt');
-    await expect(adminPage.getByLabel('URL slug')).toHaveValue('alpine-wool-overshirt');
-
-    // Navigate back to products page
-    await productsPage.goto();
-
-    console.log('✓ Add Product navigation works');
-  });
-
-  adminAuthFixture('should handle refresh functionality', async ({ adminPage }) => {
-    // Test refresh
-    await productsPage.clickRefresh();
-    await expect(adminPage.locator(productsPage.pageTitle)).toBeVisible();
-    
-    console.log('✓ Refresh functionality works');
-  });
-
-  adminAuthFixture('should handle product interactions', async ({ adminPage }) => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      console.log(`Found ${productCount} products`);
-      
-      // Test product selection
-      await productsPage.selectProduct(0);
-      
-      // Test product actions menu
-      await productsPage.openProductActionMenu(0);
-      await adminPage.click('body'); // Close menu
-      
-      // Test product editing navigation
-      await productsPage.editFirstProduct();
-      await adminPage.waitForURL(/\/admin\/products\/[^\/]+$/);
-      
-      // Navigate back
-      await productsPage.goto();
-      
-      console.log('✓ Product interactions work');
-    } else {
-      // Test empty state
-      const isEmpty = await productsPage.isEmptyState();
-      console.log(`✓ Empty state detected: ${isEmpty}`);
+      /*
+       * Re-read the badge and the rows together until they agree. Both move at once when another
+       * spec adds or removes a product, so a single snapshot can catch them mid-flight; a badge
+       * that is genuinely wrong never settles and this still fails.
+       */
+      await expect
+        .poll(async () => (await products.badgeMatchesRows(label)) ? 'match' : 'mismatch', {
+          message: `the "${label}" badge should match the rows it opens`,
+          timeout: 8000
+        })
+        .toBe('match');
     }
   });
 
-  adminAuthFixture('should handle pagination', async () => {
-    const hasPagination = await productsPage.hasPagination();
-    
-    if (hasPagination) {
-      console.log('✓ Pagination found');
-      
-      // Test pagination navigation
-      const nextSuccess = await productsPage.goToNextPage();
-      if (nextSuccess) {
-        await productsPage.goToPrevPage();
-      }
-    } else {
-      console.log('✓ No pagination needed');
-    }
+  test('a view is in the URL and can be linked to', async ({ page }) => {
+    await products.selectView('Low stock');
+    expect(page.url()).toContain('view=low_stock');
+
+    const linked = page.url();
+
+    /*
+     * The claim is that the URL carries the view, so a colleague opening the link sees the same
+     * *list* — not the same number of rows.
+     *
+     * This compared `rowCountValue()` before and against after the reload, which fails whenever
+     * another spec adds or removes a product in between. It did, once in a full parallel run, and
+     * passed in isolation — the same flakiness class the badge assertions elsewhere in this file
+     * were rewritten to avoid. A count is the wrong evidence for a claim about filters.
+     *
+     * So: the view survives the round trip, the tab is still the selected one, and the badge still
+     * agrees with the rows — which is the invariant that would actually be false if the URL did not
+     * carry the filter.
+     */
+    await page.goto(linked);
+    await page.waitForSelector('table tbody tr');
+
+    expect(page.url()).toContain('view=low_stock');
+    await expect(
+      page.locator('[role=tab][aria-selected="true"]').filter({ hasText: 'Low stock' })
+    ).toHaveCount(1);
+
+    await expect
+      .poll(async () => ((await products.badgeMatchesRows('Low stock')) ? 'match' : 'mismatch'), {
+        message: 'the linked view should show the rows its badge counts',
+        timeout: 8000
+      })
+      .toBe('match');
   });
 
-  adminAuthFixture('should handle bulk actions', async ({ adminPage }) => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Select a product
-      await productsPage.selectProduct(0);
-      
-      // Test bulk actions
-      await productsPage.openBulkActionsModal();
-      await expect(adminPage.getByText(/\d+ products? selected/)).toBeVisible();
-      await productsPage.closeModal();
-      
-      console.log('✓ Bulk actions work');
-    } else {
-      console.log('✓ No products to test bulk actions');
-    }
+  test('column headings sort, and say so to assistive technology', async ({ page }) => {
+    await products.sortBy('Price');
+
+    expect(page.url()).toContain('sort_by=price');
+    const sorted = page.locator('th[aria-sort]:not([aria-sort="none"])');
+    await expect(sorted).toHaveCount(1);
+    expect(await sorted.getAttribute('aria-sort')).toMatch(/ascending|descending/);
+
+    /* Clicking again reverses rather than re-sorting the same way. */
+    const first = await sorted.getAttribute('aria-sort');
+    await products.sortBy('Price');
+    const second = await page
+      .locator('th[aria-sort]:not([aria-sort="none"])')
+      .getAttribute('aria-sort');
+    expect(second).not.toBe(first);
   });
 
-  adminAuthFixture('should test all interactive elements', async () => {
-    const stats = await productsPage.testInteractiveElements();
-    console.log(`✓ Interactive elements test - ${stats.accessible}/${stats.total} accessible`);
-    
-    // Verify minimum number of interactive elements
-    expect(stats.accessible).toBeGreaterThan(5);
+  test('a price edited in the grid is saved', async ({ page }) => {
+    const before = await products.cellText('Cost', 0);
+
+    await products.editCell('Cost', 0, '77.77');
+
+    /* Reload rather than trusting the optimistic value: the whole point of the write is that it
+     * reaches the database. */
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+    expect(await products.cellText('Cost', 0)).toContain('77.77');
+
+    /* Put it back, so the suite can run twice. */
+    const restore = (before ?? '').replace(/[^0-9.]/g, '') || '0';
+    await products.editCell('Cost', 0, restore);
+  });
+
+  test('selecting rows offers bulk actions scoped to the filter', async ({ page }) => {
+    expect(await page.locator(products.bulkBar).count()).toBe(0);
+
+    await products.selectRow(0);
+    expect(await products.bulkBarVisible()).toBe(true);
+
+    /* The escalation from "this page" to "everything matching", which is the only kind of
+     * select-all that matters once a catalogue is bigger than a page. */
+    await expect(page.getByRole('button', { name: /Select all \d+ matching/ })).toBeVisible();
+  });
+
+  test('the add product page exists and creates a draft', async ({ page }) => {
+    /*
+     * Both "Add product" buttons used to navigate to a route nothing served, so a new store's
+     * very first click rendered "Product not found".
+     */
+    await page.click('a:has-text("Add product")');
+    await page.waitForURL(/\/admin\/products\/new/);
+    await expect(page.getByLabel('Product name')).toBeVisible();
+
+    const sku = `E2E-${Date.now().toString(36).toUpperCase()}`;
+    await page.getByLabel('Product name').fill('End to end test product');
+    await page.getByLabel('SKU').fill(sku);
+    await page.getByLabel('Price').fill('12.50');
+    await page.getByRole('button', { name: 'Save and edit' }).click();
+
+    /* Landing on the detail page proves the product was created and has an id. */
+    await page.waitForURL(/\/admin\/products\/[0-9a-f-]{36}/, { timeout: 20000 });
+
+    /* And it is in the catalogue. */
+    await products.goto();
+    await products.search(sku);
+    expect(await products.rowCountValue()).toBe(1);
+
+    /* Clean up through the UI, which also exercises the delete path. */
+    await products.openRowMenu(0);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    await page.waitForTimeout(1500);
+  });
+
+  test('export returns a CSV of the current view', async ({ page }) => {
+    /*
+     * The old suite asserted the export modal opened. The route did not exist, so the download
+     * never happened and the test passed anyway.
+     */
+    const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: /Export this view/ }).click();
+
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^products-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  test('import previews before it writes', async ({ page }) => {
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: /Import from CSV/ }).click();
+    await expect(page.getByText('Import products from CSV')).toBeVisible();
+
+    /* The import button stays disabled until a preview has run, which is the guard that stops a
+     * mismapped file rewriting a catalogue. */
+    await expect(page.getByRole('button', { name: /^Import/ })).toBeDisabled();
+  });
+
+  test('the grid is reachable by keyboard', async ({ page }) => {
+    /* `/` focuses search the way it does in every other tool a merchant uses. */
+    await page.keyboard.press('/');
+    await expect(page.locator(products.searchInput)).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    const focused = await page.evaluate(() => document.activeElement?.tagName);
+    expect(focused).toBeTruthy();
+  });
+
+  test('an uploaded image reaches the product and survives a reload', async ({ page }) => {
+    /*
+     * The upload handler never uploaded anything. It called URL.createObjectURL(file) — a blob:
+     * URL scoped to the tab that made it — wrote that string into the product's gallery, and
+     * reported "image(s) uploaded successfully". The thumbnail appeared, so it looked like it had
+     * worked; the image was gone on reload and had never resolved for any other visitor.
+     *
+     * So the assertion is not that a thumbnail appeared. It is that the URL the product now holds
+     * serves image bytes, from a fresh request, after the page that uploaded it is gone.
+     */
+    await page.click('table tbody tr:first-child a');
+    await page.waitForURL(/\/admin\/products\/[0-9a-f-]{36}/, { timeout: 20000 });
+
+    await page.getByRole('button', { name: 'Upload Images' }).click();
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles({ name: 'e2e-upload.png', mimeType: 'image/png', buffer: pngFixture() });
+    await page.getByRole('button', { name: /^Upload \(1\)/ }).click();
+
+    /* The URL is real and public — no session, no referer, a request the storefront would make. */
+    const src = await page
+      .locator('img[src^="/api/media/"]')
+      .first()
+      .getAttribute('src', { timeout: 20000 });
+    expect(src).toMatch(/^\/api\/media\/[0-9a-f-]{36}$/);
+
+    const served = await page.request.get(src);
+    expect(served.status()).toBe(200);
+    expect(served.headers()['content-type']).toBe('image/png');
+    expect((await served.body()).length).toBeGreaterThan(0);
+
+    /* And it is immutable rather than re-fetched on every storefront page view. */
+    expect(served.headers()['cache-control']).toContain('immutable');
+
+    /*
+     * Uploading stores the image; saving is what attaches it to the product. Both halves have to
+     * hold for the merchant's journey to work, and the second is where the old implementation's
+     * blob: URL was written into the database as though it meant something.
+     */
+    await page.getByRole('button', { name: 'Save Changes' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator(`img[src="${src}"]`).first()).toBeVisible({ timeout: 20000 });
+
+    /*
+     * Clean up through the delete path, which also asserts the thing that makes deletion safe:
+     * removing an image takes its URL off every product that used it, so the suite cannot leave a
+     * demo product pointing at a URL that now 404s.
+     */
+    const token = await page.evaluate(() => window.localStorage.getItem('admin_token'));
+    const deleted = await page.request.delete(`/api/admin/media/${src.split('/').pop()}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(deleted.status()).toBe(200);
+    expect((await deleted.json()).detached_from_products).toBe(1);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator(`img[src="${src}"]`)).toHaveCount(0);
+  });
+
+  test('row checkboxes and action buttons are named', async ({ page }) => {
+    /*
+     * A screen-reader user used to hear "checkbox" twenty-five times with no way to tell which
+     * product they were selecting.
+     */
+    const firstCheckbox = page.locator(products.rowCheckbox).first();
+    expect(await firstCheckbox.getAttribute('aria-label')).toMatch(/^Select /);
+
+    const firstMenu = page
+      .locator(products.productRows)
+      .first()
+      .getByRole('button', { name: /^Actions for/ });
+    await expect(firstMenu).toBeVisible();
   });
 });
 
-adminAuthFixture.describe('Admin Products Page - Product Edit Workflow', () => {
-  let productsPage;
-  let productEditPage;
+/**
+ * A genuine 8x8 PNG, assembled here rather than committed as a binary fixture.
+ *
+ * The upload route identifies a file from its own bytes, so a placeholder with a PNG extension
+ * would be rejected — correctly — and the test would prove nothing about the happy path.
+ *
+ * @returns The complete file.
+ */
+function pngFixture() {
+  const table = [];
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c;
+  }
+  const crc32 = (buf) => {
+    let crc = 0xffffffff;
+    for (const b of buf) crc = table[(crc ^ b) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const typed = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(typed));
+    return Buffer.concat([len, typed, crc]);
+  };
 
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    productsPage = new AdminProductsPage(adminPage);
-    productEditPage = new AdminProductEditPage(adminPage);
-    await productsPage.goto();
-    await productsPage.waitForPageLoad();
-  });
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(8, 0);
+  ihdr.writeUInt32BE(8, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
 
-  adminAuthFixture('should navigate to product edit page and test tabs', async () => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Navigate to first product edit page
-      await productsPage.editFirstProduct();
-      await productEditPage.waitForPageLoad();
-      
-      // Verify page elements
-      await productEditPage.verifyPageElements();
-      
-      // Test tab navigation
-      await productEditPage.testTabNavigation();
-      
-      console.log('✓ Product edit page navigation and tabs work');
-    } else {
-      console.log('✓ No products to test editing');
-    }
-  });
+  /* Pixel values derived from the clock so each run uploads distinct bytes. Content addressing
+   * means a fixed image would deduplicate against the previous run and this test would stop
+   * exercising the insert. */
+  const seed = Date.now() % 251;
+  const rows = Array.from({ length: 8 }, (_, y) =>
+    Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: 24 }, (_, i) => (seed + y * 8 + i) % 256))])
+  );
 
-  adminAuthFixture('should test product edit form interactions', async ({ adminPage }) => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Navigate to edit page
-      await productsPage.editFirstProduct();
-      await productEditPage.waitForPageLoad();
-      
-      // Test form fields (without saving)
-      await productEditPage.testAllFormFields();
-      
-      // Test other interactions
-      const hasAttention = await productEditPage.hasAttentionAlerts();
-      console.log(`✓ Product has attention alerts: ${hasAttention}`);
-      
-      // Test back navigation
-      await productEditPage.goBack();
-      await expect(adminPage).toHaveURL('/admin/products');
-      
-      console.log('✓ Product edit form interactions work');
-    } else {
-      console.log('✓ No products to test form interactions');
-    }
-  });
-
-  adminAuthFixture('should test product analytics tab', async () => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Navigate to edit page
-      await productsPage.editFirstProduct();
-      await productEditPage.waitForPageLoad();
-      
-      // Test analytics tab
-      await productEditPage.verifyAnalyticsContent();
-      
-      console.log('✓ Product analytics tab works');
-    } else {
-      console.log('✓ No products to test analytics');
-    }
-  });
-
-  adminAuthFixture('should test product advanced settings tab', async () => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Navigate to edit page
-      await productsPage.editFirstProduct();
-      await productEditPage.waitForPageLoad();
-      
-      // Test advanced settings tab
-      await productEditPage.verifyAdvancedSettingsContent();
-      
-      console.log('✓ Product advanced settings tab works');
-    } else {
-      console.log('✓ No products to test advanced settings');
-    }
-  });
-
-  adminAuthFixture('should test product preview functionality', async ({ adminPage }) => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Navigate to edit page
-      await productsPage.editFirstProduct();
-      await productEditPage.waitForPageLoad();
-      
-      // Test preview (if product is active)
-      const isActive = await productEditPage.isProductActive();
-      if (isActive) {
-        // Note: Preview opens in new tab, so we just test the button exists
-        await expect(adminPage.locator(productEditPage.previewButton)).toBeVisible();
-      }
-      
-      console.log('✓ Product preview functionality tested');
-    } else {
-      console.log('✓ No products to test preview');
-    }
-  });
-
-  adminAuthFixture('should test product deletion workflow', async ({ adminPage }) => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // Navigate to edit page
-      await productsPage.editFirstProduct();
-      await productEditPage.waitForPageLoad();
-      
-      // Test delete modal (without actually deleting)
-      await productEditPage.openDeleteModal();
-      // The modal heading, not the confirm button inside it — both read
-      // "Delete Product".
-      await expect(adminPage.getByRole('heading', { name: 'Delete Product' })).toBeVisible();
-      await productEditPage.cancelDelete();
-      
-      console.log('✓ Product deletion workflow tested');
-    } else {
-      console.log('✓ No products to test deletion');
-    }
-  });
-});
-
-adminAuthFixture.describe('Admin Products Page - Edge Cases and Error Handling', () => {
-  let productsPage;
-
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    productsPage = new AdminProductsPage(adminPage);
-    await productsPage.goto();
-    await productsPage.waitForPageLoad();
-  });
-
-  adminAuthFixture('should handle responsive design', async ({ adminPage }) => {
-    // Test different viewport sizes
-    await adminPage.setViewportSize({ width: 1200, height: 800 });
-    await expect(adminPage.locator(productsPage.pageTitle)).toBeVisible();
-    
-    await adminPage.setViewportSize({ width: 768, height: 1024 });
-    await expect(adminPage.locator(productsPage.pageTitle)).toBeVisible();
-    
-    await adminPage.setViewportSize({ width: 375, height: 667 });
-    await expect(adminPage.locator(productsPage.pageTitle)).toBeVisible();
-    
-    // Reset viewport
-    await adminPage.setViewportSize({ width: 1280, height: 720 });
-    
-    console.log('✓ Responsive design tested');
-  });
-
-  adminAuthFixture('should handle error states', async ({ adminPage }) => {
-    // Test non-existent product. `networkidle` never settles here — the page
-    // keeps a request in flight while it resolves the missing id — so wait for
-    // the DOM instead, which is what the assertion below actually needs.
-    await adminPage.goto('/admin/products/non-existent-product', { waitUntil: 'domcontentloaded' });
-    await adminPage.waitForTimeout(3000);
-    
-    // Should handle error gracefully
-    const hasError = await adminPage.locator('text=Error, text=Not Found').isVisible();
-    console.log(`✓ Error handling tested - Error shown: ${hasError}`);
-    
-    // Navigate back to products
-    await productsPage.goto();
-  });
-
-  adminAuthFixture('should handle keyboard navigation', async ({ adminPage }) => {
-    // Test keyboard navigation on search input
-    await adminPage.focus(productsPage.searchInput);
-    await adminPage.keyboard.type('test');
-    await adminPage.keyboard.press('Tab');
-    
-    // Test escape key functionality
-    await productsPage.openAdvancedFilters();
-    await adminPage.keyboard.press('Escape');
-    
-    console.log('✓ Keyboard navigation tested');
-  });
-});
-
-// Test suite for comprehensive workflow testing
-adminAuthFixture.describe('Admin Products Page - Complete Workflows', () => {
-  let productsPage;
-
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    productsPage = new AdminProductsPage(adminPage);
-    await productsPage.goto();
-    await productsPage.waitForPageLoad();
-  });
-
-  adminAuthFixture('should complete full product management workflow', async ({ adminPage }) => {
-    // 1. Search for products
-    await productsPage.search('test');
-    
-    // 2. Apply filters
-    await productsPage.filterByStatus('Active');
-    
-    // 3. Change sorting
-    await productsPage.sortBy('Name');
-    
-    // 4. Test actions menu
-    await productsPage.openActionsMenu();
-    await adminPage.click('body'); // Close menu
-    
-    // 5. Test refresh
-    await productsPage.clickRefresh();
-    
-    // 6. Clear filters
-    await productsPage.clearSearch();
-    
-    // 7. Test pagination if available
-    const hasPagination = await productsPage.hasPagination();
-    if (hasPagination) {
-      await productsPage.goToNextPage();
-      await productsPage.goToPrevPage();
-    }
-    
-    console.log('✓ Complete product management workflow tested');
-  });
-
-  adminAuthFixture('should handle bulk operations workflow', async ({ adminPage }) => {
-    const productCount = await productsPage.getProductCount();
-    
-    if (productCount > 0) {
-      // 1. Select multiple products
-      await productsPage.selectProduct(0);
-      if (productCount > 1) {
-        await productsPage.selectProduct(1);
-      }
-      
-      // 2. Open bulk actions
-      await productsPage.openBulkActionsModal();
-      
-      // 3. Test bulk actions (without executing)
-      await expect(adminPage.getByRole('button', { name: 'List Products', exact: true })).toBeVisible();
-      await expect(adminPage.getByRole('button', { name: 'Unlist Products', exact: true })).toBeVisible();
-      
-      // 4. Close modal
-      await productsPage.closeModal();
-      
-      console.log('✓ Bulk operations workflow tested');
-    } else {
-      console.log('✓ No products for bulk operations workflow');
-    }
-  });
-
-  adminAuthFixture('should handle export/import workflow', async ({ adminPage }) => {
-    // 1. Test export workflow
-    await productsPage.openExportModal();
-    // "CSV" is an option inside the Export Format Select, which is collapsed
-    // until opened; asserting on the collapsed option asserted on a hidden
-    // node. The field label is what is actually on screen.
-    await expect(adminPage.getByText('Export Format')).toBeVisible();
-    // Same as CSV above: an option inside a collapsed Select is hidden.
-    await expect(adminPage.getByText('Export Format')).toBeVisible();
-    await productsPage.closeModal();
-    
-    // 2. Test import workflow
-    await productsPage.openImportModal();
-    await expect(adminPage.getByRole('heading', { name: 'Import Products' })).toBeVisible();
-    await productsPage.closeModal();
-    
-    console.log('✓ Export/import workflow tested');
-  });
-});
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(Buffer.concat(rows))),
+    chunk('IEND', Buffer.alloc(0))
+  ]);
+}

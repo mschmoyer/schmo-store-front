@@ -463,17 +463,6 @@
   border-bottom-color: currentColor;
 }
 
-/*
- * A centred row of buttons under a section heading. Wraps on narrow screens
- * rather than shrinking the controls below a comfortable tap target.
- */
-.actionRow {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: var(--st-space-3);
-}
-
 .divider {
   border: 0;
   border-top: 1px solid var(--st-border);

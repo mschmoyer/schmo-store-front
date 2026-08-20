@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { IconRuler2, IconTruck, IconWeight } from '@tabler/icons-react';
 
 import { ProductSchema } from '@/components/product/ProductSchema';
@@ -21,6 +21,8 @@ import {
 
 import { loadStorefront, type SearchParams } from '../../../_lib/load';
 import { getProduct, getRelatedProducts, getStoreBySlug } from '../../../_lib/queries';
+import { resolveRetiredSlug } from '@/lib/catalog/slug';
+import { absoluteUrl, storefrontUrl } from '@/lib/seo/siteUrl';
 import { sanitizeRichText, toParagraphs } from '../../../_lib/html';
 import {
   formatDimensions,
@@ -31,9 +33,6 @@ import {
 } from '../../../_lib/present';
 import styles from '@/components/store/product/ProductDetail.module.css';
 import sectionStyles from '@/components/store/sections/Sections.module.css';
-import { ProductMedia } from '@/components/store/product/ProductMedia';
-import { resolveVariant } from '@/lib/catalog/variants';
-import { getProductOptions, getProductVariants } from '@/lib/catalog/variants.db';
 
 interface ProductPageProps {
   params: Promise<{ storeSlug: string; productId: string }>;
@@ -56,14 +55,28 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
   const description =
     product.metaDescription || product.shortDescription || product.longDescription || '';
 
+  const canonical = storefrontUrl(storeSlug, `/product/${product.slug}`);
+
   return {
     title: product.metaTitle || product.name,
     description: description.slice(0, 300),
+    /*
+     * Its own URL, not the platform's marketing homepage.
+     *
+     * The root layout sets `alternates.canonical` to the site root and Next inherits `alternates`
+     * down the tree, so without this every product page on every merchant's storefront declared
+     * itself a duplicate of rebelshops.com.
+     *
+     * Built from `product.slug` rather than the incoming `productId`, so the id form of the URL and
+     * a retired slug both point at the one canonical address.
+     */
+    alternates: { canonical },
     openGraph: {
       title: product.name,
       description: description.slice(0, 300),
       type: 'website',
-      ...(product.featuredImageUrl ? { images: [product.featuredImageUrl] } : {}),
+      url: canonical,
+      ...(product.featuredImageUrl ? { images: [absoluteUrl(product.featuredImageUrl)] } : {}),
     },
   };
 }
@@ -92,31 +105,24 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   const { store, theme } = result.data;
   const product = await getProduct(store.id, productId);
-  if (!product) notFound();
+  if (!product) {
+    /*
+     * Before giving up, check whether this URL used to belong to a product.
+     *
+     * `product_slug_history`, the unique index on it, the writes from the edit and import routes,
+     * and `resolveRetiredSlug` itself all existed and nothing called any of it — so renaming a
+     * product still 404'd every link, bookmark and search result pointing at the old URL, which is
+     * the entire loss migration 025 built the table to prevent. A 301 is what tells a search engine
+     * to move its ranking across rather than drop the page.
+     */
+    const currentSlug = await resolveRetiredSlug(store.id, productId);
+    if (currentSlug) {
+      permanentRedirect(`/store/${storeSlug}/product/${currentSlug}`);
+    }
+    notFound();
+  }
 
   const related = await getRelatedProducts(product, 4);
-
-  // Options and variants. A product with neither is the overwhelming majority
-  // and takes the original, fully server-rendered path below -- which keeps
-  // working with JavaScript off.
-  const [productOptions, storedVariants] = await Promise.all([
-    getProductOptions(store.id, product.id),
-    getProductVariants(store.id, product.id),
-  ]);
-
-  // Resolved here, on the server, through the same function the checkout
-  // re-prices with. The panel renders what it is given rather than computing a
-  // price of its own, so the displayed price and the charged price come from
-  // one implementation.
-  const resolvedVariants = storedVariants.map((entry) =>
-    resolveVariant(entry, {
-      basePriceCents: Math.round(product.price * 100),
-      salePriceCents: null,
-      trackInventory: product.trackInventory,
-      allowBackorder: product.allowBackorder,
-    }),
-  );
-  const hasOptions = productOptions.length > 0 && resolvedVariants.length > 0;
 
   const state = stockState(product);
   const purchasable = isPurchasable(product);
@@ -137,79 +143,6 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
     product.trackInventory && !product.allowBackorder
       ? Math.max(product.stockQuantity, 1)
       : 99;
-
-  // The buy column's pieces that do not depend on variant selection. They are
-  // shared between the plain-product layout and the optioned-product layout
-  // (where the gallery and panel are wired together in a client component and
-  // these are handed in as server-rendered nodes).
-  const titleBlock = (
-    <div className={styles.titleBlock}>
-      {product.categoryName ? (
-        <span className={styles.category}>{product.categoryName}</span>
-      ) : null}
-      <h1>{product.name}</h1>
-      <span className={styles.sku}>SKU {product.sku}</span>
-    </div>
-  );
-
-  const shortDescription = product.shortDescription ? (
-    <p className={styles.summary}>{product.shortDescription}</p>
-  ) : null;
-
-  const buyFacts = (
-    <>
-      {weight || dimensions || product.requiresShipping ? (
-        <div className={styles.facts}>
-          {weight ? (
-            <div className={styles.fact}>
-              <span className={styles.factLabel}>
-                <IconWeight size={15} aria-hidden="true" />
-                Shipping weight
-              </span>
-              <span className={styles.factValue}>{weight}</span>
-            </div>
-          ) : null}
-          {dimensions ? (
-            <div className={styles.fact}>
-              <span className={styles.factLabel}>
-                <IconRuler2 size={15} aria-hidden="true" />
-                Boxed size
-              </span>
-              <span className={styles.factValue}>{dimensions}</span>
-            </div>
-          ) : null}
-          <div className={styles.fact}>
-            <span className={styles.factLabel}>
-              <IconTruck size={15} aria-hidden="true" />
-              Delivery
-            </span>
-            <span className={styles.factValue}>
-              {product.requiresShipping ? 'Ships to you' : 'No shipping needed'}
-            </span>
-          </div>
-        </div>
-      ) : null}
-
-      {product.requiresShipping ? (
-        <Notice icon={<IconTruck size={16} />}>
-          Shipping is calculated at checkout from your delivery address — we do not estimate it
-          here, because a guess would be wrong as often as it was right.
-        </Notice>
-      ) : (
-        <Notice icon={<IconTruck size={16} />}>
-          No shipping — nothing physical ships for this item.
-        </Notice>
-      )}
-
-      {product.tags.length > 0 ? (
-        <div className={styles.tags}>
-          {product.tags.slice(0, 8).map((tag) => (
-            <Pill key={tag}>{tag}</Pill>
-          ))}
-        </div>
-      ) : null}
-    </>
-  );
 
   return (
     <StorefrontShell {...result.data}>
@@ -248,55 +181,86 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
             </span>
           </nav>
 
-          {hasOptions ? (
-            <ProductMedia
-              images={images}
-              productName={product.name}
-              sku={product.sku}
-              productId={product.id}
-              options={productOptions}
-              variants={resolvedVariants}
-              currency={store.currency}
-              cartHref={`${base}/cart`}
-              header={
-                <>
-                  {titleBlock}
-                  {shortDescription}
-                </>
-              }
-              footer={buyFacts}
-            />
-          ) : (
-            <div className={styles.layout}>
-              <ProductGallery images={images} name={product.name} sku={product.sku} />
+          <div className={styles.layout}>
+            <ProductGallery images={images} name={product.name} sku={product.sku} />
 
-              <div className={styles.buy}>
-                {titleBlock}
-
-                <div className={styles.priceRow}>
-                  <StorePrice
-                    value={product.price}
-                    compareAt={product.compareAtPrice}
-                    currency={store.currency}
-                    size="lg"
-                  />
-                  <StockIndicator state={state} quantity={product.stockQuantity} />
-                </div>
-
-                {shortDescription}
-
-                <BuyBox
-                  productId={product.id}
-                  productName={product.name}
-                  maxQuantity={maxQuantity}
-                  disabled={!purchasable}
-                  cartHref={`${base}/cart`}
-                />
-
-                {buyFacts}
+            <div className={styles.buy}>
+              <div className={styles.titleBlock}>
+                {product.categoryName ? (
+                  <span className={styles.category}>{product.categoryName}</span>
+                ) : null}
+                <h1>{product.name}</h1>
+                <span className={styles.sku}>SKU {product.sku}</span>
               </div>
+
+              <div className={styles.priceRow}>
+                <StorePrice
+                  value={product.price}
+                  compareAt={product.compareAtPrice}
+                  currency={store.currency}
+                  size="lg"
+                />
+                <StockIndicator state={state} quantity={product.stockQuantity} />
+              </div>
+
+              {product.shortDescription ? (
+                <p className={styles.summary}>{product.shortDescription}</p>
+              ) : null}
+
+              <BuyBox
+                productId={product.id}
+                productName={product.name}
+                maxQuantity={maxQuantity}
+                disabled={!purchasable}
+                cartHref={`${base}/cart`}
+              />
+
+              {weight || dimensions || product.requiresShipping ? (
+                <div className={styles.facts}>
+                  {weight ? (
+                    <div className={styles.fact}>
+                      <span className={styles.factLabel}>
+                        <IconWeight size={15} aria-hidden="true" />
+                        Shipping weight
+                      </span>
+                      <span className={styles.factValue}>{weight}</span>
+                    </div>
+                  ) : null}
+                  {dimensions ? (
+                    <div className={styles.fact}>
+                      <span className={styles.factLabel}>
+                        <IconRuler2 size={15} aria-hidden="true" />
+                        Boxed size
+                      </span>
+                      <span className={styles.factValue}>{dimensions}</span>
+                    </div>
+                  ) : null}
+                  <div className={styles.fact}>
+                    <span className={styles.factLabel}>
+                      <IconTruck size={15} aria-hidden="true" />
+                      Delivery
+                    </span>
+                    <span className={styles.factValue}>
+                      {product.requiresShipping ? 'Ships to you' : 'No shipping needed'}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              <Notice icon={<IconTruck size={16} />}>
+                Shipping is calculated at checkout from your delivery address — we do not estimate
+                it here, because a guess would be wrong as often as it was right.
+              </Notice>
+
+              {product.tags.length > 0 ? (
+                <div className={styles.tags}>
+                  {product.tags.slice(0, 8).map((tag) => (
+                    <Pill key={tag}>{tag}</Pill>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          )}
+          </div>
 
           {descriptionHtml || paragraphs.length > 0 ? (
             <div className={styles.description}>

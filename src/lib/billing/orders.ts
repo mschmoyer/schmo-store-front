@@ -183,8 +183,8 @@ export async function createPaidOrder(input: CreatePaidOrderInput): Promise<Crea
       await client.query(
         `INSERT INTO order_items (
             store_id, order_id, product_id, product_sku, product_name, product_image_url,
-            unit_price, quantity, total_price, variant_id, variant_title
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            unit_price, quantity, total_price
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           input.storeId,
           orderId,
@@ -195,12 +195,6 @@ export async function createPaidOrder(input: CreatePaidOrderInput): Promise<Crea
           centsToDecimalString(item.unitPriceCents),
           item.quantity,
           centsToDecimalString(item.lineTotalCents),
-          item.variantId,
-          // Denormalised on purpose. `variant_id` is ON DELETE SET NULL, so a
-          // discontinued variant must not take the record of what was bought
-          // with it -- an order confirmation from three years ago still has to
-          // say "Alpine Green / Medium".
-          item.variantTitle,
         ]
       );
 

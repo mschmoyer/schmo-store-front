@@ -29,44 +29,53 @@ import {
   IconAlertTriangle,
   IconSettings,
   IconChartBar,
-  IconVersions,
   IconInfoCircle
 } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { attentionLabel } from '@/lib/catalog/attention';
 import ProductEditForm from '@/components/admin/ProductEditForm';
 import ProductAnalytics from '@/components/admin/ProductAnalytics';
-import ProductAdvancedSettings from '@/components/admin/ProductAdvancedSettings';
-import VariantEditor from '@/components/admin/VariantEditor';
 import { Product } from '@/types/database';
 
 interface EnhancedProduct extends Product {
   stock_status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'not_tracked';
   needs_attention: string[];
+  /** The price a shopper pays — sale price where one is set. */
+  effective_price: number;
+  margin_percent: number | null;
+  /** Stock split by the ledger, rather than one number three writers disagreed about. */
+  on_hand: number;
+  committed: number;
+  available: number;
+  /** Fields the merchant has claimed, which the ShipStation sync will not overwrite. */
+  field_locks: string[];
   sales_data: {
     total_sales: number;
     total_revenue: number;
     total_orders: number;
+    gross_profit: number;
     avg_sale_price: number;
-    first_sale_date?: Date;
-    last_sale_date?: Date;
+    units_30d: number;
+    units_90d: number;
+    first_sale_date: string | null;
+    last_sale_date: string | null;
   };
-  analytics: {
-    views: number;
-    cart_adds: number;
-    cart_abandons: number;
-    conversion_rate: number;
-    bounce_rate: number;
-    avg_time_on_page: number;
-  };
-  inventory_history: Array<{
-    change_type: string;
-    quantity_change: number;
-    quantity_after: number;
-    reference_type?: string;
-    reference_id?: string;
-    notes?: string;
-    created_at: Date;
+  /*
+   * `analytics` and `inventory_history` are gone. The first was a stub the route returned as
+   * `{ rows: [] }` — the wrong shape entirely — which rendered `NaN%` in four places and a red
+   * "Needs improvement" verdict computed from `undefined`. The second is replaced by `movements`,
+   * which comes from the ledger and records who moved the stock and why.
+   */
+  movements: Array<{
+    id: string;
+    reason: string;
+    delta: number;
+    balance_after: number;
+    note: string | null;
+    created_at: string;
+    location_name: string;
+    actor_name: string | null;
   }>;
   category_info?: {
     name: string;
@@ -452,6 +461,15 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
             variant="light"
             leftSection={<IconEye size={16} />}
             onClick={handlePreview}
+            /* Enabled for a draft too. Preview is *most* useful before publishing — it is how a
+             * merchant checks a product looks right — and disabling it exactly then, with no
+             * tooltip and no aria-label to say why, made it look broken. The storefront route
+             * already 404s a draft, so the honest thing is to say that in the label. */
+            title={
+              product.is_active
+                ? 'Open this product on your storefront'
+                : 'Drafts are not on the storefront yet — publish to see this live'
+            }
             disabled={!product.is_active}
           >
             Preview
@@ -479,7 +497,7 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
           <Stack gap="xs">
             {product.needs_attention.map((issue, index) => (
               <Text key={index} size="sm">
-                • {issue.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                • {attentionLabel(issue)}
               </Text>
             ))}
           </Stack>
@@ -492,14 +510,8 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
           <Tabs.Tab value="details" leftSection={<IconEdit size={16} />}>
             Product Details
           </Tabs.Tab>
-          <Tabs.Tab value="variants" leftSection={<IconVersions size={16} />}>
-            Options &amp; Variants
-          </Tabs.Tab>
           <Tabs.Tab value="analytics" leftSection={<IconChartBar size={16} />}>
             Analytics
-          </Tabs.Tab>
-          <Tabs.Tab value="advanced" leftSection={<IconSettings size={16} />}>
-            Advanced Settings
           </Tabs.Tab>
         </Tabs.List>
 
@@ -515,68 +527,17 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
           />
         </Tabs.Panel>
 
-        {/* Options and variants */}
-        <Tabs.Panel value="variants" pt="md">
-          <VariantEditor
-            productId={product.id}
-            productPrice={Number(product.base_price) || 0}
-            productSku={product.sku || ''}
-          />
-        </Tabs.Panel>
-
         {/* Analytics Tab */}
         <Tabs.Panel value="analytics" pt="md">
           <ProductAnalytics
-            productId={product.id}
             salesData={product.sales_data}
-            analytics={product.analytics}
-            inventoryHistory={product.inventory_history}
-            needsAttention={product.needs_attention}
+            movements={product.movements ?? []}
+            effectivePrice={Number(product.effective_price) || 0}
+            costPrice={product.cost_price === null ? null : Number(product.cost_price)}
+            available={Number(product.available) || 0}
           />
         </Tabs.Panel>
 
-        {/* Advanced Settings Tab */}
-        <Tabs.Panel value="advanced" pt="md">
-          <ProductAdvancedSettings
-            discountSettings={{
-              discount_type: product.discount_type,
-              discount_value: product.discount_value
-            }}
-            shippingSettings={{
-              requires_shipping: product.requires_shipping,
-              shipping_class: product.shipping_class,
-              weight: product.weight,
-              weight_unit: product.weight_unit,
-              length: product.length,
-              width: product.width,
-              height: product.height,
-              dimension_unit: product.dimension_unit
-            }}
-            inventorySettings={{
-              track_inventory: product.track_inventory,
-              stock_quantity: product.stock_quantity,
-              low_stock_threshold: product.low_stock_threshold,
-              allow_backorder: product.allow_backorder
-            }}
-            customFields={[]} // Would be loaded from product data
-            onDiscountChange={(settings) => {
-              // Handle discount settings change
-              console.log('Discount settings:', settings);
-            }}
-            onShippingChange={(settings) => {
-              // Handle shipping settings change
-              console.log('Shipping settings:', settings);
-            }}
-            onInventoryChange={(settings) => {
-              // Handle inventory settings change
-              console.log('Inventory settings:', settings);
-            }}
-            onCustomFieldsChange={(fields) => {
-              // Handle custom fields change
-              console.log('Custom fields:', fields);
-            }}
-          />
-        </Tabs.Panel>
       </Tabs>
 
       {/* Delete Confirmation Modal */}

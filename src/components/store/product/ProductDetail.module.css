@@ -145,16 +145,6 @@
   gap: var(--st-space-4);
 }
 
-/*
- * Shown instead of a price when the chosen combination is one this shop does
- * not stock. Rendering a price there would be a guess, and a guess about money
- * is the one thing this codebase does not do.
- */
-.priceUnset {
-  color: var(--st-text-muted);
-  font-size: var(--st-small);
-}
-
 .buyActions {
   display: flex;
   flex-wrap: wrap;

@@ -61,14 +61,6 @@ export function ProductCard({
 
   const discounted = product.compareAtPrice !== null;
 
-  // Variant pricing, when the product has options. `variantMinPrice` is null
-  // for a single-SKU product, which is the overwhelming majority.
-  const priceFrom = product.variantCount > 0 ? product.variantMinPrice : null;
-  const rangeSpans =
-    priceFrom !== null &&
-    product.variantMaxPrice !== null &&
-    product.variantMaxPrice > priceFrom;
-
   return (
     <article className={cx(styles.card, boxed && styles.cardBoxed, soldOut && styles.cardSoldOut)}>
       <div className={styles.media}>
@@ -131,29 +123,11 @@ export function ProductCard({
         </h3>
 
         <div className={styles.meta}>
-          {/*
-            A product with options is quoted from its cheapest variant, with a
-            "from" prefix. Naming a single price for something whose variants
-            run $54 to $96 is misleading in the direction that costs trust at
-            checkout — the shopper finds out on the product page, after they
-            have already decided.
-
-            When every variant costs the same, `from` is false and the card
-            shows one figure: "from $54" on a product with one price would be
-            noise, and slightly evasive noise at that.
-          */}
-          {priceFrom !== null ? (
-            <span className={styles.priceRange}>
-              {rangeSpans ? <span className={styles.priceFrom}>from</span> : null}
-              <StorePrice value={priceFrom} compareAt={null} currency={currency} />
-            </span>
-          ) : (
-            <StorePrice
-              value={product.price}
-              compareAt={product.compareAtPrice}
-              currency={currency}
-            />
-          )}
+          <StorePrice
+            value={product.price}
+            compareAt={product.compareAtPrice}
+            currency={currency}
+          />
           <StockIndicator state={state} quantity={product.stockQuantity} />
         </div>
       </div>

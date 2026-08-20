@@ -69,7 +69,6 @@ export function CouponField({
           couponCode: trimmed,
           cartItems: lines.map((line) => ({
             product_id: line.productId,
-            variant_id: line.variantId,
             name: line.name,
             price: line.price,
             quantity: line.quantity,

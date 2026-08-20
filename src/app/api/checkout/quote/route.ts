@@ -87,10 +87,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         currency: priced.currency,
         items: priced.items.map((item) => ({
           productId: item.productId,
-          // The cart and the order summary have to name the option the shopper
-          // chose, or two lines of the same shirt are indistinguishable.
-          variantId: item.variantId,
-          variantTitle: item.variantTitle,
           sku: item.sku,
           name: item.name,
           quantity: item.quantity,

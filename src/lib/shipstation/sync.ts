@@ -326,10 +326,113 @@ export async function syncInventoryPage(
         added++;
       }
 
+      /*
+       * RECONCILING STOCK, RATHER THAN OVERWRITING IT.
+       *
+       * This used to be `UPDATE products SET stock_quantity = level.available`, which was wrong
+       * twice over.
+       *
+       * ShipStation's `available` is already net of its own allocation, while `stock_quantity`
+       * means *on hand* everywhere else in this codebase — the order trigger subtracts from it as
+       * on-hand, a receipt adds to it as on-hand. Assigning one to the other subtracted allocation
+       * a second time, so stock read low and reorder recommendations over-bought.
+       *
+       * And a blind overwrite left no trace. It was the single largest source of stock movement in
+       * the system and the only one that wrote nothing to the ledger, so a merchant's manual
+       * adjustment simply vanished at the next sync with nothing to explain it.
+       *
+       * On-hand is now reconciled against ShipStation's own `on_hand` through a `sync_correction`
+       * movement, which records the drift instead of hiding it. Allocation lands in `committed`,
+       * the column that means what ShipStation means by it, so `available` — a generated column —
+       * comes out right without anything computing it twice.
+       */
+      const productRow = await client.query<{ id: string }>(
+        'SELECT id FROM products WHERE sku = $1 AND store_id = $2',
+        [level.sku, storeId]
+      );
+
+      const productId = productRow.rows[0]?.id;
+      if (!productId) {
+        /* A SKU ShipStation holds that this store does not carry. Not an error — the catalogue
+         * sync may not have run yet, or the merchant may not list everything they warehouse. */
+        continue;
+      }
+
+      const locationId = await resolveDefaultLocationId(client, storeId);
+
+      /*
+       * The comparison is against the product's total across every location, not the default
+       * location's balance.
+       *
+       * ShipStation reports one on-hand figure per SKU for the whole account. This compared it
+       * against a single location's balance and posted the difference as an authoritative-looking
+       * `sync_correction`, so every unit a merchant had moved to a second location was invented
+       * again on the next pass. Reproduced: 77 at Main plus 40 at Back Room, ShipStation correctly
+       * reporting 117, produced a +40 correction and a total of 157.
+       *
+       * This was unreachable until multi-location became real, which is exactly why it is being
+       * fixed in the same breath as building it.
+       *
+       * The correction still lands at the default location, because ShipStation does not tell us
+       * which of our locations the units are in — `shipstation_warehouse_id` is never populated on
+       * `inventory_locations`, so there is no mapping to reason with. Landing the whole drift on
+       * one location is a known approximation and is stated in the movement's own note rather than
+       * left for someone to infer.
+       */
+      const current = await client.query<{ on_hand: number }>(
+        `SELECT COALESCE(SUM(on_hand), 0)::int AS on_hand
+           FROM inventory_levels
+          WHERE store_id = $1 AND product_id = $2`,
+        [storeId, productId]
+      );
+
+      /* The default location's row is what the correction is posted against, so it is the row that
+       * has to be locked. */
       await client.query(
-        `UPDATE products SET stock_quantity = $1, updated_at = NOW()
-          WHERE sku = $2 AND store_id = $3`,
-        [level.available ?? 0, level.sku, storeId]
+        `SELECT 1 FROM inventory_levels
+          WHERE store_id = $1 AND product_id = $2 AND location_id = $3
+          FOR UPDATE`,
+        [storeId, productId, locationId]
+      );
+
+      const reportedOnHand = level.on_hand ?? level.available ?? 0;
+      const drift = reportedOnHand - (current.rows[0]?.on_hand ?? 0);
+
+      if (drift !== 0) {
+        await client.query(
+          `SELECT post_inventory_movement($1, $2, $3, 'sync_correction'::inventory_reason,
+                                          $4, 'sync', NULL, NULL, $5)`,
+          [
+            storeId,
+            productId,
+            drift,
+            locationId,
+            `ShipStation reported ${reportedOnHand} on hand across the account; our balance across `
+              + `all locations was ${current.rows[0]?.on_hand ?? 0}. Difference applied here, `
+              + `because ShipStation does not say which location its units are in.`
+          ]
+        );
+      }
+
+      /*
+       * Allocation is a fact about ShipStation's open orders, not a movement of stock, so it is
+       * assigned rather than posted.
+       *
+       * It is account-wide, like the on-hand figure, so it is cleared from every other location
+       * before being set here. Without that, moving stock to a second location left a stale
+       * `committed` behind on the old one and the store counted the same allocation twice.
+       */
+      await client.query(
+        `UPDATE inventory_levels SET committed = 0, updated_at = NOW()
+          WHERE store_id = $1 AND product_id = $2 AND location_id <> $3 AND committed <> 0`,
+        [storeId, productId, locationId]
+      );
+      await client.query(
+        `INSERT INTO inventory_levels (store_id, product_id, location_id, committed)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (store_id, product_id, location_id)
+         DO UPDATE SET committed = EXCLUDED.committed, updated_at = NOW()`,
+        [storeId, productId, locationId, Math.max(0, level.allocated ?? 0)]
       );
     }
 
@@ -504,6 +607,39 @@ interface ShipStationProduct {
  * @param cache - Map reused across the page.
  * @returns The category UUID.
  */
+/**
+ * Find the store's default stock location, caching the lookup for the duration of a sync page.
+ *
+ * Every store has one — migration 030 creates it by trigger on store insert — so a missing result
+ * is a genuine fault rather than a case to handle gracefully.
+ *
+ * @param client - The open transaction the sync page is running in.
+ * @param storeId - The tenant.
+ * @returns The default location's id.
+ */
+const defaultLocationCache = new Map<string, string>();
+
+async function resolveDefaultLocationId(
+  client: PoolClient,
+  storeId: string
+): Promise<string> {
+  const cached = defaultLocationCache.get(storeId);
+  if (cached) return cached;
+
+  const result = await client.query<{ id: string }>(
+    'SELECT id FROM inventory_locations WHERE store_id = $1 AND is_default LIMIT 1',
+    [storeId]
+  );
+
+  const id = result.rows[0]?.id;
+  if (!id) {
+    throw new Error(`Store ${storeId} has no default inventory location`);
+  }
+
+  defaultLocationCache.set(storeId, id);
+  return id;
+}
+
 async function resolveCategoryId(
   client: PoolClient,
   storeId: string,
@@ -580,6 +716,26 @@ export async function syncProductsPage(
 
       const slug = sku.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+      /*
+       * FIELD OWNERSHIP.
+       *
+       * This upsert used to overwrite `name`, `short_description`, `base_price`,
+       * `featured_image_url`, `is_active` and `category_id` on every pass. All six are editable in
+       * the admin, so a merchant's afternoon of product copy and pricing was reverted at the top of
+       * the next hour, silently, with nothing to show it had happened.
+       *
+       * Each is now conditional on `field_locks` — the columns the merchant has edited. A field
+       * they have never touched still tracks upstream, which is what makes the integration useful
+       * on the first import and when a warehouse corrects a name. A field they own stays theirs.
+       *
+       * `status` is not in this list at all. Whether a product is published is a merchandising
+       * decision with no upstream equivalent; ShipStation's `active` flag seeds it on insert and is
+       * never allowed to republish something a merchant took down.
+       *
+       * The conflict target is `(store_id, shipstation_product_id)`. It used to be the bare
+       * product id, which was globally unique, so two merchants whose ShipStation accounts emitted
+       * the same id could not both import it — the second was skipped with no error and no count.
+       */
       const result = await client.query(
         `INSERT INTO products (
            id, store_id, shipstation_product_id, sku, name, slug, short_description,
@@ -587,14 +743,21 @@ export async function syncProductsPage(
          ) VALUES (
            gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()
          )
-         ON CONFLICT (shipstation_product_id) DO UPDATE SET
-           sku = EXCLUDED.sku,
-           name = EXCLUDED.name,
-           short_description = EXCLUDED.short_description,
-           base_price = EXCLUDED.base_price,
-           featured_image_url = EXCLUDED.featured_image_url,
-           is_active = EXCLUDED.is_active,
-           category_id = EXCLUDED.category_id,
+         ON CONFLICT (store_id, shipstation_product_id) DO UPDATE SET
+           sku = CASE WHEN 'sku' = ANY(products.field_locks)
+                      THEN products.sku ELSE EXCLUDED.sku END,
+           name = CASE WHEN 'name' = ANY(products.field_locks)
+                       THEN products.name ELSE EXCLUDED.name END,
+           short_description = CASE WHEN 'short_description' = ANY(products.field_locks)
+                                    THEN products.short_description
+                                    ELSE EXCLUDED.short_description END,
+           base_price = CASE WHEN 'base_price' = ANY(products.field_locks)
+                             THEN products.base_price ELSE EXCLUDED.base_price END,
+           featured_image_url = CASE WHEN 'featured_image_url' = ANY(products.field_locks)
+                                     THEN products.featured_image_url
+                                     ELSE EXCLUDED.featured_image_url END,
+           category_id = CASE WHEN 'category_id' = ANY(products.field_locks)
+                              THEN products.category_id ELSE EXCLUDED.category_id END,
            updated_at = NOW()
          WHERE products.store_id = $1
          RETURNING (xmax <> 0) AS was_update`,

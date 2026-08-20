@@ -9,8 +9,6 @@ import { useCart } from '../cart/CartProvider';
 export interface AddToCartButtonProps {
   productId: string;
   productName: string;
-  /** The chosen variant, when the product has options. */
-  variantId?: string | null;
   quantity?: number;
   disabled?: boolean;
   variant?: 'primary' | 'secondary';
@@ -41,7 +39,6 @@ const CONFIRM_MS = 1800;
 export function AddToCartButton({
   productId,
   productName,
-  variantId = null,
   quantity = 1,
   disabled = false,
   variant = 'primary',
@@ -65,7 +62,7 @@ export function AddToCartButton({
   const onClick = async (): Promise<void> => {
     if (state === 'busy' || disabled) return;
     setState('busy');
-    await addItem(productId, quantity, variantId);
+    await addItem(productId, quantity);
     setState('done');
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setState('idle'), CONFIRM_MS);

@@ -31,47 +31,15 @@ export interface StoredCartLine {
   product_id: string;
   quantity: number;
   store_id: string;
-  /**
-   * The chosen variant, when the product has options.
-   *
-   * Optional so a cart written by an older build still parses: a line without
-   * it is a product with no options, which is exactly what it was.
-   */
-  variant_id?: string | null;
   /** Cached for older readers and for first paint; re-derived from the server. */
   name: string;
   price: number;
   thumbnail_url: string;
 }
 
-/**
- * The identity of a cart line.
- *
- * A cart is keyed on product **and** variant, because a medium and a large of
- * the same shirt are two lines. Keying on the product alone merged them, and
- * merging them meant the quantity stepper moved both and stock was checked
- * against whichever one happened to be found first.
- *
- * The empty-variant suffix keeps the key stable for a product with no options,
- * so nothing about those lines changed.
- *
- * @param productId - The product
- * @param variantId - The chosen variant, or null/undefined for none
- * @returns A stable key for this line
- */
-export function cartLineKey(productId: string, variantId?: string | null): string {
-  return `${productId}::${variantId ?? ''}`;
-}
-
 /** A line after the server has re-priced it. This is what the UI renders. */
 export interface CartLine {
-  /** Stable identity for this line. See {@link cartLineKey}. */
-  key: string;
   productId: string;
-  /** The chosen variant, or null when the product has no options. */
-  variantId: string | null;
-  /** "Alpine Green / Medium", or null. */
-  variantTitle: string | null;
   sku: string;
   name: string;
   slug: string;
@@ -93,14 +61,13 @@ export interface CartState {
   loading: boolean;
   /** Lines dropped because the product went away or sold out. */
   removedNotice: string | null;
-  addItem: (productId: string, quantity?: number, variantId?: string | null) => Promise<void>;
-  /** Keyed by {@link cartLineKey}, not by product id — a cart may hold two variants of one product. */
-  setQuantity: (lineKey: string, quantity: number) => void;
-  removeItem: (lineKey: string) => void;
+  addItem: (productId: string, quantity?: number) => Promise<void>;
+  setQuantity: (productId: string, quantity: number) => void;
+  removeItem: (productId: string) => void;
   /** Restore the most recently removed line. Powers undo. */
   undoRemove: () => void;
   /** The line waiting to be undone, if any. */
-  pendingUndo: { name: string; lineKey: string } | null;
+  pendingUndo: { name: string; productId: string } | null;
   clearUndo: () => void;
   clear: () => void;
 }
@@ -125,20 +92,9 @@ function readStorage(): StoredCartLine[] {
       const id = typeof item.product_id === 'string' ? item.product_id : String(item.product_id ?? '');
       if (!/^[0-9a-fA-F-]{36}$/.test(id)) return [];
       const quantity = Math.min(Math.max(Math.floor(Number(item.quantity) || 1), 1), 99);
-      // `variant_id` has to survive this rebuild. It did not at first, and the
-      // failure was quiet and total: the stored line lost its variant, the sync
-      // therefore asked the server to price a product that has options without
-      // naming one, the server correctly refused, and the client pruned the
-      // line -- so adding anything to the cart emptied it a second later.
-      const variantId =
-        typeof item.variant_id === 'string' && /^[0-9a-fA-F-]{36}$/.test(item.variant_id)
-          ? item.variant_id
-          : null;
-
       return [
         {
           product_id: id,
-          variant_id: variantId,
           quantity,
           store_id: typeof item.store_id === 'string' ? item.store_id : '',
           name: typeof item.name === 'string' ? item.name : '',
@@ -233,7 +189,6 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
           body: JSON.stringify({
             items: stored.map((line) => ({
               product_id: line.product_id,
-              variant_id: line.variant_id ?? null,
               quantity: line.quantity,
             })),
           }),
@@ -250,21 +205,7 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
         setLines(
           items.map(
             (item: Record<string, unknown>): CartLine => ({
-              key: cartLineKey(
-                String(item.product_id),
-                item.variant_id === null || item.variant_id === undefined
-                  ? null
-                  : String(item.variant_id),
-              ),
               productId: String(item.product_id),
-              variantId:
-                item.variant_id === null || item.variant_id === undefined
-                  ? null
-                  : String(item.variant_id),
-              variantTitle:
-                item.variant_title === null || item.variant_title === undefined
-                  ? null
-                  : String(item.variant_title),
               sku: String(item.sku ?? ''),
               name: String(item.name ?? ''),
               slug: String(item.slug ?? ''),
@@ -289,11 +230,7 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
           );
           // Prune the dead ids so we stop asking about them.
           const dead = new Set(removed);
-          const survivors = stored.filter(
-            (line) =>
-              !dead.has(line.product_id) &&
-              !dead.has(cartLineKey(line.product_id, line.variant_id)),
-          );
+          const survivors = stored.filter((line) => !dead.has(line.product_id));
           if (survivors.length !== stored.length) writeStorage(survivors);
         } else {
           setRemovedNotice(null);
@@ -304,12 +241,7 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
         if (!cancelled) {
           setLines(
             stored.map((line) => ({
-              key: cartLineKey(line.product_id, line.variant_id),
               productId: line.product_id,
-              variantId: line.variant_id ?? null,
-              // The stored hint never carried a title; the server supplies it
-              // on the next successful sync.
-              variantTitle: null,
               sku: '',
               name: line.name || 'Item',
               slug: '',
@@ -345,7 +277,7 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
   }, []);
 
   const addItem = React.useCallback(
-    async (productId: string, quantity = 1, variantId: string | null = null) => {
+    async (productId: string, quantity = 1) => {
       const all = readStorage();
       // Adding from a different shop replaces the cart: one checkout can only
       // ever quote one merchant's catalogue.
@@ -353,13 +285,10 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
       const foreign = all.length !== sameStore.length;
       const base = foreign ? [] : sameStore;
 
-      const key = cartLineKey(productId, variantId);
-      const existing = base.find(
-        (line) => cartLineKey(line.product_id, line.variant_id) === key,
-      );
+      const existing = base.find((line) => line.product_id === productId);
       const next = existing
         ? base.map((line) =>
-            cartLineKey(line.product_id, line.variant_id) === key
+            line.product_id === productId
               ? { ...line, quantity: Math.min(line.quantity + quantity, 99) }
               : line,
           )
@@ -367,7 +296,6 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
             ...base,
             {
               product_id: productId,
-              variant_id: variantId,
               quantity: Math.min(Math.max(quantity, 1), 99),
               store_id: storeId,
               name: '',
@@ -382,13 +310,11 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
   );
 
   const setQuantity = React.useCallback(
-    (lineKey: string, quantity: number) => {
+    (productId: string, quantity: number) => {
       const clamped = Math.min(Math.max(Math.floor(quantity) || 1, 1), 99);
       commit(
         stored.map((line) =>
-          cartLineKey(line.product_id, line.variant_id) === lineKey
-            ? { ...line, quantity: clamped }
-            : line,
+          line.product_id === productId ? { ...line, quantity: clamped } : line,
         ),
       );
     },
@@ -396,24 +322,14 @@ export function CartProvider({ storeId, children }: CartProviderProps) {
   );
 
   const removeItem = React.useCallback(
-    (lineKey: string) => {
-      const victim = stored.find(
-        (line) => cartLineKey(line.product_id, line.variant_id) === lineKey,
-      );
+    (productId: string) => {
+      const victim = stored.find((line) => line.product_id === productId);
       if (victim) {
         undoRef.current = victim;
-        const display = lines.find((line) => line.key === lineKey);
-        // The undo toast names the variant too, so removing the medium and
-        // being offered "Undo — Shirt" when a large is still in the cart is
-        // not ambiguous.
-        const label = display
-          ? [display.name, display.variantTitle].filter(Boolean).join(' — ')
-          : 'Item';
-        setPendingUndo({ name: label || 'Item', lineKey });
+        const display = lines.find((line) => line.productId === productId);
+        setPendingUndo({ name: display?.name || 'Item', productId });
       }
-      commit(
-        stored.filter((line) => cartLineKey(line.product_id, line.variant_id) !== lineKey),
-      );
+      commit(stored.filter((line) => line.product_id !== productId));
     },
     [commit, stored, lines],
   );

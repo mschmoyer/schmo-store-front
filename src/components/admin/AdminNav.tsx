@@ -56,8 +56,11 @@ interface NavGroup {
  * - **Orders is added, second.** It is the most-visited screen in any store
  *   admin and it had no route at all — 27 orders and 51 tracking numbers with
  *   no door into them.
- * - **Purchase Orders is removed** as a top-level item. It is already a tab
- *   inside Inventory, and two doors to one room cost a slot each.
+ * - **Purchase Orders is removed** as a top-level item, reached from Inventory's
+ *   overflow menu instead. The reasoning here used to say it was "already a tab
+ *   inside Inventory" — it was not, and had not been since Inventory was
+ *   rewritten; its tabs are stock views. One door, and this comment now
+ *   describes where it is.
  * - **Coupons is removed** as a top-level item and reached from Products. A
  *   merchant edits promotions monthly, not daily, and a coupon is part of
  *   pricing the catalog.
@@ -86,7 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Categories', icon: IconCategory, href: '/admin/categories', enabled: false },
       /* Reached from Products → Pricing & promotions. */
       { label: 'Coupons & Discounts', icon: IconTicket, href: '/admin/coupons', enabled: false },
-      /* Reached from Inventory → Purchase Orders. */
+      /* Reached from Inventory → More → Purchase orders. */
       {
         label: 'Purchase Orders',
         icon: IconTruckDelivery,

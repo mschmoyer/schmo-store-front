@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Title,
@@ -43,7 +43,24 @@ import { useRouter } from 'next/navigation';
 import table from '@/components/admin/adminTable.module.css';
 
 // Types
-export type PurchaseOrderStatus = 'pending' | 'approved' | 'shipped' | 'delivered' | 'cancelled';
+/*
+ * Every status the database allows.
+ *
+ * Three were missing — `draft`, `partially_received` and `closed` — and the omissions were not
+ * cosmetic. Receiving 7 of 10 units sets `partially_received`, which had no label and no colour, so
+ * the header rendered an **empty status pill** and the list page showed the raw enum. Worse, the
+ * Receive button was gated on `status === 'shipped'`, so it disappeared the moment a partial
+ * receipt happened and the outstanding 3 units could never be received: the order was trapped.
+ */
+export type PurchaseOrderStatus =
+  | 'draft'
+  | 'pending'
+  | 'approved'
+  | 'shipped'
+  | 'partially_received'
+  | 'delivered'
+  | 'closed'
+  | 'cancelled';
 
 interface PurchaseOrderItem {
   id: string;
@@ -66,7 +83,10 @@ interface PurchaseOrderItem {
 interface PurchaseOrder {
   id: string;
   po_number: string;
-  supplier: string;
+  /* The API returns `supplier_name`. This declared `supplier`, so the Supplier row on the detail
+   * page rendered empty while the list page — reading the right field — showed the name. */
+  supplier_name: string;
+  supplier_id: string | null;
   order_date: string;
   expected_delivery: string;
   actual_delivery: string;
@@ -74,28 +94,52 @@ interface PurchaseOrder {
   subtotal: number;
   tax_amount: number;
   shipping_amount: number;
-  total_amount: number;
+  /* The column is `total_cost`. Reading `total_amount` rendered the order total as **$NaN** beside
+   * a correct subtotal. */
+  total_cost: number;
   notes: string;
   created_at: string;
   updated_at: string;
   items: PurchaseOrderItem[];
 }
 
-const STATUS_COLORS = {
+/**
+ * Statuses an order can still be received against.
+ *
+ * Deliberately includes `partially_received`: a part-delivered order is the one most likely to have
+ * another box arrive.
+ */
+const RECEIVABLE_STATUSES: PurchaseOrderStatus[] = [
+  'draft',
+  'pending',
+  'approved',
+  'shipped',
+  'partially_received'
+];
+
+const STATUS_COLORS: Record<PurchaseOrderStatus, string> = {
+  draft: 'gray',
   pending: 'yellow',
   approved: 'blue',
   shipped: 'cyan',
+  partially_received: 'orange',
   delivered: 'green',
+  closed: 'gray',
   cancelled: 'red'
-} as const;
+};
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
+  draft: 'Draft',
   pending: 'Pending',
   approved: 'Approved',
   shipped: 'Shipped',
-  delivered: 'Delivered',
+  /* Named, because "some of it arrived" is a different situation from both "nothing has" and
+   * "everything has", and it is the one that needs action. */
+  partially_received: 'Partly received',
+  delivered: 'Received',
+  closed: 'Closed',
   cancelled: 'Cancelled'
-} as const;
+};
 
 /**
  * Purchase Order Detail/Edit Page Component
@@ -120,6 +164,8 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
   // State management
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  /* Identifies one delivery across retries, so a double-click cannot book it twice. */
+  const receiptKeyRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -140,6 +186,13 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
   // Modal state
   const [newStatus, setNewStatus] = useState<PurchaseOrderStatus>('pending');
   const [receivingData, setReceivingData] = useState<Record<string, number>>({});
+  /** Locations the store keeps stock in, for the receive dialog. */
+  const [locations, setLocations] = useState<Array<{ value: string; label: string }>>([]);
+  const [receiveLocationId, setReceiveLocationId] = useState<string | null>(null);
+  /* Damaged units, per line. Counted as arrived and then written off, so the supplier's invoice
+   * still reconciles and the damage is its own reportable event. */
+  const [damageData, setDamageData] = useState<Record<string, number>>({});
+  const [damageNote, setDamageNote] = useState('');
   
   /**
    * Fetch purchase order details
@@ -308,8 +361,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     const itemsToReceive = Object.entries(receivingData)
       .filter(([, quantity]) => quantity > 0)
       .map(([itemId, quantity]) => ({
-        item_id: itemId,
-        received_quantity: quantity
+        purchase_order_item_id: itemId,
+        quantity_received: quantity,
+        damaged_quantity: damageData[itemId] || 0,
+        damage_notes: damageData[itemId] ? damageNote.trim() || null : null
       }));
     
     if (itemsToReceive.length === 0) {
@@ -326,33 +381,59 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
         throw new Error('No authentication token available');
       }
 
-      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}`, {
-        method: 'PATCH',
+      /*
+       * The real receive endpoint, which posts to the stock ledger.
+       *
+       * This posted `action: 'receive_items'` to the PATCH handler, which referenced a column named
+       * `received_quantity` that does not exist — the column is `quantity_received` — so the button
+       * returned 500 for every shape of request, including an empty one. That dead path also wrote
+       * `stock_quantity` directly, outside the ledger, and ran `BEGIN` on the pool rather than on a
+       * checked-out client. It has been deleted; this is the endpoint the receiving modal already
+       * used.
+       */
+      if (!receiptKeyRef.current) {
+        receiptKeyRef.current = `${purchaseOrder.id}-${crypto.randomUUID()}`;
+      }
+
+      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}/receive`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({
-          action: 'receive_items',
-          items: itemsToReceive
+          items: itemsToReceive.map((line) => ({ ...line, location_id: receiveLocationId })),
+          idempotency_key: receiptKeyRef.current
         })
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to receive items');
-      }
-      
+
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to receive items');
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || `Could not receive the delivery (${response.status})`);
       }
       
+      /* The endpoint's own sentence, which says whether the order is now complete and how many
+       * units are still outstanding. */
       notifications.show({
-        title: 'Success',
-        message: 'Items received and inventory updated',
+        title: result.replayed ? 'Already recorded' : 'Received',
+        message: result.message ?? result.data?.message ?? 'The delivery was recorded.',
         color: 'green'
       });
+
+      const warnings: string[] = result.data?.warnings ?? [];
+      if (warnings.length > 0) {
+        notifications.show({
+          title: 'Worth checking',
+          message: warnings.join('. '),
+          color: 'yellow',
+          autoClose: 12000
+        });
+      }
+
+      receiptKeyRef.current = null;
+      setDamageData({});
+      setDamageNote('');
       
       // Reset receiving data
       const resetReceivingData: Record<string, number> = {};
@@ -368,8 +449,10 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     } catch (err) {
       console.error('Error receiving items:', err);
       notifications.show({
-        title: 'Error',
-        message: 'Failed to receive items',
+        title: 'Could not receive',
+        /* The reason, not a generic sentence: an over-receipt refusal and a lost connection need
+         * different responses from the merchant. */
+        message: err instanceof Error ? err.message : 'Failed to receive items',
         color: 'red'
       });
     }
@@ -447,6 +530,29 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       fetchPurchaseOrder();
     }
   }, [isAuthenticated, session?.sessionToken, fetchPurchaseOrder]);
+
+  /* The store's stock locations, so a delivery can be received into the right one. */
+  useEffect(() => {
+    if (!session?.sessionToken) return;
+    fetch('/api/admin/inventory/locations', {
+      headers: { Authorization: `Bearer ${session.sessionToken}` }
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const rows = payload?.locations ?? [];
+        const options = rows
+          .filter((l: { is_active: boolean }) => l.is_active)
+          .map((l: { id: string; name: string; is_default: boolean }) => ({
+            value: l.id,
+            label: l.is_default ? `${l.name} (default)` : l.name
+          }));
+        setLocations(options);
+        setReceiveLocationId(
+          rows.find((l: { is_default: boolean }) => l.is_default)?.id ?? options[0]?.value ?? null
+        );
+      })
+      .catch(() => setLocations([]));
+  }, [session?.sessionToken]);
   
   if (loading) {
     return (
@@ -495,7 +601,14 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       </Container>
     );
   }
-  
+
+  /* What is still to arrive. Drives whether receiving is offered at all, and says how much is
+   * outstanding on the button itself so the merchant does not have to add it up from the table. */
+  const unitsOutstanding = purchaseOrder.items.reduce(
+    (total, item) => total + Math.max(0, item.quantity - (item.received_quantity ?? 0)),
+    0
+  );
+
   return (
     <Container size="lg">
       {/* Header */}
@@ -554,7 +667,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                 onClick={() => {
                   setEditing(false);
                   setFormData({
-                    supplier: purchaseOrder.supplier || '',
+                    supplier: purchaseOrder.supplier_name || '',
                     order_date: purchaseOrder.order_date || '',
                     expected_delivery: purchaseOrder.expected_delivery || '',
                     notes: purchaseOrder.notes || ''
@@ -607,7 +720,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                   style={{ flex: 1, maxWidth: 200 }}
                 />
               ) : (
-                <Text>{purchaseOrder.supplier}</Text>
+                <Text>{purchaseOrder.supplier_name}</Text>
               )}
             </Group>
             
@@ -692,7 +805,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             
             <Group justify="space-between">
               <Text fw={700} size="lg">Total:</Text>
-              <Text fw={700} size="lg">{formatCurrency(purchaseOrder.total_amount)}</Text>
+              <Text fw={700} size="lg">{formatCurrency(purchaseOrder.total_cost)}</Text>
             </Group>
             
             <Divider />
@@ -714,12 +827,24 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       <Card withBorder p="lg" mb="xl">
         <Group justify="space-between" mb="md">
           <Title order={3}>Items</Title>
-          {purchaseOrder.status === 'shipped' && (
+          {/*
+            * Receivable whenever the order is open and something is still outstanding.
+            *
+            * This was gated on `status === 'shipped'` alone, so receiving 7 of 10 units flipped the
+            * order to `partially_received` and the button vanished — the remaining 3 could never be
+            * received and the order was stuck there permanently. A merchant also routinely receives
+            * against an order still marked `approved`, because deliveries arrive before anyone
+            * updates a status field.
+            */}
+          {RECEIVABLE_STATUSES.includes(purchaseOrder.status) && unitsOutstanding > 0 && (
             <Button
               leftSection={<IconPackage size={16} />}
               onClick={openReceiveModal}
             >
-              Receive Items
+              Receive items
+              <Text span size="xs" ml={6} c="var(--mantine-color-white)">
+                ({unitsOutstanding} outstanding)
+              </Text>
             </Button>
           )}
         </Group>
@@ -808,17 +933,31 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             Update the status of purchase order {purchaseOrder.po_number}
           </Text>
           
+          {/*
+            * Only the statuses a person sets by hand.
+            *
+            * `partially_received` and `delivered` are *derived* from the receipts — the receive
+            * endpoint sets them, and migration 035 refuses `delivered` on an order nothing has been
+            * received against. Offering them here would let a merchant assert a delivery the
+            * receipts do not support, and their units would then count as incoming forever.
+            *
+            * The list also had no current value selected, so opening the dialog and pressing Update
+            * silently discarded a partial state.
+            */}
           <Select
-            label="New Status"
+            label="New status"
+            description="Received and Partly received are set by receiving the delivery, not here."
             data={[
+              { value: 'draft', label: 'Draft' },
               { value: 'pending', label: 'Pending' },
               { value: 'approved', label: 'Approved' },
               { value: 'shipped', label: 'Shipped' },
-              { value: 'delivered', label: 'Delivered' },
+              { value: 'closed', label: 'Closed — no more is coming' },
               { value: 'cancelled', label: 'Cancelled' }
             ]}
-            value={newStatus}
+            value={newStatus || purchaseOrder.status}
             onChange={(value) => setNewStatus(value as PurchaseOrderStatus)}
+            allowDeselect={false}
           />
           
           <Group justify="flex-end" mt="md">
@@ -841,7 +980,33 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
       <Modal opened={receiveModalOpened} onClose={closeReceiveModal} title="Receive Items" size="lg">
         <Stack>
           <Text size="sm" c="dimmed">
-            Enter the quantities received for each item. This will update your inventory.
+            Enter what actually arrived. Each line posts a stock movement against the location you
+            choose, and the order&apos;s status follows from what has been received.
+          </Text>
+
+          {/*
+            * Where the delivery is going.
+            *
+            * There was no selector at all, so everything landed at the store's default location —
+            * fine for a single-location store and wrong for any other, since a delivery that
+            * arrives at the back room was recorded on the shop floor and the two balances drifted
+            * from the first pallet onwards. Only shown when there is a choice to make.
+            */}
+          {locations.length > 1 && (
+            <Select
+              label="Received into"
+              description="Where these units are going."
+              data={locations}
+              value={receiveLocationId}
+              onChange={setReceiveLocationId}
+              allowDeselect={false}
+            />
+          )}
+
+          {/* Over-receipt is allowed and reported rather than refused — suppliers over-ship, and
+              the alternative is a merchant editing the order to hide it. */}
+          <Text size="xs" c="dimmed">
+            You can receive more than was ordered; the difference is reported back to you.
           </Text>
           
           <Table>
@@ -851,6 +1016,16 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                 <Table.Th className={table.numeric}>Ordered</Table.Th>
                 <Table.Th className={table.numeric}>Already received</Table.Th>
                 <Table.Th className={table.numeric}>Receive now</Table.Th>
+                {/*
+                  * Damage, recorded on the receipt.
+                  *
+                  * The endpoint has always accepted `damaged_quantity` and posted it as its own
+                  * ledger movement — arrival then damage, two entries rather than one netted one,
+                  * because the supplier is invoicing for those units and the damage is its own
+                  * reportable event. Nothing collected it, so "the delivery arrived short and
+                  * damaged" was a journey that could not be completed anywhere in the admin.
+                  */}
+                <Table.Th className={table.numeric}>Of which damaged</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -879,8 +1054,22 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
                         [item.id]: Number(value) || 0 
                       }))}
                       min={0}
-                      max={item.quantity - item.received_quantity}
                       size="sm"
+                      aria-label={`Receive now for ${item.product_name}`}
+                    />
+                  </Table.Td>
+
+                  <Table.Td>
+                    <NumberInput
+                      value={damageData[item.id] || 0}
+                      onChange={(value) =>
+                        setDamageData(prev => ({ ...prev, [item.id]: Number(value) || 0 }))
+                      }
+                      min={0}
+                      max={receivingData[item.id] || 0}
+                      size="sm"
+                      disabled={!receivingData[item.id]}
+                      aria-label={`Damaged units for ${item.product_name}`}
                     />
                   </Table.Td>
                 </Table.Tr>
@@ -888,6 +1077,15 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             </Table.Tbody>
           </Table>
           
+          {Object.values(damageData).some((n) => n > 0) && (
+            <TextInput
+              label="What was wrong with the damaged units"
+              description="Goes on the stock movement, and is what a carrier claim is built from."
+              value={damageNote}
+              onChange={(event) => setDamageNote(event.currentTarget.value)}
+            />
+          )}
+
           <Group justify="flex-end" mt="md">
             <Button variant="light" onClick={closeReceiveModal}>
               Cancel

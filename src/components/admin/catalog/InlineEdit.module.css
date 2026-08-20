@@ -1,0 +1,123 @@
+/*
+ * Editable cells.
+ *
+ * The resting state has to look like a table cell, not a form field. A grid of visible inputs
+ * reads as a form the merchant must fill in, and forty of them is intimidating; the edit
+ * affordance belongs in the hover and focus states, where it appears exactly when it is wanted.
+ */
+
+.cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: text;
+  position: relative;
+}
+
+.cell:hover:not(.disabled) {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.numeric {
+  justify-content: flex-end;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.value {
+  white-space: nowrap;
+}
+
+.placeholder {
+  color: var(--text-subtle);
+}
+
+.disabled {
+  cursor: default;
+  color: var(--text-secondary);
+}
+
+/* A save in flight dims the value rather than replacing it with a spinner. The merchant has
+   already moved on to the next cell; a spinner where a number was is a flicker they have to
+   re-read, and at a column of forty edits it is forty flickers. */
+.saving .value {
+  opacity: 0.55;
+}
+
+.errored {
+  border-color: var(--danger-border);
+}
+
+.errorText {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 2;
+  margin-top: 2px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-subtle);
+  color: var(--danger-text);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+/* Marks a field the merchant owns, which the ShipStation sync will not overwrite. Deliberately
+   quiet: it is reassurance, not an alert. */
+.lock {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--success-text);
+  opacity: 0.6;
+  flex: none;
+}
+
+.input {
+  width: 100%;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border: 1px solid var(--focus-ring);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.input:focus {
+  outline: none;
+}
+
+/*
+ * Available to assistive technology, invisible on screen.
+ *
+ * For meaning that a sighted user reads from an icon — the field-lock tick — and that a screen
+ * reader would otherwise get nothing for. Clip rather than `display: none`, which removes an
+ * element from the accessibility tree along with the layout.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

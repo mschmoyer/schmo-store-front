@@ -1,11 +1,20 @@
 import { htmlToText } from '@/app/store/_lib/html';
+import { SITE_URL } from '@/lib/seo/siteUrl';
 import { stockState } from '@/app/store/_lib/present';
 import type { ProductRecord, StoreRecord } from '@/app/store/_lib/types';
 
 export interface ProductSchemaProps {
   product: ProductRecord;
   store: StoreRecord;
-  /** Absolute origin, e.g. `https://shop.example`. Relative URLs are emitted when absent. */
+  /**
+   * Absolute origin, e.g. `https://shop.example`.
+   *
+   * Defaults to the deployment's own origin rather than an empty string. It was `''`, and every
+   * caller left it out, so `absolute()` below was a no-op and this component shipped relative URLs
+   * in JSON-LD — `"url": "/store/demo/product/x"`. A consumer cannot resolve those, so the offer,
+   * the breadcrumb items and the images were all silently discarded and the product was ineligible
+   * for a rich result.
+   */
   baseUrl?: string;
   /** Canonical path of the product page, used for the offer URL and breadcrumb. */
   path: string;
@@ -30,7 +39,7 @@ export interface ProductSchemaProps {
  * @param props - {@link ProductSchemaProps}
  * @returns Two JSON-LD script elements: the product and its breadcrumb
  */
-export function ProductSchema({ product, store, baseUrl = '', path }: ProductSchemaProps) {
+export function ProductSchema({ product, store, baseUrl = SITE_URL, path }: ProductSchemaProps) {
   const absolute = (value: string): string =>
     baseUrl && value.startsWith('/') ? `${baseUrl}${value}` : value;
 
@@ -61,6 +70,17 @@ export function ProductSchema({ product, store, baseUrl = '', path }: ProductSch
     ...(description ? { description } : {}),
     ...(images.length > 0 ? { image: images } : {}),
     ...(product.categoryName ? { category: product.categoryName } : {}),
+    /*
+     * Brand and a product identifier, both of which were absent while `products.vendor` and
+     * `products.barcode` sat populated in the database. Google requires a brand plus one identifier
+     * for a Product rich result, and a Merchant Center feed built from a page without them is
+     * rejected — so their absence was the difference between appearing in shopping results and not.
+     *
+     * The `gtin` property is length-agnostic; `gtin8/12/13/14` are the specific forms. Emitting the
+     * generic one avoids claiming a length the value may not have.
+     */
+    ...(product.vendor ? { brand: { '@type': 'Brand', name: product.vendor } } : {}),
+    ...(product.barcode ? { gtin: product.barcode } : {}),
     offers: {
       '@type': 'Offer',
       url: absolute(path),

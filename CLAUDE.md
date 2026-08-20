@@ -73,6 +73,7 @@ npm run test:e2e -- --project=chromium   # note the `--`
 npm run db:migrate         # apply migrations
 npm run db:status          # what is pending
 npm run db:seed-demo       # demo stores and users (idempotent)
+npm run db:verify          # run the trigger-backed schema invariants as behaviour
 
 npm run shipstation:probe  # SHIPSTATION_API_KEY=<key> — live endpoint + response-shape check
 npm run sync:background    # ShipStation sync CLI entry point
@@ -136,12 +137,6 @@ Two variables fail closed rather than degrading:
 ## Working rules
 
 - **Store scope.** Every query touching tenant data carries `store_id`. No exceptions.
-- **Variants.** A product may carry up to three option axes (`product_options`) and one row per
-  combination (`product_variants`). A variant's `price`, `sale_price`, `track_inventory` and
-  `allow_backorder` are nullable and **NULL means "inherit the product"** — never copy the
-  product's value onto a variant. The storefront and the checkout both price through
-  `resolveVariant` in `src/lib/catalog/variants.ts`, so what is displayed and what is charged come
-  from one implementation; keep it that way.
 - **Starter copy.** Presets, default sections and page templates may not state anything a customer
   could hold a merchant to — delivery times, returns windows, warranties, discount rates, payment
   terms. Those are visible bracketed prompts. Brand voice is fine. Enforced by

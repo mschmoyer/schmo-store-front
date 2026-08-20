@@ -10,22 +10,10 @@ import styles from './ProductDetail.module.css';
 export interface BuyBoxProps {
   productId: string;
   productName: string;
-  /** The chosen variant, when the product has options. */
-  variantId?: string | null;
-  /** "Alpine Green / Medium", used in the add confirmation. */
-  variantTitle?: string | null;
   /** Upper bound on the quantity a shopper may add. */
   maxQuantity: number;
   disabled: boolean;
   cartHref: string;
-  /**
-   * What the button says when it cannot be pressed.
-   *
-   * "Out of stock" is wrong for a combination the shop never made — the
-   * shopper would wait for a restock that is not coming.
-   * @default 'Out of stock'
-   */
-  disabledLabel?: string;
 }
 
 /**
@@ -42,12 +30,9 @@ export interface BuyBoxProps {
 export function BuyBox({
   productId,
   productName,
-  variantId = null,
-  variantTitle = null,
   maxQuantity,
   disabled,
   cartHref,
-  disabledLabel = 'Out of stock',
 }: BuyBoxProps) {
   const [quantity, setQuantity] = React.useState(1);
   const [draft, setDraft] = React.useState('1');
@@ -108,13 +93,12 @@ export function BuyBox({
       <div className={styles.addWrap}>
         <AddToCartButton
           productId={productId}
-          productName={variantTitle ? `${productName} (${variantTitle})` : productName}
-          variantId={variantId}
+          productName={productName}
           quantity={quantity}
           disabled={disabled}
           size="lg"
           block
-          label={disabled ? disabledLabel : 'Add to cart'}
+          label={disabled ? 'Out of stock' : 'Add to cart'}
         />
       </div>
 

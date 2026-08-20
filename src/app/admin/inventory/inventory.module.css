@@ -1,0 +1,168 @@
+/*
+ * Inventory page layout.
+ *
+ * Shares its structure with the catalogue deliberately: the two pages show the same rows through
+ * different lenses, and a merchant who learns one should not have to learn the other. The columns
+ * differ; the chrome, the view tabs, the refresh behaviour and the scroll container do not.
+ */
+
+.panel {
+  overflow: hidden;
+}
+
+.tabs {
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.toolbar {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+
+.search {
+  flex: 1 1 240px;
+  min-width: 190px;
+  max-width: 340px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alert {
+  margin: var(--space-3);
+}
+
+.footer {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* A refetch dims the rows rather than unmounting them. The toolbar stays live because the merchant
+   is often refining the filter that caused the refetch. */
+.refreshing tbody {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.thumb {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  color: var(--text-primary);
+  font-weight: 500;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 38ch;
+}
+
+.name:hover {
+  text-decoration: underline;
+}
+
+/* Stock state is a dot plus a word, never a colour on its own. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-subtle);
+}
+
+.state[data-state='in_stock'] .dot {
+  background: var(--success-text);
+}
+
+.state[data-state='low_stock'] .dot {
+  background: var(--warning-text);
+}
+
+.state[data-state='out_of_stock'] .dot,
+.state[data-state='oversold'] .dot {
+  background: var(--danger-text);
+}
+
+/*
+ * Negative availability means the store has sold more than it holds. It gets an icon as well as a
+ * tint because it is the single most consequential state on this page — and because it was
+ * previously impossible to see at all, the balance having been clamped at zero.
+ */
+.available {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.available[data-negative] {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.numericHead {
+  text-align: right;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .search {
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .count {
+    order: 10;
+  }
+}
