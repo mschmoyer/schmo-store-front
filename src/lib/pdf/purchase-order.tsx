@@ -10,19 +10,23 @@ import {
 } from '@react-pdf/renderer';
 import { PurchaseOrder, PurchaseOrderItem, Supplier, Store } from '@/lib/types/database';
 
-// Register fonts (optional - for better typography)
-Font.register({
-  family: 'Open Sans',
-  fonts: [
-    {
-      src: 'https://cdn.jsdelivr.net/npm/open-sans-all@0.1.3/fonts/open-sans-regular.ttf',
-    },
-    {
-      src: 'https://cdn.jsdelivr.net/npm/open-sans-all@0.1.3/fonts/open-sans-600.ttf',
-      fontWeight: 600,
-    },
-  ],
-});
+/*
+ * TYPOGRAPHY, WITHOUT A NETWORK DEPENDENCY.
+ *
+ * This module used to `Font.register` Open Sans from jsdelivr. The fetch happens at *render* time,
+ * so generating a purchase order meant a live request to a third-party CDN — and when that request
+ * failed the whole document failed with "Unknown font format", not with a fallback. A merchant
+ * cannot send a supplier a PDF that did not render because a font host was unreachable.
+ *
+ * Helvetica ships inside @react-pdf/renderer and needs no fetch, so generation is hermetic. On a
+ * business document that a supplier reads once and files, the typeface is not worth an external
+ * dependency in the critical path.
+ *
+ * `Font` stays imported: `registerHyphenationCallback` disables react-pdf's default hyphenation,
+ * which otherwise breaks SKUs and part numbers across lines — on a document someone types back
+ * into an order system, a hyphen that is not part of the SKU is a real transcription error.
+ */
+Font.registerHyphenationCallback((word) => [word]);
 
 // Define styles
 const styles = StyleSheet.create({
@@ -30,7 +34,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     backgroundColor: '#ffffff',
     padding: 40,
-    fontFamily: 'Open Sans',
+    fontFamily: 'Helvetica',
     fontSize: 10,
   },
   header: {
@@ -41,7 +45,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 600,
+    fontWeight: 'bold',
     color: '#333333',
     marginBottom: 5,
   },
@@ -55,7 +59,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 14,
-    fontWeight: 600,
+    fontWeight: 'bold',
     color: '#333333',
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -84,7 +88,7 @@ const styles = StyleSheet.create({
   },
   infoTitle: {
     fontSize: 12,
-    fontWeight: 600,
+    fontWeight: 'bold',
     color: '#333333',
     marginBottom: 5,
   },
@@ -118,7 +122,7 @@ const styles = StyleSheet.create({
   },
   tableCellHeader: {
     fontSize: 10,
-    fontWeight: 600,
+    fontWeight: 'bold',
     color: '#333333',
   },
   // Column widths
@@ -152,12 +156,12 @@ const styles = StyleSheet.create({
   },
   totalsValue: {
     fontSize: 10,
-    fontWeight: 600,
+    fontWeight: 'bold',
     color: '#333333',
   },
   totalRow: {
     backgroundColor: '#f8f9fa',
-    fontWeight: 600,
+    fontWeight: 'bold',
   },
   footer: {
     marginTop: 30,
@@ -356,18 +360,34 @@ export const PurchaseOrderPDF: React.FC<{
                 Phone: {purchaseOrder.supplier.phone}
               </Text>
             )}
-            {purchaseOrder.supplier.address && (
-              <>
-                <Text style={styles.infoText}>
-                  {purchaseOrder.supplier.address.street}
-                </Text>
-                <Text style={styles.infoText}>
-                  {purchaseOrder.supplier.address.city}, {purchaseOrder.supplier.address.state} {purchaseOrder.supplier.address.postal_code}
-                </Text>
-                <Text style={styles.infoText}>
-                  {purchaseOrder.supplier.address.country}
-                </Text>
-              </>
+            {/*
+              * Each address line is rendered only when it has content. Rendering them
+              * unconditionally printed a bare ", " for any supplier with a street but no city —
+              * a stray comma on a document the merchant sends to that supplier.
+              */}
+            {purchaseOrder.supplier.address?.street && (
+              <Text style={styles.infoText}>
+                {purchaseOrder.supplier.address.street}
+              </Text>
+            )}
+            {(purchaseOrder.supplier.address?.city ||
+              purchaseOrder.supplier.address?.state ||
+              purchaseOrder.supplier.address?.postal_code) && (
+              <Text style={styles.infoText}>
+                {[
+                  purchaseOrder.supplier.address.city,
+                  [purchaseOrder.supplier.address.state, purchaseOrder.supplier.address.postal_code]
+                    .filter(Boolean)
+                    .join(' ')
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
+              </Text>
+            )}
+            {purchaseOrder.supplier.address?.country && (
+              <Text style={styles.infoText}>
+                {purchaseOrder.supplier.address.country}
+              </Text>
             )}
             {purchaseOrder.supplier.tax_id && (
               <Text style={styles.infoText}>
@@ -440,7 +460,7 @@ export const PurchaseOrderPDF: React.FC<{
               </View>
             )}
             <View style={[styles.totalsRow, styles.totalRow]}>
-              <Text style={[styles.totalsLabel, { fontWeight: 600 }]}>Total:</Text>
+              <Text style={[styles.totalsLabel, { fontWeight: 'bold' }]}>Total:</Text>
               <Text style={[styles.totalsValue, { fontSize: 12 }]}>
                 {formatCurrency(purchaseOrder.total_amount)}
               </Text>
