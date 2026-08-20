@@ -4,7 +4,7 @@ import { HOMEPAGE_FAQ } from '@/components/marketing/data/faq';
 /**
  * Canonical site origin. Overridable per environment; falls back to the production domain.
  */
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://rebelshops.com';
+import { SITE_URL } from '@/lib/seo/siteUrl';
 
 /**
  * INTEGRITY NOTE — read before adding anything to this file.

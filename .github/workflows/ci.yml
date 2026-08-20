@@ -112,6 +112,15 @@ jobs:
           node scripts/seed-demo.js
           node scripts/seed-demo.js
 
+      # Several rules — a product always having a variant, an option combination
+      # being unique within it, a value belonging to its own option — live in
+      # triggers and deferred constraints rather than in a column type. Those are
+      # what a later migration disarms by accident: a CASCADE that takes a trigger
+      # with it, a constraint recreated without DEFERRABLE. This runs them as
+      # behaviour, so the disarming shows up here rather than in production data.
+      - name: Schema invariants are still enforced
+        run: node database/verify-schema-invariants.js
+
   build:
     name: Production build
     runs-on: ubuntu-latest

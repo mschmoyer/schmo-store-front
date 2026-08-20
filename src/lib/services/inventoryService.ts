@@ -79,6 +79,7 @@ export class InventoryService {
         // Process each order item
         for (const item of orderItems) {
           await this.processInventoryAdjustment({
+            store_id: order.store_id,
             product_id: item.product_id,
             sku: item.product_sku,
             quantity_change: -item.quantity,
@@ -175,21 +176,35 @@ export class InventoryService {
     const currentQuantity = product.stock_quantity ?? 0;
     const newQuantity = currentQuantity + quantity_change;
 
-    // Prevent negative inventory (optional - can be configured per store)
     if (newQuantity < 0) {
-      console.warn(`Adjustment would result in negative inventory for ${sku}: ${newQuantity}`);
-      // Optionally throw error or set to 0
-      // throw new Error(`Insufficient inventory for ${sku}. Current: ${currentQuantity}, Requested: ${Math.abs(quantity_change)}`);
+      console.warn(`Adjustment leaves ${sku} oversold: ${newQuantity}`);
     }
 
-    // Update product inventory
+    /*
+     * The clamp is gone.
+     *
+     * This wrote `Math.max(0, newQuantity)` while logging the unclamped figure to
+     * `inventory_logs` — so an oversell was erased from the balance and preserved in the audit
+     * trail, and the two stopped reconciling. Migration 029's header describes removing exactly
+     * this behaviour from `update_product_stock`; it was still alive on this path.
+     *
+     * Stock going negative is a fact about the business: it means units were sold that were not
+     * there. Rounding it up to zero destroys the only evidence of the thing the merchant most
+     * needs to know about.
+     *
+     * The write is `stock_quantity + $1` rather than a read-then-write of a value computed above,
+     * so two concurrent adjustments cannot both read the same balance and both write it.
+     * `store_id` is in the predicate because every query touching tenant data carries one — this
+     * one addressed a product by bare id, which is a cross-tenant write waiting for a caller that
+     * passes an id from the wrong place.
+     */
     await db.query(`
-      UPDATE products 
-      SET 
-        stock_quantity = $1,
+      UPDATE products
+      SET
+        stock_quantity = COALESCE(stock_quantity, 0) + $1,
         updated_at = $2
-      WHERE id = $3
-    `, [Math.max(0, newQuantity), new Date(), product_id]);
+      WHERE id = $3 AND store_id = $4
+    `, [quantity_change, new Date(), product_id, product.store_id]);
 
     // Log the inventory change
     await db.query(`
@@ -270,6 +285,7 @@ export class InventoryService {
             // Update inventory if changed
             if (quantityChange !== 0) {
               await this.processInventoryAdjustment({
+                store_id: storeId,
                 product_id: product.id,
                 sku: item.sku,
                 quantity_change: quantityChange,
@@ -356,6 +372,10 @@ export class InventoryService {
    * @returns Promise<{ success: boolean; processed: number; errors: string[] }>
    */
   async handleStockLevelAdjustments(
+    /* The tenant, required. This method took none at all and mutated stock addressed by bare
+     * product id — a bulk cross-tenant write with nothing standing in its way but the absence of a
+     * caller. It has none today; the parameter is here so the first one cannot forget. */
+    storeId: UUID,
     adjustments: Array<{
       product_id: UUID;
       sku: string;
@@ -379,9 +399,12 @@ export class InventoryService {
 
             if (adj.adjustment_type === 'set') {
               // Get current quantity to calculate change
+              /* Scoped to the store, like every other read of tenant data. Reading a stock level
+               * by bare id would let a caller who supplied someone else's product id compute a
+               * delta against a balance that is not theirs. */
               const productResult = await db.query<Pick<ProductRow, 'stock_quantity'>>(`
-                SELECT stock_quantity FROM products WHERE id = $1
-              `, [adj.product_id]);
+                SELECT stock_quantity FROM products WHERE id = $1 AND store_id = $2
+              `, [adj.product_id, storeId]);
 
               if (productResult.rows.length === 0) {
                 throw new Error(`Product not found: ${adj.product_id}`);
@@ -394,6 +417,7 @@ export class InventoryService {
             }
 
             await this.processInventoryAdjustment({
+              store_id: storeId,
               product_id: adj.product_id,
               sku: adj.sku,
               quantity_change: quantityChange,

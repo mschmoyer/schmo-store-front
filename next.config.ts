@@ -225,10 +225,27 @@ const nextConfig: NextConfig = {
       },
       {
         // Never let a proxy or the CDN cache an API response by default.
-        source: "/api/(.*)",
+        //
+        // Uploaded product images are the one exception, so they are excluded here rather than
+        // fighting this rule from the route. They are served from /api because that is where a
+        // request handler lives, but they are static bytes, not an API response: the id is the
+        // SHA-256 of the content, so a URL can never come to mean different bytes. Left under the
+        // blanket rule, every storefront visitor re-downloaded every product image on every page
+        // view, which is a bandwidth bill rather than a correctness bug and so would have gone
+        // unnoticed indefinitely.
+        source: "/api/:path((?!media/).*)",
         headers: [
           { key: "Cache-Control", value: "no-store, max-age=0" },
           { key: "X-Robots-Tag", value: "noindex" },
+        ],
+      },
+      {
+        // Cacheable forever, and indexable: a product photograph found in an image search is a
+        // route to the storefront, which is the opposite of what noindex is for.
+        source: "/api/media/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
         ],
       },
     ];

@@ -1,478 +1,207 @@
+/**
+ * The inventory grid.
+ *
+ * This route used to `SELECT ... FROM products WHERE store_id = $1 ORDER BY p.name` with no LIMIT,
+ * attach seven windowed sales aggregates per SKU, and ship the whole catalogue to the browser,
+ * which then filtered it in JavaScript and recomputed a forecast for every row on every change. At
+ * a few thousand SKUs that is a multi-megabyte response and an unusable page. It is paginated and
+ * filtered server-side now, and the forecast arithmetic happens in SQL where the data already is.
+ *
+ * The numbers changed as well as the shape. The grid showed one quantity — `products.stock_quantity`
+ * — which the ShipStation sync overwrote with *available* while an order trigger subtracted from it
+ * as *on hand*. It now reads the five quantities the ledger maintains separately, so "12 on the
+ * shelf, 4 already sold, 8 sellable, 50 arriving Tuesday" is a sentence the screen can actually
+ * say. Supplier was the hardcoded string `'ShipStation'` for every row, which made the supplier
+ * filter a dropdown with one option; it is the real supplier relation now, and null where there
+ * genuinely is not one.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
-import {
-  InventoryProductRow,
-  LastRestockRow,
-  ProductSalesVelocityRow
-} from '@/lib/types/db-rows';
 import { requireAuth } from '@/lib/auth/session';
-import { collectErrors, runManualSync, toCounts } from '@/lib/shipstation/manualSync';
-import { statusForResult } from '../sync/_lib/respond';
+import { adminErrorResponse } from '@/lib/api/adminError';
+import { suggestReorderPoint } from '@/lib/inventory/reorder';
 import {
-  convertInventoryToCSV, 
-  generateCSVFilename, 
-  createCSVDownloadResponse, 
-  validateInventoryData, 
-  formatInventoryForCSV,
-  type InventoryCSVData 
-} from '@/lib/utils/csv-export';
+  INVENTORY_STATE_SQL,
+  INVENTORY_SELECT,
+  buildInventoryOrderBy,
+  buildInventoryWhere,
+  inventoryFrom,
+  resolveDirection,
+  resolveInventorySort,
+  resolveInventoryState,
+  type InventoryFilters
+} from './_lib/query';
 
-interface InventoryItem {
-  id: string;
-  product_id: string;
-  name: string;
-  sku: string;
-  stock_quantity: number;
-  low_stock_threshold: number;
-  unit_cost: number;
-  base_price: number;
-  featured_image_url: string | null;
-  category: string;
-  supplier: string;
-  last_restocked: string | null;
-  forecast_30_days: number;
-  forecast_90_days: number;
-  avg_monthly_sales: number;
-  reorder_point: number;
-  reorder_quantity: number;
-  status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued';
-  warehouse_id: string | null;
-  warehouse_name: string | null;
-  shipstation_inventory?: {
-    available: number;
-    on_hand: number;
-    allocated: number;
-  };
-}
-
-interface InventoryStats {
-  total_products: number;
-  total_value: number;
-  low_stock_items: number;
-  out_of_stock_items: number;
-  pending_orders: number;
-  this_month_restocked: number;
-  average_cost_per_item: number;
-  total_on_hand: number;
-}
+/** Hard ceiling on page size. The export route exists for "give me everything". */
+const MAX_LIMIT = 250;
 
 /**
  * GET /api/admin/inventory
- * Get comprehensive inventory data with real-time ShipStation sync
+ *
+ * One page of the inventory grid, plus the store-wide counts that label its saved views.
+ *
+ * Query parameters: `page`, `limit`, `search`, `state`, `category_id`, `supplier_id`,
+ * `location_id`, `vendor`, `sort_by`, `sort_order`.
+ *
+ * @param request - The incoming request.
+ * @returns The page of stock rows, pagination metadata, view counts, and the store's locations.
  */
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request);
     if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
     }
 
     const { searchParams } = new URL(request.url);
-    const includeShipStation = searchParams.get('sync') === 'true';
-    const exportFormat = searchParams.get('export');
+    const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
+    const limit = Math.min(
+      MAX_LIMIT,
+      Math.max(1, Number.parseInt(searchParams.get('limit') || '50', 10) || 50)
+    );
+    const offset = (page - 1) * limit;
 
-    // Get all products with their inventory data
-    const inventoryQuery = `
-      SELECT 
-        p.id as product_id,
-        p.name,
-        p.sku,
-        p.stock_quantity,
-        p.low_stock_threshold,
-        p.cost_price as unit_cost,
-        p.base_price,
-        p.featured_image_url,
-        c.name as category,
-        p.created_at,
-        p.updated_at,
-        p.is_active,
-        i.available as shipstation_available,
-        i.on_hand as shipstation_on_hand,
-        i.allocated as shipstation_allocated,
-        i.warehouse_id,
-        i.warehouse_name,
-        i.updated_at as inventory_updated_at
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      LEFT JOIN inventory i ON p.sku = i.sku AND p.store_id = i.store_id
-      WHERE p.store_id = $1
-      ORDER BY p.name
-    `;
-
-    const inventoryResult = await db.query<InventoryProductRow>(inventoryQuery, [user.storeId]);
-    const products = inventoryResult.rows;
-
-    // Get sales data for forecasting with multiple time periods
-    /*
-     * Sales velocity per SKU.
-     *
-     * Same fix as `purchase-orders/recommendations`: every window keyed off
-     * `oi.created_at`, which is the line's insert timestamp and not the date
-     * of the sale, so 7-day, 30-day and 90-day sales were the same number for
-     * every product and the grid's seven "windows" were seven copies of one
-     * figure. They key off `o.created_at` now, and the status filter widens
-     * from `IN ('completed','processing')` to everything not cancelled, so a
-     * shipped order counts as the sale it is.
-     *
-     * `avg_monthly_sales` was `AVG(quantity)` over 30 days — mean line size,
-     * not a monthly rate. It is now the 90-day demand over three months.
-     */
-    const salesQuery = `
-      SELECT
-        oi.product_id,
-        oi.product_sku,
-        SUM(oi.quantity) as total_sales,
-        COUNT(DISTINCT oi.order_id) as total_orders,
-        AVG(oi.quantity) as avg_order_quantity,
-        MAX(o.created_at) as last_sale_date,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '7 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_7_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '14 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_14_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '30 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_30_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '60 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_60_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_90_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '180 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_180_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '365 days' THEN oi.quantity ELSE 0 END), 0) as sales_last_365_days,
-        COALESCE(SUM(CASE WHEN o.created_at >= NOW() - INTERVAL '90 days' THEN oi.quantity ELSE 0 END), 0) / 3.0 as avg_monthly_sales
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      WHERE o.store_id = $1 AND o.status <> 'cancelled'
-      GROUP BY oi.product_id, oi.product_sku
-    `;
-
-    const salesResult = await db.query<ProductSalesVelocityRow>(salesQuery, [user.storeId]);
-    const salesData = salesResult.rows.reduce<Record<string, ProductSalesVelocityRow>>((acc, row) => {
-      acc[row.product_id] = row;
-      return acc;
-    }, {});
-
-    // Get recent inventory changes for last restocked dates
-    const inventoryLogsQuery = `
-      SELECT DISTINCT ON (product_id) 
-        product_id,
-        created_at as last_restocked,
-        change_type,
-        quantity_change
-      FROM inventory_logs
-      WHERE store_id = $1 AND change_type IN ('restock', 'adjustment', 'initial_stock')
-      ORDER BY product_id, created_at DESC
-    `;
-
-    const inventoryLogsResult = await db.query<LastRestockRow>(inventoryLogsQuery, [user.storeId]);
-    const inventoryLogs = inventoryLogsResult.rows.reduce<Record<string, LastRestockRow>>((acc, row) => {
-      acc[row.product_id] = row;
-      return acc;
-    }, {});
-
-    // Transform data into inventory items
-    const inventoryItems: InventoryItem[] = products.map(product => {
-      const sales: Partial<ProductSalesVelocityRow> = salesData[product.product_id] ?? {};
-      const lastRestock = inventoryLogs[product.product_id];
-      
-      // Calculate stock status
-      const stockQuantity = Number(product.stock_quantity) || 0;
-      const lowStockThreshold = Number(product.low_stock_threshold) || 10;
-      
-      let status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued';
-      if (!product.is_active) {
-        status = 'discontinued';
-      } else if (stockQuantity === 0) {
-        status = 'out_of_stock';
-      } else if (stockQuantity <= lowStockThreshold) {
-        status = 'low_stock';
-      } else {
-        status = 'in_stock';
-      }
-
-      // Calculate forecasts based on sales history
-      const avgMonthlySales = Number(sales.avg_monthly_sales) || 0;
-      const salesLast30Days = Number(sales.sales_last_30_days) || 0;
-      const salesLast90Days = Number(sales.sales_last_90_days) || 0;
-      
-      // Simple forecast calculation: recent sales trend
-      const forecast30Days = Math.max(salesLast30Days, avgMonthlySales);
-      const forecast90Days = Math.max(salesLast90Days, avgMonthlySales * 3);
-
-      // Calculate reorder point (30 days of sales + buffer)
-      const reorderPoint = Math.max(forecast30Days + 5, lowStockThreshold);
-      const reorderQuantity = Math.max(forecast90Days, 20);
-
-      return {
-        id: product.product_id,
-        product_id: product.product_id,
-        name: product.name,
-        sku: product.sku,
-        stock_quantity: stockQuantity,
-        low_stock_threshold: lowStockThreshold,
-        unit_cost: Number(product.unit_cost) || 0,
-        base_price: Number(product.base_price) || 0,
-        featured_image_url: product.featured_image_url,
-        category: product.category || 'Uncategorized',
-        supplier: 'ShipStation', // Default supplier
-        last_restocked: lastRestock?.last_restocked?.toISOString() ?? null,
-        forecast_30_days: forecast30Days,
-        forecast_90_days: forecast90Days,
-        avg_monthly_sales: avgMonthlySales,
-        reorder_point: reorderPoint,
-        reorder_quantity: reorderQuantity,
-        status,
-        warehouse_id: product.warehouse_id,
-        warehouse_name: product.warehouse_name,
-        // Include detailed sales velocity data for frontend forecasting
-        sales_velocity: {
-          total_sales: Number(sales.total_sales) || 0,
-          total_orders: Number(sales.total_orders) || 0,
-          avg_order_quantity: Number(sales.avg_order_quantity) || 0,
-          last_sale_date: sales.last_sale_date?.toISOString() ?? null,
-          sales_last_7_days: Number(sales.sales_last_7_days) || 0,
-          sales_last_14_days: Number(sales.sales_last_14_days) || 0,
-          sales_last_30_days: Number(sales.sales_last_30_days) || 0,
-          sales_last_60_days: Number(sales.sales_last_60_days) || 0,
-          sales_last_90_days: Number(sales.sales_last_90_days) || 0,
-          sales_last_180_days: Number(sales.sales_last_180_days) || 0,
-          sales_last_365_days: Number(sales.sales_last_365_days) || 0,
-          avg_monthly_sales: avgMonthlySales
-        },
-        shipstation_inventory: product.shipstation_available !== null ? {
-          available: Number(product.shipstation_available) || 0,
-          on_hand: Number(product.shipstation_on_hand) || 0,
-          allocated: Number(product.shipstation_allocated) || 0
-        } : undefined
-      };
-    });
-
-    /*
-     * INVENTORY STATISTICS — THE JOIN FAN-OUT.
-     *
-     * This query used to aggregate over
-     *   FROM products p LEFT JOIN inventory_logs il ON p.id = il.product_id
-     * which multiplies every product by its number of log rows. Each aggregate
-     * in the tile row was therefore inflated by however much stock movement a
-     * product happened to have had:
-     *
-     *   Total products    45  ->  12   (+275%)
-     *   Total value  $77,755.47 -> $22,275.99  (+249%)
-     *   Low stock          4  ->   2
-     *   Out of stock       4  ->   1
-     *
-     * The grid immediately below the tiles listed 12 products and one
-     * out-of-stock item, so the page visibly contradicted itself — and this is
-     * the number a merchant uses for insurance and for loan applications.
-     *
-     * The fix is to aggregate `products` alone and get the one figure that
-     * genuinely needs `inventory_logs` from a scalar subquery, where a
-     * many-rows-per-product relationship cannot fan anything out.
-     *
-     * Verified:
-     *   SELECT COUNT(*), SUM(stock_quantity * COALESCE(cost_price, base_price))
-     *     FROM products WHERE store_id = '650e8400-…0001';
-     *   -> 12 | 22275.99   — which now matches the valuation report exactly.
-     */
-    const statsQuery = `
-      SELECT
-        COUNT(*) as total_products,
-        COUNT(CASE WHEN stock_quantity > low_stock_threshold THEN 1 END) as in_stock_items,
-        COUNT(CASE WHEN stock_quantity <= low_stock_threshold AND stock_quantity > 0 THEN 1 END) as low_stock_items,
-        COUNT(CASE WHEN stock_quantity = 0 THEN 1 END) as out_of_stock_items,
-        SUM(stock_quantity * COALESCE(cost_price, base_price)) as total_value,
-        SUM(stock_quantity) as total_on_hand,
-        AVG(COALESCE(cost_price, base_price)) as average_cost_per_item,
-        (
-          SELECT COUNT(*)
-          FROM inventory_logs il
-          WHERE il.store_id = p_outer.store_id
-            AND il.change_type = 'restock'
-            AND il.created_at >= NOW() - INTERVAL '30 days'
-        ) as restocked_this_month
-      FROM products p_outer
-      WHERE p_outer.store_id = $1
-      GROUP BY p_outer.store_id
-    `;
-
-    const statsResult = await db.query(statsQuery, [user.storeId]);
-    const stats = statsResult.rows[0] || {};
-
-    /*
-     * Customer orders awaiting fulfilment — NOT inbound purchase orders.
-     *
-     * The comment here used to read "Get pending purchase orders count (mock
-     * for now)" and the tile it fed was labelled "Pending orders / Awaiting
-     * delivery" in a row of inventory tiles, so a merchant read five restocks
-     * arriving. It is in fact five *customers* who have been waiting, and for
-     * this store they had been waiting 61 to 73 days. The count is unchanged;
-     * the naming now says what it counts, and the Orders page is where it is
-     * properly surfaced.
-     */
-    const pendingOrdersQuery = `
-      SELECT COUNT(*) as pending_orders
-      FROM orders
-      WHERE store_id = $1 AND status IN ('pending', 'processing')
-    `;
-    const pendingOrdersResult = await db.query(pendingOrdersQuery, [user.storeId]);
-    const pendingOrders = Number(pendingOrdersResult.rows[0]?.pending_orders) || 0;
-
-    const inventoryStats: InventoryStats = {
-      total_products: Number(stats.total_products) || 0,
-      total_value: Number(stats.total_value) || 0,
-      low_stock_items: Number(stats.low_stock_items) || 0,
-      out_of_stock_items: Number(stats.out_of_stock_items) || 0,
-      pending_orders: pendingOrders,
-      this_month_restocked: Number(stats.restocked_this_month) || 0,
-      average_cost_per_item: Number(stats.average_cost_per_item) || 0,
-      total_on_hand: Number(stats.total_on_hand) || 0
+    const filters: InventoryFilters = {
+      search: searchParams.get('search')?.trim() || undefined,
+      state: resolveInventoryState(searchParams.get('state')),
+      categoryId: searchParams.get('category_id') || undefined,
+      supplierId: searchParams.get('supplier_id') || undefined,
+      locationId: searchParams.get('location_id') || undefined,
+      vendor: searchParams.get('vendor') || undefined
     };
 
-    // Handle CSV export
-    if (exportFormat === 'csv') {
-      const csvData = inventoryItems as InventoryCSVData[];
-      const validation = validateInventoryData(csvData);
-      
-      if (!validation.isValid) {
-        return NextResponse.json({
-          success: false,
-          error: 'Invalid inventory data',
-          details: validation.errors
-        }, { status: 400 });
-      }
+    const sortKey = resolveInventorySort(searchParams.get('sort_by'));
+    const direction = resolveDirection(searchParams.get('sort_order'));
 
-      const formattedData = formatInventoryForCSV(csvData);
-      const csvContent = convertInventoryToCSV(formattedData);
-      const filename = generateCSVFilename('inventory');
-      
-      return createCSVDownloadResponse(csvContent, filename);
-    }
+    const where = buildInventoryWhere(user.storeId, filters);
+    const from = inventoryFrom(where.locationParam);
+
+    const rowsSql = `
+      SELECT ${INVENTORY_SELECT}
+      ${from}
+      ${where.sql}
+      ${buildInventoryOrderBy(sortKey, direction)}
+      LIMIT $${where.params.length + 1} OFFSET $${where.params.length + 2}
+    `;
+
+    const countSql = `SELECT COUNT(*)::int AS total ${from} ${where.sql}`;
+
+    /*
+     * View counts are scoped to the store and the selected location, but not to the other filters —
+     * they label the tabs above the grid, and a tab whose count depended on which tab you were
+     * already on would be useless for navigating between them.
+     *
+     * `uncosted_value` is deliberately absent: there is no honest way to value stock whose cost is
+     * unknown. The count is reported instead, so the merchant can see how much of their valuation
+     * is missing rather than being handed a figure that quietly imputed one. An earlier version of
+     * the reports multiplied retail by 0.6 to fill the gap; a number a merchant takes to an insurer
+     * must not be invented.
+     */
+    /*
+     * Every state count is generated from `INVENTORY_STATE_SQL`, the same map the `state` filter
+     * uses, so a badge and the list it opens cannot disagree. They used to: this query carried
+     * `p.track_inventory` guards the filter predicates lacked, so untracked products (whose
+     * `available` is 0) were counted out of "Out of stock" and listed into it. An adversarial
+     * review reproduced a badge of 3 over a list of 5.
+     */
+    const stateCounts = Object.entries(INVENTORY_STATE_SQL)
+      .map(([state, predicate]) => `COUNT(*) FILTER (WHERE ${predicate})::int AS ${state}`)
+      .join(',\n        ');
+
+    const statsSql = `
+      SELECT
+        COUNT(*)::int AS total,
+        ${stateCounts},
+        COALESCE(SUM(lv.on_hand), 0)::int                                         AS total_units,
+        COALESCE(SUM(lv.on_hand * COALESCE(p.cost_price, 0)), 0)::numeric         AS value_at_cost,
+        COALESCE(SUM(lv.on_hand * COALESCE(p.sale_price, p.base_price)), 0)::numeric AS value_at_retail,
+        COALESCE(SUM(CASE WHEN lv.on_hand > 0 AND (p.cost_price IS NULL OR p.cost_price <= 0)
+                          THEN lv.on_hand ELSE 0 END), 0)::int                    AS uncosted_units
+      ${from}
+      WHERE p.store_id = $1
+    `;
+
+    const [rowsResult, countResult, statsResult, locationsResult] = await Promise.all([
+      db.query(rowsSql, [...where.params, limit, offset]),
+      db.query<{ total: number }>(countSql, where.params),
+      db.query(statsSql, where.params.slice(0, 2)),
+      db.query(
+        `SELECT id, code, name, location_type, is_default, is_fulfillable
+           FROM inventory_locations
+          WHERE store_id = $1 AND is_active
+          ORDER BY is_default DESC, priority, name`,
+        [user.storeId]
+      )
+    ]);
+
+    const total = countResult.rows[0]?.total ?? 0;
+    const stats = statsResult.rows[0] ?? {};
+
+    /* `pg` returns NUMERIC as a string to protect precision. These are display figures the grid
+     * formats and sorts, so they are coerced once here. */
+    const items = rowsResult.rows.map((row) => ({
+      ...row,
+      base_price: Number(row.base_price) || 0,
+      sale_price: row.sale_price === null ? null : Number(row.sale_price),
+      unit_cost: row.unit_cost === null ? null : Number(row.unit_cost),
+      value_at_cost: Number(row.value_at_cost) || 0,
+      value_at_retail: Number(row.value_at_retail) || 0,
+      daily_demand: Number(row.daily_demand) || 0,
+      days_of_cover: row.days_of_cover === null ? null : Number(row.days_of_cover),
+      /* The suggested reorder point, shown *beside* the merchant's own figure rather than instead
+       * of it. Demand over the lead time plus safety stock — the textbook formula, using the
+       * store's own lead time where one is recorded and a fortnight where it is not. */
+      suggested_reorder_point: suggestReorderPoint({
+      dailyDemand: Number(row.daily_demand) || 0,
+      leadTimeDays: Number(row.lead_time_days) || null,
+      safetyStock: Number(row.safety_stock) || null
+    })
+    }));
 
     return NextResponse.json({
       success: true,
       data: {
-        inventory: inventoryItems,
-        stats: inventoryStats,
-        last_updated: new Date().toISOString(),
-        shipstation_synced: includeShipStation
+        items,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+          hasNext: offset + items.length < total,
+          hasPrev: page > 1
+        },
+        statistics: {
+          /*
+           * Every state the grid can filter to, keyed by the same name the `state` parameter takes,
+           * generated from `INVENTORY_STATE_SQL`. The camelCase keys below are what the page reads
+           * today and are kept; these are what make the whole vocabulary available without a third
+           * hand-written copy of the list.
+           */
+          ...Object.fromEntries(
+            Object.keys(INVENTORY_STATE_SQL).map((state) => [state, Number(stats[state]) || 0])
+          ),
+          total: Number(stats.total) || 0,
+          oversold: Number(stats.oversold) || 0,
+          outOfStock: Number(stats.out_of_stock) || 0,
+          lowStock: Number(stats.low_stock) || 0,
+          needsReorder: Number(stats.needs_reorder) || 0,
+          incoming: Number(stats.incoming) || 0,
+          unavailable: Number(stats.unavailable) || 0,
+          deadStock: Number(stats.dead_stock) || 0,
+          totalUnits: Number(stats.total_units) || 0,
+          valueAtCost: Number(stats.value_at_cost) || 0,
+          valueAtRetail: Number(stats.value_at_retail) || 0,
+          /* Reported, never imputed. The grid renders this as "excludes N SKUs with no cost on
+           * file" beside the valuation, so the figure's own limits travel with it. */
+          uncostedProducts: Number(stats.uncosted) || 0,
+          uncostedUnits: Number(stats.uncosted_units) || 0
+        },
+        locations: locationsResult.rows,
+        sort: { by: sortKey, order: direction.toLowerCase() }
       }
     });
-
   } catch (error) {
-    console.error('Admin inventory GET error:', error);
-    
-    if (error instanceof Error && error.message === 'Authentication required') {
-      return NextResponse.json({
-        success: false,
-        error: 'Authentication required'
-      }, { status: 401 });
-    }
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
-  }
-}
-
-/**
- * POST /api/admin/inventory/sync
- * Sync inventory data with ShipStation
- */
-export async function POST(request: NextRequest) {
-  try {
-    const user = await requireAuth(request);
-    if (!user.storeId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Store not found'
-      }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const { action, productId, quantity, notes } = body;
-
-    if (action === 'sync_shipstation') {
-      /*
-       * Runs the same page-at-a-time writers as the scheduled sync, so this button fills the
-       * `inventory` table as well as `products.stock_quantity`.
-       *
-       * It used to hand the ShipStation feed to `inventoryService.syncInventoryWithExternalSystem`,
-       * whose contract is `success: errors.length === 0`, counting every SKU with no matching local
-       * product as an error. A ShipStation account almost always carries SKUs the storefront does
-       * not, so the route committed its writes and then answered 500: the sync had worked and the
-       * UI reported it as a failure.
-       */
-      const result = await runManualSync(user.storeId, { operations: ['products', 'inventory'] });
-      const counts = toCounts(result.operations);
-      const errors = collectErrors(result);
-
-      return NextResponse.json(
-        {
-          success: result.success,
-          message: result.success
-            ? 'Inventory synced successfully with ShipStation'
-            : `Inventory sync finished with ${errors.length} error(s)`,
-          synced_items: counts.totalCount,
-          data: counts,
-          errors,
-          truncated: result.operations.some((entry) => entry.truncated)
-        },
-        { status: statusForResult(result) }
-      );
-
-
-    } else if (action === 'adjust_inventory' && productId && quantity !== undefined) {
-      // Manual inventory adjustment
-      const product = await db.query('SELECT * FROM products WHERE id = $1 AND store_id = $2', [productId, user.storeId]);
-      
-      if (product.rows.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'Product not found'
-        }, { status: 404 });
-      }
-
-      const currentQuantity = Number(product.rows[0].stock_quantity) || 0;
-      const newQuantity = Math.max(0, currentQuantity + quantity);
-      
-      // Update product stock
-      await db.query(
-        'UPDATE products SET stock_quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-        [newQuantity, productId]
-      );
-
-      // Log the inventory change
-      await db.query(`
-        INSERT INTO inventory_logs (
-          store_id, product_id, change_type, quantity_change, quantity_after, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-      `, [
-        user.storeId,
-        productId,
-        'adjustment',
-        quantity,
-        newQuantity,
-        notes || 'Manual inventory adjustment'
-      ]);
-
-      return NextResponse.json({
-        success: true,
-        message: 'Inventory adjusted successfully',
-        old_quantity: currentQuantity,
-        new_quantity: newQuantity
-      });
-    }
-
-    return NextResponse.json({
-      success: false,
-      error: 'Invalid action'
-    }, { status: 400 });
-
-  } catch (error) {
-    console.error('Admin inventory POST error:', error);
-    
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return adminErrorResponse(error, 'inventory.list');
   }
 }

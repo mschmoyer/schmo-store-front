@@ -149,16 +149,25 @@ export function ShipStationSyncButton({
     <Button
       leftSection={<IconRefresh size="1rem" />}
       variant="default"
-      onClick={sync}
-      disabled={disabled}
+      onClick={disabled ? undefined : sync}
+      /*
+       * `aria-disabled`, not `disabled`, when there is a reason to convey.
+       *
+       * A `disabled` button is removed from the tab order entirely, so a keyboard-only or
+       * screen-reader user could never reach it and the tooltip explaining why it was dead was
+       * unreachable by construction — the reason existed only for people using a mouse. This keeps
+       * the control focusable and carries the reason in its accessible name, while `onClick` is
+       * withheld so it still does nothing.
+       */
+      aria-disabled={disabled || undefined}
+      disabled={syncing && connected === true}
+      aria-label={reason ? `${label}. ${reason}` : undefined}
       loading={syncing}
     >
       {label}
     </Button>
   );
 
-  // A disabled button swallows pointer events, so the tooltip needs a wrapper to
-  // explain itself — otherwise the merchant sees a dead control and no reason.
   return reason ? (
     <Tooltip label={reason} withArrow>
       <span>{button}</span>

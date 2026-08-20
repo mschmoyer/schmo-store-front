@@ -7,6 +7,7 @@ import {
   Table,
   Button,
   TextInput,
+  Select,
   Group,
   Text,
   Stack,
@@ -51,8 +52,17 @@ interface Product {
   name: string;
   sku: string;
   base_price: number;
+  /* What the product costs *us*. A purchase order is priced in this, not in retail. */
+  cost_price: number | null;
   stock_quantity: number;
   featured_image_url: string;
+}
+
+/** A supplier, as the suppliers endpoint returns it. */
+interface Supplier {
+  id: string;
+  name: string;
+  payment_terms?: string | null;
 }
 
 interface PurchaseOrderItem {
@@ -66,7 +76,15 @@ interface PurchaseOrderItem {
 }
 
 interface CreatePurchaseOrderForm {
-  supplier: string;
+  /*
+   * The supplier's id, not their name.
+   *
+   * This was a free-text field posting `supplier: "<whatever was typed>"` while the route requires
+   * `supplier_id`, so **Create Purchase Order could never create a purchase order** — every attempt
+   * ended in a 400. It also meant the PO was disconnected from the Suppliers list, so the supplier's
+   * payment terms and lead time were unreachable from the order that needed them.
+   */
+  supplier_id: string;
   // Mantine v8 date inputs work with 'yyyy-MM-dd' strings rather than Date objects.
   order_date: string | null;
   expected_delivery: string | null;
@@ -91,13 +109,14 @@ export default function CreatePurchaseOrderPage() {
   
   // State management
   const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // Form state
   const [form, setForm] = useState<CreatePurchaseOrderForm>({
-    supplier: '',
+    supplier_id: '',
     order_date: new Date().toISOString().split('T')[0],
     expected_delivery: null,
     notes: '',
@@ -122,6 +141,26 @@ export default function CreatePurchaseOrderPage() {
   /**
    * Fetch products for selection
    */
+  /**
+   * The store's suppliers, for the picker.
+   *
+   * A purchase order is an order placed with someone, and the route requires that someone to exist
+   * — this page used to collect a name as free text, which is why it could never submit.
+   */
+  const fetchSuppliers = useCallback(async () => {
+    if (!session?.sessionToken) return;
+    try {
+      const response = await fetch('/api/admin/suppliers?active_only=true', {
+        headers: { Authorization: `Bearer ${session.sessionToken}` }
+      });
+      const payload = await response.json();
+      const rows = payload?.data?.suppliers ?? payload?.suppliers ?? payload?.data ?? [];
+      setSuppliers(Array.isArray(rows) ? rows : []);
+    } catch {
+      setSuppliers([]);
+    }
+  }, [session?.sessionToken]);
+
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -255,7 +294,7 @@ export default function CreatePurchaseOrderPage() {
    */
   const submitPurchaseOrder = async () => {
     // Validation
-    if (!form.supplier.trim()) {
+    if (!form.supplier_id) {
       notifications.show({
         title: 'Validation Error',
         message: 'Supplier is required',
@@ -289,13 +328,18 @@ export default function CreatePurchaseOrderPage() {
         throw new Error('No authentication token available');
       }
 
+      /* The shape the route actually accepts. It was posting `supplier` where `supplier_id` is
+       * required, and lines with no SKU where a SKU is required — two independent contract
+       * mismatches, each of which alone made this button impossible to succeed with. */
       const requestBody = {
-        supplier: form.supplier,
+        supplier_id: form.supplier_id,
         order_date: form.order_date,
         expected_delivery: form.expected_delivery ?? undefined,
         notes: form.notes,
         items: form.items.map(item => ({
           product_id: item.product_id,
+          product_sku: item.product_sku,
+          product_name: item.product_name,
           quantity: item.quantity,
           unit_cost: item.unit_cost
         }))
@@ -310,14 +354,15 @@ export default function CreatePurchaseOrderPage() {
         body: JSON.stringify(requestBody)
       });
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to create purchase order');
+      /* Read the body before deciding. Throwing on `!response.ok` discarded the server's own
+       * sentence — "Choose a supplier for this purchase order" — and showed the merchant
+       * "HTTP error! status: 400", which tells them nothing they can act on. */
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error || `Could not create the purchase order (${response.status})`
+        );
       }
       
       notifications.show({
@@ -355,6 +400,7 @@ export default function CreatePurchaseOrderPage() {
   useEffect(() => {
     if (isAuthenticated && session?.sessionToken) {
       fetchProducts();
+      fetchSuppliers();
     }
   }, [isAuthenticated, session?.sessionToken, fetchProducts]);
   
@@ -394,7 +440,7 @@ export default function CreatePurchaseOrderPage() {
             leftSection={<IconCheck size={16} />}
             onClick={submitPurchaseOrder}
             loading={submitting}
-            disabled={form.items.length === 0 || !form.supplier || !form.order_date}
+            disabled={form.items.length === 0 || !form.supplier_id || !form.order_date}
           >
             Create Purchase Order
           </Button>
@@ -419,12 +465,20 @@ export default function CreatePurchaseOrderPage() {
           <Stack>
             <Title order={3} mb="md">Purchase Order Details</Title>
             
-            <TextInput
+            <Select
               label="Supplier"
-              placeholder="Enter supplier name"
-              value={form.supplier}
-              onChange={(e) => setForm(prev => ({ ...prev, supplier: e.target.value }))}
+              placeholder={suppliers.length ? 'Choose a supplier' : 'No suppliers yet'}
+              description={
+                suppliers.length
+                  ? 'Their terms and lead time come with the order.'
+                  : 'Add a supplier first — a purchase order is an order placed with someone.'
+              }
+              data={suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name }))}
+              value={form.supplier_id || null}
+              onChange={(value) => setForm(prev => ({ ...prev, supplier_id: value ?? '' }))}
+              searchable
               required
+              nothingFoundMessage="No supplier by that name"
             />
             
             <DateInput
@@ -591,7 +645,16 @@ export default function CreatePurchaseOrderPage() {
               const product = products.find(p => p.id === val);
               if (product) {
                 setSelectedProduct(product);
-                setItemUnitCost(product.base_price);
+                /*
+                 * The recorded cost, not the retail price.
+                 *
+                 * This defaulted to `base_price`, so adding a keyboard that costs $85.86 and sells
+                 * for $159.00 produced a line at $159.00 and a purchase order valued at retail —
+                 * which then poisons the receipt's moving-average cost and every margin figure
+                 * downstream. Zero when there is no cost on file, because a merchant typing the
+                 * real number is better than one silently accepting a wrong one.
+                 */
+                setItemUnitCost(Number(product.cost_price) || 0);
                 combobox.closeDropdown();
               }
             }}
@@ -639,7 +702,8 @@ export default function CreatePurchaseOrderPage() {
                         <Stack gap={0}>
                           <Text fw={500} size="sm">{product.name}</Text>
                           <Text size="xs" c="dimmed">
-                            SKU: {product.sku} • Stock: {product.stock_quantity} • ${product.base_price}
+                            SKU: {product.sku} • Stock: {product.stock_quantity} • cost{' '}
+                            {product.cost_price ? `$${product.cost_price}` : 'not recorded'}
                           </Text>
                         </Stack>
                       </Group>

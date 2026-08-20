@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { storefrontUrl } from '@/lib/seo/siteUrl';
 
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import {
@@ -38,14 +39,32 @@ export async function generateMetadata({
       ? query.category.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
       : 'All products';
 
+  /*
+   * A category is a real, distinct collection and canonicalises to itself. Every other variation —
+   * a sort order, a page, a search — is the same products arranged differently, so it points at the
+   * clean listing.
+   *
+   * Without this the page inherited the root layout's canonical, which is the platform's marketing
+   * homepage, so every merchant's collection page declared itself a duplicate of rebelshops.com.
+   */
+  const canonical = query.category
+    ? storefrontUrl(storeSlug, `/products?category=${encodeURIComponent(query.category)}`)
+    : storefrontUrl(storeSlug, '/products');
+
   return {
     title,
-    // A filtered or paged view is a duplicate of the catalogue as far as search
-    // engines are concerned; only the clean listing should be indexed.
+    alternates: { canonical },
+    /*
+     * A filtered, sorted or paged view is a duplicate of the catalogue as far as search engines are
+     * concerned; only the clean listing should be indexed. `sort` was missing from this test, so
+     * `?sort=price-asc`, `?sort=newest` and the rest were all indexable duplicates of each other.
+     * `'featured'` is the default the query parser falls back to.
+     */
     robots:
-      query.search || query.page > 1
+      query.search || query.page > 1 || query.sort !== 'featured'
         ? { index: false, follow: true }
         : undefined,
+    openGraph: { title, url: canonical, type: 'website' },
   };
 }
 

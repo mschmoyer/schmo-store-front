@@ -1,666 +1,415 @@
-const { expect } = require('@playwright/test');
-const { adminAuthFixture } = require('../fixtures/admin-auth');
-
 /**
- * Admin Inventory Page Tests - Comprehensive E2E Testing
- * 
- * This test suite provides comprehensive coverage of the Inventory admin page including:
- * - Inventory management with search, filtering, and sorting
- * - Supplier creation and management workflows
- * - Purchase Order creation and management workflows
- * - Tab navigation and functionality
- * - Smart reorder widget and recommendations
- * - Bulk actions and export functionality
- * - Form validation and error handling
- * - Interactive element testing
- * - Complete user workflows
+ * The admin inventory page, end to end.
+ *
+ * Rewritten with the page. The previous suite covered five tabs that no longer live here —
+ * purchase orders, suppliers, reports and alerts each have their own screen now — and asserted
+ * that their modals opened. It passed while "Create purchase order" made no request at all and
+ * while the receive endpoint was a `console.log` that returned `success: true`.
+ *
+ * What is tested here is what a merchant does on this page: see what needs ordering, adjust stock
+ * with a reason, count a shelf, and read where the units went. Each test asserts a change that
+ * survives a reload, because the failure mode this page has actually had is a green toast over a
+ * write that never happened.
  */
 
-adminAuthFixture.describe('Admin Inventory Page - Core Functionality', () => {
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    // Navigate to inventory page
-    await adminPage.goto('/admin/inventory');
-    
-    // Wait for page to load
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
-    await adminPage.waitForLoadState('networkidle');
+const { test, expect } = require('@playwright/test');
+const { AdminLoginPage } = require('../pages/admin/login-page');
+
+/** Open the inventory page and wait for real content. */
+async function gotoInventory(page) {
+  await page.goto('/admin/inventory');
+  await page.waitForLoadState('networkidle');
+  await Promise.race([
+    page.waitForSelector('table tbody tr', { timeout: 20000 }),
+    page.waitForSelector('text=No stock tracked yet', { timeout: 20000 })
+  ]);
+}
+
+/** Read a view tab's badge count. */
+async function viewCount(page, label) {
+  const text = await page.locator('[role=tab]').filter({ hasText: label }).first().textContent();
+  const match = /(\d+)$/.exec(text ?? '');
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Put a row with stock in it at the top.
+ *
+ * The default sort is by name, and the first product alphabetically may well have nothing on the
+ * shelf — transferring or holding zero units is correctly refused, so a test that reaches for row
+ * zero is testing the refusal. Sorting by on hand, descending, makes "the first row" mean "a row
+ * this operation can actually be performed on".
+ */
+async function sortByMostStock(page) {
+  const heading = page.getByRole('button', { name: /^On hand/ }).first();
+
+  /* Clicked until the header reports descending. Asserting the state rather than counting clicks:
+   * the first click on a column that is not the active sort sets ascending, and a fixed number of
+   * clicks would depend on where the page happened to start. */
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const sorted = await page
+      .locator('th[aria-sort="descending"]')
+      .filter({ hasText: 'On hand' })
+      .count();
+    if (sorted > 0) break;
+    await heading.click();
+    await page.waitForTimeout(800);
+  }
+
+  await expect(
+    page.locator('th[aria-sort="descending"]').filter({ hasText: 'On hand' })
+  ).toHaveCount(1);
+}
+
+/**
+ * Read one row's numeric cell, by column *heading* rather than position.
+ *
+ * Positional indices broke the moment a selection checkbox column was added to the left of the
+ * grid: every number silently shifted one place and the assertions started comparing on-hand
+ * against committed. Resolving the index from the header row means a test fails when the number is
+ * wrong, not when the layout moves.
+ *
+ * @param page - The Playwright page.
+ * @param rowIndex - Which body row, zero-based.
+ * @param heading - The column's heading text, such as "On hand".
+ * @returns The cell's numeric content.
+ */
+async function cellValue(page, rowIndex, heading) {
+  const headings = await page.locator('table thead th').allInnerTexts();
+  const columnIndex = headings.findIndex((text) => text.trim().startsWith(heading));
+  if (columnIndex === -1) {
+    throw new Error(`No column headed "${heading}". Headings: ${headings.join(' | ')}`);
+  }
+
+  const text = await page
+    .locator('table tbody tr')
+    .nth(rowIndex)
+    .locator('td')
+    .nth(columnIndex)
+    .textContent();
+  return Number((text ?? '').replace(/[^0-9-]/g, ''));
+}
+
+test.describe('Admin inventory', () => {
+  test.beforeEach(async ({ page }) => {
+    const login = new AdminLoginPage(page);
+    await login.goto();
+    await login.login('demo@schmostore.com', 'rebeldev');
+    await login.waitForLoginSuccess();
+    await gotoInventory(page);
   });
 
-  adminAuthFixture('should load inventory page with all key elements', async ({ adminPage }) => {
-    // Verify page title and description
-    await expect(adminPage.locator('h1')).toContainText('Inventory');
+  test('shows the quantities apart from one another', async ({ page }) => {
+    /*
+     * The old page showed one number, `stock_quantity`, which the sync overwrote with *available*
+     * while the order trigger subtracted from it as *on hand*. These five columns are the whole
+     * point of the ledger underneath.
+     */
+    for (const heading of ['On hand', 'Committed', 'Available', 'On order', 'Cover']) {
+      await expect(page.getByRole('button', { name: new RegExp(`^${heading}`) }).first()).toBeVisible();
+    }
+    expect(await page.locator('table tbody tr').count()).toBeGreaterThan(0);
+  });
+
+  test('every view badge matches the rows it opens', async ({ page }) => {
+    for (const label of ['Needs reordering', 'Low', 'Out', 'Oversold', 'Not selling']) {
+      await page.locator('[role=tab]').filter({ hasText: label }).first().click();
+      await page.waitForTimeout(700);
+
+      /* Read the pair together until it settles — see the note in the catalogue spec. */
+      await expect
+        .poll(
+          async () => {
+            const badge = await viewCount(page, label);
+            const empty = await page.getByText('Nothing matches that').count();
+            const rows = empty ? 0 : await page.locator('table tbody tr').count();
+            return badge === rows ? 'match' : `badge ${badge} vs ${rows} rows`;
+          },
+          { message: `the "${label}" badge should match the rows it opens`, timeout: 8000 }
+        )
+        .toBe('match');
+    }
+  });
+
+  test('a stock adjustment requires a reason and moves the stock', async ({ page }) => {
+    const onHandBefore = await cellValue(page, 0, 'On hand');
+
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
+    await expect(page.getByText('Something moved')).toBeVisible();
+
+    /* The reason is a required field with a closed vocabulary, not a free-text note. */
+    await expect(page.getByRole('textbox', { name: 'Why' })).toBeVisible();
+
+    await page.getByRole('textbox', { name: 'How many units' }).fill('2');
 
     /*
-     * Stat tiles. Two things changed here beyond casing:
+     * Submitting without a reason is refused.
      *
-     * - "Total value" is now $22,275.99, the real figure. It read $77,755.47 —
-     *   inflated 249% by a `LEFT JOIN inventory_logs` fan-out that also
-     *   reported 45 products where there are 12. It now agrees with the
-     *   valuation report and the Products page.
-     * - "Pending orders / Awaiting delivery" is now "Customer orders to ship".
-     *   The count was always customer orders in pending/processing, but the
-     *   label read as inbound restocks — so five customers who had been waiting
-     *   two months looked like five deliveries on their way.
+     * The dialog used to default to "Damaged", so opening it, typing a number and pressing the
+     * button wrote stock off as damaged — a reason with real consequences for valuation and for a
+     * supplier claim, chosen by nobody. The reason is the entire point of this dialog.
      */
-    // `.first()` throughout: several of these words also appear as table
-    // column headers, and an unscoped getByText is a strict-mode violation
-    // rather than a failure of the page.
-    await expect(adminPage.getByText('Total products').first()).toBeVisible();
-    await expect(adminPage.getByText('Total value').first()).toBeVisible();
-    await expect(adminPage.getByText('$22,275').first()).toBeVisible();
-    await expect(adminPage.getByText('Low stock', { exact: true }).first()).toBeVisible();
-    await expect(adminPage.getByText('Out of stock', { exact: true }).first()).toBeVisible();
-    await expect(adminPage.getByText('Customer orders to ship')).toBeVisible();
-    await expect(adminPage.getByText('Restocked').first()).toBeVisible();
-    
-    // Verify sync button
-    await expect(adminPage.locator('button:has-text("Sync ShipStation")')).toBeVisible();
-    
-    // Verify tabs
-    // Tabs by role. A bare `text=Purchase Orders` also matches the panel's own
-    // <h3>, which is a strict-mode violation rather than a real failure.
-    for (const tab of ['Inventory Grid', 'Purchase Orders', 'Suppliers', 'Reports', 'Alerts & Notifications']) {
-      await expect(adminPage.getByRole('tab', { name: tab })).toBeVisible();
-    }
-    
-    console.log('✓ Inventory page loaded with all key elements');
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await expect(page.getByText('Choose what happened to these units')).toBeVisible();
+
+    await page.getByRole('textbox', { name: 'Why' }).click();
+    await page.getByRole('option', { name: 'Damaged' }).first().click();
+
+    /* The consequence is stated in words before it happens, not encoded in a colour. */
+    /* "On hand at Back Room becomes 12" in a multi-location store, "On hand becomes 12" in a
+     * single-location one — the location is named only when there is more than one, because it is
+     * ambiguous only then. */
+    await expect(page.getByText(/On hand.*becomes/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+
+    /* "Damaged" removes stock, so on hand must have fallen by two. */
+    expect(await cellValue(page, 0, 'On hand')).toBe(onHandBefore - 2);
+
+    /* Put it back through the same path, which is also how a merchant corrects a mis-keyed
+     * adjustment — the ledger has no edit. */
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
+    await page.getByRole('textbox', { name: 'Why' }).click();
+    await page.getByRole('option', { name: 'Customer return' }).click();
+    await page.getByRole('textbox', { name: 'How many units' }).fill('2');
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await page.waitForTimeout(2000);
   });
 
-  adminAuthFixture('should handle tab navigation', async ({ adminPage }) => {
-    // Test Inventory Grid tab (default)
-    await expect(adminPage.getByPlaceholder('Search by name or SKU...')).toBeVisible();
-    await expect(adminPage.locator('text=Export')).toBeVisible();
-    
-    // Test Purchase Orders tab
-    await adminPage.getByRole('tab', { name: 'Purchase Orders' }).click();
-    await expect(adminPage.locator('text=Create New Order').first()).toBeVisible();
-    
-    // Test Suppliers tab
-    await adminPage.getByRole('tab', { name: 'Suppliers' }).click();
-    await expect(adminPage.locator('text=Add Supplier').first()).toBeVisible();
-    await expect(adminPage.getByPlaceholder('Search suppliers...')).toBeVisible();
-    
-    // Test Reports tab
-    await adminPage.getByRole('tab', { name: 'Reports' }).click();
-    await expect(adminPage.locator('text=Inventory Turnover')).toBeVisible();
-    await expect(adminPage.locator('text=Stock Valuation')).toBeVisible();
-    
-    // Test Alerts tab
-    await adminPage.getByRole('tab', { name: 'Alerts & Notifications' }).click();
-    await expect(adminPage.locator('text=Alert Settings').first()).toBeVisible();
-    await expect(adminPage.locator('text=Low Stock Notifications').first()).toBeVisible();
-    
-    // Return to Inventory Grid tab
-    await adminPage.getByRole('tab', { name: 'Inventory Grid' }).click();
-    await expect(adminPage.getByPlaceholder('Search by name or SKU...')).toBeVisible();
-    
-    console.log('✓ Tab navigation works correctly');
-  });
-
-  adminAuthFixture('should handle search and filter functionality', async ({ adminPage }) => {
-    // Test search functionality
-    const searchInput = adminPage.locator('input[placeholder="Search by name or SKU..."]');
-    await searchInput.fill('test product');
-    await expect(searchInput).toHaveValue('test product');
-    
-    // Clear search
-    await searchInput.clear();
-    await expect(searchInput).toHaveValue('');
-    
-    // Test supplier filter
-    const supplierFilter = adminPage.locator('select, div[role="combobox"]').filter({ hasText: 'All Suppliers' }).first();
-    if (await supplierFilter.isVisible()) {
-      await supplierFilter.click();
-      // Wait for dropdown options to appear
-      await adminPage.waitForTimeout(500);
-    }
-    
-    // Test stock status filter
-    const stockFilter = adminPage.locator('select, div[role="combobox"]').filter({ hasText: 'All Items' }).first();
-    if (await stockFilter.isVisible()) {
-      await stockFilter.click();
-      await adminPage.waitForTimeout(500);
-    }
-    
-    console.log('✓ Search and filter functionality works');
-  });
-
-  adminAuthFixture('should handle inventory actions', async ({ adminPage }) => {
-    // Test export functionality
-    await adminPage.click('button:has-text("Export")');
-    
-    // Test sync functionality
-    await adminPage.click('button:has-text("Sync ShipStation")');
-    
-    // Wait for any notifications or responses
-    await adminPage.waitForTimeout(1000);
-    
-    console.log('✓ Inventory actions work');
-  });
-
-  adminAuthFixture('should handle forecast period selection', async ({ adminPage }) => {
-    // Look for forecast period selector
-    const forecastSelector = adminPage.locator('select').filter({ hasText: '30' }).first();
-    if (await forecastSelector.isVisible()) {
-      await forecastSelector.click();
-      await adminPage.waitForTimeout(500);
-    }
-    
-    console.log('✓ Forecast period selection tested');
-  });
-
-  adminAuthFixture('should test inventory table interactions', async ({ adminPage }) => {
-    // Wait for table to load
-    await adminPage.waitForSelector('table', { timeout: 5000 });
-    
-    // Check if inventory table has data
-    const tableRows = adminPage.locator('table tbody tr');
-    const rowCount = await tableRows.count();
-    
-    if (rowCount > 0) {
-      console.log(`Found ${rowCount} inventory items`);
-      
-      // Test action buttons on first row
-      const firstRow = tableRows.first();
-      const quickReorderBtn = firstRow.locator('button[title="Quick Reorder"]');
-      const addToPOBtn = firstRow.locator('button[title="Add to Purchase Order"]');
-      
-      if (await quickReorderBtn.isVisible()) {
-        await quickReorderBtn.click();
-        // Wait for modal to appear
-        await adminPage.waitForTimeout(1000);
-        
-        // Close modal by clicking Cancel or outside
-        const cancelBtn = adminPage.locator('button:has-text("Cancel")');
-        if (await cancelBtn.isVisible()) {
-          await cancelBtn.click();
-        }
-      }
-      
-      if (await addToPOBtn.isVisible()) {
-        await addToPOBtn.click();
-        await adminPage.waitForTimeout(1000);
-        
-        // Close modal
-        const closeBtn = adminPage.locator('button:has-text("Cancel")');
-        if (await closeBtn.isVisible()) {
-          await closeBtn.click();
-        }
-      }
-      
-      console.log('✓ Inventory table interactions work');
-    } else {
-      console.log('✓ No inventory items found - empty state handled');
-    }
-  });
-});
-
-adminAuthFixture.describe('Admin Inventory Page - Supplier Management', () => {
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    await adminPage.goto('/admin/inventory');
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
-    
-    // Navigate to Suppliers tab
-    await adminPage.getByRole('tab', { name: 'Suppliers' }).click();
-    await adminPage.waitForSelector('text=Add Supplier', { timeout: 5000 });
-  });
-
-  adminAuthFixture('should open supplier creation modal', async ({ adminPage }) => {
-    // Click Add Supplier button
-    await adminPage.click('button:has-text("Add Supplier")');
-    
-    // Wait for modal to open
-    await adminPage.waitForSelector('text=Add Supplier', { timeout: 5000 });
-    
-    // Verify modal elements. Scoped to the dialog and matched by field rather
-    // than by loose text: "Email" and "Phone" each appear on both a label and
-    // a column header, which is a strict-mode violation, not a page fault.
-    const modal = adminPage.getByRole('dialog');
-    await expect(modal.getByText('Basic Information')).toBeVisible();
-    await expect(modal.getByPlaceholder('Enter supplier name')).toBeVisible();
-    await expect(modal.getByPlaceholder('Primary contact name')).toBeVisible();
-    await expect(modal.getByPlaceholder('contact@supplier.com')).toBeVisible();
-    await expect(modal.getByPlaceholder('(555) 123-4567')).toBeVisible();
-    await expect(modal.getByText('Address Information')).toBeVisible();
-    await expect(modal.getByText('Business Information')).toBeVisible();
-    
-    console.log('✓ Supplier creation modal opens and displays all required fields');
-  });
-
-  adminAuthFixture('should test supplier creation workflow', async ({ adminPage }) => {
-    // Click Add Supplier button
-    await adminPage.click('button:has-text("Add Supplier")');
-    await adminPage.waitForSelector('text=Add Supplier', { timeout: 5000 });
-    
-    // Fill in supplier details
-    const supplierName = `Test Supplier ${Date.now()}`;
-    await adminPage.fill('input[placeholder="Enter supplier name"]', supplierName);
-    await adminPage.fill('input[placeholder="Primary contact name"]', 'John Doe');
-    await adminPage.fill('input[placeholder="contact@supplier.com"]', 'john@testsupplier.com');
-    await adminPage.fill('input[placeholder="(555) 123-4567"]', '(555) 123-4567');
-    await adminPage.fill('textarea[placeholder="Enter street address"]', '123 Test Street');
-    await adminPage.fill('input[placeholder="City"]', 'Test City');
-    await adminPage.fill('input[placeholder="State"]', 'TS');
-    await adminPage.fill('input[placeholder="ZIP"]', '12345');
-    
-    // Test form validation - name is required
-    await expect(adminPage.locator('button:has-text("Add Supplier")').first()).toBeEnabled();
-    
-    // Test cancel functionality
-    await adminPage.getByRole('button', { name: 'Cancel' }).click();
-
-    // The dialog closes. Asserting on `text=Add Supplier` cannot work — the
-    // button that opens the modal carries the same words and stays on screen.
-    await expect(adminPage.getByRole('dialog')).toHaveCount(0, { timeout: 10000 });
-    
-    console.log('✓ Supplier creation workflow tested');
-  });
-
-  adminAuthFixture('should test supplier search functionality', async ({ adminPage }) => {
-    // Test search input
-    const searchInput = adminPage.locator('input[placeholder="Search suppliers..."]');
-    await searchInput.fill('test supplier');
-    await expect(searchInput).toHaveValue('test supplier');
-    
-    // Clear search
-    await searchInput.clear();
-    await expect(searchInput).toHaveValue('');
-    
-    console.log('✓ Supplier search functionality works');
-  });
-
-  adminAuthFixture('should test supplier table interactions', async ({ adminPage }) => {
+  test('the movement history reads back', async ({ page }) => {
     /*
-     * The seeded store has no suppliers, so there is no table to wait for —
-     * the tab renders its empty state instead. Waiting unconditionally on
-     * `table` made this fail on an absence that is the correct behaviour.
+     * This data has been accumulating since the platform was built and nothing has ever displayed
+     * it — a merchant investigating a discrepancy had no way to ask what happened.
      */
-    const tableRows = adminPage.locator('table tbody tr');
-    const rowCount = await adminPage
-      .locator('table')
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Stock history' }).click();
+
+    await expect(page.getByText('Where the units went')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Every movement')).toBeVisible();
+
+    /* The ledger is append-only, and the drawer says so rather than offering an edit that would
+     * quietly rewrite history. */
+    await expect(page.getByText(/cannot be edited or deleted/)).toBeVisible();
+  });
+
+  test('a reorder point set in the grid is saved', async ({ page }) => {
+    const cell = page.getByRole('button', { name: /^Reorder point for .*Select to edit/ }).first();
+    await cell.click();
+
+    const input = page.locator('input[aria-label^="Reorder point for"]');
+    await input.fill('9');
+    await input.press('Enter');
+    await page.waitForTimeout(1500);
+
+    /*
+     * The old modal collected a reorder point and the API dropped it on the floor beneath a
+     * "Successfully updated" toast, so the reload is the assertion that matters.
+     */
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+
+    const after = await page
+      .getByRole('button', { name: /^Reorder point for .*Select to edit/ })
       .first()
-      .waitFor({ timeout: 5000 })
-      .then(() => tableRows.count())
-      .catch(() => 0);
-
-    if (rowCount === 0) {
-      console.log('No suppliers on this store; empty state is the expected view');
-    }
-    
-    if (rowCount > 0) {
-      console.log(`Found ${rowCount} suppliers`);
-      
-      // Test supplier actions menu
-      const firstRow = tableRows.first();
-      const actionsMenu = firstRow.locator('button[aria-label="Actions"]');
-      
-      if (await actionsMenu.isVisible()) {
-        await actionsMenu.click();
-        await adminPage.waitForTimeout(500);
-        
-        // Verify menu options
-        await expect(adminPage.locator('text=View Details')).toBeVisible();
-        await expect(adminPage.locator('text=Edit')).toBeVisible();
-        await expect(adminPage.locator('text=Delete')).toBeVisible();
-        
-        // Close menu by clicking elsewhere
-        await adminPage.click('body');
-      }
-      
-      console.log('✓ Supplier table interactions work');
-    } else {
-      console.log('✓ No suppliers found - empty state handled');
-    }
-  });
-});
-
-adminAuthFixture.describe('Admin Inventory Page - Purchase Order Management', () => {
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    await adminPage.goto('/admin/inventory');
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
-    
-    // Navigate to Purchase Orders tab
-    await adminPage.getByRole('tab', { name: 'Purchase Orders' }).click();
-    await adminPage.waitForSelector('text=Create New Order', { timeout: 5000 });
+      .textContent();
+    expect(after).toContain('9');
   });
 
-  adminAuthFixture('should open purchase order creation modal', async ({ adminPage }) => {
-    // Click Create New Order button
-    await adminPage.click('button:has-text("Create New Order")');
-    
-    // Wait for modal to open
-    await adminPage.waitForSelector('text=Create Purchase Order', { timeout: 5000 });
-    
-    // Verify the stepper. Scoped to the dialog and matched on the step
-    // control: bare `text=Supplier` matches eleven elements on this page.
-    const modal = adminPage.getByRole('dialog');
-    for (const step of ['Supplier', 'Items', 'Review']) {
-      await expect(modal.getByText(step, { exact: true }).first()).toBeVisible();
-    }
-    
-    console.log('✓ Purchase order creation modal opens with stepper');
+  test('export returns a CSV of the current view', async ({ page }) => {
+    const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: /Export this view/ }).click();
+
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^inventory-\d{4}-\d{2}-\d{2}\.csv$/);
   });
 
-  adminAuthFixture('should test purchase order creation workflow', async ({ adminPage }) => {
-    // Click Create New Order button
-    await adminPage.click('button:has-text("Create New Order")');
-    await adminPage.waitForSelector('text=Create Purchase Order', { timeout: 5000 });
-    
-    // Step 1: Supplier Information
-    await expect(adminPage.locator('text=Supplier Name').first()).toBeVisible();
-    await adminPage.fill('input[placeholder="Search or enter supplier name"]', 'Test Supplier');
-    await adminPage.fill('input[placeholder="supplier@example.com"]', 'test@supplier.com');
-    await adminPage.fill('input[placeholder="(555) 123-4567"]', '(555) 123-4567');
-    await adminPage.fill('textarea[placeholder="Supplier address"]', '123 Supplier Street');
-    
-    // Test Next button
-    await adminPage.click('button:has-text("Next")');
-    await adminPage.waitForTimeout(500);
-    
-    // Step 2: Items
-    await expect(adminPage.getByRole('dialog').getByText('Add Product').first()).toBeVisible();
-    
-    // Test Back button
-    await adminPage.getByRole('button', { name: 'Back' }).first().click();
-    await adminPage.waitForTimeout(500);
-
-    // Test Cancel button
-    await adminPage.getByRole('button', { name: 'Cancel' }).first().click();
-    await expect(adminPage.getByRole('dialog')).toHaveCount(0, { timeout: 10000 });
-    
-    console.log('✓ Purchase order creation workflow tested');
-  });
-
-  adminAuthFixture('should test AI recommendations functionality', async ({ adminPage }) => {
-    // Click Create New Order button
-    await adminPage.click('button:has-text("Create New Order")');
-    await adminPage.waitForSelector('text=Create Purchase Order', { timeout: 5000 });
-    
-    // Fill supplier info and move to items step
-    await adminPage.fill('input[placeholder="Search or enter supplier name"]', 'Test Supplier');
-    await adminPage.getByRole('button', { name: 'Next' }).first().click();
-    await adminPage.waitForTimeout(1000);
-    
-    // Check for AI recommendations
-    const aiRecommendations = adminPage.locator('text=AI Recommendations');
-    if (await aiRecommendations.isVisible()) {
-      console.log('✓ AI recommendations are available');
-      
-      // Test hide recommendations
-      const hideBtn = adminPage.locator('button:has-text("Hide Recommendations")');
-      if (await hideBtn.isVisible()) {
-        await hideBtn.click();
-      }
-    } else {
-      console.log('✓ No AI recommendations available');
-    }
-    
-    // Test product search
-    const productSearch = adminPage.locator('input[placeholder="Search products by name or SKU"]');
-    await productSearch.fill('test product');
-    await adminPage.waitForTimeout(1000);
-    
+  test('links out to the surfaces that used to be tabs here', async ({ page }) => {
     /*
-     * Step back, then cancel. Step 2 of the stepper offers Back and Next only
-     * — Cancel lives on step 1 — so waiting for Cancel here timed the test out
-     * on a button that is correctly absent, and the modal does not close on
-     * Escape either. This is the path a user actually has.
+     * Purchase orders and suppliers were tabs on this page, which meant two implementations of the
+     * same list — the tab's had a dead edit button, no pagination, and sent no store id, so it was
+     * permanently empty.
      */
-    await adminPage.getByRole('button', { name: 'Back' }).first().click();
-    await adminPage.getByRole('button', { name: 'Cancel' }).first().click();
-    await expect(adminPage.getByRole('dialog')).toHaveCount(0, { timeout: 10000 });
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: 'Suppliers' }).click();
+    await page.waitForURL(/\/admin\/suppliers/);
+    await expect(page.getByRole('heading', { name: 'Suppliers' })).toBeVisible();
 
-    console.log('✓ AI recommendations and product search tested');
+    await gotoInventory(page);
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: 'Purchase orders' }).click();
+    await page.waitForURL(/\/admin\/purchase-orders/);
   });
 
-  adminAuthFixture('should test purchase order table interactions', async ({ adminPage }) => {
+  test('a second location can be created, and stock moved into it', async ({ page }) => {
     /*
-     * This store has no purchase orders, so the tab renders its empty state
-     * and there is no table to wait for. That is now the honest view: the
-     * list page used to render three hardcoded orders from January 2024
-     * whether or not any existed.
+     * Multi-location was presented throughout the product and implemented nowhere: the table, the
+     * levels, the grid filter and the ledger's location column all existed, `transferStock` was
+     * exported and never called, and nothing could create a second row — so every store had exactly
+     * the one its trigger made and the adjustment dialog's location picker had one option.
+     *
+     * The assertion that matters is the pair of ledger entries, not the dialog: a transfer that
+     * moved a number without recording both legs would leave the two locations unreconcilable.
      */
-    const hasTable = await adminPage
-      .locator('table')
-      .first()
-      .waitFor({ timeout: 5000 })
-      .then(() => true)
-      .catch(() => false);
+    /*
+     * A fixed name, created only if it is not already there.
+     *
+     * A unique name per run accumulated a location every time the suite ran — and they cannot be
+     * cleaned up afterwards, because once stock has moved through a location its ledger rows
+     * reference it and deleting it is correctly refused. Eighteen "E2E Room" entries in the
+     * location picker is the suite damaging the data it runs against.
+     */
+    const name = 'E2E Location';
 
-    if (!hasTable) {
-      console.log('No purchase orders on this store; empty state is the expected view');
-      return;
+    await sortByMostStock(page);
+
+    await page.getByRole('button', { name: 'More' }).first().click();
+    await page.getByRole('menuitem', { name: 'Locations' }).click();
+    await expect(page.getByText('Stock locations')).toBeVisible();
+
+    if ((await page.getByText(name).count()) === 0) {
+      await page.getByLabel('Add a location').fill(name);
+      await page.getByRole('button', { name: 'Add', exact: true }).click();
     }
-    
-    const tableRows = adminPage.locator('table tbody tr');
-    const rowCount = await tableRows.count();
-    
-    if (rowCount > 0) {
-      console.log(`Found ${rowCount} purchase orders`);
-      
-      // Test action buttons on first row
-      const firstRow = tableRows.first();
-      const actionButtons = firstRow.locator('button');
-      const buttonCount = await actionButtons.count();
-      
-      if (buttonCount > 0) {
-        // Test first action button (usually edit/view)
-        await actionButtons.first().click();
-        await adminPage.waitForTimeout(500);
-        
-        // Close any modal that might have opened
-        const cancelBtn = adminPage.locator('button:has-text("Cancel")');
-        if (await cancelBtn.isVisible()) {
-          await cancelBtn.click();
-        }
-      }
-      
-      console.log('✓ Purchase order table interactions work');
-    } else {
-      console.log('✓ No purchase orders found - empty state handled');
-    }
-  });
-});
+    await expect(page.getByText(name).first()).toBeVisible({ timeout: 15000 });
 
-adminAuthFixture.describe('Admin Inventory Page - Reports and Analytics', () => {
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    await adminPage.goto('/admin/inventory');
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
-    
-    // Navigate to Reports tab
-    await adminPage.getByRole('tab', { name: 'Reports' }).click();
-    await adminPage.waitForSelector('text=Inventory Turnover', { timeout: 5000 });
+    /* The default location cannot be removed, because it is where an unlocated movement goes. */
+    await expect(page.getByRole('button', { name: /Remove Main/ })).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+
+    const onHandBefore = await cellValue(page, 0, 'On hand');
+
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Move between locations' }).click();
+    await expect(page.getByText('Move stock between locations')).toBeVisible();
+
+    await page.getByRole('textbox', { name: 'From', exact: true }).click();
+    await page.getByRole('option').first().click();
+    await page.getByRole('textbox', { name: 'To', exact: true }).click();
+    await page.getByRole('option', { name: new RegExp(name) }).click();
+    await page.getByRole('textbox', { name: 'How many units', exact: true }).fill('3');
+    await page.getByRole('button', { name: 'Move stock' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+
+    /* The store-wide total is unchanged: a transfer moves stock, it does not create or destroy it.
+     * That is the property the two-legged ledger entry exists to guarantee. */
+    expect(await cellValue(page, 0, 'On hand')).toBe(onHandBefore);
+
+    /* And both legs are in the history. */
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Stock history' }).click();
+    /* Both legs are in the history — the badge and the per-reason summary — which is exactly what
+     * makes a transfer readable from either end. */
+    await expect(page.getByText('Transferred out').first()).toBeVisible({ timeout: 15000 });
   });
 
-  adminAuthFixture('should display all report options', async ({ adminPage }) => {
-    // Verify report cards
-    await expect(adminPage.locator('text=Inventory Turnover')).toBeVisible();
-    await expect(adminPage.locator('text=Stock Valuation')).toBeVisible();
+  test('stock can be held back from sale without leaving the shelf', async ({ page }) => {
+    /*
+     * `inventory_levels.unavailable` was in the grid, the CSV, the detail page and a statistics
+     * tile, and no code path ever wrote it — so "present but not saleable" was displayed throughout
+     * and could not happen, and this view could never match a row.
+     *
+     * The distinction is the whole point, so it is what this asserts: on hand unchanged, available
+     * down.
+     */
+    await sortByMostStock(page);
 
-    // Dead Stock Analysis is back: its component and API both worked all along
-    // and it was commented out of the report router in one line.
-    await expect(adminPage.locator('text=Dead Stock Analysis')).toBeVisible();
+    const onHandBefore = await cellValue(page, 0, 'On hand');
+    const availableBefore = await cellValue(page, 0, 'Available');
+    expect(onHandBefore).toBeGreaterThan(2);
 
-    // Supplier Performance is gone. It had a title and a "Generate Report"
-    // button and neither a component nor an API, so the button bounced the
-    // merchant silently back to this page.
-    await expect(adminPage.locator('text=Supplier Performance')).toHaveCount(0);
-    
-    // Test Generate Report buttons
-    const generateButtons = adminPage.locator('button:has-text("Generate Report")');
-    const buttonCount = await generateButtons.count();
-    
-    if (buttonCount > 0) {
-      // Test first generate button
-      await generateButtons.first().click();
-      await adminPage.waitForTimeout(1000);
-    }
-    
-    console.log('✓ All report options are displayed and functional');
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
+    await page.getByRole('radio', { name: 'Hold stock back' }).click();
+
+    await page.getByRole('textbox', { name: 'How many units' }).fill('2');
+    /* The label reads "Note (required)" for a quarantine, which is the point — somebody eventually
+     * has to know what these units are waiting on. */
+    await page.getByRole('textbox', { name: /^Note/ }).fill('E2E: awaiting inspection');
+    await expect(page.getByText(/stay on the shelf but stop being sellable/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await page.waitForTimeout(2000);
+
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('table tbody tr');
+
+    expect(await cellValue(page, 0, 'On hand')).toBe(onHandBefore);
+    expect(await cellValue(page, 0, 'Available')).toBe(availableBefore - 2);
+
+    /* Put them back, so the suite can run twice. */
+    await page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ }).click();
+    await page.getByRole('menuitem', { name: 'Adjust stock' }).click();
+    await page.getByRole('radio', { name: 'Hold stock back' }).click();
+    await page.getByRole('radio', { name: 'Return to sale' }).click();
+    await page.getByRole('textbox', { name: 'How many units' }).fill('2');
+    await page.getByRole('button', { name: 'Record adjustment' }).click();
+    await page.waitForTimeout(2000);
   });
 
-  adminAuthFixture('should test purchase order analytics', async ({ adminPage }) => {
-    // Look for purchase order analytics section
-    const analyticsSection = adminPage.locator('text=Purchase Order Analytics');
-    
-    if (await analyticsSection.isVisible()) {
-      console.log('✓ Purchase order analytics section is visible');
-    } else {
-      console.log('✓ Purchase order analytics may not be available');
-    }
-  });
-});
+  test('the restock worklist turns into a purchase order', async ({ page }) => {
+    /*
+     * The journey this page exists for, and the one it could not do.
+     *
+     * Inventory had no row selection and no bulk actions at all, so deciding what to order for
+     * forty SKUs meant opening forty row menus — and the screen that turned a shortage into a
+     * purchase order was a separate page whose Create button could never submit.
+     */
+    await sortByMostStock(page);
 
-adminAuthFixture.describe('Admin Inventory Page - Alerts and Notifications', () => {
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    await adminPage.goto('/admin/inventory');
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
-    
-    // Navigate to Alerts tab
-    await adminPage.getByRole('tab', { name: 'Alerts & Notifications' }).click();
-    await adminPage.waitForSelector('text=Alert Settings', { timeout: 5000 });
-  });
+    /* No bar until something is selected: it is a response to a choice, not furniture. */
+    expect(await page.locator('[role="region"][aria-label*="Bulk actions"]').count()).toBe(0);
 
-  adminAuthFixture('should display alert settings', async ({ adminPage }) => {
-    // Verify alert settings
-    await expect(adminPage.locator('text=Low Stock Notifications').first()).toBeVisible();
-    await expect(adminPage.locator('text=Out of Stock Alerts')).toBeVisible();
-    await expect(adminPage.locator('text=Forecast Warnings')).toBeVisible();
-    
-    // Test toggle switches
-    const switches = adminPage.locator('input[type="checkbox"]');
-    const switchCount = await switches.count();
-    
-    if (switchCount > 0) {
-      console.log(`Found ${switchCount} alert toggle switches`);
-    }
-    
-    console.log('✓ Alert settings are displayed');
+    await page.locator('table tbody tr input[type="checkbox"]').first().check();
+    const bar = page.locator('[role="region"][aria-label*="Bulk actions"]');
+    await expect(bar).toBeVisible();
+    await expect(bar).toContainText('1 product selected');
+
+    await page.getByRole('button', { name: 'Create purchase order' }).first().click();
+
+    const modal = page.locator('.mantine-Modal-body');
+    await expect(modal.getByText('One order, to one supplier')).toBeVisible();
+
+    /* Every selected line is listed with a quantity already worked out from the reorder policy,
+     * net of what is on the shelf and what is already on order. */
+    const quantity = modal.locator('input[aria-label^="Order quantity for"]').first();
+    await expect(quantity).toBeVisible();
+
+    /* And it will not submit without a supplier — an order is placed with someone. */
+    await expect(
+      modal.getByRole('button', { name: 'Create purchase order' })
+    ).toBeDisabled();
   });
 
-  adminAuthFixture('should display active alerts', async ({ adminPage }) => {
-    // Look for active alerts section
-    await expect(adminPage.locator('text=Active Alerts')).toBeVisible();
-    
-    // Check for alert items
-    const alertItems = adminPage.locator('div[role="alert"]');
-    const alertCount = await alertItems.count();
-    
-    if (alertCount > 0) {
-      console.log(`Found ${alertCount} active alerts`);
-      
-      // Test reorder button on first alert
-      const reorderBtn = alertItems.first().locator('button:has-text("Reorder")');
-      if (await reorderBtn.isVisible()) {
-        await reorderBtn.click();
-        await adminPage.waitForTimeout(1000);
-        
-        // Close any modal
-        const cancelBtn = adminPage.locator('button:has-text("Cancel")');
-        if (await cancelBtn.isVisible()) {
-          await cancelBtn.click();
-        }
-      }
-    } else {
-      console.log('✓ No active alerts found');
-    }
-  });
-});
+  test('reports an error rather than an empty table', async ({ page }) => {
+    /*
+     * A failed fetch used to be swallowed, leaving a fully-rendered page with zeroed cards and no
+     * rows — which a merchant reads as "I have no inventory", not "something went wrong".
+     */
+    await page.route('**/api/admin/inventory?*', (route) => route.abort());
+    await page.reload();
 
-adminAuthFixture.describe('Admin Inventory Page - Complete Workflows', () => {
-  adminAuthFixture.beforeEach(async ({ adminPage }) => {
-    await adminPage.goto('/admin/inventory');
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
+    await expect(page.getByText('Could not load inventory')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
   });
 
-  adminAuthFixture('should complete full inventory management workflow', async ({ adminPage }) => {
-    // 1. Check inventory stats
-    await expect(adminPage.getByText('Total products').first()).toBeVisible();
-    
-    // 2. Search and filter inventory
-    await adminPage.fill('input[placeholder="Search by name or SKU..."]', 'test');
-    await adminPage.waitForTimeout(1000);
-    
-    // 3. Clear search
-    await adminPage.fill('input[placeholder="Search by name or SKU..."]', '');
-    
-    // 4. Test sync functionality
-    await adminPage.click('button:has-text("Sync ShipStation")');
-    await adminPage.waitForTimeout(2000);
-    
-    // 5. Test export functionality
-    await adminPage.click('button:has-text("Export")');
-    await adminPage.waitForTimeout(2000);
-    
-    // 6. Navigate through all tabs
-    await adminPage.getByRole('tab', { name: 'Purchase Orders' }).click();
-    await adminPage.waitForTimeout(500);
-    await adminPage.getByRole('tab', { name: 'Suppliers' }).click();
-    await adminPage.waitForTimeout(500);
-    await adminPage.getByRole('tab', { name: 'Reports' }).click();
-    await adminPage.waitForTimeout(500);
-    await adminPage.getByRole('tab', { name: 'Alerts & Notifications' }).click();
-    await adminPage.waitForTimeout(500);
-    await adminPage.getByRole('tab', { name: 'Inventory Grid' }).click();
-    await adminPage.waitForTimeout(500);
-    
-    console.log('✓ Complete inventory management workflow tested');
-  });
+  test('row actions are named for assistive technology', async ({ page }) => {
+    const menu = page.locator('table tbody tr').first().getByRole('button', { name: /^Actions for/ });
+    await expect(menu).toBeVisible();
 
-  adminAuthFixture('should handle error states gracefully', async ({ adminPage }) => {
-    // Test navigation to non-existent inventory item
-    await adminPage.goto('/admin/inventory/non-existent-item');
-    await adminPage.waitForLoadState('networkidle');
-    
-    // Should handle gracefully (either show error or redirect)
-    const currentUrl = adminPage.url();
-    console.log(`✓ Error handling tested - Current URL: ${currentUrl}`);
-    
-    // Navigate back to inventory
-    await adminPage.goto('/admin/inventory');
-    // The heading is `Inventory`, not `Inventory Management`. Every test in
-    // this file was failing here rather than on an assertion.
-    await adminPage.waitForSelector('h1:has-text("Inventory")', { timeout: 20000 });
-  });
-
-  adminAuthFixture('should test responsive design', async ({ adminPage }) => {
-    // Test different viewport sizes
-    await adminPage.setViewportSize({ width: 1200, height: 800 });
-    await expect(adminPage.locator('h1')).toContainText('Inventory');
-    
-    await adminPage.setViewportSize({ width: 768, height: 1024 });
-    await expect(adminPage.locator('h1')).toContainText('Inventory');
-    
-    await adminPage.setViewportSize({ width: 375, height: 667 });
-    await expect(adminPage.locator('h1')).toContainText('Inventory');
-    
-    // Reset viewport
-    await adminPage.setViewportSize({ width: 1280, height: 720 });
-    
-    console.log('✓ Responsive design tested');
-  });
-
-  adminAuthFixture('should test keyboard navigation', async ({ adminPage }) => {
-    // Test keyboard navigation on search input
-    await adminPage.focus('input[placeholder="Search by name or SKU..."]');
-    await adminPage.keyboard.type('test product');
-    await adminPage.keyboard.press('Tab');
-    
-    // Test escape key functionality
-    await adminPage.keyboard.press('Escape');
-    
-    console.log('✓ Keyboard navigation tested');
+    /* Stock state is a dot plus a word, so it is not conveyed by colour alone. */
+    const stateText = await page.locator('table tbody tr').first().textContent();
+    expect(stateText).toMatch(/In stock|Low|Out|Oversold|Untracked/);
   });
 });

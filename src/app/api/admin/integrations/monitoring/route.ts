@@ -2,22 +2,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import { monitoringService } from '@/lib/services/monitoringService';
 import { jobQueueService } from '@/lib/services/jobQueueService';
 import { inventoryService } from '@/lib/services/inventoryService';
+import { requireAuth } from '@/lib/auth/session';
+import { adminErrorResponse } from '@/lib/api/adminError';
 
 /**
  * Integration Monitoring API
- * 
- * Provides monitoring and metrics endpoints for integration health:
- * - GET: Retrieve integration metrics and health status
- * - POST: Trigger manual health checks or operations
- * 
- * Requires admin authentication
+ *
+ * Metrics and health for the integrations, plus a few manual operations.
+ *
+ * The docblock here said "Requires admin authentication" and the file called `requireAuth`
+ * nowhere. It was the only route under `/api/admin/**` that mutated data without a session, it
+ * read `store_id` from the request body, and one of its actions destroyed stock:
+ *
+ *     curl -X POST /api/admin/integrations/monitoring \
+ *       -d '{"action":"sync-inventory","store_id":"<any store>","products":["FWG-WD-2012"]}'
+ *     -> {"success":true,"data":{"synced":1}}   and that SKU went from 31 units to 0
+ *
+ * With no token, against any store, from anywhere. It reached `syncInventoryWithExternalSystem`
+ * with `available_quantity: 0` under a comment reading "Will be updated during sync" — it was not,
+ * and could not be, because nothing else in the call had the real quantities.
+ *
+ * Both handlers now require a session and take the store from it. The `sync-inventory` action is
+ * gone; the real sync is `/api/admin/sync/inventory`, which authenticates, reads live quantities
+ * from ShipStation and posts them through the ledger.
  */
 export async function GET(request: NextRequest) {
   try {
+    const user = await requireAuth(request);
+    if (!user.storeId) {
+      return NextResponse.json({ error: 'Store not found' }, { status: 404 });
+    }
+
     const { searchParams } = request.nextUrl;
     const action = searchParams.get('action');
     const integrationType = searchParams.get('integration') || 'shipstation';
-    const storeId = searchParams.get('store_id');
+    /* From the session, never the query string. Reading it from the caller is what made every
+     * store's metrics readable by every other. */
+    const storeId = user.storeId;
     const hoursBack = parseInt(searchParams.get('hours') || '24');
 
     switch (action) {
@@ -51,14 +72,11 @@ export async function GET(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('Error in integration monitoring API:', error);
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    /* `adminErrorResponse` turns a missing session into a 401 rather than a 500, and
+     * stops the raw error text reaching the client. This returned
+     * `{"error":"Internal server error","message":"Authentication required"}` with a 500,
+     * which reads as a broken server rather than a rejected request. */
+    return adminErrorResponse(error, 'monitoring.get');
   }
 }
 
@@ -67,7 +85,16 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { action, ...data } = await request.json();
+    const user = await requireAuth(request);
+    if (!user.storeId) {
+      return NextResponse.json({ error: 'Store not found' }, { status: 404 });
+    }
+
+    const { action, ...body } = await request.json();
+
+    /* The store is the session's. A caller-supplied `store_id` is ignored rather than trusted —
+     * that field is how this route came to be able to zero another merchant's stock. */
+    const data = { ...body, store_id: user.storeId, storeId: user.storeId };
 
     switch (action) {
       case 'trigger-health-check':
@@ -81,10 +108,25 @@ export async function POST(request: NextRequest) {
       
       case 'test-notification':
         return await testNotification(data);
-      
+
       case 'sync-inventory':
-        return await triggerInventorySync(data);
-      
+        /*
+         * Removed rather than authenticated.
+         *
+         * It called `syncInventoryWithExternalSystem` with `available_quantity: 0` for every SKU
+         * named, so its only possible effect was to set that stock to zero. Adding a session to it
+         * would have made it a destructive button only the merchant could press, which is not an
+         * improvement.
+         */
+        return NextResponse.json(
+          {
+            error:
+              'This action set stock to zero and has been removed. Use POST /api/admin/sync/inventory, '
+              + 'which reads live quantities from ShipStation and posts them through the stock ledger.'
+          },
+          { status: 410 }
+        );
+
       default:
         return NextResponse.json(
           { error: 'Unknown action' },
@@ -93,14 +135,7 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('Error in integration monitoring POST:', error);
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    return adminErrorResponse(error, 'monitoring.post');
   }
 }
 
@@ -445,51 +480,3 @@ async function testNotification(data: { order_id?: string; notification_type?: s
   }
 }
 
-/**
- * Trigger inventory sync
- */
-async function triggerInventorySync(data: { store_id?: string; products?: string[]; storeId?: string }) {
-  try {
-    const { store_id, products } = data;
-    
-    if (!store_id) {
-      return NextResponse.json(
-        { error: 'store_id is required for inventory sync' },
-        { status: 400 }
-      );
-    }
-
-    let result;
-    
-    if (products && Array.isArray(products)) {
-      // Convert product SKUs to expected format for sync
-      const productData = products.map(sku => ({
-        sku,
-        available_quantity: 0, // Will be updated during sync
-      }));
-      result = await inventoryService.syncInventoryWithExternalSystem(store_id, productData);
-    } else {
-      // Trigger full inventory sync job
-      const jobId = await jobQueueService.addJob(
-        'inventory_update',
-        {
-          store_id,
-          sync_type: 'full_sync',
-          triggered_by: 'manual'
-        },
-        'medium'
-      );
-      
-      result = { success: true, job_id: jobId };
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-      message: 'Inventory sync initiated'
-    });
-
-  } catch (error) {
-    throw error;
-  }
-}

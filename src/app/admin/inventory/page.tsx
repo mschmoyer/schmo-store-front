@@ -1,996 +1,988 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { 
-  Stack, 
-  Title, 
-  Card, 
-  Text, 
-  Button, 
-  Group, 
-  Badge, 
-  Table, 
-  ActionIcon, 
-  NumberInput, 
-  Modal, 
-  TextInput,
-  Select,
+/**
+ * Inventory.
+ *
+ * The old page loaded the entire catalogue with no `LIMIT`, attached seven windowed sales
+ * aggregates per SKU, shipped the lot to the browser, filtered it in JavaScript, and recomputed a
+ * forecast for every row on every change. At a few thousand SKUs it was unusable. It had no
+ * pagination control, no row count, no error state — a failed fetch was swallowed and left a
+ * fully-rendered page with six zeroed cards and an empty table, which reads as "you have no
+ * inventory".
+ *
+ * The numbers were worse than the performance. It showed one quantity, `stock_quantity`, which the
+ * ShipStation sync overwrote with *available* while the order trigger subtracted from it as *on
+ * hand*. Supplier was the literal string 'ShipStation' for every row, so the supplier filter was a
+ * dropdown with one option. The reorder point was recomputed as `forecast30 + 5` on every request
+ * and shown in an editable field whose value the API discarded. "Create purchase order" showed a
+ * green toast and made no request at all.
+ *
+ * What this page shows now comes from the ledger: on hand, committed, available, and incoming from
+ * open purchase orders. Adjustments go through a dialog that requires a reason, and every movement
+ * is readable afterwards. The five things a merchant does here — see what needs ordering, adjust
+ * stock, count a shelf, check where units went, and set a reorder policy — are each one or two
+ * clicks from the grid.
+ *
+ * Purchase orders and suppliers are no longer tabs on this page. They have their own lifecycles and
+ * their own screens; nesting them here meant two implementations of the same list, one of which
+ * had a dead edit button and no pagination.
+ */
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import {
+  ActionIcon,
   Alert,
-  Loader,
+  Badge,
+  Checkbox,
+  Button,
+  Group,
+  Menu,
+  Pagination,
+  Paper,
+  Select,
+  Stack,
+  Table,
   Tabs,
-  SimpleGrid,
-  Switch,
+  Text,
+  TextInput,
   Tooltip
 } from '@mantine/core';
-import { 
-  IconPackage, 
-  IconTruckDelivery, 
-  IconAlertTriangle, 
-  IconRefresh, 
-  IconPlus,
-  IconFileText,
-  IconEdit,
-  IconTrash,
+import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
+import {
+  IconAlertTriangle,
+  IconChevronDown,
+  IconClipboardList,
+  IconDots,
+  IconFileExport,
+  IconArrowsExchange,
+  IconBuildingWarehouse,
+  IconHistory,
   IconSearch,
-  IconDownload,
-  IconChartBar,
   IconShoppingCart,
-  IconBell,
-  IconCheck,
-  IconAlertCircle,
-  IconExclamationMark,
+  IconTruckDelivery,
   IconX
 } from '@tabler/icons-react';
-import { notifications } from '@mantine/notifications';
-import { ShipStationSyncButton } from '@/components/admin/ShipStationSyncButton';
-import { useDisclosure } from '@mantine/hooks';
-import InventoryEditModal from '@/components/admin/InventoryEditModal';
-import type { ForecastPeriod, ForecastResult } from '@/lib/inventory-forecasting-types';
-import { FORECAST_PERIODS, calculateClientSideForecast } from '@/lib/inventory-forecasting-types';
-import PurchaseOrderModal, { type PurchaseOrderItem } from '@/components/admin/PurchaseOrderModal';
-import ReceivingModal from '@/components/admin/ReceivingModal';
-import SupplierModal from '@/components/admin/SupplierModal';
-import SmartReorderWidget from '@/components/admin/SmartReorderWidget';
-import PurchaseOrderAnalytics from '@/components/admin/PurchaseOrderAnalytics';
-import SuppliersManagement from '@/components/admin/SuppliersManagement';
+import { useAdmin } from '@/contexts/AdminContext';
+import { EmptyState, Price } from '@/components/ui';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
-import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { ShipStationSyncButton } from '@/components/admin/ShipStationSyncButton';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
-import { Price, ProductImage } from '@/components/ui';
+import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
+import { SortableTh } from '@/components/admin/catalog/SortableTh';
+import { InlineEdit } from '@/components/admin/catalog/InlineEdit';
+import { downloadWithAuth } from '@/components/admin/catalog/download';
+import { AdjustStockModal, type AdjustTarget } from '@/components/admin/inventory/AdjustStockModal';
+import {
+  TransferStockModal,
+  type TransferTarget
+} from '@/components/admin/inventory/TransferStockModal';
+import { LocationsModal } from '@/components/admin/inventory/LocationsModal';
+import { InventoryBulkBar } from '@/components/admin/inventory/InventoryBulkBar';
+import { LedgerDrawer } from '@/components/admin/inventory/LedgerDrawer';
+import {
+  INVENTORY_VIEWS,
+  useInventoryParams,
+  type InventoryViewKey
+} from '@/components/admin/inventory/useInventoryParams';
 import table from '@/components/admin/adminTable.module.css';
+import styles from './inventory.module.css';
 
-interface SalesVelocity {
-  total_sales: number;
-  total_orders: number;
-  avg_order_quantity: number;
-  last_sale_date: string | null;
-  sales_last_7_days: number;
-  sales_last_14_days: number;
-  sales_last_30_days: number;
-  sales_last_60_days: number;
-  sales_last_90_days: number;
-  sales_last_180_days: number;
-  sales_last_365_days: number;
-  avg_monthly_sales: number;
-}
-
-interface InventoryItem {
-  id: string;
-  name: string;
+/** One row of the inventory grid. */
+interface InventoryRow {
+  product_id: string;
   sku: string;
-  stock_quantity: number;
-  low_stock_threshold: number;
-  unit_cost: number;
-  base_price: number;
+  name: string;
   featured_image_url: string | null;
-  category: string;
-  supplier: string;
-  last_restocked: string;
-  forecast_30_days: number;
-  forecast_90_days: number;
-  avg_monthly_sales: number;
-  reorder_point: number;
-  reorder_quantity: number;
-  status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'discontinued';
-  sales_velocity: SalesVelocity;
-  forecast?: ForecastResult;
-}
-
-interface PurchaseOrder {
-  id: string;
-  po_number: string;
-  supplier_name: string;
-  order_date: string;
-  expected_delivery: string;
-  status: 'pending' | 'approved' | 'shipped' | 'delivered' | 'cancelled';
-  total_cost: number;
-  subtotal: number;
-  tax_amount: number;
-  shipping_amount: number;
-  purchase_order_items?: {
-    id: string;
-    product_name: string;
-    product_sku: string;
-    quantity: number;
-    quantity_received: number;
-    quantity_pending: number;
-    unit_cost: number;
-    total_cost: number;
-  }[];
+  track_inventory: boolean;
+  on_hand: number;
+  committed: number;
+  reserved: number;
+  unavailable: number;
+  available: number;
+  incoming: number;
+  location_count: number;
+  unit_cost: number | null;
+  base_price: number;
+  value_at_cost: number;
+  units_30d: number;
+  units_90d: number;
+  daily_demand: number;
+  days_of_cover: number | null;
+  reorder_point: number | null;
+  reorder_quantity: number | null;
+  suggested_reorder_point: number | null;
+  low_stock_threshold: number | null;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  category_name: string | null;
+  state: 'in_stock' | 'low_stock' | 'out_of_stock' | 'oversold' | 'not_tracked';
+  last_sale_date: string | null;
 }
 
 interface InventoryStats {
-  total_products: number;
-  total_value: number;
-  low_stock_items: number;
-  out_of_stock_items: number;
-  pending_orders: number;
-  this_month_restocked: number;
+  total: number;
+  oversold: number;
+  outOfStock: number;
+  lowStock: number;
+  needsReorder: number;
+  incoming: number;
+  unavailable: number;
+  deadStock: number;
+  totalUnits: number;
+  valueAtCost: number;
+  valueAtRetail: number;
+  uncostedProducts: number;
+  uncostedUnits: number;
 }
 
-export default function InventoryPage() {
-  const router = useRouter();
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+interface Location {
+  id: string;
+  code: string;
+  name: string;
+  is_default: boolean;
+}
+
+/** Stock state as a word, paired with a dot. Never colour alone. */
+const STATE_LABEL: Record<InventoryRow['state'], string> = {
+  in_stock: 'In stock',
+  low_stock: 'Low',
+  out_of_stock: 'Out',
+  oversold: 'Oversold',
+  not_tracked: 'Untracked'
+};
+
+/**
+ * The inventory page.
+ *
+ * @returns The stock grid with its views, adjustments and movement history.
+ */
+export default function InventoryPage(): React.ReactElement {
+  const { session } = useAdmin();
+  const { params, update, setView, toggleSort, apiQuery, hasFilters, clearFilters } =
+    useInventoryParams();
+
+  const [rows, setRows] = useState<InventoryRow[]>([]);
   const [stats, setStats] = useState<InventoryStats | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [categories, setCategories] = useState<Array<{ value: string; label: string }>>([]);
+  const [suppliers, setSuppliers] = useState<Array<{ value: string; label: string }>>([]);
+
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>('inventory');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSupplier, setSelectedSupplier] = useState<string>('');
-  const [stockFilter, setStockFilter] = useState<string>('all');
-  
-  const [reorderModalOpened, { open: openReorderModal, close: closeReorderModal }] = useDisclosure(false);
-  const [purchaseOrderModalOpened, { open: openPurchaseOrderModal, close: closePurchaseOrderModal }] = useDisclosure(false);
-  const [receivingModalOpened, { open: openReceivingModal, close: closeReceivingModal }] = useDisclosure(false);
-  const [supplierModalOpened, { close: closeSupplierModal }] = useDisclosure(false);
-  const [editModalOpened, { open: openEditModal, close: closeEditModal }] = useDisclosure(false);
-  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
-  const [reorderQuantity, setReorderQuantity] = useState(0);
-  const [forecastPeriod, setForecastPeriod] = useState<ForecastPeriod>(30 as ForecastPeriod);
-  const [forecastData, setForecastData] = useState<Record<string, ForecastResult>>({});
-  const [loadingForecast, setLoadingForecast] = useState(false);
-  const [prefilledPOItems, setPrefilledPOItems] = useState<PurchaseOrderItem[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchInventoryData = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        return;
-      }
+  const [adjusting, setAdjusting] = useState<AdjustTarget | null>(null);
+  const [transferring, setTransferring] = useState<TransferTarget | null>(null);
+  /* Selection for the bulk bar. Kept as ids so it survives a refetch that replaces the row objects. */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [locationsOpen, { open: openLocations, close: closeLocations }] = useDisclosure(false);
+  const [viewingHistory, setViewingHistory] = useState<InventoryRow | null>(null);
 
-      const response = await fetch('/api/admin/inventory', {
+  const [searchDraft, setSearchDraft] = useState(params.search);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const firstLoad = useRef(true);
+
+  const token = session?.sessionToken;
+
+  const authFetch = useCallback(
+    async (url: string, init?: RequestInit) => {
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch(url, {
+        ...init,
         headers: {
-          'Authorization': `Bearer ${token}`
+          ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+          ...init?.headers,
+          Authorization: `Bearer ${token}`
         }
       });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setInventory(result.data.inventory);
-          setStats(result.data.stats);
-          
-          // Fetch real purchase orders
-          fetchPurchaseOrders();
-        }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || `Request failed (${response.status})`);
       }
-    } catch (error) {
-      console.error('Failed to fetch inventory data:', error);
+      return payload;
+    },
+    [token]
+  );
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    if (firstLoad.current) setLoading(true);
+    else setRefreshing(true);
+    setError(null);
+
+    try {
+      const payload = await authFetch(`/api/admin/inventory?${apiQuery}`);
+      setRows(payload.data.items);
+      setStats(payload.data.statistics);
+      setLocations(payload.data.locations);
+      setTotal(payload.data.pagination.total);
+      setTotalPages(payload.data.pagination.totalPages);
+    } catch (caught) {
+      /* Surfaced, not swallowed. A failed fetch used to leave a fully-rendered page with zeroed
+       * cards and an empty table, which a merchant reads as "I have no inventory". */
+      setError(caught instanceof Error ? caught.message : 'Could not load inventory');
     } finally {
+      firstLoad.current = false;
       setLoading(false);
+      setRefreshing(false);
     }
+  }, [apiQuery, authFetch, token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!token) return;
+    authFetch('/api/admin/categories')
+      .then((payload) => setCategories(payload.options ?? []))
+      .catch(() => setCategories([]));
+    authFetch('/api/admin/suppliers')
+      .then((payload) =>
+        setSuppliers(
+          (payload.data ?? []).map((supplier: { id: string; name: string }) => ({
+            value: supplier.id,
+            label: supplier.name
+          }))
+        )
+      )
+      .catch(() => setSuppliers([]));
+  }, [authFetch, token]);
+
+  useEffect(() => {
+    if (searchDraft === params.search) return;
+    const timer = setTimeout(() => update({ search: searchDraft || null }, { replace: true }), 350);
+    return () => clearTimeout(timer);
+  }, [searchDraft, params.search, update]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (event.key === '/' && !typing) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(() => {
-    fetchInventoryData();
-  }, [fetchInventoryData]);
-
-  const handleReorder = (item: InventoryItem) => {
-    setSelectedItem(item);
-    setReorderQuantity(item.reorder_quantity);
-    openReorderModal();
-  };
-
-  const handleEditItem = (item: InventoryItem) => {
-    setSelectedItem(item);
-    openEditModal();
-  };
-
-  const handleEditSuccess = (updatedItem: InventoryItem) => {
-    // Update the inventory list with the updated item
-    setInventory(prev => 
-      prev.map(item => 
-        item.id === updatedItem.id ? updatedItem : item
-      )
-    );
-    
-    // Refresh the stats
-    fetchInventoryData();
-  };
-
-  const fetchPurchaseOrders = async () => {
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-
-      const response = await fetch('/api/admin/purchase-orders?limit=20', {
-        headers: { 'Authorization': `Bearer ${token}` }
+  /**
+   * Save an inventory setting on one product.
+   *
+   * @param productId - The product.
+   * @param body - The settings to change.
+   */
+  const saveSetting = useCallback(
+    async (productId: string, body: Record<string, unknown>) => {
+      const payload = await authFetch(`/api/admin/inventory/${productId}`, {
+        method: 'PUT',
+        body: JSON.stringify(body)
       });
+      setRows((current) =>
+        current.map((row) =>
+          row.product_id === productId
+            ? {
+                ...row,
+                ...payload.data.product,
+                product_id: row.product_id,
+                unit_cost:
+                  payload.data.product.cost_price === null
+                    ? null
+                    : Number(payload.data.product.cost_price)
+              }
+            : row
+        )
+      );
+    },
+    [authFetch]
+  );
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          setPurchaseOrders(result.data.purchaseOrders || []);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch purchase orders:', error);
-    }
-  };
-
-  const handleCreatePurchaseOrder = (prefilledItems?: PurchaseOrderItem[]) => {
-    if (prefilledItems) {
-      setPrefilledPOItems(prefilledItems);
-    } else {
-      setPrefilledPOItems([]);
-    }
-    openPurchaseOrderModal();
-  };
-
-  const handleQuickReorder = (item: InventoryItem) => {
-    const poItem = {
-      product_id: item.id,
-      product_sku: item.sku,
-      product_name: item.name,
-      quantity: item.reorder_quantity || 1,
-      unit_cost: item.unit_cost,
-      total_cost: (item.reorder_quantity || 1) * item.unit_cost
-    };
-    handleCreatePurchaseOrder([poItem]);
-  };
-
-  const handleReceivePO = (po: PurchaseOrder) => {
-    setSelectedPO(po);
-    openReceivingModal();
-  };
-
-  const handlePOSuccess = () => {
-    fetchInventoryData();
-    fetchPurchaseOrders();
-  };
-
-  const handleReceivingSuccess = () => {
-    fetchInventoryData();
-    fetchPurchaseOrders();
-    closeReceivingModal();
-  };
-
-  const handleForecastPeriodChange = (period: ForecastPeriod) => {
-    setForecastPeriod(period);
-    updateForecastData(period);
-  };
-
-  const updateForecastData = useCallback((period: ForecastPeriod) => {
-    if (inventory.length === 0) return;
-    
-    setLoadingForecast(true);
+  const exportCsv = useCallback(async () => {
+    const query = new URLSearchParams(apiQuery);
+    query.delete('page');
+    query.delete('limit');
     try {
-      const newForecastData: Record<string, ForecastResult> = {};
-      
-      inventory.forEach(item => {
-        // Use the sales velocity data to calculate forecasts on the frontend
-        const forecast = calculateClientSideForecast(item.sales_velocity, period);
-        newForecastData[item.id] = forecast;
-      });
-      
-      setForecastData(newForecastData);
-    } catch (error) {
-      console.error('Failed to calculate forecasts:', error);
+      await downloadWithAuth(`/api/admin/inventory/export?${query}`, token, 'inventory.csv');
+    } catch (caught) {
       notifications.show({
-        title: 'Forecast Error',
-        message: 'Failed to calculate forecasts. Using existing data.',
+        title: 'Could not export',
+        message: caught instanceof Error ? caught.message : 'Export failed',
         color: 'red'
       });
-    } finally {
-      setLoadingForecast(false);
     }
-  }, [inventory]);
+  }, [apiQuery, token]);
 
-  // Update forecasts when inventory data changes
-  useEffect(() => {
-    if (inventory.length > 0) {
-      updateForecastData(forecastPeriod);
-    }
-  }, [inventory, forecastPeriod, updateForecastData]);
-
-
-  const handleExportCSV = async () => {
-    try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        notifications.show({
-          title: 'Authentication Error',
-          message: 'Please log in to export data',
-          color: 'red',
-          icon: <IconAlertCircle size="1rem" />
-        });
-        return;
-      }
-
-      // Show loading notification
-      notifications.show({
-        id: 'export-loading',
-        title: 'Exporting Data',
-        message: 'Generating CSV file...',
-        loading: true,
-        autoClose: false
-      });
-
-      const response = await fetch('/api/admin/inventory/export?format=csv', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        // Get the filename from the response headers
-        const contentDisposition = response.headers.get('content-disposition');
-        const filename = contentDisposition?.match(/filename="(.+)"/)?.[1] || 'inventory_export.csv';
-        
-        // Create blob and download
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
-        // Hide loading notification and show success
-        notifications.hide('export-loading');
-        notifications.show({
-          title: 'Export Successful',
-          message: `Inventory data exported as ${filename}`,
-          color: 'green',
-          icon: <IconCheck size="1rem" />
-        });
-      } else {
-        const result = await response.json();
-        notifications.hide('export-loading');
-        notifications.show({
-          title: 'Export Failed',
-          message: result.error || 'Failed to export inventory data',
-          color: 'red',
-          icon: <IconAlertCircle size="1rem" />
-        });
-      }
-    } catch (error) {
-      console.error('Export error:', error);
-      notifications.hide('export-loading');
-      notifications.show({
-        title: 'Export Error',
-        message: 'An error occurred while exporting data',
-        color: 'red',
-        icon: <IconAlertCircle size="1rem" />
-      });
-    }
+  const viewCounts: Record<InventoryViewKey, number | undefined> = {
+    all: stats?.total,
+    needs_reorder: stats?.needsReorder,
+    low_stock: stats?.lowStock,
+    out_of_stock: stats?.outOfStock,
+    oversold: stats?.oversold,
+    incoming: stats?.incoming,
+    dead_stock: stats?.deadStock,
+    uncosted: stats?.uncostedProducts
   };
 
-  const processReorder = () => {
-    if (selectedItem && reorderQuantity > 0) {
-      notifications.show({
-        title: 'Reorder Initiated',
-        message: `Created purchase order for ${reorderQuantity} units of ${selectedItem.name}`,
-        color: 'green',
-        icon: <IconCheck size="1rem" />
-      });
-      closeReorderModal();
-    }
-  };
+  const locationOptions = useMemo(
+    () => locations.map((location) => ({ value: location.id, label: location.name })),
+    [locations]
+  );
 
-  const filteredInventory = inventory.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         item.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSupplier = selectedSupplier === '' || item.supplier === selectedSupplier;
-    const matchesStock = stockFilter === 'all' || item.status === stockFilter;
-    
-    return matchesSearch && matchesSupplier && matchesStock;
-  });
-
-  const getStockStatusIcon = (status: string) => {
-    switch (status) {
-      case 'out_of_stock': return <IconX size="1rem" color="var(--danger-text)" />;
-      case 'low_stock': return <IconExclamationMark size="1rem" color="var(--warning-text)" />;
-      case 'discontinued': return <IconX size="1rem" color="var(--text-quaternary)" />;
-      default: return null;
-    }
-  };
-
-  const getStockStatusTooltip = (status: string) => {
-    switch (status) {
-      case 'out_of_stock': return 'Out of stock';
-      case 'low_stock': return 'Low stock';
-      case 'discontinued': return 'Discontinued';
-      default: return '';
-    }
-  };
-
-  const getPurchaseOrderStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'yellow';
-      case 'approved': return 'blue';
-      case 'shipped': return 'cyan';
-      case 'delivered': return 'green';
-      case 'cancelled': return 'red';
-      default: return 'gray';
-    }
-  };
-
-  if (loading) {
-    /* §5: a skeleton at the real layout's geometry, not a spinner in the
-       middle of an otherwise empty page. */
-    return (
-      <Stack gap="lg">
-        <AdminPageHeader title="Inventory" description="Stock levels across every warehouse." />
-        <StatGridSkeleton count={4} />
-        <TableSkeleton rows={8} columns={6} label="Loading inventory" />
-      </Stack>
-    );
-  }
+  const showingFrom = total === 0 ? 0 : (params.page - 1) * params.limit + 1;
+  const showingTo = Math.min(params.page * params.limit, total);
 
   return (
     <Stack gap="lg">
       <AdminPageHeader
         title="Inventory"
-        description="Stock levels, forecasting and restock orders across every warehouse."
+        description="What you hold, what is already sold, what is on the way, and what runs out first."
         actions={
-          /* Gated on the integration actually being connected. The button used to
-             be always enabled, so a store with no ShipStation key got a failure
-             notification instead of being told what was missing. */
-          <ShipStationSyncButton
-            endpoint="/api/admin/inventory"
-            body={{ action: 'sync_shipstation' }}
-            label="Sync from ShipStation"
-            onSynced={fetchInventoryData}
-          />
+          <Group gap="xs">
+            <ShipStationSyncButton
+              endpoint="/api/admin/sync/inventory"
+              label="Sync stock"
+              onSynced={load}
+            />
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <Button variant="default" rightSection={<IconChevronDown size={14} />}>
+                  More
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconFileExport size={14} />} onClick={() => void exportCsv()}>
+                  Export this view as CSV
+                </Menu.Item>
+                <Menu.Divider />
+                {/* Purchase orders and suppliers are their own screens now. They were tabs here,
+                    which meant two implementations of the same list — the tab's had a dead edit
+                    button, no pagination, and sent no store id so it was permanently empty. */}
+                <Menu.Item
+                  leftSection={<IconShoppingCart size={14} />}
+                  component={Link}
+                  href="/admin/purchase-orders"
+                >
+                  Purchase orders
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconTruckDelivery size={14} />}
+                  component={Link}
+                  href="/admin/suppliers"
+                >
+                  Suppliers
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconBuildingWarehouse size={14} />}
+                  onClick={openLocations}
+                >
+                  Locations
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconClipboardList size={14} />}
+                  component={Link}
+                  href="/admin/inventory/reports/valuation"
+                >
+                  Stock reports
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         }
       />
 
-      {/*
-        Six hand-built cards became six StatCards. Their `ThemeIcon`s carried a
-        green chart, an amber triangle and a red circle — three hues chosen per
-        card rather than per value, which is what made this row read as a
-        traffic light that never changes. Tone now tracks the number: low stock
-        is amber only when something is low, out of stock is red only when
-        something is out.
-      */}
-      <StatGrid min={172}>
-        <StatCard
-          label="Total products"
-          value={stats?.total_products ?? 0}
-          icon={<IconPackage size={18} stroke={1.6} />}
-        />
-        <StatCard
-          label="Total value"
-          value={stats?.total_value ?? 0}
-          format="currency"
-          meta="At unit cost"
-          icon={<IconChartBar size={18} stroke={1.6} />}
-        />
-        <StatCard
-          label="Low stock"
-          value={stats?.low_stock_items ?? 0}
-          tone={(stats?.low_stock_items ?? 0) > 0 ? 'warning' : 'neutral'}
-          icon={<IconAlertTriangle size={18} stroke={1.6} />}
-        />
-        <StatCard
-          label="Out of stock"
-          value={stats?.out_of_stock_items ?? 0}
-          tone={(stats?.out_of_stock_items ?? 0) > 0 ? 'danger' : 'neutral'}
-          icon={<IconAlertCircle size={18} stroke={1.6} />}
-        />
-        <StatCard
-          /*
-           * Labelled "Pending orders / Awaiting delivery" in a row of
-           * inventory tiles, which reads as five restocks arriving. It counts
-           * customer orders in pending/processing — five people who paid and
-           * have been waiting, in this store's case for 61 to 73 days. The
-           * label now says whose orders these are, and the tile links to the
-           * screen that can do something about them.
-           */
-          label="Customer orders to ship"
-          value={stats?.pending_orders ?? 0}
-          meta="Paid, not yet dispatched"
-          tone={(stats?.pending_orders ?? 0) > 0 ? 'warning' : 'neutral'}
-          href="/admin/orders?status=unshipped"
-          icon={<IconTruckDelivery size={18} stroke={1.6} />}
-        />
-        <StatCard
-          label="Restocked"
-          value={stats?.this_month_restocked ?? 0}
-          meta="This month"
-          icon={<IconRefresh size={18} stroke={1.6} />}
-        />
-      </StatGrid>
-
-      {/* Smart AI Recommendations Widget */}
-      <SmartReorderWidget 
-        onCreatePO={handleCreatePurchaseOrder}
-        onQuickReorder={(rec) => {
-          const poItem = {
-            product_id: rec.product_id,
-            product_sku: rec.product_sku,
-            product_name: rec.product_name,
-            quantity: rec.recommended_quantity,
-            unit_cost: rec.unit_cost,
-            total_cost: rec.recommended_quantity * rec.unit_cost
-          };
-          handleCreatePurchaseOrder([poItem]);
-        }}
-      />
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'inventory')}>
-        <Tabs.List>
-          <Tabs.Tab value="inventory" leftSection={<IconPackage size="1rem" />}>
-            Inventory Grid
-          </Tabs.Tab>
-          <Tabs.Tab value="purchase-orders" leftSection={<IconFileText size="1rem" />}>
-            Purchase Orders
-          </Tabs.Tab>
-          <Tabs.Tab value="suppliers" leftSection={<IconTruckDelivery size="1rem" />}>
-            Suppliers
-          </Tabs.Tab>
-          <Tabs.Tab value="reports" leftSection={<IconChartBar size="1rem" />}>
-            Reports
-          </Tabs.Tab>
-          <Tabs.Tab value="alerts" leftSection={<IconBell size="1rem" />}>
-            Alerts & Notifications
-          </Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="inventory" pt="md">
-          <Stack gap="md">
-            {/* Filters */}
-            <Card shadow="sm" padding="md" radius="md" withBorder>
-              <Group>
-                <TextInput
-                  placeholder="Search by name or SKU..."
-                  leftSection={<IconSearch size="1rem" />}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.currentTarget.value)}
-                  style={{ flex: 1 }}
-                />
-                <Select
-                  placeholder="Filter by supplier"
-                  data={[
-                    { value: '', label: 'All Suppliers' },
-                    ...Array.from(new Set(inventory.map(item => item.supplier)))
-                      .map(supplier => ({ value: supplier, label: supplier }))
-                  ]}
-                  value={selectedSupplier}
-                  onChange={(value) => setSelectedSupplier(value || '')}
-                  style={{ minWidth: 200 }}
-                />
-                <Select
-                  placeholder="Stock status"
-                  data={[
-                    { value: 'all', label: 'All Items' },
-                    { value: 'in_stock', label: 'In Stock' },
-                    { value: 'low_stock', label: 'Low Stock' },
-                    { value: 'out_of_stock', label: 'Out of Stock' }
-                  ]}
-                  value={stockFilter}
-                  onChange={(value) => setStockFilter(value || 'all')}
-                  style={{ minWidth: 150 }}
-                />
-                <Button leftSection={<IconDownload size="1rem" />} variant="outline" onClick={handleExportCSV}>
-                  Export
-                </Button>
-              </Group>
-            </Card>
-
-            {/* Inventory Grid */}
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              {/* The forecast window used to be a <Select> living inside a
-                  <th>. A column header is a label for the column, not a place
-                  to put a 40px control — it stretched the header band to twice
-                  the height of every other cell and put a form field in the
-                  tab order between two column names. */}
-              <Group justify="flex-end" gap="xs" mb="sm">
-                <Text size="xs" c="dimmed" component="label" htmlFor="forecast-window">
-                  Forecast window
-                </Text>
-                <Select
-                  id="forecast-window"
-                  size="xs"
-                  aria-label="Forecast window"
-                  data={FORECAST_PERIODS.map(p => ({ value: p.value.toString(), label: p.label }))}
-                  value={forecastPeriod.toString()}
-                  onChange={(value) => handleForecastPeriodChange(parseInt(value || '30') as ForecastPeriod)}
-                  style={{ width: 110 }}
-                />
-                {loadingForecast && <Loader size="xs" />}
-              </Group>
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Product</Table.Th>
-                    <Table.Th className={table.numeric}>Stock</Table.Th>
-                    <Table.Th className={table.numeric}>Forecast</Table.Th>
-                    <Table.Th className={table.numeric}>Reorder at</Table.Th>
-                    <Table.Th className={table.numeric}>Unit cost</Table.Th>
-                    <Table.Th className={table.numeric}>Total value</Table.Th>
-                    <Table.Th>Actions</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {filteredInventory.map((item) => (
-                    <Table.Tr key={item.id}>
-                      <Table.Td>
-                        <Group gap="sm">
-                          {/* A fixed-width frame; Mantine's Avatar let a wide
-                              photograph push the name onto its own line, which
-                              is why two rows in this grid were twice as tall as
-                              the rest. */}
-                          <ProductImage
-                            src={item.featured_image_url}
-                            name={item.name}
-                            alt=""
-                            rounded="sm"
-                            style={{ width: 32, flex: 'none' }}
-                          />
-                          <div style={{ minWidth: 0 }}>
-                            <Text size="sm" fw={500} lineClamp={1}>{item.name}</Text>
-                            <Text component="span" className={table.code}>{item.sku}</Text>
-                            <Text size="xs" c="dimmed">{item.category}</Text>
-                          </div>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td className={table.numeric}>
-                        <Group gap="xs" justify="flex-end" wrap="nowrap">
-                          {getStockStatusIcon(item.status) && (
-                            <Tooltip label={getStockStatusTooltip(item.status)}>
-                              {getStockStatusIcon(item.status)}
-                            </Tooltip>
-                          )}
-                          <Text size="sm" fw={500}>{item.stock_quantity}</Text>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td className={table.numeric}>
-                        <Group gap="xs" justify="flex-end" wrap="nowrap">
-                          <Text size="sm">
-                            {forecastData[item.id]?.forecastValue || 
-                             (forecastPeriod <= 30 ? item.forecast_30_days : item.forecast_90_days)}
-                          </Text>
-                          {forecastData[item.id] && (
-                            <Badge 
-                              size="xs" 
-                              color={
-                                forecastData[item.id].confidence === 'high' ? 'green' :
-                                forecastData[item.id].confidence === 'medium' ? 'yellow' : 'red'
-                              }
-                              variant="light"
-                            >
-                              {forecastData[item.id].confidence}
-                            </Badge>
-                          )}
-                          {(forecastData[item.id]?.forecastValue || 
-                            (forecastPeriod <= 30 ? item.forecast_30_days : item.forecast_90_days)) 
-                            > item.stock_quantity && (
-                            <IconAlertTriangle size="1rem" color="var(--warning-text)" />
-                          )}
-                        </Group>
-                      </Table.Td>
-                      <Table.Td className={table.numeric}>
-                        <Text size="sm">{item.reorder_point}</Text>
-                      </Table.Td>
-                      <Table.Td className={table.numeric}>
-                        <Price value={item.unit_cost} size="sm" />
-                      </Table.Td>
-                      <Table.Td className={table.numeric}>
-                        <Price value={item.stock_quantity * item.unit_cost} size="sm" />
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <ActionIcon 
-                            size="sm" 
-                            variant="subtle"
-                            onClick={() => handleReorder(item)}
-                            title="Quick Reorder"
-                          >
-                            <IconRefresh size="1rem" />
-                          </ActionIcon>
-                          <ActionIcon 
-                            size="sm" 
-                            variant="subtle"
-                            color="ink"
-                            onClick={() => handleQuickReorder(item)}
-                            title="Add to Purchase Order"
-                          >
-                            <IconShoppingCart size="1rem" />
-                          </ActionIcon>
-                          <ActionIcon 
-                            size="sm" 
-                            variant="subtle"
-                            onClick={() => handleEditItem(item)}
-                          >
-                            <IconEdit size="1rem" />
-                          </ActionIcon>
-                        </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Card>
-          </Stack>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="purchase-orders" pt="md">
-          <Stack gap="md">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Group justify="space-between" mb="md">
-                <Title order={3}>Purchase Orders</Title>
-                <Button leftSection={<IconPlus size="1rem" />} onClick={() => handleCreatePurchaseOrder()}>
-                  Create New Order
-                </Button>
-              </Group>
-              
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Order ID</Table.Th>
-                    <Table.Th>Supplier</Table.Th>
-                    <Table.Th>Order Date</Table.Th>
-                    <Table.Th>Expected Delivery</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                    <Table.Th>Total Cost</Table.Th>
-                    <Table.Th>Items</Table.Th>
-                    <Table.Th>Actions</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {purchaseOrders.map((order) => (
-                    <Table.Tr key={order.id}>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>{order.po_number || order.id}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{order.supplier_name}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{order.order_date}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{order.expected_delivery}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge 
-                          color={getPurchaseOrderStatusColor(order.status)}
-                          variant="light"
-                        >
-                          {order.status}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>${order.total_cost.toFixed(2)}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{order.purchase_order_items?.length || 0} items</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs">
-                          <ActionIcon 
-                            size="sm" 
-                            variant="subtle"
-                            onClick={() => {
-                              // View PO details
-                              console.log('View PO:', order.id);
-                            }}
-                          >
-                            <IconEdit size="1rem" />
-                          </ActionIcon>
-                          {(order.status === 'shipped' || order.status === 'approved') && (
-                            <ActionIcon 
-                              size="sm" 
-                              variant="subtle"
-                              onClick={() => handleReceivePO(order)}
-                            >
-                              <IconTruckDelivery size="1rem" />
-                            </ActionIcon>
-                          )}
-                          {order.status === 'pending' && (
-                            <ActionIcon size="sm" variant="subtle" color="red">
-                              <IconTrash size="1rem" />
-                            </ActionIcon>
-                          )}
-                        </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Card>
-          </Stack>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="suppliers" pt="md">
-          <SuppliersManagement />
-        </Tabs.Panel>
-
-        <Tabs.Panel value="reports" pt="md">
-          <Stack gap="xl">
-            {/* Purchase Order Analytics */}
-            <PurchaseOrderAnalytics purchaseOrders={purchaseOrders} />
-            
-            {/* Inventory Reports */}
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Title order={3} mb="md">Inventory Turnover</Title>
-                <Text c="dimmed" mb="md">Track how quickly inventory is sold and replaced</Text>
-                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/turnover')}>
-                  Generate Report
-                </Button>
-              </Card>
-
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Title order={3} mb="md">Stock Valuation</Title>
-                <Text c="dimmed" mb="md">Current value of all inventory items</Text>
-                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/valuation')}>
-                  Generate Report
-                </Button>
-              </Card>
-
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Title order={3} mb="md">Dead Stock Analysis</Title>
-                <Text c="dimmed" mb="md">Capital sitting still — days since last sale, carrying cost and a suggested markdown</Text>
-                <Button variant="outline" fullWidth onClick={() => router.push('/admin/inventory/reports/dead-stock')}>
-                  Generate Report
-                </Button>
-              </Card>
-
-              {/*
-                * The Supplier Performance card was here. Its button pushed to
-                * `/admin/inventory/reports/supplier-performance`, which has no
-                * component and no API — the route map's fallback bounced you
-                * silently back to this page. A button that does nothing and
-                * says nothing is worse than no button, so it is gone until
-                * there is a report behind it.
-                */}
-            </SimpleGrid>
-          </Stack>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="alerts" pt="md">
-          <Stack gap="md">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Title order={3} mb="md">Alert Settings</Title>
-              <Stack gap="md">
-                <Group justify="space-between">
-                  <div>
-                    <Text fw={500}>Low Stock Notifications</Text>
-                    <Text size="sm" c="dimmed">Get notified when items reach reorder point</Text>
-                  </div>
-                  <Switch defaultChecked />
-                </Group>
-                
-                <Group justify="space-between">
-                  <div>
-                    <Text fw={500}>Out of Stock Alerts</Text>
-                    <Text size="sm" c="dimmed">Immediate alerts for zero stock items</Text>
-                  </div>
-                  <Switch defaultChecked />
-                </Group>
-                
-                <Group justify="space-between">
-                  <div>
-                    <Text fw={500}>Forecast Warnings</Text>
-                    <Text size="sm" c="dimmed">Alert when forecast exceeds current stock</Text>
-                  </div>
-                  <Switch defaultChecked />
-                </Group>
-              </Stack>
-            </Card>
-
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Title order={3} mb="md">Active Alerts</Title>
-              <Stack gap="md">
-                {inventory.filter(item => item.status === 'low_stock' || item.status === 'out_of_stock').map(item => (
-                  <Alert
-                    key={item.id}
-                    icon={<IconAlertTriangle size="1rem" />}
-                    color={item.status === 'out_of_stock' ? 'red' : 'yellow'}
-                    variant="light"
-                  >
-                    <Group justify="space-between">
-                      <div>
-                        <Text fw={500}>{item.name}</Text>
-                        <Text size="sm">
-                          {item.status === 'out_of_stock' ? 'Out of stock' : `Low stock: ${item.stock_quantity} remaining`}
-                        </Text>
-                      </div>
-                      <Button size="xs" onClick={() => handleReorder(item)}>
-                        Reorder
-                      </Button>
-                    </Group>
-                  </Alert>
-                ))}
-              </Stack>
-            </Card>
-          </Stack>
-        </Tabs.Panel>
-      </Tabs>
-
-      {/* Reorder Modal */}
-      <Modal opened={reorderModalOpened} onClose={closeReorderModal} title="Reorder Item">
-        {selectedItem && (
-          <Stack gap="md">
-            <Text>
-              Reorder <strong>{selectedItem.name}</strong> (SKU: {selectedItem.sku})
-            </Text>
-            <NumberInput
-              label="Quantity to order"
-              value={reorderQuantity}
-              onChange={(value) => setReorderQuantity(Number(value))}
-              min={1}
+      {loading ? (
+        <StatGridSkeleton count={4} />
+      ) : (
+        stats && (
+          <StatGrid>
+            <StatCard
+              label="Needs reordering"
+              value={stats.needsReorder}
+              tone={stats.needsReorder > 0 ? 'warning' : 'neutral'}
+              meta="Below the reorder point with nothing on order"
+              href="/admin/inventory?view=needs_reorder&state=needs_reorder"
             />
-            <Text size="sm" c="dimmed">
-              Estimated cost: ${(reorderQuantity * selectedItem.unit_cost).toFixed(2)}
-            </Text>
-            <Group justify="flex-end">
-              <Button variant="outline" onClick={closeReorderModal}>
-                Cancel
+            <StatCard
+              label={stats.oversold > 0 ? 'Oversold' : 'Out of stock'}
+              value={stats.oversold > 0 ? stats.oversold : stats.outOfStock}
+              tone={stats.oversold > 0 || stats.outOfStock > 0 ? 'danger' : 'neutral'}
+              meta={
+                stats.oversold > 0
+                  ? 'Sold more than you hold'
+                  : 'Nothing available to sell'
+              }
+              href={
+                stats.oversold > 0
+                  ? '/admin/inventory?view=oversold&state=oversold'
+                  : '/admin/inventory?view=out_of_stock&state=out_of_stock'
+              }
+            />
+            <StatCard
+              label="Stock value at cost"
+              value={stats.valueAtCost}
+              format="currency"
+              meta={
+                /* The figure's own limits travel with it. The reports used to fill a missing cost
+                   with base_price × 0.6 — a 40% margin invented for a number that goes to insurers
+                   and lenders. Now what cannot be valued is counted and said out loud. */
+                stats.uncostedProducts > 0
+                  ? `Excludes ${stats.uncostedProducts} SKU${stats.uncostedProducts === 1 ? '' : 's'} with no cost on file`
+                  : `${stats.totalUnits.toLocaleString()} units`
+              }
+              href={
+                stats.uncostedProducts > 0
+                  ? '/admin/inventory?view=uncosted&state=uncosted'
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Not selling"
+              value={stats.deadStock}
+              tone={stats.deadStock > 0 ? 'warning' : 'neutral'}
+              meta="Held stock with no sale in 90 days"
+              href="/admin/inventory?view=dead_stock&state=dead_stock"
+            />
+          </StatGrid>
+        )
+      )}
+
+      <Paper withBorder radius="md" className={styles.panel}>
+        <Tabs
+          value={params.view}
+          onChange={(value) => setView((value ?? 'all') as InventoryViewKey)}
+          keepMounted={false}
+        >
+          <Tabs.List className={styles.tabs}>
+            {(Object.keys(INVENTORY_VIEWS) as InventoryViewKey[]).map((key) => (
+              <Tabs.Tab
+                key={key}
+                value={key}
+                rightSection={
+                  viewCounts[key] === undefined ? null : (
+                    <Badge size="xs" variant="light">
+                      {viewCounts[key]}
+                    </Badge>
+                  )
+                }
+              >
+                {INVENTORY_VIEWS[key].label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs>
+
+        <Group gap="sm" className={styles.toolbar} wrap="wrap">
+          <TextInput
+            ref={searchRef}
+            className={styles.search}
+            leftSection={<IconSearch size={16} />}
+            placeholder="Search name, SKU or barcode"
+            aria-label="Search inventory"
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.currentTarget.value)}
+            rightSection={
+              searchDraft ? (
+                <ActionIcon variant="subtle" onClick={() => setSearchDraft('')} aria-label="Clear search">
+                  <IconX size={14} />
+                </ActionIcon>
+              ) : null
+            }
+          />
+
+          {/* Only shown once a store actually has more than one location, so single-location
+              merchants never meet the concept. */}
+          {locationOptions.length > 1 && (
+            <Select
+              aria-label="Stock location"
+              placeholder="All locations"
+              data={locationOptions}
+              value={params.locationId || null}
+              onChange={(value) => update({ location_id: value })}
+              clearable
+              w={180}
+            />
+          )}
+
+          <Select
+            placeholder="Any category"
+            aria-label="Filter by category"
+            data={categories}
+            value={params.categoryId || null}
+            onChange={(value) => update({ category_id: value })}
+            clearable
+            searchable
+            w={180}
+            nothingFoundMessage="No categories yet"
+          />
+
+          <Select
+            placeholder="Any supplier"
+            aria-label="Filter by supplier"
+            data={suppliers}
+            value={params.supplierId || null}
+            onChange={(value) => update({ supplier_id: value })}
+            clearable
+            searchable
+            w={180}
+            nothingFoundMessage="No suppliers yet"
+          />
+
+          {hasFilters && (
+            <Button variant="subtle" size="compact-sm" onClick={clearFilters} leftSection={<IconX size={14} />}>
+              Clear filters
+            </Button>
+          )}
+
+          <div className={styles.spacer} />
+
+          <Text size="sm" c="dimmed" className={styles.count}>
+            {total === 0 ? 'Nothing here' : `${showingFrom}–${showingTo} of ${total.toLocaleString()}`}
+          </Text>
+
+          <Select
+            aria-label="Rows per page"
+            data={['25', '50', '100', '250']}
+            value={String(params.limit)}
+            onChange={(value) => update({ limit: value, page: 1 })}
+            w={90}
+          />
+        </Group>
+
+        {error && (
+          <Alert
+            color="red"
+            icon={<IconAlertTriangle size={16} />}
+            title="Could not load inventory"
+            className={styles.alert}
+          >
+            <Stack gap="xs" align="flex-start">
+              <Text size="sm">{error}</Text>
+              <Button size="compact-sm" variant="default" onClick={load}>
+                Try again
               </Button>
-              <Button onClick={processReorder}>
-                Create Purchase Order
-              </Button>
-            </Group>
-          </Stack>
+            </Stack>
+          </Alert>
         )}
-      </Modal>
 
-      {/* Purchase Order Modal */}
-      <PurchaseOrderModal
-        opened={purchaseOrderModalOpened}
-        onClose={() => {
-          closePurchaseOrderModal();
-          setPrefilledPOItems([]);
-        }}
-        onSuccess={handlePOSuccess}
-        prefilledItems={prefilledPOItems}
+        {loading ? (
+          <TableSkeleton rows={10} columns={9} />
+        ) : /*
+             * `!error` matters: without it a failed load rendered the error banner and the
+             * "you have nothing" empty state in the same viewport — "Could not load products /
+             * Database connection lost / Try again" directly above "No products yet — add a
+             * product by hand" with a call to action. A merchant with a transient database blip
+             * was being told their catalogue was empty.
+             */
+          !error && rows.length === 0 ? (
+          <EmptyState
+            title={params.view === 'all' && !hasFilters ? 'No stock tracked yet' : 'Nothing matches that'}
+            description={
+              params.view === 'all' && !hasFilters
+                ? 'Sync your ShipStation stock levels, or add products and record their opening balances.'
+                : 'Try a different view, or clear the filters.'
+            }
+            action={
+              params.view === 'all' && !hasFilters ? (
+                <Button component={Link} href="/admin/products">
+                  Go to products
+                </Button>
+              ) : (
+                <Button variant="default" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <Table.ScrollContainer minWidth={1100}>
+            <Table highlightOnHover verticalSpacing="sm" className={refreshing ? styles.refreshing : undefined}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={40}>
+                    <Checkbox
+                      aria-label="Select all products on this page"
+                      checked={rows.length > 0 && selectedIds.length === rows.length}
+                      indeterminate={selectedIds.length > 0 && selectedIds.length < rows.length}
+                      onChange={(event) => {
+                        const checked = event.currentTarget.checked;
+                        setSelectedIds(checked ? rows.map((r) => r.product_id) : []);
+                      }}
+                    />
+                  </Table.Th>
+                  <SortableTh column="name" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort}>
+                    Product
+                  </SortableTh>
+                  <SortableTh
+                    column="on_hand"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={90}
+                    hint="Physically present, saleable or not"
+                  >
+                    On hand
+                  </SortableTh>
+                  <SortableTh
+                    column="committed"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={95}
+                    hint="Sold but not yet shipped — still on the shelf, not available to promise"
+                  >
+                    Committed
+                  </SortableTh>
+                  <SortableTh
+                    column="available"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={110}
+                    hint="What you can still sell"
+                  >
+                    Available
+                  </SortableTh>
+                  <SortableTh
+                    column="incoming"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={90}
+                    hint="On open purchase orders and not yet received"
+                  >
+                    On order
+                  </SortableTh>
+                  <SortableTh
+                    column="days_of_cover"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={110}
+                    hint="How long available stock lasts at the last 90 days' rate"
+                  >
+                    Cover
+                  </SortableTh>
+                  <SortableTh
+                    column="reorder_point"
+                    activeColumn={params.sortBy}
+                    direction={params.sortOrder}
+                    onSort={toggleSort}
+                    numeric
+                    width={110}
+                    hint="Raise a purchase order when available stock reaches this. Editable."
+                  >
+                    Reorder at
+                  </SortableTh>
+                  <SortableTh column="unit_cost" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort} numeric width={100}>
+                    Unit cost
+                  </SortableTh>
+                  <SortableTh column="value_at_cost" activeColumn={params.sortBy} direction={params.sortOrder} onSort={toggleSort} numeric width={110}>
+                    Value
+                  </SortableTh>
+                  <Table.Th w={44}>
+                    <span className={styles.srOnly}>Actions</span>
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+
+              <Table.Tbody>
+                {rows.map((row) => (
+                  <Table.Tr key={row.product_id}>
+                    <Table.Td>
+                      {/* Named for the product, not a row of twenty identical "checkbox"
+                          announcements. */}
+                      <Checkbox
+                        aria-label={`Select ${row.name}`}
+                        checked={selectedIds.includes(row.product_id)}
+                        onChange={(event) => {
+                          /* Read before the updater runs. React nulls `currentTarget` once the
+                           * handler returns, so reading it inside the functional update — which is
+                           * deferred — gives undefined and the box never ticks. */
+                          const checked = event.currentTarget.checked;
+                          setSelectedIds((current) =>
+                            checked
+                              ? [...current, row.product_id]
+                              : current.filter((id) => id !== row.product_id)
+                          );
+                        }}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap="sm" wrap="nowrap">
+                        <div className={styles.thumb}>
+                          {row.featured_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={row.featured_image_url} alt="" loading="lazy" />
+                          ) : null}
+                        </div>
+                        <div className={styles.identity}>
+                          <Link href={`/admin/products/${row.product_id}`} className={styles.name}>
+                            {row.name}
+                          </Link>
+                          <Group gap={6}>
+                            <span className={table.code}>{row.sku}</span>
+                            <span className={styles.state} data-state={row.state}>
+                              <span className={styles.dot} aria-hidden="true" />
+                              {STATE_LABEL[row.state]}
+                            </span>
+                            {row.supplier_name && (
+                              <span className={table.sub}>· {row.supplier_name}</span>
+                            )}
+                          </Group>
+                        </div>
+                      </Group>
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>{row.on_hand.toLocaleString()}</Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      {row.committed > 0 ? (
+                        row.committed.toLocaleString()
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          —
+                        </Text>
+                      )}
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      <span className={styles.available} data-negative={row.available < 0 || undefined}>
+                        {row.available < 0 && <IconAlertTriangle size={12} aria-hidden="true" />}
+                        {row.available.toLocaleString()}
+                      </span>
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      {row.incoming > 0 ? (
+                        <Tooltip label="On an open purchase order">
+                          <span>+{row.incoming.toLocaleString()}</span>
+                        </Tooltip>
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          —
+                        </Text>
+                      )}
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      {row.days_of_cover === null ? (
+                        /* Not "∞" and not a 999999 sentinel: no demand signal is a different fact
+                           from never running out, and a merchant sorting by cover needs the
+                           difference. */
+                        <Tooltip label="No sales in the last 90 days">
+                          <Text size="sm" c="dimmed">
+                            —
+                          </Text>
+                        </Tooltip>
+                      ) : (
+                        <div className={table.stacked}>
+                          <span>{formatCover(row.days_of_cover)}</span>
+                          <span className={table.sub}>{row.units_90d} sold 90d</span>
+                        </div>
+                      )}
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      <InlineEdit
+                        label={`Reorder point for ${row.name}`}
+                        value={row.reorder_point}
+                        placeholder={
+                          row.suggested_reorder_point === null
+                            ? 'Not set'
+                            : `${row.suggested_reorder_point} suggested`
+                        }
+                        render={(value) => <span>{Number(value).toLocaleString()}</span>}
+                        onCommit={(next) => saveSetting(row.product_id, { reorder_point: next })}
+                      />
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      <InlineEdit
+                        label={`Unit cost for ${row.name}`}
+                        value={row.unit_cost}
+                        placeholder="Not set"
+                        render={(value) => <Price value={Number(value)} />}
+                        onCommit={(next) => saveSetting(row.product_id, { unit_cost: next })}
+                      />
+                    </Table.Td>
+
+                    <Table.Td className={table.numeric}>
+                      {row.unit_cost === null ? (
+                        <Tooltip label="Record a cost to value this stock">
+                          <Text size="sm" c="dimmed">
+                            —
+                          </Text>
+                        </Tooltip>
+                      ) : (
+                        <Price value={row.value_at_cost} />
+                      )}
+                    </Table.Td>
+
+                    <Table.Td>
+                      <Menu position="bottom-end" withinPortal>
+                        <Menu.Target>
+                          <ActionIcon variant="subtle" aria-label={`Actions for ${row.name}`}>
+                            <IconDots size={16} />
+                          </ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          <Menu.Item
+                            onClick={() =>
+                              setAdjusting({
+                                product_id: row.product_id,
+                                sku: row.sku,
+                                name: row.name,
+                                on_hand: row.on_hand,
+                                available: row.available,
+                                committed: row.committed,
+                                unit_cost: row.unit_cost
+                              })
+                            }
+                          >
+                            Adjust stock
+                          </Menu.Item>
+                          {/* Only offered when there is somewhere to move stock to. A transfer
+                              action in a single-location store is a dead end dressed as a
+                              feature. */}
+                          {locationOptions.length > 1 && (
+                            <Menu.Item
+                              leftSection={<IconArrowsExchange size={14} />}
+                              onClick={() =>
+                                setTransferring({
+                                  product_id: row.product_id,
+                                  sku: row.sku,
+                                  name: row.name
+                                })
+                              }
+                            >
+                              Move between locations
+                            </Menu.Item>
+                          )}
+                          <Menu.Item
+                            leftSection={<IconHistory size={14} />}
+                            onClick={() => setViewingHistory(row)}
+                          >
+                            Stock history
+                          </Menu.Item>
+                          <Menu.Divider />
+                          <Menu.Item component={Link} href={`/admin/products/${row.product_id}`}>
+                            Edit product
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconShoppingCart size={14} />}
+                            component={Link}
+                            href={`/admin/purchase-orders/create?sku=${encodeURIComponent(row.sku)}`}
+                          >
+                            Order more
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+
+        {totalPages > 1 && (
+          <Group justify="space-between" className={styles.footer}>
+            <Text size="sm" c="dimmed">
+              Page {params.page} of {totalPages}
+            </Text>
+            <Pagination
+              total={totalPages}
+              value={params.page}
+              onChange={(page) => update({ page })}
+              siblings={1}
+              withEdges
+            />
+          </Group>
+        )}
+      </Paper>
+
+      <AdjustStockModal
+        target={adjusting}
+        onClose={() => setAdjusting(null)}
+        locations={locationOptions}
+        activeLocationId={params.locationId || null}
+        token={token}
+        onAdjusted={load}
       />
 
-      {/* Receiving Modal */}
-      <ReceivingModal
-        opened={receivingModalOpened}
-        onClose={closeReceivingModal}
-        purchaseOrder={selectedPO}
-        onSuccess={handleReceivingSuccess}
+      <InventoryBulkBar
+        selected={rows
+          .filter((row) => selectedIds.includes(row.product_id))
+          .map((row) => ({
+            product_id: row.product_id,
+            sku: row.sku,
+            name: row.name,
+            available: Number(row.available) || 0,
+            incoming: Number(row.incoming) || 0,
+            reorder_point: row.reorder_point,
+            reorder_quantity: row.reorder_quantity,
+            suggested_reorder_point: row.suggested_reorder_point ?? null,
+            unit_cost: row.unit_cost,
+            supplier_id: row.supplier_id
+          }))}
+        onClear={() => setSelectedIds([])}
+        token={token}
+        onChanged={load}
+        suppliers={suppliers}
       />
 
-      {/* Supplier Modal */}
-      <SupplierModal
-        opened={supplierModalOpened}
-        onClose={closeSupplierModal}
-        onSuccess={() => {
-          // Refresh suppliers if needed
-          closeSupplierModal();
-        }}
+      <LocationsModal
+        opened={locationsOpen}
+        onClose={closeLocations}
+        token={token}
+        onChanged={load}
       />
 
-      {/* Inventory Edit Modal */}
-      <InventoryEditModal
-        opened={editModalOpened}
-        onClose={closeEditModal}
-        item={selectedItem}
-        onSuccess={handleEditSuccess}
+      <TransferStockModal
+        target={transferring}
+        onClose={() => setTransferring(null)}
+        locations={locationOptions}
+        activeLocationId={params.locationId || null}
+        token={token}
+        onTransferred={load}
+      />
+
+      <LedgerDrawer
+        product={viewingHistory}
+        onClose={() => setViewingHistory(null)}
+        token={token}
       />
     </Stack>
   );
+}
+
+/**
+ * Days of cover in the unit a person reasons in.
+ *
+ * At the current rate a slow-moving product can have four or five thousand days of cover, which is
+ * arithmetically true and useless: nobody plans in units of "6,390 days". Past a year the exact
+ * figure carries no decision — the answer is "far more than you need" — so it reads as years, and
+ * beyond five as a ceiling.
+ *
+ * @param days - Days of cover, or null when there is no demand signal.
+ * @returns A short label.
+ */
+function formatCover(days: number): string {
+  if (days < 60) return `${Math.round(days)}d`;
+  if (days < 365) return `${Math.round(days / 30)}mo`;
+  const years = days / 365;
+  return years >= 5 ? '5y+' : `${years.toFixed(1)}y`;
 }

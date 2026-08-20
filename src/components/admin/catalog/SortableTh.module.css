@@ -1,0 +1,66 @@
+/*
+ * Sortable header controls.
+ *
+ * The button is styled to look like the header text it replaces rather than like a button — a
+ * table with fourteen visible buttons across its header reads as a toolbar. The affordance is
+ * carried by the hover state and the sort indicator instead.
+ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.button:hover {
+  color: var(--text-primary);
+}
+
+/* A visible focus ring is the only way a keyboard user can tell which header they are on. It is
+   offset so it does not sit under the adjacent column's hairline. */
+.button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  flex: none;
+}
+
+.button:hover .indicator,
+.button:focus-visible .indicator,
+.active .indicator {
+  opacity: 1;
+}
+
+/* The active indicator stays fully visible; the hover hint on other columns is deliberately
+   faint so it reads as an invitation rather than as state. */
+.button:not(.active):hover .indicator {
+  opacity: 0.45;
+}
+
+.numericHead {
+  text-align: right;
+}
+
+.numericHead .button {
+  justify-content: flex-end;
+}

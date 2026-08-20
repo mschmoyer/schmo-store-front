@@ -830,6 +830,14 @@ export interface OrderStatusUpdateData {
 }
 
 export interface InventoryAdjustment {
+  /**
+   * The tenant.
+   *
+   * Not optional. Every adjustment ends in an `UPDATE products`, and a stock write addressed by
+   * bare product id is a cross-tenant write waiting for a caller that passes an id from the wrong
+   * place. Two of the three services that build this type were doing exactly that.
+   */
+  store_id: UUID;
   product_id: UUID;
   sku: string;
   quantity_change: number;

@@ -22,6 +22,8 @@ function makeProduct(overrides: Partial<ProductRecord> = {}): ProductRecord {
     id: '11111111-1111-4111-8111-111111111111',
     storeId: '22222222-2222-4222-8222-222222222222',
     sku: 'SKU-1',
+    vendor: null,
+    barcode: null,
     name: 'Test Product',
     slug: 'test-product',
     shortDescription: null,
