@@ -51,7 +51,8 @@ const heroFields: SettingField[] = [
     id: 'subheading',
     label: 'Supporting copy',
     type: 'textarea',
-    default: 'Everything in stock ships the same day. Free returns for 30 days.',
+    default:
+      '[One line on why someone should buy from you. Say only what you will honour.]',
   },
   { id: 'primaryLabel', label: 'Button label', type: 'text', default: 'Shop all' },
   {
@@ -210,9 +211,9 @@ const valuePropsFields: SettingField[] = [
     label: 'Items',
     type: 'textarea',
     default: [
-      { icon: 'IconTruck', title: 'Same-day dispatch', body: 'Order before 3pm on weekdays.' },
-      { icon: 'IconRotateClockwise', title: '30-day returns', body: 'No restocking fee, ever.' },
-      { icon: 'IconShieldCheck', title: 'Two-year warranty', body: 'Covered against defects.' },
+      { icon: 'IconTruck', title: '[Dispatch speed]', body: '[How fast do orders leave you?]' },
+      { icon: 'IconRotateClockwise', title: '[Returns]', body: '[How long, and on what conditions?]' },
+      { icon: 'IconShieldCheck', title: '[Your guarantee]', body: '[What is covered, and for how long?]' },
     ],
     help: 'Each item has an icon, a title and a line of copy.',
   },
@@ -263,8 +264,8 @@ const faqFields: SettingField[] = [
     label: 'Questions',
     type: 'textarea',
     default: [
-      { question: 'How fast do you ship?', answer: 'Same day on weekdays for orders placed before 3pm.' },
-      { question: 'Can I return something?', answer: 'Within 30 days, unused, in its original packaging.' },
+      { question: 'How fast do you ship?', answer: '[Your dispatch and delivery times.]' },
+      { question: 'Can I return something?', answer: '[Your returns window and conditions.]' },
     ],
   },
   { id: 'openFirst', label: 'Open the first answer', type: 'toggle', default: true },
@@ -523,7 +524,7 @@ export function defaultSections(): Section[] {
   return [
     createSection('hero', '1', {
       eyebrow: 'New arrivals',
-      heading: 'Everything in stock. Shipped today.',
+      heading: '[Your headline]',
       subheading:
         'Live inventory straight from our warehouse, so what you see is genuinely on the shelf.',
       primaryLabel: 'Shop all products',
@@ -542,7 +543,8 @@ export function defaultSections(): Section[] {
     }),
     createSection('image-with-text', '1', {
       heading: 'Run by people who pack the boxes',
-      body: 'We built this shop on top of our own warehouse. Stock counts are real, shipping estimates are real, and the person answering your email has held the product.',
+      body:
+        '[Two or three sentences on who you are and why someone should buy from you.]',
       imageSide: 'left',
     }),
     createSection('collection-grid', '1', {

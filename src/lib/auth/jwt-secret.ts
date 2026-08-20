@@ -18,8 +18,15 @@
  * cannot tell users apart must not boot at all. Degrading here means forging
  * sessions, which is not a degraded service — it is an open door.
  *
- * The check runs at module load, so a misconfigured deployment fails on its
- * first request rather than at some later moment under attack.
+ * **The check is lazy, and that is load-bearing.** The first version validated
+ * at module load, and it broke the customizer: `Customizer.tsx` is a client
+ * component that imports `previewUrl` from `@/lib/storefront-theme`, whose
+ * index re-exports `preview.ts`, which imports this module. `process.env.JWT_SECRET`
+ * is undefined in a browser bundle, so the throw fired on import and took the
+ * whole preview pane down — six customizer e2e tests, green on `main`, red on
+ * the branch. Validating on first *use* keeps the guarantee (nothing can sign
+ * or verify with a bad secret) while leaving the import harmless anywhere the
+ * secret is never touched, which is every client path.
  */
 
 /**
@@ -36,8 +43,10 @@ const MIN_SECRET_LENGTH = 32;
  * Secrets that are public knowledge and must never sign a token.
  *
  * The first is the old fallback literal from this repository's history; the
- * second is the placeholder `.env.example` ships. Both are long enough to pass
- * the length check, which is exactly why they need naming.
+ * others are placeholders `.env.example` has shipped. They are named rather
+ * than left to the length check because the check they would trip tells the
+ * operator the wrong thing: "too short" invites padding it, when the actual
+ * problem is that the value is public.
  */
 const KNOWN_PLACEHOLDERS = new Set([
   'your-secret-key-here',
@@ -45,8 +54,14 @@ const KNOWN_PLACEHOLDERS = new Set([
   'change-me-in-every-environment-please',
 ]);
 
+/** Cached after the first successful read. */
+let cached: string | null = null;
+
 /**
  * Read and validate `JWT_SECRET`.
+ *
+ * Call this at the point of signing or verifying, never at module scope — see
+ * the note in this file's header about the customizer.
  *
  * Under `NODE_ENV=test` a deterministic stand-in is returned instead of
  * throwing, so the unit suite needs no environment. That stand-in is not a
@@ -56,17 +71,32 @@ const KNOWN_PLACEHOLDERS = new Set([
  * @returns The validated secret
  * @throws When the secret is missing, too short, or a known placeholder
  */
-function readJwtSecret(): string {
+export function getJwtSecret(): string {
+  if (cached !== null) return cached;
+
   const raw = process.env.JWT_SECRET?.trim();
 
   if (process.env.NODE_ENV === 'test' && !raw) {
-    return 'test-only-jwt-secret-not-used-outside-jest-runs';
+    cached = 'test-only-jwt-secret-not-used-outside-jest-runs';
+    return cached;
   }
 
   if (!raw) {
     throw new Error(
       'JWT_SECRET is not set. Sessions and preview tokens cannot be signed safely without it. ' +
         'Generate one with `openssl rand -base64 48` and add it to .env.local (see .env.example).',
+    );
+  }
+
+  // Placeholders are checked *before* length. Both known ones are shorter than
+  // the 32-character floor, so a length-first order made this branch
+  // unreachable and reported "too short" for a secret whose real problem is
+  // that it is published in this repository -- a much more useful thing to be
+  // told, and a much more urgent one.
+  if (KNOWN_PLACEHOLDERS.has(raw)) {
+    throw new Error(
+      'JWT_SECRET is still set to a placeholder value that appears in this repository. ' +
+        'Anyone could forge a session for any store. Generate a real one with `openssl rand -base64 48`.',
     );
   }
 
@@ -77,15 +107,13 @@ function readJwtSecret(): string {
     );
   }
 
-  if (KNOWN_PLACEHOLDERS.has(raw)) {
-    throw new Error(
-      'JWT_SECRET is still set to a placeholder value that appears in this repository. ' +
-        'Anyone could forge a session for any store. Generate a real one with `openssl rand -base64 48`.',
-    );
-  }
-
-  return raw;
+  cached = raw;
+  return cached;
 }
 
-/** The validated signing secret. Reading this module is the check. */
-export const JWT_SECRET: string = readJwtSecret();
+/**
+ * Drop the cached secret. Tests only — nothing in the application rotates it.
+ */
+export function resetJwtSecretCache(): void {
+  cached = null;
+}

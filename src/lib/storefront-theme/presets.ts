@@ -423,7 +423,7 @@ function voltageSections(): Section[] {
       eyebrow: 'In stock now',
       heading: 'Gear that ships before you finish reading this.',
       subheading:
-        'Live warehouse counts. Order before 3pm on a weekday and it leaves the building the same day.',
+        '[Say what makes ordering from you easy — stock accuracy, dispatch speed, whatever is true.]',
       primaryLabel: 'Shop the range',
       primaryHref: '/products',
       secondaryLabel: 'New arrivals',
@@ -437,9 +437,9 @@ function voltageSections(): Section[] {
       style: 'bar',
       columns: 3,
       items: [
-        { icon: 'IconBolt', title: 'Same-day dispatch', body: 'Weekdays, before 3pm.' },
-        { icon: 'IconShieldCheck', title: 'Two-year warranty', body: 'Covered against defects.' },
-        { icon: 'IconRotateClockwise', title: '30-day returns', body: 'No restocking fee.' },
+        { icon: 'IconBolt', title: '[Dispatch speed]', body: '[How fast do orders leave you?]' },
+        { icon: 'IconShieldCheck', title: '[Your guarantee]', body: '[What is covered, and for how long?]' },
+        { icon: 'IconRotateClockwise', title: '[Returns]', body: '[How long, and on what conditions?]' },
       ],
     }),
     createSection('featured-collection', '1', {
@@ -541,7 +541,7 @@ function depotSections(): Section[] {
       eyebrow: 'Trade counter',
       heading: 'Parts, in stock, with the numbers on them.',
       subheading:
-        'Search by part number or work down the categories. Live counts, net-30 terms, no minimum order.',
+        '[How buyers find a part here, and the account terms you actually offer.]',
       primaryLabel: 'Search the catalogue',
       primaryHref: '/products',
       layout: 'text-only',
@@ -566,10 +566,10 @@ function depotSections(): Section[] {
       style: 'cards',
       columns: 4,
       items: [
-        { icon: 'IconTruck', title: 'Dispatched same day', body: 'On stocked lines ordered before 4pm.' },
-        { icon: 'IconReceipt', title: 'Net-30 available', body: 'On approved trade accounts.' },
+        { icon: 'IconTruck', title: '[Dispatch speed]', body: '[On which lines, ordered by when?]' },
+        { icon: 'IconReceipt', title: '[Payment terms]', body: '[Which terms do you offer, and to whom?]' },
         { icon: 'IconRuler', title: 'Full specifications', body: 'Dimensions and weights on every line.' },
-        { icon: 'IconPackages', title: 'Volume pricing', body: 'Breaks at 10, 50 and 250 units.' },
+        { icon: 'IconPackages', title: '[Volume pricing]', body: '[Where do your price breaks start?]' },
       ],
     }),
     createSection('faq', '1', {
@@ -577,15 +577,15 @@ function depotSections(): Section[] {
       items: [
         {
           question: 'Can I order without an account?',
-          answer: 'Yes. An account only adds order history and net-30 terms.',
+          answer: '[Do you require an account? Say what one adds.]',
         },
         {
           question: 'Do you ship on a pallet?',
-          answer: 'Anything over 30kg goes on a pallet and is quoted at checkout from the delivery address.',
+          answer: '[How do you ship heavy or oversized items, and how is that quoted?]',
         },
         {
           question: 'Is the stock figure live?',
-          answer: 'It is read from the warehouse on every page load.',
+          answer: '[Is your stock figure live? Say so only if it is.]',
         },
       ],
       openFirst: true,
@@ -629,8 +629,9 @@ function marqueeSections(): Section[] {
       showViewAll: true,
     }),
     createSection('rich-text', '1', {
-      heading: 'We do not run sales',
-      body: 'Marking a price down two months after someone paid it is a way of telling them they were wrong to trust you. We price it once.',
+      heading: '[Your stance on discounting]',
+      body:
+        '[If you have a pricing philosophy worth stating, state it here. Leave this section out if you would rather not commit to one.]',
       align: 'left',
       width: 'full',
     }),
@@ -648,10 +649,10 @@ function marqueeSections(): Section[] {
 function freshSections(): Section[] {
   return [
     createSection('hero', '1', {
-      eyebrow: 'Subscribe and save 15%',
+      eyebrow: '[Your subscription offer]',
       heading: 'Order it once. It turns up on schedule.',
       subheading:
-        'Skip, pause or cancel from the first email. No lock-in, and no phone call to get out of it.',
+        '[What a subscriber can change, and how easily. Only promise what you will honour.]',
       primaryLabel: 'Start a subscription',
       primaryHref: '/products',
       secondaryLabel: 'How it works',
@@ -665,8 +666,8 @@ function freshSections(): Section[] {
       columns: 3,
       items: [
         { icon: 'IconCalendarEvent', title: 'Skip any delivery', body: 'From the app or the email.' },
-        { icon: 'IconTruck', title: 'Free over $75', body: 'On every repeat order.' },
-        { icon: 'IconRotateClockwise', title: 'Cancel in two taps', body: 'No phone call, no retention offer.' },
+        { icon: 'IconTruck', title: '[Shipping offer]', body: '[Free over what, on which orders?]' },
+        { icon: 'IconRotateClockwise', title: '[How to cancel]', body: '[Describe your cancellation policy.]' },
       ],
     }),
     createSection('featured-collection', '1', {
@@ -689,8 +690,8 @@ function freshSections(): Section[] {
     createSection('faq', '1', {
       heading: 'The awkward questions',
       items: [
-        { question: 'Can I cancel?', answer: 'Any time, in two taps, with no phone call.' },
-        { question: 'What if I am away?', answer: 'Skip as many weeks as you like. Skipped weeks are never charged.' },
+        { question: 'Can I cancel?', answer: '[How, and how quickly?]' },
+        { question: 'What if I am away?', answer: '[Can deliveries be skipped, and are skipped weeks charged?]' },
       ],
       openFirst: true,
     }),

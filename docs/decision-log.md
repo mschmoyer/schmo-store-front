@@ -2385,3 +2385,82 @@ The add-product e2e test **was asserting the bug**: it waited for
 `/admin/products/add` and passed while that route rendered "Product not found".
 It now asserts the destination renders a usable form and that the slug proposal
 works, which is the thing a merchant actually needs.
+
+## No promises on a merchant's behalf, and a regression the unit suite could not see (2026-08-20)
+
+**The finding.** A reviewer picked "Marquee" during onboarding and published.
+Their live shop — selling Lightroom presets — then read "One mill, nine years"
+and, under a heading of its own, **"We do not run sales"**: a public pricing
+commitment they had never agreed to and would break with their first Black
+Friday bundle. Other presets promised same-day dispatch, 30-day returns, a
+two-year warranty, net-30 terms and free shipping over $75.
+
+`presets.ts` had already established the rule for the announcement bar — *sample
+copy inside a section is a starting point a merchant will edit; a promise is a
+commitment made on their behalf* — and the section copy had simply never been
+held to it.
+
+- [x] Every claim a customer could hold a merchant to is now a visible bracketed
+      prompt: delivery times, returns windows, warranty lengths, discount rates,
+      payment terms, free-shipping thresholds, and stated pricing policy
+- [x] **Brand voice is untouched.** "The Autumn Edit", "Built to last", "Cut
+      once, in a mill we have used for nine years" — evocative copy that commits
+      nobody to anything stays exactly as it was. A test asserts *both*
+      directions, so the patterns cannot quietly grow greedy enough to push
+      merchants towards placeholders where real copy belongs
+- [x] The trade is real and worth stating plainly: the value-prop cards read
+      less impressively in a screenshot now. That is the correct direction — a
+      merchant editing three cards beats a merchant unknowingly advertising a
+      returns window they never chose
+- [x] The duration rule needed a second pass. `\d+ (day|year)` flagged "a mill
+      we have used for nine years", which is history, not a promise. It now
+      requires the duration and a commitment noun (warranty, guarantee, return,
+      refund, exchange, trial) to appear together — in either order, since
+      "Two-year warranty" and "returns within 30 days" both occur
+- [x] Migration 019's inline default sections still carry the old copy. **Left
+      alone deliberately**: it has been applied, migrations are append-only, and
+      those rows belong to merchants who can edit them
+
+### An attempt that made things worse, and was reverted
+
+Filling the demo stores' value props from the seed looked like the way to keep
+the showcase sharp while leaving the shipped defaults honest. It called
+`backfill_storefront_themes()` to give the demo stores theme rows first — and
+that function writes **one generic section list for every store**. All three
+demo shops collapsed onto the same composition, destroying exactly the property
+`storefront.spec.js` guards ("three shops, not one page three colours") and the
+one reviewers singled out as hardest to retrofit. Reverted in full; the demo
+stores render from their preset compositions again, verified by diffing their
+section orders. The demo value-props bar shows prompts for now, which is
+cosmetic and honest.
+
+### The regression: `JWT_SECRET` broke the customizer
+
+The fail-closed check landed earlier as a module-level `const`. That was wrong
+in a way nothing in CI could see.
+
+- [x] `Customizer.tsx` is a **client component**. It imports `previewUrl` from
+      `@/lib/storefront-theme`, whose index re-exports `preview.ts`, which
+      imports the secret module. `process.env.JWT_SECRET` is undefined in a
+      browser bundle, so the throw fired **on import** and took the whole
+      preview pane down. Six customizer e2e tests, green on `main`, red on the
+      branch
+- [x] **CI would never have caught it**: the workflow runs lint, typecheck, unit
+      tests, migrations and a build. It does not run Playwright. `tsc` was
+      clean, 922 unit tests were green, and the build passed
+- [x] Fixed by making the read lazy — `getJwtSecret()` validates on first *use*
+      and caches. The guarantee is unchanged (nothing can sign or verify with a
+      bad secret) and importing is harmless wherever the secret is never touched,
+      which is every client path
+- [x] A unit test now asserts the storefront-theme entry point imports cleanly
+      with no secret present, so the failure mode is caught by the suite that
+      CI actually runs
+- [x] Writing those tests surfaced a second bug: **both known placeholders are
+      shorter than the 32-character floor**, so the length check fired first and
+      the placeholder branch was unreachable. Reordered — "this value is
+      published in the repo" is more useful and more urgent than "too short",
+      which merely invites padding it
+- [x] Diagnosed by bisecting against `main` rather than assuming: 7/7 passing
+      there, 1/7 on the branch, which is what identified the commit
+- [x] 931 tests, tsc clean, lint 0 errors, production build reproduced locally
+      with CI's exact environment
