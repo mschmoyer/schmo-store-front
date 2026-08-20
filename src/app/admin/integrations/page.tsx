@@ -9,8 +9,8 @@ import {
 } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { IntegrationSettings, type Integration } from '@/components/admin/IntegrationSettings';
-import { CustomStoreCard } from '@/components/admin/CustomStoreCard';
 import { IntegrationConfiguration } from '@/types/database';
+import { StripeConnectCard } from '@/components/admin/StripeConnectCard';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { PanelSkeleton } from '@/components/admin/AdminSkeletons';
 
@@ -35,15 +35,18 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Held in state so child cards receive it as a prop rather than each reaching into
-  // localStorage during render, which is not available on the server pass.
-  const [authToken, setAuthToken] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchIntegrations = async () => {
+  /**
+   * Load the integration list.
+   *
+   * Hoisted out of the mount effect so a disconnect can refresh the cards
+   * without a full page reload — the card's state is derived entirely from this
+   * response, so a stale list would keep showing Disconnect for something that
+   * is already gone.
+   */
+  const fetchIntegrations = React.useCallback(async () => {
       try {
         const token = localStorage.getItem('admin_token');
-        setAuthToken(token);
         if (!token) return;
         
         const response = await fetch('/api/admin/integrations', {
@@ -128,10 +131,15 @@ export default function IntegrationsPage() {
       } finally {
         setLoading(false);
       }
-    };
-    
-    fetchIntegrations();
   }, []);
+
+  useEffect(() => {
+    // Awaited inside the effect rather than called from its body: the state this
+    // sets lands after the request resolves, not synchronously on mount.
+    void (async () => {
+      await fetchIntegrations();
+    })();
+  }, [fetchIntegrations]);
   
   const handleUpdateIntegration = async (integrationType: string, data: Partial<Integration>) => {
     setSaving(true);
@@ -211,10 +219,11 @@ export default function IntegrationsPage() {
       {/* Shipping Integrations */}
       <div>
         <Title order={2} size="h3" mb="md">
-          Shipping & Fulfillment
+          Shipping &amp; Fulfillment
         </Title>
         <Text size="sm" c="dimmed" mb="lg">
-          Connect your shipping provider to sync products and manage inventory automatically.
+          Connect ShipStation to import your catalogue, send orders for fulfilment, and get
+          tracking back.
         </Text>
         <Stack gap="lg">
           {integrations
@@ -224,12 +233,10 @@ export default function IntegrationsPage() {
                 key={integration.integrationType}
                 integration={integration}
                 onUpdate={handleUpdateIntegration}
+                onDisconnected={fetchIntegrations}
                 loading={saving}
               />
             ))}
-          {/* Orders travel the other way: ShipStation pulls them from us over the Custom Store
-              feed, so it needs its own credentials rather than the API key above. */}
-          <CustomStoreCard token={authToken} />
         </Stack>
       </div>
       
@@ -242,13 +249,21 @@ export default function IntegrationsPage() {
           Choose your payment processors to accept credit cards, digital wallets, and more.
         </Text>
         <Stack gap="lg">
+          {/* Stripe is not a stored API key on this platform: payments run on the
+              deployment's STRIPE_SECRET_KEY plus a Connect account per store. The
+              generic card collected a per-store secret that no payment code read,
+              so its "Active" badge was derived from a row with no bearing on
+              whether the store could take money. */}
+          <StripeConnectCard />
+
           {integrations
-            .filter(integration => ['stripe', 'square', 'paypal'].includes(integration.integrationType))
+            .filter(integration => ['square', 'paypal'].includes(integration.integrationType))
             .map((integration) => (
               <IntegrationSettings
                 key={integration.integrationType}
                 integration={integration}
                 onUpdate={handleUpdateIntegration}
+                onDisconnected={fetchIntegrations}
                 loading={saving}
               />
             ))}

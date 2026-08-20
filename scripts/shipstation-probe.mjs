@@ -114,6 +114,30 @@ const PROBES = [
     optional: ['sku', 'name', 'description', 'customs_value', 'thumbnail_url', 'active'],
   },
   {
+    label: 'Shipments (order push target + tracking read-back)',
+    callers: [
+      'src/lib/shipstation/sync.ts → syncShipmentsPage',
+      'src/lib/shipstation/orderPush.ts → pushOrderToShipStation',
+    ],
+    // The read side of the order flow. `external_shipment_id` is the field that
+    // matches a shipment back to the order that created it, so a response that
+    // omits it would silently strand every order without tracking — exactly the
+    // kind of shape change unit tests cannot see.
+    path: '/v2/shipments?page=1&page_size=5&sort_by=modified_at&sort_dir=desc',
+    collection: 'shipments',
+    required: ['shipment_id'],
+    optional: [
+      'external_shipment_id',
+      'shipment_status',
+      'carrier_code',
+      'service_code',
+      'tracking_number',
+      'ship_date',
+      'shipment_cost',
+    ],
+    allowEmpty: true,
+  },
+  {
     label: 'Webhook subscriptions (list side of registration)',
     callers: ['src/lib/shipstation/webhookRegistration.ts → registerStoreWebhook'],
     path: '/v2/environment/webhooks',

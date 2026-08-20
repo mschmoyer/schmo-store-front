@@ -52,6 +52,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Product, ProductFilters } from '@/types/database';
 import { EmptyState, Price } from '@/components/ui';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { ShipStationSyncButton } from '@/components/admin/ShipStationSyncButton';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
 import table from '@/components/admin/adminTable.module.css';
@@ -595,6 +596,15 @@ export default function ProductsAdminPage() {
         }
         actions={
           <>
+          {/* Pulls the catalogue from ShipStation on demand rather than waiting for
+              the hourly scheduled run. Disabled, with the reason, until the
+              integration is connected. */}
+          <ShipStationSyncButton
+            endpoint="/api/admin/sync/products"
+            label="Sync from ShipStation"
+            onSynced={() => fetchProducts(currentPage, true)}
+          />
+
           {/* Coupons lost its top-level nav slot — a merchant edits promotions
               monthly, not daily, and a coupon is part of pricing the catalog.
               This is its door. */}

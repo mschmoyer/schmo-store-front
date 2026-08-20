@@ -52,14 +52,18 @@ interface IntegrationUpdateData extends Partial<Integration> {
 interface IntegrationSettingsProps {
   integration: Integration;
   onUpdate: (integrationType: string, data: IntegrationUpdateData) => Promise<void>;
+  /** Called after a successful disconnect so the page can refetch its list. */
+  onDisconnected?: () => void;
   loading?: boolean;
 }
 
-export function IntegrationSettings({ integration, onUpdate, loading = false }: IntegrationSettingsProps) {
+export function IntegrationSettings({ integration, onUpdate, onDisconnected, loading = false }: IntegrationSettingsProps) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [syncing, setSyncing] = useState({ products: false, inventory: false });
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [testingStored, setTestingStored] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(integration.isActive); // Start expanded if active, collapsed if inactive
   
   const form = useForm({
@@ -84,8 +88,19 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
   
   const integrationConfig = {
     shipstation: {
+      /**
+       * Routes backing the header actions. `connectedTest` must verify the
+       * *stored* credential — `/api/admin/integrations/test` cannot, because it
+       * requires an apiKey in the body, so it only ever proves that a key the
+       * merchant just typed works.
+       */
+      connectedTest: '/api/admin/integrations/shipstation/test',
+      disconnect: '/api/admin/integrations/shipstation',
+      // One credential now does everything: catalogue and inventory in, orders out
+      // over `POST /v2/shipments`, tracking back from `GET /v2/shipments`.
       name: 'ShipStation',
-      description: 'Connect your ShipStation account to manage products, inventory, and shipping',
+      description:
+        'Imports products and inventory, sends your orders for fulfilment, and brings tracking back.',
       icon: IconPlug,
       apiKeyLabel: 'ShipStation API Key',
       apiKeyPlaceholder: 'ukyI...',
@@ -226,6 +241,103 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
     }
   };
   
+  /**
+   * Whether this card should offer Test and Disconnect rather than Connect.
+   *
+   * Both need a credential to act on, so an integration that is merely toggled
+   * active without a key still shows Connect — offering "Test" with nothing to
+   * test would report a failure the merchant cannot act on.
+   */
+  const endpoints = config as { connectedTest?: string; disconnect?: string };
+  const isConnected = integration.isActive && integration.hasApiKey;
+
+  /**
+   * Verify the credential that is actually stored.
+   *
+   * Sends no body: the route falls back to the saved key, which is the thing the
+   * merchant wants reassurance about. A test that only checks freshly typed
+   * input cannot tell them whether the integration is working right now.
+   */
+  const handleTestStored = async () => {
+    if (!endpoints.connectedTest) return;
+    setTestingStored(true);
+    try {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(endpoints.connectedTest, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: '{}',
+      });
+      const data = await response.json();
+      const ok = response.ok && data.success !== false;
+      notifications.show({
+        title: ok ? `${config.name} is working` : `${config.name} test failed`,
+        message:
+          data.data?.message ??
+          data.message ??
+          data.error ??
+          (ok ? 'The stored credentials still work.' : 'The stored credentials were rejected.'),
+        color: ok ? 'green' : 'red',
+        icon: ok ? <IconCheck style={{ width: rem(18), height: rem(18) }} /> : undefined,
+      });
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: `We couldn't reach the server to test ${config.name}.`,
+        color: 'red',
+      });
+    } finally {
+      setTestingStored(false);
+    }
+  };
+
+  /**
+   * Remove the stored credential after an explicit confirmation.
+   *
+   * Disconnecting stops catalogue sync and order push, so it asks first — this
+   * button sits next to Test and a misclick would otherwise silently break
+   * fulfilment.
+   */
+  const handleDisconnect = async () => {
+    if (!endpoints.disconnect) return;
+    const confirmed = window.confirm(
+      `Disconnect ${config.name}?\n\nYour stored credentials are deleted. Catalogue sync stops and new orders are no longer sent for fulfilment until you reconnect.`
+    );
+    if (!confirmed) return;
+
+    setDisconnecting(true);
+    try {
+      const token = localStorage.getItem('admin_token');
+      const response = await fetch(endpoints.disconnect, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) {
+        notifications.show({
+          title: 'Could not disconnect',
+          message: data.error ?? 'The server refused the request.',
+          color: 'red',
+        });
+        return;
+      }
+      notifications.show({
+        title: `${config.name} disconnected`,
+        message: data.message ?? 'The stored credentials have been removed.',
+        color: 'green',
+      });
+      onDisconnected?.();
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: `We couldn't reach the server to disconnect ${config.name}.`,
+        color: 'red',
+      });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   const handleSync = async (type: 'products' | 'inventory' | 'all') => {
     if (!integration.isActive || !integration.hasApiKey) {
       notifications.show({
@@ -409,8 +521,33 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
           </Group>
           
           <Group gap="md">
-            {/* Connect button for inactive integrations */}
-            {!integration.isActive && (
+            {/* A connected integration offers the two things you actually want from
+                one: prove it still works, and take it out. Leaving only "Connect"
+                on an active card gave a merchant no way to do either. */}
+            {isConnected ? (
+              <>
+                <Button
+                  variant="light"
+                  color="green"
+                  size="sm"
+                  loading={testingStored}
+                  leftSection={<IconCheck style={{ width: rem(14), height: rem(14) }} />}
+                  onClick={handleTestStored}
+                >
+                  Test
+                </Button>
+                <Button
+                  variant="light"
+                  color="red"
+                  size="sm"
+                  loading={disconnecting}
+                  leftSection={<IconX style={{ width: rem(14), height: rem(14) }} />}
+                  onClick={handleDisconnect}
+                >
+                  Disconnect
+                </Button>
+              </>
+            ) : (
               <Button
                 variant="filled"
                 size="sm"
@@ -480,7 +617,9 @@ export function IntegrationSettings({ integration, onUpdate, loading = false }: 
                       loading={testing}
                       disabled={!form.values.apiKey}
                     >
-                      Test Connection
+                      {/* Distinct from the header's Test, which checks the key already
+                          stored. This one checks the key being typed, before saving. */}
+                      Test this key
                     </Button>
                   </Box>
                 </Group>

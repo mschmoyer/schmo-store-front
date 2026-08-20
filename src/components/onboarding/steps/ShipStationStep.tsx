@@ -208,8 +208,12 @@ export default function ShipStationStep({ api }: { api: OnboardingApi }): React.
           <div className={styles.helpNote}>
             <InfoMark />
             <span>
-              <strong>We only ever read your catalog.</strong> Products, SKUs, prices, images and
-              stock levels come in; we don’t change anything in ShipStation during setup.
+              {/* This key is not read-only any more. Once the store is live, every paid
+                  order is pushed to ShipStation as a shipment, so promising we never
+                  write would be false the first time somebody buys something. */}
+              <strong>Setup only reads.</strong> Products, SKUs, prices, images and stock levels
+              come in, and nothing in ShipStation changes while you set up. Once your store is
+              live, this same key sends each paid order over for fulfilment.
             </span>
           </div>
         </>

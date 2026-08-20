@@ -297,7 +297,7 @@ docs/
 ├── brand.md, marketing-copy.md  # Voice and approved copy
 ├── demo-data.md                 # What the demo seed creates
 ├── shipstation-api-openapi.yaml # Upstream V2 contract
-├── shipstation-custom-store.md  # Legacy Custom Store XML wire format
+├── shipstation-custom-store.md  # Removed Custom Store XML format, kept for reference
 └── audits/                      # Point-in-time critiques
 ```
 
@@ -334,7 +334,6 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 
 ### Integration and scheduled
 - `/api/shipstation/webhook/[storeToken]` - Per-store ShipStation webhook receiver
-- `/api/shipstation/orders` - Legacy Custom Store XML feed (order export, shipment notification)
 - `/api/cron/sync` - Vercel Cron: schedules a ShipStation sync per store
 - `/api/cron/inventory-snapshot` - Vercel Cron: daily inventory snapshot
 - `/api/jobs/process` - Drains `job_queue` (sync pages, order pushes, notifications)

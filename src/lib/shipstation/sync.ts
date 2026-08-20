@@ -38,14 +38,16 @@ export type SyncOperation =
   | 'products'
   | 'inventory'
   | 'inventory-warehouses'
-  | 'inventory-locations';
+  | 'inventory-locations'
+  | 'shipments';
 
 /** Operations that page; `warehouses` returns everything in one call. */
 export const PAGED_OPERATIONS: readonly SyncOperation[] = [
   'products',
   'inventory',
   'inventory-warehouses',
-  'inventory-locations'
+  'inventory-locations',
+  'shipments'
 ];
 
 /**
@@ -58,7 +60,8 @@ export const SYNC_OPERATIONS: readonly SyncOperation[] = [
   'inventory-warehouses',
   'inventory-locations',
   'products',
-  'inventory'
+  'inventory',
+  'shipments'
 ];
 
 /**
@@ -644,6 +647,123 @@ export async function syncProductsPage(
  * @returns Counts for this page.
  * @throws {Error} On an unknown operation or a ShipStation failure.
  */
+/** How far back a shipments sync looks when it has never run for a store. */
+const SHIPMENT_LOOKBACK_DAYS = 30;
+
+/** One shipment as returned by `GET /v2/shipments`. */
+interface ShipStationShipment {
+  shipment_id?: string;
+  external_shipment_id?: string | null;
+  shipment_status?: string | null;
+  carrier_code?: string | null;
+  service_code?: string | null;
+  tracking_number?: string | null;
+  ship_date?: string | null;
+  shipment_cost?: { amount?: number } | null;
+}
+
+/**
+ * Pull shipments back from ShipStation and write their tracking onto our orders.
+ *
+ * This is the inbound half of the V2 order flow. `orderPush` sets
+ * `external_shipment_id` to our `order_number` when it creates the shipment, so a
+ * shipment can be matched back to the order that produced it without storing a
+ * second identifier — and orders that did not originate here simply do not match.
+ *
+ * The window is `modified_at_start`, not `created_at`, because a shipment that was
+ * created days ago and shipped this morning is exactly the row we need; filtering
+ * on creation would miss it. There is no stored cursor yet, so each run re-reads a
+ * fixed lookback. That is deliberately idempotent: every write below is an update
+ * to the same columns with the same values, so re-reading a shipment costs a query
+ * and changes nothing.
+ *
+ * Money is decimal dollars on the V2 wire and `orders.shipment_cost` is a
+ * `DECIMAL(10,2)` dollars column, so the value passes through unscaled.
+ *
+ * @param apiKey - Merchant's V2 API key
+ * @param storeId - Store UUID; every write below is scoped to it
+ * @param page - 1-based page number
+ * @param network - Injectable network seam for tests
+ * @returns Page result for the orchestrator
+ * @channel api-v2
+ */
+export async function syncShipmentsPage(
+  apiKey: string,
+  storeId: string,
+  page: number,
+  network: SyncNetworkOptions = {}
+): Promise<PageSyncResult> {
+  const since = new Date(Date.now() - SHIPMENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const response = await shipStationFetch<{ shipments?: ShipStationShipment[] }>(
+    `/v2/shipments?page=${page}&page_size=${PAGE_SIZE}` +
+      `&modified_at_start=${encodeURIComponent(since)}&sort_by=modified_at&sort_dir=asc`,
+    { apiKey, operation: `list shipments page ${page}`, ...network }
+  );
+
+  if (!response.ok) {
+    // Same rule as every other operation here: a non-OK response is an error, not
+    // an empty page. Treating it as "no more" turns a rate limit into orders that
+    // silently never receive their tracking.
+    throw new Error(response.error);
+  }
+
+  const shipments = response.data.shipments ?? [];
+
+  const counts = await db.transaction(async (client) => {
+    let updated = 0;
+
+    for (const shipment of shipments) {
+      const orderNumber = shipment.external_shipment_id?.trim();
+      if (!orderNumber) {
+        // Not one of ours — the merchant's own shipments live in the same account.
+        continue;
+      }
+
+      const shipped = shipment.shipment_status === 'shipped' || Boolean(shipment.tracking_number);
+
+      const result = await client.query(
+        `UPDATE orders
+            SET tracking_number = COALESCE($3, tracking_number),
+                carrier         = COALESCE($4, carrier),
+                carrier_code    = COALESCE($4, carrier_code),
+                service_code    = COALESCE($5, service_code),
+                shipment_cost   = COALESCE($6, shipment_cost),
+                shipstation_shipment_id = COALESCE($7, shipstation_shipment_id),
+                shipped_at      = CASE WHEN $8 THEN COALESCE($9::timestamp, shipped_at, NOW())
+                                       ELSE shipped_at END,
+                status          = CASE WHEN $8 AND status NOT IN ('cancelled', 'refunded')
+                                       THEN 'shipped' ELSE status END,
+                updated_at      = CURRENT_TIMESTAMP
+          WHERE store_id = $1
+            AND order_number = $2`,
+        [
+          storeId,
+          orderNumber,
+          shipment.tracking_number ?? null,
+          shipment.carrier_code ?? null,
+          shipment.service_code ?? null,
+          shipment.shipment_cost?.amount ?? null,
+          shipment.shipment_id ?? null,
+          shipped,
+          shipment.ship_date ?? null
+        ]
+      );
+
+      updated += result.rowCount ?? 0;
+    }
+
+    return { updated };
+  });
+
+  return {
+    processed: shipments.length,
+    added: 0,
+    updated: counts.updated,
+    hasMore: shipments.length === PAGE_SIZE
+  };
+}
+
 export async function runSyncPage(
   operation: SyncOperation,
   apiKey: string,
@@ -662,6 +782,8 @@ export async function runSyncPage(
       return syncInventoryWarehousesPage(apiKey, storeId, page, network);
     case 'inventory-locations':
       return syncInventoryLocationsPage(apiKey, storeId, page, network);
+    case 'shipments':
+      return syncShipmentsPage(apiKey, storeId, page, network);
     default: {
       const exhaustive: never = operation;
       throw new Error(`Unknown sync operation: ${String(exhaustive)}`);

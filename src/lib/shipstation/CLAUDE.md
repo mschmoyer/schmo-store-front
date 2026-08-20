@@ -8,25 +8,32 @@ Read this before changing anything in that surface. Most of what looks like an o
 here was already tried and reverted — see `docs/audits/shipstation-audit.md` for the findings each
 rule below closes, and `docs/decision-log.md` for what changed after.
 
-## Two channels, split by capability
+## One channel: the V2 REST API
 
-There are two ShipStation integrations in this directory. They are **not** competing
-implementations of the same thing, and neither is being removed. Every exported function belongs to
-exactly one, marked with a `@channel` tag in its JSDoc.
+Everything goes through ShipStation's V2 REST API under a single merchant API key. There is no
+second integration and no second credential.
 
-| Channel | Owns | Direction | Tag |
-|---|---|---|---|
-| **Custom Store** | Orders out, shipment notifications in | ShipStation pulls from us over XML and posts ship notices back | `@channel custom-store` |
-| **API v2** | Products, inventory, warehouses | We pull from ShipStation's REST API | `@channel api-v2` |
+| Direction | How | Endpoint |
+|---|---|---|
+| Catalogue, inventory, warehouses **in** | Paged sync | `GET /v2/products`, `/v2/inventory`, `/v2/inventory_warehouses`, `/v2/inventory_locations`, `/v2/warehouses` |
+| Orders **out** | Queued job on a paid order | `POST /v2/shipments` |
+| Shipment status and tracking **back** | Paged sync on a modified-at window | `GET /v2/shipments` |
 
-Custom Store has no catalogue capability, and V2 has no real order-creation resource, so a merchant
-who wants catalogue import *and* fulfilment needs **both** sets of credentials. Saying that plainly
-in the UI is a product requirement, not a nicety.
+The two order directions key off each other: the push sets `external_shipment_id` to our
+`order_number`, and `syncShipmentsPage` matches shipments back to orders on that field. A shipment
+without it belongs to the merchant, not to us, and is skipped.
 
-**Orders are Custom Store.** `docs/shipstation-custom-store.md` is the contract — export and
-shipnotify shapes, field tables, and the XSD ShipStation validates against. Read it before touching
-`/api/shipstation/orders`, `xmlBuilder.ts`, `xmlParser.ts` or Custom Store auth. The V2 order-push
-path (`orderPush.ts`) stays in the tree for now, unwired and tagged, rather than being deleted.
+**The Custom Store XML feed has been removed.** It was a second, parallel integration with its own
+credentials, its own wire format and its own auth, and it could not import a catalogue. Its wire
+format is preserved for reference in `docs/shipstation-custom-store.md`, which now documents a
+surface this codebase no longer exposes — do not build against it without reinstating the endpoint.
+
+**Known limit, and it is load-bearing:** the V2 contract in `docs/shipstation-api-openapi.yaml` has
+**no order resource** — no `POST /v2/orders`, no `GET /v2/sales_orders`. Orders reach ShipStation
+only as a side effect of creating a shipment, via the `create_sales_order: true` field in
+`orderPush.ts`. **That field does not appear anywhere in the published contract**, the same class as
+`/v2/products`, which 404s on some accounts. Nothing here has been exercised against a live
+ShipStation account. If push turns out not to create a fulfillable order, this is why.
 
 ## Rules
 
@@ -102,13 +109,11 @@ Shipments in ──────────────────────�
 | `sync.ts` | One page of one operation, written in one transaction. `SYNC_OPERATIONS` dependency order. | Loop pages here. Reorder operations (`products` must precede `inventory`). |
 | `syncOrchestrator.ts` | Turning "sync this store" into chained `job_queue` rows; `sync_runs` cursor. | Build a second queue. `jobQueueService` already is one. |
 | `manualSync.ts` | Operator-triggered sync that finishes in its own request. `PAGE_CAP`, `DEFAULT_BUDGET_MS`. | Remove the bounds. Fork the writers — it must call `runSyncPage`. |
-| `orderPush.ts` | **API v2** queued order push. Retained but unwired — orders go out through Custom Store. | Wire this up. Orders are Custom Store now. |
+| `orderPush.ts` | Queued order push to `POST /v2/shipments`, enqueued by `billing/orders.ts::createPaidOrder` after the transaction commits. Sets `external_shipment_id` to the order number. | Push inline from a checkout path. Fail a paid checkout on a ShipStation error. |
 | `webhookSecurity.ts` | Inbound auth: path token → store, shared-secret header, optional body HMAC. | Trust anything in the payload to identify the tenant. |
 | `webhookRegistration.ts` | `POST`/`DELETE /v2/environment/webhooks`. Idempotent by URL. | Register without the secret header. |
 | `webhookPayload.ts` | Parsing/validating the inbound notification body. | Assume fields exist. |
 | `v2Api.ts` | Legacy shipment creation + credential read. **Deprecated**, see Known gaps. | Add call sites. |
-| `xmlBuilder.ts` / `xmlParser.ts` / `xmlTypes.ts` | **Custom Store** order export and ship-notice XML. | Diverge from `docs/shipstation-custom-store.md` §5. Its XSD (§6) is *incomplete* — field table wins over schema; see the note there. Use `formatMoney` here — these tables are **decimal dollars**, so it is `formatDecimalMoney`. Format dates in JS — `created_at`/`updated_at` are `TIMESTAMP` without zone and are rendered by SQL `to_char`. Read `Order.shipping_address` — the table is flat. |
-| `customStoreAuth.ts` | **Custom Store** Basic auth: username resolves the store, secret compared in constant time. | Scan every tenant's row looking for a match. Accept an auth scheme the spec does not define. |
 | `utils.ts` | Date, status-map, money and validation helpers. | Put network or DB code here. |
 
 ## Outbound API surface (ShipStation V2)
@@ -140,7 +145,6 @@ cannot catch.
 |---|---|---|---|
 | POST | `/api/shipstation/webhook/[storeToken]` | Path token + `x-rebelshops-webhook-secret`, optional `x-shipstation-signature` HMAC | The live webhook receiver. 401 before the body is parsed. Body capped at 512 KB. |
 | POST/GET | `/api/shipstation/webhook` | none | **Retired.** Returns 410 with an explanation. Do not revive; it could not identify a tenant (P0-7). |
-| GET/POST/PUT | `/api/shipstation/orders` | `auth.authenticateShipStationMulti` (Basic or API key) | Legacy Custom Store XML feed: order export and shipment notification. Wire format is specified in `docs/shipstation-custom-store.md`. |
 | GET/POST/DELETE | `/api/admin/integrations/shipstation` | merchant session | Read masked config / save key + register webhook / disconnect. Returns only what the server will honour — never a credential it invented (P0-1). |
 | POST | `/api/admin/integrations/shipstation/test` | merchant session | Live `GET /v2/warehouses` against the submitted key, else the stored one. Routed through `shipStationFetch`. |
 | POST | `/api/admin/integrations/test` | merchant session | Generic tester (`{ integrationType: 'shipstation' \| 'stripe' }`). Also hits `/v2/warehouses`, but with a raw `fetch` — see Known gaps. |
@@ -160,7 +164,6 @@ both:
 | Channel | Credential | Who issues it | Stored as |
 |---|---|---|---|
 | API v2 | API key the merchant pastes in from ShipStation | ShipStation | `store_integrations.api_key_encrypted` |
-| Custom Store | Username + secret that **ShipStation sends to us** as Basic auth | We generate them | `shipstation_username` + `custom_store_password_encrypted` |
 
 The rule P0-1 established still holds and applies to both: **never show a merchant a credential the
 server will not accept.** The old screen generated a pair client-side with `Math.random()` that the
@@ -211,11 +214,15 @@ other.
 
 ## Sync
 
+`shipments` runs last and depends on nothing: it reads back what `orderPush` sent, matching on
+`external_shipment_id`. It has no stored time cursor yet and re-reads a fixed 30-day window each
+run, which is safe because every write is the same update with the same values.
+
 `SYNC_OPERATIONS` runs in dependency order and the order matters — `products` before `inventory`, so
 stock levels land on rows that exist:
 
 ```
-warehouses → inventory-warehouses → inventory-locations → products → inventory
+warehouses → inventory-warehouses → inventory-locations → products → inventory → shipments
 ```
 
 `warehouses` is the only unpaged operation. Progress lives in `sync_runs.last_page_completed`, so a

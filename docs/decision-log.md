@@ -1830,3 +1830,187 @@ Left deliberately, with reasons:
       the hook is probably the right answer and is a separate decision
 - [ ] `@typescript-eslint/no-unused-vars` in `scripts/dev-local.js:48` and `scripts/seed-demo.js:802`
       — `scripts/` was out of scope for this pass
+
+## ShipStation setup split by capability, in settings and onboarding (2026-08-19)
+
+**User request**: "On our integrations page on the dashboard, should this be how to setup a custom
+store? It looks like it is an APIv2 config?" … then, after the catalogue dependency surfaced: "Ah,
+this is why we need APIv2 AND the custom store. We do need both. The custom store should properly
+handle the order flow, and the API key allows product/inventory import."
+
+The two ShipStation surfaces are **not** alternatives, and the UI had been presenting them as if a
+merchant should pick one. Custom Store carries orders out and tracking back and has no catalogue
+capability; the V2 REST key imports products and stock and has no order-creation resource. A store
+that sells and ships needs both. Both screens now say so.
+
+- [x] **Integrations page** — Custom Store card first (nothing ships without it), V2 card second,
+      relabelled from "ShipStation" to **"ShipStation catalogue & inventory"** with a description
+      scoped to what the key actually does. Its old description claimed it managed "shipping",
+      which is what sent merchants looking for their orders in the wrong card
+- [x] The Custom Store card was the only card on the page with **no help link and no status badge**
+      — the most confusing setup on the screen was also the least supported. Both added, matching
+      the pattern the other cards already use
+- [x] Its own copy said the API key was configured "above" — it is now below it. Fixed
+- [x] **Onboarding step 3 is now the order connection.** It issues the credentials and shows the
+      four values plus the five case-sensitive status strings, each with its own copy button, and
+      the numbered path through ShipStation's own menus
+- [x] **The API key moved to step 4**, where it is the thing standing between the merchant and
+      their products, via the new `POST /api/onboarding/catalog-key`. The validation, the live
+      `GET /v2/warehouses` test and the P0-1/P0-2/P1-7 guarantees are carried over unchanged
+- [x] `statusMappingForForm`, the endpoint URL builder and the ShipStation setup steps moved to
+      `src/lib/shipstation/customStoreConnection.ts` so the admin card and onboarding cannot drift
+      apart. A status string that differs by one character between the two screens is a silent
+      mis-import
+- [x] `OnboardingShipStation` gained `catalogKeyPresent`, because `connected` now means the order
+      feed. `LaunchStep` was reporting catalogue outcomes ("products are in", "tied to this API
+      key") off `connected`, which after the split would have described the wrong credential
+
+Found by running the flow rather than reading it — none of these were visible in the diff:
+
+- [x] **Step 3 was skipped entirely.** Issuing credentials on mount also marked the step complete
+      and advanced the cursor, so the wizard jumped from Store to Catalog and the one screen whose
+      whole job is to display these values was never seen. Completion is now an explicit
+      `{ confirm: true }` sent by Continue
+- [x] **"Skip for now" was silently ignored.** Because step 3 issues credentials on arrival,
+      everyone had them by the time they reached Skip — and `buildState` cleared `skipped` whenever
+      credentials existed. A deliberate skip now outranks their presence
+- [x] **The numbered ShipStation steps rendered without numbers.** The global reset strips list
+      markers, turning "do these in this order" into an indented blob
+- [x] **Step 3's header still read "Paste your API key"**, the one thing that screen no longer does
+- [x] **Step 4 claimed "Your orders are set up"** unconditionally, including to merchants who had
+      just skipped step 3
+- [x] Dropped a success banner that announced "Your connection is ready" on arrival. The
+      credentials were ready; the connection is not until ShipStation calls. Same reason the admin
+      card reports a timestamp rather than a badge
+- [x] Verified in a real browser at each stage: `tsc --noEmit` clean, 843 unit tests, lint 0 errors
+- [x] **Version bumped** to 2.6.0
+
+Open:
+- [ ] The two ShipStation cards are rendered by different components (`CustomStoreCard` and the
+      generic `IntegrationSettings`), so their internal layouts differ slightly — icon placement
+      and header alignment. Cosmetic, but they sit adjacent and read as two design languages
+- [ ] `/admin/integrations/shipstation` (695 lines) is still reachable by URL, linked from nowhere,
+      and still generates credentials **client-side** before POSTing them. It is a second, divergent
+      credential path that can overwrite the real one. PR #5 planned to delete it and did not
+- [ ] Onboarding never verifies the Custom Store connection actually works — it cannot, since
+      ShipStation polls on its own schedule. The admin card's "last request received" is the only
+      evidence, and onboarding does not surface it
+
+## Pivot: everything on the V2 API, Custom Store removed (2026-08-19)
+
+**User request**: "Ok big pivot. We should drive everything off V2 api. Remove custom store.
+Implement order push and fetch from APIv2."
+
+One integration, one credential. The Custom Store XML feed is gone; catalogue, orders out and
+tracking back all go through the V2 REST API under the merchant's single API key.
+
+- [x] **Order push wired.** `enqueueOrderPush` had been complete but callerless since it was
+      written — the "well-built dead code" the audit flagged. `billing/orders.ts::createPaidOrder`
+      now enqueues it **after** the transaction commits and only for a genuinely new order, so a
+      redelivered Stripe event cannot double-push and a ShipStation outage cannot fail a checkout
+      the shopper already paid for
+- [x] **Order fetch implemented.** New `syncShipmentsPage` pages `GET /v2/shipments` on a
+      `modified_at_start` window and writes tracking, carrier, service, cost, shipment id and
+      shipped-at back onto orders. Matching is on `external_shipment_id`, which `orderPush` already
+      sets to our `order_number` — so the two halves key off each other and shipments belonging to
+      the merchant rather than to us are skipped. Registered in `SyncOperation`, `SYNC_OPERATIONS`,
+      `PAGED_OPERATIONS`, the `runSyncPage` switch and `scripts/shipstation-probe.mjs`
+- [x] The window is on *modified*, not created: a shipment created days ago and shipped this
+      morning is exactly the row we need. No stored cursor yet — each run re-reads a fixed 30-day
+      window, which is safe because every write is the same update with the same values
+- [x] **Custom Store removed** — the endpoint, `xmlBuilder`/`xmlParser`/`xmlTypes`,
+      `customStoreAuth`, `customStoreConnection`, the admin card, the credential route, the
+      verification script and its npm entry, and 43 tests
+- [x] Onboarding reverted to the single-credential flow: step 3 takes the API key again, step 4
+      imports the catalogue with it. The admin card is one ShipStation entry that does everything
+- [x] `docs/shipstation-custom-store.md` kept, headed as removed/historical — the wire format is
+      not published anywhere else we control, so reinstating the feed would start from it
+- [x] `npx tsc --noEmit` clean, 800 tests, lint 0 errors. App boots clean; `/api/shipstation/orders`
+      now 404s as intended
+- [x] **Version bumped** to 3.0.0 — an integration was removed, which is breaking for any store
+      already pointing ShipStation at the feed
+
+Open — and the first one decides whether this pivot works at all:
+
+- [ ] **`create_sales_order` is not in the published contract.** `docs/shipstation-api-openapi.yaml`
+      has no order resource at all — no `POST /v2/orders`, no `GET /v2/sales_orders`. It knows
+      `sales_order_id` as a read-only field on a shipment and a `sales_orders_imported` webhook
+      event, but nothing that creates one. Orders reach ShipStation only as a side effect of
+      `POST /v2/shipments` with `create_sales_order: true`, a field ShipStation does not document —
+      the same class as `/v2/products`, which 404s on some accounts. **Nothing here has run against
+      a live account.** If push does not produce a fulfillable order, this is the reason, and the
+      Custom Store feed removed above was the only alternative
+- [ ] Creating a *shipment* is not obviously the same as creating an order awaiting fulfilment.
+      Whether the merchant sees something they can pick and pack, or a record already marked
+      shipped, is unverified
+- [ ] `syncShipmentsPage` has no unit test. The sync writers are not unit-tested as a class — they
+      need a database — and `npm run shipstation:probe` is the check that catches a changed response
+      shape. The probe entry is in place
+- [ ] Migration 024's Custom Store columns (`shipstation_username`,
+      `custom_store_password_encrypted`, `custom_store_enabled`) are now unused. Left in place
+      rather than dropped, since dropping them is irreversible and they cost nothing
+
+## Integration cards: Connect/Disconnect/Test, and the sync that was never running (2026-08-19)
+
+**User request**: "give the same UI treatment to the stripe integration in settings… When an
+integration is connected, is the Connect button replaced with a red Disconnect button? It should
+be… Where did the inventory/product sync go? Do we still do that on a daily cron? (we should)."
+
+Three findings, then the work:
+
+- [x] **The scheduled sync was scheduled but inert.** `/api/cron/sync` runs hourly and only
+      *enqueues* one `job_queue` row per store per operation. The drainer, `/api/jobs/process`, had
+      **no cron entry at all**, so nothing ever processed the queue. Catalogue and inventory sync
+      has therefore not been running in production; the admin button worked only because
+      `manualSync` bypasses the queue. Added `*/5 * * * *` for `/api/jobs/process`, plus the
+      `functions` entry it was also missing — its `WORK_BUDGET_MS` is 50 s and without a
+      `maxDuration` above that the platform default would kill jobs mid-flight
+- [x] **There was no Disconnect anywhere.** `Connect` rendered only when inactive and nothing
+      replaced it, so a connected integration offered no way out
+- [x] **`Test Connection` could not test what was stored.** `/api/admin/integrations/test` requires
+      `apiKey` in the body, so it only ever proved that a key the merchant had just typed worked.
+      The header Test now posts to `/api/admin/integrations/shipstation/test` with no body, which
+      falls back to the stored credential and goes through `shipStationFetch`. The in-form button
+      is relabelled **"Test this key"** so the two are not confusable
+- [x] Connected cards now show a green **Test** and a red **Disconnect**; disconnect confirms first,
+      since it stops catalogue sync and order push, then refetches the list rather than reloading
+- [x] **`ShipStationSyncButton`** on the Products and Inventory grids, disabled with the reason
+      until the integration is connected — an always-enabled button that fails tells the merchant
+      nothing. It reports rows written rather than "success"
+
+### The Stripe card was reporting a fiction
+
+It collected a per-store **Stripe Secret Key** into `store_integrations`, and nothing read it:
+grep across `src/lib/stripe/**`, `src/lib/billing/**` and the checkout/billing/connect routes finds
+no reader for `api_key_encrypted`. Payments run on the deployment's `STRIPE_SECRET_KEY` plus a
+Stripe **Connect** account per store. Its "Active" badge came from a row with no bearing on whether
+the store could take money — on the demo store it showed **Active** while `STRIPE_SECRET_KEY` was
+not set at all.
+
+- [x] Replaced with `StripeConnectCard`, driven by `GET /api/connect/status`: platform
+      configuration, then whether *their* account can accept charges and receive payouts. Connect
+      starts real onboarding via `/api/connect/onboard`; Test re-reads from Stripe and reports
+      capability rather than mere linkage; Disconnect unlinks via a new
+      `DELETE /api/connect/disconnect`
+- [x] That route deletes **our record of the link, not the Stripe account** — destroying a
+      merchant's account from our admin screen is the wrong power to hold, and Stripe does not
+      offer it for a live account anyway. The confirmation says so
+- [x] Verified in a browser: connected ShipStation shows Test/Disconnect, the Products button
+      enables only when connected, and Stripe correctly reads "Not connected" with the missing-key
+      alert. `tsc` clean, 800 tests, lint 0 errors (75 pre-existing warnings)
+- [x] **Version bumped** to 3.1.0
+
+Caught while wiring, worth recording: the inventory grid's `onSynced` was first pointed at
+`handleSyncShipStation`, which would have re-run the sync instead of refreshing the grid — every
+sync firing twice. It now refreshes, and the superseded handler is deleted.
+
+Open:
+- [ ] Square and PayPal cards are still the generic form with no disconnect route, so they show
+      Connect and never Test/Disconnect. They are also inactive everywhere — worth asking whether
+      they are real or should follow the Stripe card out
+- [ ] `/api/admin/integrations/test` still logs a masked fragment of the key
+      (`first4...last4`), which rule 3 in `src/lib/shipstation/CLAUDE.md` forbids outright, and
+      still uses a raw `fetch` rather than `shipStationFetch`. The header Test no longer routes
+      through it, but the in-form button does
+- [ ] The new `*/5` cron will drain a queue that has been accumulating; the first production run
+      after deploy may process a backlog
