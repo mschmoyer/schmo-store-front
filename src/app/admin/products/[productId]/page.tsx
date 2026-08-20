@@ -29,6 +29,7 @@ import {
   IconAlertTriangle,
   IconSettings,
   IconChartBar,
+  IconVersions,
   IconInfoCircle
 } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
@@ -36,6 +37,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import ProductEditForm from '@/components/admin/ProductEditForm';
 import ProductAnalytics from '@/components/admin/ProductAnalytics';
 import ProductAdvancedSettings from '@/components/admin/ProductAdvancedSettings';
+import VariantEditor from '@/components/admin/VariantEditor';
 import { Product } from '@/types/database';
 
 interface EnhancedProduct extends Product {
@@ -490,6 +492,9 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
           <Tabs.Tab value="details" leftSection={<IconEdit size={16} />}>
             Product Details
           </Tabs.Tab>
+          <Tabs.Tab value="variants" leftSection={<IconVersions size={16} />}>
+            Options &amp; Variants
+          </Tabs.Tab>
           <Tabs.Tab value="analytics" leftSection={<IconChartBar size={16} />}>
             Analytics
           </Tabs.Tab>
@@ -507,6 +512,15 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
             onCancel={handleBack}
             loading={saving}
             errors={formErrors}
+          />
+        </Tabs.Panel>
+
+        {/* Options and variants */}
+        <Tabs.Panel value="variants" pt="md">
+          <VariantEditor
+            productId={product.id}
+            productPrice={Number(product.base_price) || 0}
+            productSku={product.sku || ''}
           />
         </Tabs.Panel>
 

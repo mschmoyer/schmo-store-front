@@ -2264,3 +2264,68 @@ Open:
 - [ ] ShipStation sync does not create or update variants
 - [ ] Variant images are stored and honoured by the panel, but there is still no
       media library to put one there
+
+## The variant editor: merchants can now create variants (2026-08-20)
+
+Variants existed end to end for shoppers but could only be created through the
+seed or the persistence layer — which made the feature exactly the kind of
+half-built thing the review criticised elsewhere. This closes it.
+
+- [x] `GET`/`PUT /api/admin/products/[productId]/variants`. The store comes from
+      the session; the product is confirmed to belong to that store **inside the
+      write transaction**, so a product id from another tenant cannot have
+      variants attached to it. Verified live: a cross-tenant `PUT` returns 404
+      and writes nothing
+- [x] The cross-tenant case is a **404, not a 403 or a 500** — it must read the
+      same as a product that does not exist, or the endpoint becomes a way to
+      discover which ids are real in other stores
+- [x] `PUT` replaces the whole set rather than accepting a patch. A variant grid
+      is edited as a grid — a merchant adds a size, renames a colour and deletes
+      two rows in one sitting — and reconstructing that as a patch stream is
+      more ways to be wrong for no benefit
+- [x] `variant-schema.ts` holds the wire rules, out of the route so they can be
+      unit-tested without a request. The cross-field ones are the point: a
+      payload can be well-typed and still describe an impossible product, and
+      each of those would otherwise reach the database and come back as a
+      constraint error with no field attached to it. 25 tests
+- [x] Rejected with a pointed field error: a variant naming a value its axis
+      does not offer, an axis left unchosen, two variants covering one
+      combination, a SKU used twice, option positions with gaps, an axis with no
+      variants (and vice versa), and a sale price at or above the variant price
+- [x] The combination key is **JSON, not a joined string**. Option values are
+      free text, and any separator a merchant could also type would make
+      "Red/Blue" on one axis collide with `["Red", "Blue"]` across two
+- [x] A SKU colliding with one used elsewhere in the store is a field error
+      rather than a 500 — the in-payload case is caught by the schema, the
+      across-products case only the database knows about
+- [x] **`VariantEditor`**: declare the axes, then **Generate** builds every
+      combination *and keeps the rows that already exist*. Adding a colour to a
+      shirt that already has three sizes adds three rows and disturbs none of
+      the others — losing a merchant's stock counts because they added a colour
+      would be unforgivable
+- [x] A blank price means "inherit", and the field's placeholder is the
+      product's own price, so a merchant can see what an empty field will
+      charge. An empty field must never become 0: a variant priced at zero is
+      free, which is a much worse thing to publish by accident
+- [x] Removing an axis strips it from every row too — otherwise the rows keep a
+      value for an axis that no longer exists and the save fails with an error
+      the merchant cannot see the cause of
+- [x] Optional per-value swatches; setting them all is what makes the storefront
+      render colour circles instead of buttons
+- [x] Driven in a real browser: add option, generate, price one variant, save —
+      then confirmed in Postgres that the blank price stored NULL, the typed one
+      stored 39.50, and the storefront immediately rendered "White, sold out"
+      for the variant left at zero stock
+- [x] `admin/__tests__` caught `color="blue"` on an Alert: only the semantic
+      hues survive in this codebase. Removed
+- [x] 915 tests, `tsc` clean, lint 0 errors
+
+Still open on variants:
+
+- [ ] The catalogue grid still shows one price for an optioned product whose
+      variants run $54-$96. `priceRange` is written and tested; nothing calls it
+- [ ] No per-variant image picker in the editor — the column is stored and the
+      storefront honours it, but there is no media library to put one there
+- [ ] ShipStation sync neither creates nor updates variants
+- [ ] `/admin/products/add` still does not exist, so a merchant can create
+      variants on a product they cannot create
