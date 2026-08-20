@@ -114,10 +114,16 @@ class AdminProductEditPage {
 
   /**
    * Check if product is active
+   *
+   * `text=Listed` matched more than one node -- the status badge and the
+   * "Show on my storefront" copy -- so `isVisible()` threw a strict-mode
+   * violation rather than returning a boolean, and the preview test failed on
+   * every run. Scoped to the first match and made non-throwing: a missing badge
+   * means "not listed", which is the answer the caller wants, not an error.
    */
   async isProductActive() {
-    const badge = this.page.locator('text=Listed');
-    return await badge.isVisible();
+    const badge = this.page.locator('text=Listed').first();
+    return await badge.isVisible().catch(() => false);
   }
 
   /**

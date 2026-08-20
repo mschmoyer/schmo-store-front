@@ -2464,3 +2464,28 @@ in a way nothing in CI could see.
       there, 1/7 on the branch, which is what identified the commit
 - [x] 931 tests, tsc clean, lint 0 errors, production build reproduced locally
       with CI's exact environment
+
+## CI now runs the e2e suite (2026-08-20)
+
+The customizer regression above is the argument. It walked through lint,
+typecheck, 922 unit tests and a production build without a mark, and was caught
+only by Playwright — which CI did not run. A blind spot that lets a broken
+preview pane ship is not one to leave open once it has been demonstrated.
+
+- [x] New `e2e` job: Postgres 16 service, migrate, seed, then
+      `storefront.spec.js` and `customizer.spec.js` on Chromium. Those two cover
+      the surfaces a shopper and a merchant actually touch — the purchase
+      journey end to end, and the preview/viewport/reorder machinery that broke
+- [x] The Playwright report and traces upload as an artifact on failure, since
+      a red e2e job with no artifacts is barely more useful than no job
+- [x] Chromium only, matching what a session container can run, so a failure is
+      reproducible locally with the same command
+- [x] Fixed the one genuinely broken spec first, rather than adding a job that
+      would have started red: `isProductActive()` used `text=Listed`, which
+      matched both the status badge and the "Show on my storefront" copy, so
+      `isVisible()` threw a strict-mode violation instead of returning a
+      boolean. Scoped to the first match and made non-throwing — a missing badge
+      means "not listed", which is the answer the caller wants
+- [x] All 23 `admin-products` specs pass now, where two failed before
+- [x] The build job's comment about `JWT_SECRET` throwing "at module load" was
+      left stale by the lazy fix. Corrected
