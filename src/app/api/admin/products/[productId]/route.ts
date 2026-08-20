@@ -359,6 +359,41 @@ export async function PUT(
       updateValues.push(body.images);
       paramCount++;
     }
+    // The hero shot. Absent from this allowlist until now, while the renderer
+    // prefers `featured_image_url || gallery[0]` — so whatever ShipStation set
+    // won permanently and a merchant's gallery edit could never override it.
+    // On apparel the hero shot is the conversion.
+    if (body.featured_image_url !== undefined) {
+      updateFields.push(`featured_image_url = $${paramCount}`);
+      updateValues.push(body.featured_image_url || null);
+      paramCount++;
+    }
+    // `is_digital` and `requires_shipping` are both rendered as switches in
+    // `ProductEditForm` and were both dropped here, so the form saved, returned
+    // `success: true` and showed a green toast while writing nothing. That is
+    // the "wrote nothing, reported success" failure the working rules forbid,
+    // and it is why a digital seller could not mark a product as digital.
+    //
+    // They move together when only one is sent: a digital product does not ship
+    // and a shipped product is not digital. An explicit value for both still
+    // wins, so a merchant can express the odd case (a digital licence bundled
+    // with a printed manual) if they mean to.
+    if (body.is_digital !== undefined) {
+      updateFields.push(`is_digital = $${paramCount}`);
+      updateValues.push(Boolean(body.is_digital));
+      paramCount++;
+
+      if (body.requires_shipping === undefined) {
+        updateFields.push(`requires_shipping = $${paramCount}`);
+        updateValues.push(!body.is_digital);
+        paramCount++;
+      }
+    }
+    if (body.requires_shipping !== undefined) {
+      updateFields.push(`requires_shipping = $${paramCount}`);
+      updateValues.push(Boolean(body.requires_shipping));
+      paramCount++;
+    }
     if (body.is_active !== undefined) {
       updateFields.push(`is_active = $${paramCount}`);
       updateValues.push(body.is_active);
