@@ -189,6 +189,12 @@
   white-space: nowrap;
 }
 
+/* `.sub` is inline elsewhere, where it follows a block. Here it follows a
+   `<time>`, so it needs to be told to start a new line. */
+.dateCell .sub {
+  display: block;
+}
+
 .badgeStack {
   display: flex;
   flex-wrap: wrap;
