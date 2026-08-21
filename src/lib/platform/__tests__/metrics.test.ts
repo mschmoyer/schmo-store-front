@@ -543,7 +543,8 @@ describe('getPlatformOverview', () => {
       `SELECT COUNT(*)::text AS received,
               COUNT(*) FILTER (WHERE status = 'cancelled')::text AS cancelled,
               COUNT(*) FILTER (WHERE shipped_at IS NOT NULL)::text AS shipped
-         FROM orders`,
+         FROM orders o
+         JOIN stores s ON s.id = o.store_id AND s.is_demo IS NOT TRUE`,
     );
 
     expect(after.orders.receivedAllTime).toBe(Number(truth.rows[0].received));
@@ -572,9 +573,10 @@ describe('getPlatformOverview', () => {
     const bounds = resolveWindow(WINDOW_DAYS, NOW);
     const truth = await db.query<{ shipped: string }>(
       `SELECT COUNT(*)::text AS shipped
-         FROM orders
-        WHERE shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
-          AND shipped_at <  ($2::timestamptz AT TIME ZONE 'UTC')`,
+         FROM orders o
+         JOIN stores s ON s.id = o.store_id AND s.is_demo IS NOT TRUE
+        WHERE o.shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+          AND o.shipped_at <  ($2::timestamptz AT TIME ZONE 'UTC')`,
       [bounds.prevStart.toISOString(), bounds.start.toISOString()],
     );
 

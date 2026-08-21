@@ -35,12 +35,20 @@
  * case genuinely is zero; {@link fulfillmentRatePct} and {@link averageCents} — both imported, not
  * redefined — return `null`.
  *
- * **5. This module does not define what an order is.** `received`, `settled`, `unsettled`,
+ * **5. This module does not define what an order is, nor which stores count.** `received`, `settled`, `unsettled`,
  * `cancelled` and `refunded` are all imported from `src/lib/platform/customers.ts`, together with
  * the two rates derived from them. Three surfaces had each decided for themselves what "received"
  * meant and the console reported one platform's fulfilment as 75%, 68% and 63% on adjacent
  * screens. The import is the fix: there is one definition, in one file, and a new query here that
  * wants an order count has to name it.
+ *
+ * The same is true of the demo exclusion. {@link realStorePredicate} and {@link realStoreExists}
+ * come from that file too, and **every aggregate below is written through one of them** — including
+ * the ones that never mention `stores`, which is most of them. A figure summed from `orders` or
+ * `storefront_click_daily` with no scope predicate is a figure that quietly counts invented
+ * merchants, and a metric that keeps counting demo data is worse than not excluding it at all,
+ * because the screen looks finished. Each SQL string below is therefore a *function* of
+ * `includeDemo` rather than a constant: there is nowhere to put a query that forgot to ask.
  *
  * ### Time
  *
@@ -66,7 +74,11 @@ import {
   SETTLED_ORDER_PREDICATE,
   UNSETTLED_ORDER_PREDICATE,
   averageCents,
+  describeScope,
   fulfillmentRatePct,
+  realStoreExists,
+  realStorePredicate,
+  type PlatformScope,
 } from '@/lib/platform/customers';
 
 /**
@@ -74,7 +86,8 @@ import {
  * importing the customers read model directly, and so there is visibly one implementation rather
  * than a metrics copy and a customers copy that agree until someone edits one of them.
  */
-export { averageCents, fulfillmentRatePct };
+export { averageCents, describeScope, fulfillmentRatePct, realStoreExists, realStorePredicate };
+export type { PlatformScope };
 
 /** Default reporting window, in days, when the caller does not ask for one. */
 export const DEFAULT_WINDOW_DAYS = 30;
@@ -449,6 +462,15 @@ export interface PlatformOverview {
   catalog: PlatformCatalogMetrics;
   integrations: PlatformIntegrationMetrics;
   conversion: PlatformConversionMetrics;
+  /**
+   * Which stores these figures were computed over, and how many were left out to get them.
+   *
+   * Every number above excludes seeded demo stores unless the caller passed `?includeDemo=1`. The
+   * payload says so rather than leaving the console to guess: on a database whose every store is a
+   * demo store, an unlabelled empty overview is indistinguishable from a platform with no
+   * merchants, and telling those two apart is the whole reason this block exists.
+   */
+  scope: PlatformScope;
 }
 
 /** One UTC day in the timeseries. Every day in the window is present, gaps zero-filled. */
@@ -467,6 +489,15 @@ export interface PlatformTimeseriesDay {
 /** The `/api/platform/timeseries` payload. */
 export interface PlatformTimeseries {
   days: PlatformTimeseriesDay[];
+  /**
+   * Which stores these figures were computed over, and how many were left out to get them.
+   *
+   * Every number above excludes seeded demo stores unless the caller passed `?includeDemo=1`. The
+   * payload says so rather than leaving the console to guess: on a database whose every store is a
+   * demo store, an unlabelled empty overview is indistinguishable from a platform with no
+   * merchants, and telling those two apart is the whole reason this block exists.
+   */
+  scope: PlatformScope;
 }
 
 /** How a store's ShipStation integration is doing. */
@@ -550,6 +581,15 @@ export interface PlatformHealth {
   unfulfilled: PlatformUnfulfilledBacklog;
   stores: PlatformStoreHealth[];
   alerts: PlatformAlert[];
+  /**
+   * Which stores these figures were computed over, and how many were left out to get them.
+   *
+   * Every number above excludes seeded demo stores unless the caller passed `?includeDemo=1`. The
+   * payload says so rather than leaving the console to guess: on a database whose every store is a
+   * demo store, an unlabelled empty overview is indistinguishable from a platform with no
+   * merchants, and telling those two apart is the whole reason this block exists.
+   */
+  scope: PlatformScope;
 }
 
 // ---------------------------------------------------------------------------
@@ -846,9 +886,18 @@ const SHIPPED_MEASURABLE = `(${SHIPPED_IN_WINDOW} AND o.shipped_at >= o.created_
  * an order sitting in this one query.
  *
  * `first_store_at` comes along for free from the same scan. It is what tells the console whether a
- * `*PrevWindow` figure of zero is a measured zero or a period before the platform existed.
+ * `*PrevWindow` figure of zero is a measured zero or a period before the platform existed. It is
+ * scoped like everything else: a demo store seeded eight months ago must not become the date the
+ * platform is said to have existed since.
+ *
+ * The scope predicate goes on the one scan of `stores`; the two grouped sub-selects reach the
+ * output only through that scan's rows, so filtering them again would be a second copy of the rule.
+ *
+ * @param includeDemo - When `true`, seeded demo stores are counted.
+ * @returns The merchant-counts statement. `$1`/`$3` bound the window, `$2` the previous one.
  */
-const MERCHANTS_SQL = `
+function merchantsSql(includeDemo: boolean): string {
+  return `
   SELECT
     COUNT(*) AS total,
     MIN(s.created_at) AS first_store_at,
@@ -873,7 +922,9 @@ const MERCHANTS_SQL = `
                               AND created_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS window_order_count
       FROM orders o WHERE ${RECEIVED_ORDER_PREDICATE} GROUP BY store_id
   ) o ON o.store_id = s.id
+  WHERE ${realStorePredicate('s', includeDemo)}
 `;
+}
 
 /**
  * Click counts, from the daily rollup.
@@ -885,8 +936,16 @@ const MERCHANTS_SQL = `
  *
  * `day` is a UTC date, and the window starts at a UTC midnight, so the bucket boundaries line up
  * exactly with the window rather than slicing the first day in half.
+ *
+ * The rollup carries no `is_demo`, so the scope test is an `EXISTS` against `stores` — a semi-join,
+ * which cannot fan a `SUM` out the way a mis-written join could.
+ *
+ * @param includeDemo - When `true`, demo stores' clicks are counted.
+ * @returns The click-totals statement. `$1`/`$2` are the window's first and last UTC day, `$3` the
+ *          previous window's first.
  */
-const CLICKS_SQL = `
+function clicksSql(includeDemo: boolean): string {
+  return `
   SELECT
     COALESCE(SUM(clicks), 0) AS clicks_all_time,
     COALESCE(SUM(clicks) FILTER (WHERE day >= $1::date AND day <= $2::date), 0) AS clicks_in_window,
@@ -899,8 +958,10 @@ const CLICKS_SQL = `
                                    AND event_type = 'add_to_cart'), 0) AS add_to_cart,
     COALESCE(SUM(clicks) FILTER (WHERE day >= $1::date AND day <= $2::date
                                    AND event_type = 'checkout_start'), 0) AS checkout_starts
-  FROM storefront_click_daily
+  FROM storefront_click_daily d
+ WHERE ${realStoreExists('d.store_id', includeDemo)}
 `;
+}
 
 /**
  * Unique visitors in the window, from the event table.
@@ -916,14 +977,23 @@ const CLICKS_SQL = `
  *
  * `$1::date AT TIME ZONE 'UTC'` yields the `timestamptz` of that UTC midnight, so the comparison
  * stays sargable against `idx_click_events_time` instead of wrapping the column in a function.
+ *
+ * A visitor of a demo storefront is not a visitor to the platform, so the scope test applies here
+ * exactly as it does to the click count this figure is rendered beside.
+ *
+ * @param includeDemo - When `true`, demo stores' visitors are counted.
+ * @returns The unique-visitor statement. `$1`/`$2` are the window's first and last UTC day.
  */
-const UNIQUE_VISITORS_SQL = `
-  SELECT COUNT(DISTINCT COALESCE(visitor_id, ip_hash)) AS unique_visitors
-    FROM storefront_click_events
-   WHERE occurred_at >= ($1::date AT TIME ZONE 'UTC')
-     AND occurred_at <  (($2::date + 1) AT TIME ZONE 'UTC')
-     AND COALESCE(visitor_id, ip_hash) IS NOT NULL
+function uniqueVisitorsSql(includeDemo: boolean): string {
+  return `
+  SELECT COUNT(DISTINCT COALESCE(e.visitor_id, e.ip_hash)) AS unique_visitors
+    FROM storefront_click_events e
+   WHERE e.occurred_at >= ($1::date AT TIME ZONE 'UTC')
+     AND e.occurred_at <  (($2::date + 1) AT TIME ZONE 'UTC')
+     AND COALESCE(e.visitor_id, e.ip_hash) IS NOT NULL
+     AND ${realStoreExists('e.store_id', includeDemo)}
 `;
+}
 
 /**
  * Orders, fulfilment and revenue, in one pass over `orders`.
@@ -962,8 +1032,16 @@ const UNIQUE_VISITORS_SQL = `
  * **Distribution, not just the mean.** On the demo data the mean time to ship is 36.7 hours, which
  * sounds fine and hides four orders that have sat for more than sixty days. `percentile_cont`
  * returns the median and p90 from the same pass, which is what makes the tail visible.
+ *
+ * Every figure in it is scoped to real merchants by the single `WHERE` at the foot of the query.
+ * That one predicate is doing a lot of work — roughly twenty counts and sums hang off it — which is
+ * exactly why it is one predicate and not twenty.
+ *
+ * @param includeDemo - When `true`, demo stores' orders are counted.
+ * @returns The orders/fulfilment/revenue statement. `$1`/`$3` bound the window, `$2` the previous.
  */
-const ORDERS_SQL = `
+function ordersSql(includeDemo: boolean): string {
+  return `
   SELECT
     COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE}) AS received_all_time,
     COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE} AND ${ORDER_IN_WINDOW}) AS received_in_window,
@@ -1022,7 +1100,9 @@ const ORDERS_SQL = `
     COUNT(*) FILTER (WHERE ${REFUNDED_ORDER_PREDICATE} AND ${CANCELLED_ORDER_PREDICATE}
                        AND ${REFUND_IN_WINDOW}) AS refunded_cancelled_orders_in_window
   FROM orders o
+ WHERE ${realStoreExists('o.store_id', includeDemo)}
 `;
+}
 
 /**
  * Units sold in the window.
@@ -1041,15 +1121,24 @@ const ORDERS_SQL = `
  * disagree with their parent order's date — it records when the row was written, not when the sale
  * happened. Dating anything off it has already shipped as a bug here once
  * (`docs/audits/admin-usefulness-critique.md`).
+ *
+ * Scoped on the order's store, not the item's: the two agree by the join above, and scoping the
+ * side that carries the window keeps one rule per row source.
+ *
+ * @param includeDemo - When `true`, demo stores' units are counted.
+ * @returns The units-sold statement. `$1`/`$2` bound the window.
  */
-const UNITS_SOLD_SQL = `
+function unitsSoldSql(includeDemo: boolean): string {
+  return `
   SELECT COALESCE(SUM(oi.quantity), 0) AS units_sold_in_window
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id
    WHERE (${SETTLED_ORDER_PREDICATE})
      AND o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
      AND o.created_at <  ($2::timestamptz AT TIME ZONE 'UTC')
+     AND ${realStoreExists('o.store_id', includeDemo)}
 `;
+}
 
 /**
  * Catalogue and stock, one pass over `products`.
@@ -1061,19 +1150,28 @@ const UNITS_SOLD_SQL = `
  *
  * `out_of_stock` counts only active products that actually track inventory: a digital or
  * made-to-order product sitting at zero is not a stockout.
+ *
+ * The demo seed's 36 products and their $36k of invented inventory are exactly the sort of figure
+ * that reads as platform scale, so `products` carries the scope test like everything else.
+ *
+ * @param includeDemo - When `true`, demo stores' catalogues are counted.
+ * @returns The catalogue statement. No parameters; it is an all-time snapshot.
  */
-const CATALOG_SQL = `
+function catalogSql(includeDemo: boolean): string {
+  return `
   SELECT
     COUNT(*) AS products,
-    COUNT(*) FILTER (WHERE is_active IS TRUE) AS active_products,
-    COALESCE(SUM(GREATEST(COALESCE(stock_quantity, 0), 0)), 0) AS inventory_units,
-    ROUND(COALESCE(SUM(GREATEST(COALESCE(stock_quantity, 0), 0)
-                       * COALESCE(cost_price, base_price)), 0) * 100) AS inventory_value_cents,
-    COUNT(*) FILTER (WHERE is_active IS TRUE
-                       AND track_inventory IS TRUE
-                       AND COALESCE(stock_quantity, 0) <= 0) AS out_of_stock
-  FROM products
+    COUNT(*) FILTER (WHERE p.is_active IS TRUE) AS active_products,
+    COALESCE(SUM(GREATEST(COALESCE(p.stock_quantity, 0), 0)), 0) AS inventory_units,
+    ROUND(COALESCE(SUM(GREATEST(COALESCE(p.stock_quantity, 0), 0)
+                       * COALESCE(p.cost_price, p.base_price)), 0) * 100) AS inventory_value_cents,
+    COUNT(*) FILTER (WHERE p.is_active IS TRUE
+                       AND p.track_inventory IS TRUE
+                       AND COALESCE(p.stock_quantity, 0) <= 0) AS out_of_stock
+  FROM products p
+ WHERE ${realStoreExists('p.store_id', includeDemo)}
 `;
+}
 
 /**
  * Setup progress per store.
@@ -1094,8 +1192,12 @@ const CATALOG_SQL = `
  * because the two had independently invented rules that disagreed completely — 0 of 3 stores here
  * against 3 of 3 there, which would have rendered "0 stores customized" directly above a table in
  * which every row said "Customized". One definition, one import, no second copy to keep in step.
+ *
+ * @param includeDemo - When `true`, demo stores are counted.
+ * @returns The setup-progress statement. No parameters.
  */
-const INTEGRATIONS_SQL = `
+function integrationsSql(includeDemo: boolean): string {
+  return `
   SELECT
     COUNT(*) FILTER (WHERE ss.store_id IS NOT NULL) AS shipstation_connected,
     COUNT(*) FILTER (WHERE st.store_id IS NOT NULL) AS stripe_connected,
@@ -1111,7 +1213,9 @@ const INTEGRATIONS_SQL = `
     SELECT DISTINCT store_id FROM payment_accounts WHERE charges_enabled IS TRUE
   ) st ON st.store_id = s.id
   LEFT JOIN (${CUSTOMIZED_THEME_JOIN}) th ON th.store_id = s.id
+  WHERE ${realStorePredicate('s', includeDemo)}
 `;
+}
 
 /**
  * The zero-filled daily series.
@@ -1132,8 +1236,17 @@ const INTEGRATIONS_SQL = `
  * ones, exactly as the overview does. Both halves of that sentence matter: the series has to sum
  * to the tile above it, and it can only do that if the two are written from the same definitions
  * rather than from two people's memory of them.
+ *
+ * **Every one of the five metric CTEs carries the scope test**, and they have to individually: the
+ * calendar is the only thing they share, and a chart line that still traced a demo store's orders
+ * under a headline that excluded them would be a contradiction on one screen. `signups` scopes the
+ * `stores` scan directly; the other four are `EXISTS` against it.
+ *
+ * @param includeDemo - When `true`, demo stores contribute to every series.
+ * @returns The daily-series statement. `$1`/`$2` are the window instants, `$3`/`$4` its UTC days.
  */
-const TIMESERIES_SQL = `
+function timeseriesSql(includeDemo: boolean): string {
+  return `
   WITH bounds AS (
     SELECT $1::timestamptz AS win_start,
            $2::timestamptz AS win_end,
@@ -1151,6 +1264,7 @@ const TIMESERIES_SQL = `
     SELECT d.day, SUM(d.clicks) AS clicks
       FROM storefront_click_daily d, bounds b
      WHERE d.day >= b.first_day AND d.day <= b.last_day
+       AND ${realStoreExists('d.store_id', includeDemo)}
      GROUP BY d.day
   ),
   uniques AS (
@@ -1160,6 +1274,7 @@ const TIMESERIES_SQL = `
      WHERE e.occurred_at >= (b.first_day AT TIME ZONE 'UTC')
        AND e.occurred_at <  ((b.last_day + 1) AT TIME ZONE 'UTC')
        AND COALESCE(e.visitor_id, e.ip_hash) IS NOT NULL
+       AND ${realStoreExists('e.store_id', includeDemo)}
      GROUP BY 1
   ),
   ordered AS (
@@ -1170,6 +1285,7 @@ const TIMESERIES_SQL = `
      WHERE ${RECEIVED_ORDER_PREDICATE}
        AND o.created_at >= (b.win_start AT TIME ZONE 'UTC')
        AND o.created_at <  (b.win_end   AT TIME ZONE 'UTC')
+       AND ${realStoreExists('o.store_id', includeDemo)}
      GROUP BY 1
   ),
   shipped AS (
@@ -1177,6 +1293,7 @@ const TIMESERIES_SQL = `
       FROM orders o, bounds b
      WHERE o.shipped_at >= (b.win_start AT TIME ZONE 'UTC')
        AND o.shipped_at <  (b.win_end   AT TIME ZONE 'UTC')
+       AND ${realStoreExists('o.store_id', includeDemo)}
      GROUP BY 1
   ),
   signups AS (
@@ -1184,6 +1301,7 @@ const TIMESERIES_SQL = `
       FROM stores st, bounds b
      WHERE st.created_at >= (b.win_start AT TIME ZONE 'UTC')
        AND st.created_at <  (b.win_end   AT TIME ZONE 'UTC')
+       AND ${realStorePredicate('st', includeDemo)}
      GROUP BY 1
   )
   SELECT to_char(c.day, 'YYYY-MM-DD') AS day,
@@ -1201,6 +1319,7 @@ const TIMESERIES_SQL = `
     LEFT JOIN signups sg ON sg.day = c.day
    ORDER BY c.day ASC
 `;
+}
 
 /**
  * Every store with its ShipStation state.
@@ -1216,8 +1335,16 @@ const TIMESERIES_SQL = `
  * `last_sync_at` is a naive UTC timestamp, so it is compared against `NOW() AT TIME ZONE 'UTC'`
  * rather than `NOW()` — comparing it directly would silently reinterpret it in the session's
  * timezone and mislabel every store by that offset.
+ *
+ * Scoped, and the health counts are folded from these rows, so "3 not connected" stops being three
+ * demo stores that were never going to connect anything. The alert list is built from the same
+ * rows, which is what keeps an operator from being handed a demo store's phantom problem to chase.
+ *
+ * @param includeDemo - When `true`, demo stores appear in the list, the counts and the alerts.
+ * @returns The per-store health statement. `$1` is the failing-status array, `$2` the stale hours.
  */
-const STORE_HEALTH_SQL = `
+function storeHealthSql(includeDemo: boolean): string {
+  return `
   SELECT
     s.id AS store_id,
     s.store_name,
@@ -1237,6 +1364,7 @@ const STORE_HEALTH_SQL = `
    AND si.integration_type = 'shipstation'
    AND si.is_active IS TRUE
    AND si.api_key_encrypted IS NOT NULL
+  WHERE ${realStorePredicate('s', includeDemo)}
   ORDER BY
     CASE
       WHEN si.store_id IS NULL THEN 3
@@ -1247,20 +1375,31 @@ const STORE_HEALTH_SQL = `
     END,
     s.store_name ASC
 `;
+}
 
 /**
  * Job queue depth.
  *
  * `retrying` is counted as `pending` because it is: work that has not succeeded and has not yet
  * been given up on. Splitting it out would let a queue full of retries look empty.
+ *
+ * `job_queue.store_id` is nullable, and a job with no store is platform work rather than a demo
+ * store's work — so it stays counted under either scope. Only jobs belonging to a demo store drop
+ * out, which is the honest reading of "how deep is the queue for real merchants".
+ *
+ * @param includeDemo - When `true`, demo stores' queued work is counted.
+ * @returns The queue-depth statement. No parameters.
  */
-const JOBS_SQL = `
+function jobsSql(includeDemo: boolean): string {
+  return `
   SELECT
-    COUNT(*) FILTER (WHERE status IN ('pending', 'retrying')) AS pending,
-    COUNT(*) FILTER (WHERE status = 'failed') AS failed,
-    COUNT(*) FILTER (WHERE status = 'processing') AS processing
-  FROM job_queue
+    COUNT(*) FILTER (WHERE j.status IN ('pending', 'retrying')) AS pending,
+    COUNT(*) FILTER (WHERE j.status = 'failed') AS failed,
+    COUNT(*) FILTER (WHERE j.status = 'processing') AS processing
+  FROM job_queue j
+ WHERE (j.store_id IS NULL OR ${realStoreExists('j.store_id', includeDemo)})
 `;
+}
 
 /**
  * Settled orders that have sat unshipped past the alert threshold, broken down by store.
@@ -1277,8 +1416,16 @@ const JOBS_SQL = `
  *
  * `paid_at` is NULL on every order the seed wrote, so the age falls back to `created_at`, which for
  * a settled order is at worst slightly conservative.
+ *
+ * The `stores` row is already joined for the name, so the scope test rides on it rather than
+ * needing an `EXISTS`. A demo store's four permanently stuck orders are not an operator's problem,
+ * and putting them at the top of a triage list is how a real one gets missed.
+ *
+ * @param includeDemo - When `true`, demo stores' backlogs are reported.
+ * @returns The backlog statement. `$1` is the alert threshold in hours.
  */
-const UNFULFILLED_SQL = `
+function unfulfilledSql(includeDemo: boolean): string {
+  return `
   SELECT
     o.store_id,
     s.store_name,
@@ -1291,9 +1438,11 @@ const UNFULFILLED_SQL = `
    WHERE o.shipped_at IS NULL
      AND (${SETTLED_ORDER_PREDICATE})
      AND COALESCE(o.paid_at, o.created_at) < ((NOW() AT TIME ZONE 'UTC') - ($1::int * INTERVAL '1 hour'))
+     AND ${realStorePredicate('s', includeDemo)}
    GROUP BY o.store_id, s.store_name
    ORDER BY COUNT(*) DESC, s.store_name ASC
 `;
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -1309,30 +1458,47 @@ const UNFULFILLED_SQL = `
  * An empty database is a normal state, not an error: every aggregate returns zero rows' worth of
  * `COALESCE`d zeros, so a platform on its first day renders zeros rather than a 500.
  *
+ * Seeded demo stores are left out of **every** figure unless `includeDemo` says otherwise, and the
+ * returned `scope` says which of those two happened. See {@link realStorePredicate}.
+ *
  * @param days - Window width in whole UTC days. Clamp caller input with {@link resolveWindowDays}
  *               first; values outside the supported range are clamped here as well.
  * @param now - The instant the window ends. Injectable for deterministic tests.
- * @returns The full overview payload, every numeric field a real `number`.
+ * @param includeDemo - When `true`, seeded demo stores are counted. Defaults to `false`.
+ * @returns The full overview payload, every numeric field a real `number`, with the scope it was
+ *          computed under.
  */
 export async function getPlatformOverview(
   days: number = DEFAULT_WINDOW_DAYS,
   now: Date = new Date(),
+  includeDemo: boolean = false,
 ): Promise<PlatformOverview> {
   const bounds = resolveWindow(resolveWindowDays(String(days)), now);
   const startIso = bounds.start.toISOString();
   const prevStartIso = bounds.prevStart.toISOString();
   const endIso = bounds.end.toISOString();
 
-  const [merchantsResult, clicksResult, uniquesResult, ordersResult, unitsResult, catalogResult, integrationsResult] =
-    await Promise.all([
-      db.query<CountRow>(MERCHANTS_SQL, [startIso, prevStartIso, endIso]),
-      db.query<CountRow>(CLICKS_SQL, [bounds.startDay, bounds.endDay, bounds.prevStartDay]),
-      db.query<CountRow>(UNIQUE_VISITORS_SQL, [bounds.startDay, bounds.endDay]),
-      db.query<CountRow>(ORDERS_SQL, [startIso, prevStartIso, endIso]),
-      db.query<CountRow>(UNITS_SOLD_SQL, [startIso, endIso]),
-      db.query<CountRow>(CATALOG_SQL),
-      db.query<CountRow>(INTEGRATIONS_SQL),
-    ]);
+  const [
+    merchantsResult,
+    clicksResult,
+    uniquesResult,
+    ordersResult,
+    unitsResult,
+    catalogResult,
+    integrationsResult,
+    scope,
+  ] = await Promise.all([
+    db.query<CountRow>(merchantsSql(includeDemo), [startIso, prevStartIso, endIso]),
+    db.query<CountRow>(clicksSql(includeDemo), [bounds.startDay, bounds.endDay, bounds.prevStartDay]),
+    db.query<CountRow>(uniqueVisitorsSql(includeDemo), [bounds.startDay, bounds.endDay]),
+    db.query<CountRow>(ordersSql(includeDemo), [startIso, prevStartIso, endIso]),
+    db.query<CountRow>(unitsSoldSql(includeDemo), [startIso, endIso]),
+    db.query<CountRow>(catalogSql(includeDemo)),
+    db.query<CountRow>(integrationsSql(includeDemo)),
+    // Counted in the same round of round trips rather than after them: it is one more aggregate
+    // over `stores`, and the payload is not honest without it.
+    describeScope(includeDemo),
+  ]);
 
   const merchantsRow = merchantsResult.rows[0] ?? {};
   const clicksRow = clicksResult.rows[0] ?? {};
@@ -1480,6 +1646,7 @@ export async function getPlatformOverview(
       publishedStores: toNumber(integrationsRow.published_stores),
     },
     conversion: buildConversion(receivedInWindow, traffic),
+    scope,
   };
 }
 
@@ -1539,24 +1706,34 @@ function buildConversion(
  * result always contains exactly `days` rows in ascending order with gaps zero-filled — the caller
  * never has to reconcile a sparse result against a date axis.
  *
+ * Scoped exactly as {@link getPlatformOverview} is, so the chart and the tile above it are drawn
+ * from the same set of merchants. A series that included demo stores under a headline that did not
+ * would be the "customized" defect again, in chart form.
+ *
  * @param days - Window width in whole UTC days.
  * @param now - The instant the window ends. Injectable for deterministic tests.
- * @returns `{ days: [...] }`, one entry per UTC day, oldest first.
+ * @param includeDemo - When `true`, seeded demo stores contribute to every series.
+ * @returns `{ days: [...], scope }`, one entry per UTC day, oldest first.
  */
 export async function getPlatformTimeseries(
   days: number = DEFAULT_WINDOW_DAYS,
   now: Date = new Date(),
+  includeDemo: boolean = false,
 ): Promise<PlatformTimeseries> {
   const bounds = resolveWindow(resolveWindowDays(String(days)), now);
 
-  const result = await db.query<TimeseriesRow>(TIMESERIES_SQL, [
-    bounds.start.toISOString(),
-    bounds.end.toISOString(),
-    bounds.startDay,
-    bounds.endDay,
+  const [result, scope] = await Promise.all([
+    db.query<TimeseriesRow>(timeseriesSql(includeDemo), [
+      bounds.start.toISOString(),
+      bounds.end.toISOString(),
+      bounds.startDay,
+      bounds.endDay,
+    ]),
+    describeScope(includeDemo),
   ]);
 
   return {
+    scope,
     days: result.rows.map((row) => ({
       day: row.day,
       clicks: toNumber(row.clicks),
@@ -1577,13 +1754,24 @@ export async function getPlatformTimeseries(
  * JavaScript costs nothing, while a second `GROUP BY` would be a second round trip that could
  * disagree with the list beside it.
  *
- * @returns Counts, queue depth, the unfulfilled backlog, one row per store, and the alert list.
+ * Demo stores are left out of all four unless `includeDemo` says otherwise — a triage screen is
+ * the surface where phantom work is most expensive, because an operator can spend real time on it.
+ *
+ * @param includeDemo - When `true`, seeded demo stores are included everywhere in the payload.
+ * @returns Counts, queue depth, the unfulfilled backlog, one row per store, the alert list, and
+ *          the scope it was all computed under.
  */
-export async function getPlatformHealth(): Promise<PlatformHealth> {
-  const [storesResult, jobsResult, unfulfilledResult] = await Promise.all([
-    db.query<StoreHealthRow>(STORE_HEALTH_SQL, [[...FAILING_SYNC_STATUSES], STALE_SYNC_HOURS]),
-    db.query<CountRow>(JOBS_SQL),
-    db.query<UnfulfilledRow>(UNFULFILLED_SQL, [UNFULFILLED_ALERT_HOURS]),
+export async function getPlatformHealth(
+  includeDemo: boolean = false,
+): Promise<PlatformHealth> {
+  const [storesResult, jobsResult, unfulfilledResult, scope] = await Promise.all([
+    db.query<StoreHealthRow>(storeHealthSql(includeDemo), [
+      [...FAILING_SYNC_STATUSES],
+      STALE_SYNC_HOURS,
+    ]),
+    db.query<CountRow>(jobsSql(includeDemo)),
+    db.query<UnfulfilledRow>(unfulfilledSql(includeDemo), [UNFULFILLED_ALERT_HOURS]),
+    describeScope(includeDemo),
   ]);
 
   const stores: PlatformStoreHealth[] = storesResult.rows.map((row) => ({
@@ -1640,6 +1828,7 @@ export async function getPlatformHealth(): Promise<PlatformHealth> {
     unfulfilled,
     stores,
     alerts: buildAlerts(stores, jobs, backlogStores),
+    scope,
   };
 }
 

@@ -154,7 +154,8 @@ async function readAgreement(attempts = 5): Promise<Agreement> {
       db.query<{ received: string; shipped: string }>(
         `SELECT COUNT(*)::text AS received,
                 COUNT(*) FILTER (WHERE shipped_at IS NOT NULL)::text AS shipped
-           FROM orders`,
+           FROM orders o
+           JOIN stores s ON s.id = o.store_id AND s.is_demo IS NOT TRUE`,
       ),
       getPlatformOverview(30),
       listCustomers(normalizeCustomerListParams({ pageSize: '100' })),

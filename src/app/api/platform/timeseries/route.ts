@@ -17,6 +17,7 @@ import {
   requirePlatformAdmin,
 } from '@/lib/auth/platform-admin';
 import { getPlatformTimeseries, resolveWindowDays } from '@/lib/platform/metrics';
+import { resolveIncludeDemo } from '@/lib/platform/customers';
 
 /**
  * Serve the platform daily series.
@@ -31,7 +32,14 @@ export async function GET(request: NextRequest) {
     const admin = await requirePlatformAdmin(request);
 
     const days = resolveWindowDays(request.nextUrl.searchParams.get('days'));
-    const data = await getPlatformTimeseries(days);
+    /*
+     * Demo stores are left out unless the caller explicitly asks for them. The payload's `scope`
+     * says which happened and how many stores were hidden, so the console can state the filter
+     * rather than just showing a smaller number — a console that hides rows silently is the same
+     * class of dishonesty as rendering a failed fetch as a zero.
+     */
+    const includeDemo = resolveIncludeDemo(request.nextUrl.searchParams);
+    const data = await getPlatformTimeseries(days, new Date(), includeDemo);
 
     await recordAdminAction(admin.userId, 'view_timeseries', undefined, { days });
 
