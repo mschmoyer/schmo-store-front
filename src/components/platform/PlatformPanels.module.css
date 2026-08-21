@@ -853,6 +853,8 @@
       'meter'
       'detail';
     align-items: stretch;
+    /* Stacked, a 6px track hugging the label reads as an underline rather than as a meter. */
+    row-gap: var(--space-2);
   }
 }
 
