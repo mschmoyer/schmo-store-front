@@ -153,7 +153,7 @@ export default function AdminBlogPage() {
         return;
       }
 
-      const response = await fetch(`/api/blog/${selectedPost.id}`, {
+      const response = await fetch(`/api/blog/admin/${selectedPost.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

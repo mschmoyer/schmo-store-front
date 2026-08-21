@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { BlogPost, BlogAPIResponse } from '@/types/blog';
+import { sanitizeRichText } from '@/app/store/_lib/html';
 
 // GET /api/blog/by-slug/[storeSlug]/[slug] - Get a single published blog post by slug
 export async function GET(
@@ -70,7 +71,22 @@ export async function GET(
       id: String(post.id),
       title: String(post.title),
       slug: String(post.slug),
-      content: String(post.content),
+      // Sanitised here, at the boundary that serves it.
+      //
+      // The consumer, `src/app/blog/[storeSlug]/[slug]/page.tsx`, is a client
+      // component that puts this string straight into
+      // `dangerouslySetInnerHTML`. `innerHTML` does not run `<script>`, but it
+      // very much runs `<img src=x onerror=...>` and `<svg onload=...>` — so
+      // this was stored XSS on a merchant's storefront, on the same origin as
+      // `/admin`.
+      //
+      // Sanitising on read rather than only on write is deliberate: rows
+      // written before the write-side guard existed are already in the
+      // database, and a render-time boundary is the only one that protects
+      // them. Writes are sanitised too (`blogUtils.createBlogPost` /
+      // `updateBlogPost`), so the two are belt and braces, which is the correct
+      // posture for a raw-HTML sink.
+      content: sanitizeRichText(String(post.content)),
       excerpt: post.excerpt ? String(post.excerpt) : undefined,
       featured_image: post.featured_image_url ? String(post.featured_image_url) : undefined,
       meta_title: post.meta_title ? String(post.meta_title) : undefined,

@@ -37,6 +37,7 @@ import {
 } from '@tabler/icons-react';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
+import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { type GeneratedStoreDetails } from '@/lib/prompts/store-details';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
@@ -64,6 +65,20 @@ const aiFeatures: AIFeature[] = [
       'Consistent brand messaging',
       'Saves hours of copywriting time',
       'Based on your actual products'
+    ]
+  },
+  {
+    id: 'compose-page',
+    title: 'AI Home Page Builder',
+    description: 'Describe your business in a sentence and generate a full home-page layout — hero, product rows, story and more — saved as a draft you review before publishing.',
+    icon: IconSparkles,
+    category: 'content',
+    status: 'beta',
+    benefits: [
+      'A designed page from one prompt',
+      'Saved as a draft — nothing goes live until you publish',
+      'Only real, supported sections; no broken layouts',
+      'Fix it up in the customizer afterwards'
     ]
   },
   {
@@ -154,11 +169,13 @@ const aiFeatures: AIFeature[] = [
 
 export default function AIPage() {
   const { user } = useAdmin();
+  const router = useRouter();
   const [selectedFeature, setSelectedFeature] = useState<AIFeature | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
   const [blogPostPrompt, setBlogPostPrompt] = useState('');
+  const [pagePrompt, setPagePrompt] = useState('');
   const [businessDescription, setBusinessDescription] = useState('');
   const [generatedStoreDetails, setGeneratedStoreDetails] = useState<GeneratedStoreDetails | null>(null);
   const [resultsOpened, { open: openResults, close: closeResults }] = useDisclosure(false);
@@ -271,16 +288,28 @@ export default function AIPage() {
       return;
     }
 
+    if (featureId === 'compose-page' && !pagePrompt.trim()) {
+      notifications.show({
+        title: 'Description Required',
+        message: 'Describe your business so the generator has something to work from',
+        color: 'orange',
+        icon: <IconInfoCircle size={16} />
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setGeneratedContent('');
     setGeneratedStoreDetails(null);
     setHsCodeResults(null);
 
     try {
-      const requestBody = featureId === 'store-details-generator' 
+      const requestBody = featureId === 'store-details-generator'
         ? { businessDescription: businessDescription.trim() }
         : featureId === 'blog-post-generator'
         ? { userPrompt: blogPostPrompt.trim() }
+        : featureId === 'compose-page'
+        ? { prompt: pagePrompt.trim(), apply: true }
         : featureId === 'hs-code-generator'
         ? {} // Will process all products for the store
         : { storeId: user.storeId };
@@ -295,12 +324,41 @@ export default function AIPage() {
         body: JSON.stringify(requestBody)
       });
 
+      // The page builder surfaces the server's own message (a labelled "not
+      // configured" 503, a rate-limit 429) rather than a generic failure, and
+      // sends the merchant to the customizer to review the draft it saved.
+      if (featureId === 'compose-page') {
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          notifications.show({
+            title: response.status === 503 ? 'Not configured' : 'Could not generate',
+            message: result.error ?? 'The page could not be generated.',
+            color: 'orange',
+            icon: <IconInfoCircle size={16} />
+          });
+          return;
+        }
+        const notes: string[] = result.data?.notes ?? [];
+        notifications.show({
+          title: 'Draft page generated',
+          message:
+            notes.length > 0
+              ? `Saved as a draft. A few things were adjusted: ${notes.slice(0, 3).join(' ')}`
+              : 'Saved as a draft. Opening the customizer to review.',
+          color: 'green',
+          icon: <IconCheck size={16} />
+        });
+        close();
+        router.push('/admin/design');
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Failed to generate content');
       }
 
       const data = await response.json();
-      
+
       if (featureId === 'store-details-generator') {
         setGeneratedStoreDetails(data.data);
         close();
@@ -481,6 +539,21 @@ export default function AIPage() {
               </div>
             )}
 
+            {selectedFeature?.id === 'compose-page' && (
+              <div>
+                <Text fw={500} mb="xs">Describe your shop:</Text>
+                <Textarea
+                  placeholder="A neighbourhood bakery selling sourdough and pastries for local pickup, with a warm, hand-made feel..."
+                  value={pagePrompt}
+                  onChange={(e) => setPagePrompt(e.currentTarget.value)}
+                  minRows={4}
+                  maxRows={6}
+                  maxLength={2000}
+                  mb="md"
+                />
+              </div>
+            )}
+
             {selectedFeature?.id === 'blog-post-generator' && (
               <div>
                 <Text fw={500} mb="xs">Blog Post Idea:</Text>
@@ -513,7 +586,7 @@ export default function AIPage() {
               leftSection={<IconWand size={16} />}
               size="md"
             >
-              {isGenerating ? 'Generating...' : (selectedFeature.id === 'store-details-generator' ? 'Generate Store Details' : selectedFeature.id === 'blog-post-generator' ? 'Generate Blog Post' : 'Generate Now')}
+              {isGenerating ? 'Generating...' : (selectedFeature.id === 'store-details-generator' ? 'Generate Store Details' : selectedFeature.id === 'blog-post-generator' ? 'Generate Blog Post' : selectedFeature.id === 'compose-page' ? 'Generate My Home Page' : 'Generate Now')}
             </Button>
 
             {generatedContent && (

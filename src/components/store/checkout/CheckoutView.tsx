@@ -520,10 +520,14 @@ export function CheckoutView({
   const canPay =
     !submitting && !quoting && !paymentsDisabled && !hasRejections && (quote?.items.length ?? 0) > 0;
 
-  // Shipping and tax are functions of a delivery address. Printing "$0.00" for
-  // both before one is entered contradicts the cart's own "calculated at
-  // checkout" and quietly understates the total, so until the destination is
-  // real those rows say so instead of showing a number.
+  // Whether the quote is worth showing a shipping figure for.
+  //
+  // The comment here used to say "shipping and tax are functions of a delivery
+  // address". Neither is: shipping is a flat rate per method with a
+  // free-over-threshold on the subtotal, and tax is always zero. What the
+  // address gates is the *quote request* — the server will not price a cart it
+  // cannot ship — so this stays as the trigger, and the two rows now say what
+  // actually determines them.
   const hasDestination = /^\d{5}(-\d{4})?$/.test(form.postalCode.trim()) && form.state.trim() !== '';
 
   const payLabel = submitting
@@ -805,20 +809,30 @@ export function CheckoutView({
 
           <div className={styles.row}>
             <span>Shipping</span>
+            {/*
+              "From your delivery speed", not "From your address". Shipping is a
+              flat rate per method with a free-over threshold on the subtotal
+              (`SHIPPING_OPTIONS` in cart-pricing.ts) — the address is collected
+              to ship to, and never enters the price. Saying otherwise told a
+              shopper their postcode might change the number, which it cannot.
+            */}
             {hasDestination ? (
               <span className={styles.rowValue}>{quote?.totals.shipping ?? '—'}</span>
             ) : (
-              <span className={styles.rowPending}>From your address</span>
+              <span className={styles.rowPending}>From your delivery speed</span>
             )}
           </div>
 
           <div className={styles.row}>
             <span>Tax</span>
-            {hasDestination ? (
-              <span className={styles.rowValue}>{quote?.totals.tax ?? '—'}</span>
-            ) : (
-              <span className={styles.rowPending}>From your address</span>
-            )}
+            {/*
+              Not "From your address". `computeTaxCents` returns 0 for every
+              cart and every destination — deliberately, so no order is silently
+              mis-taxed by a guess — so a pending state promising a calculation
+              from the address described something that never happens, and then
+              resolved to $0.00.
+            */}
+            <span className={styles.rowValue}>{quote?.totals.tax ?? '—'}</span>
           </div>
 
           <div className={styles.total}>
@@ -870,9 +884,8 @@ export function CheckoutView({
 
           {!hasDestination ? (
             <Notice icon={<IconInfoCircle size={16} />}>
-              Shipping and any tax are worked out from your delivery address, so the total above is
-              not final until you have entered one. We do not estimate it here, because a guess
-              would be wrong as often as it was right.
+              Shipping is added once you choose a delivery speed, so the total above is not final
+              yet. Tax is not added at checkout.
             </Notice>
           ) : null}
 

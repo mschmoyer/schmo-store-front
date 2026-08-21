@@ -65,6 +65,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         theme: draft?.raw ?? {},
         resolvedTheme: draft?.theme ?? null,
         sections: draft?.sections ?? [],
+        navigation: draft?.navigation ?? {},
         version: draft?.version ?? 0,
         updatedAt: draft?.updatedAt ?? null,
         contrast: draft ? auditContrast(draft.theme) : [],
@@ -73,6 +74,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           ? {
               theme: published.raw,
               sections: published.sections,
+              navigation: published.navigation,
               version: published.version,
               publishedAt: published.publishedAt,
             }
@@ -133,7 +135,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const draft = await saveDraft(storeId, parsed.data.theme, sections);
+    const draft = await saveDraft(storeId, parsed.data.theme, sections, parsed.data.navigation);
     return NextResponse.json({
       success: true,
       data: {

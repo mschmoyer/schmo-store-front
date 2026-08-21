@@ -20,6 +20,7 @@ import type {
   SettingField,
 } from './types';
 import { SECTION_TYPES } from './types';
+import { isSafeNavHref } from './navigation';
 
 /**
  * Build the default settings object from a settings schema.
@@ -51,7 +52,8 @@ const heroFields: SettingField[] = [
     id: 'subheading',
     label: 'Supporting copy',
     type: 'textarea',
-    default: 'Everything in stock ships the same day. Free returns for 30 days.',
+    default:
+      '[One line on why someone should buy from you. Say only what you will honour.]',
   },
   { id: 'primaryLabel', label: 'Button label', type: 'text', default: 'Shop all' },
   {
@@ -59,7 +61,7 @@ const heroFields: SettingField[] = [
     label: 'Button link',
     type: 'text',
     default: '/products',
-    help: 'A path on your store, such as /products or /collections/new.',
+    help: 'A path on your store, such as /products or /pages/about.',
   },
   { id: 'secondaryLabel', label: 'Secondary button label', type: 'text', default: '' },
   { id: 'secondaryHref', label: 'Secondary button link', type: 'text', default: '' },
@@ -210,9 +212,9 @@ const valuePropsFields: SettingField[] = [
     label: 'Items',
     type: 'textarea',
     default: [
-      { icon: 'IconTruck', title: 'Same-day dispatch', body: 'Order before 3pm on weekdays.' },
-      { icon: 'IconRotateClockwise', title: '30-day returns', body: 'No restocking fee, ever.' },
-      { icon: 'IconShieldCheck', title: 'Two-year warranty', body: 'Covered against defects.' },
+      { icon: 'IconTruck', title: '[Dispatch speed]', body: '[How fast do orders leave you?]' },
+      { icon: 'IconRotateClockwise', title: '[Returns]', body: '[How long, and on what conditions?]' },
+      { icon: 'IconShieldCheck', title: '[Your guarantee]', body: '[What is covered, and for how long?]' },
     ],
     help: 'Each item has an icon, a title and a line of copy.',
   },
@@ -263,8 +265,8 @@ const faqFields: SettingField[] = [
     label: 'Questions',
     type: 'textarea',
     default: [
-      { question: 'How fast do you ship?', answer: 'Same day on weekdays for orders placed before 3pm.' },
-      { question: 'Can I return something?', answer: 'Within 30 days, unused, in its original packaging.' },
+      { question: 'How fast do you ship?', answer: '[Your dispatch and delivery times.]' },
+      { question: 'Can I return something?', answer: '[Your returns window and conditions.]' },
     ],
   },
   { id: 'openFirst', label: 'Open the first answer', type: 'toggle', default: true },
@@ -523,7 +525,7 @@ export function defaultSections(): Section[] {
   return [
     createSection('hero', '1', {
       eyebrow: 'New arrivals',
-      heading: 'Everything in stock. Shipped today.',
+      heading: '[Your headline]',
       subheading:
         'Live inventory straight from our warehouse, so what you see is genuinely on the shelf.',
       primaryLabel: 'Shop all products',
@@ -542,7 +544,8 @@ export function defaultSections(): Section[] {
     }),
     createSection('image-with-text', '1', {
       heading: 'Run by people who pack the boxes',
-      body: 'We built this shop on top of our own warehouse. Stock counts are real, shipping estimates are real, and the person answering your email has held the product.',
+      body:
+        '[Two or three sentences on who you are and why someone should buy from you.]',
       imageSide: 'left',
     }),
     createSection('collection-grid', '1', {
@@ -617,4 +620,302 @@ export function normalizeSections(sections: unknown): {
   }
 
   return { sections: out, problems };
+}
+
+/* ------------------------------------------------------------------ *
+ * Settings coercion
+ * ------------------------------------------------------------------ */
+
+/**
+ * Caps applied to any setting value that did not come from this codebase.
+ *
+ * These are deliberately generous for a human and restrictive for a machine: a
+ * merchant will never write a 2,000-character supporting line, and a language
+ * model asked for one occasionally writes an essay.
+ */
+export const SETTING_LIMITS = {
+  /** Single-line fields. */
+  text: 300,
+  /** Multi-line prose. */
+  textarea: 2_000,
+  /** Rich text, which is sanitised separately before it reaches the DOM. */
+  richtext: 20_000,
+  /** Items in a repeatable list setting (value props, testimonials, FAQ). */
+  listItems: 12,
+  /** Hand-picked products on one section. */
+  productList: 24,
+} as const;
+
+/** Hex colours the colour engine can do maths on. */
+const HEX_SETTING = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/** Strings a spreadsheet, a form post or a language model uses for `true`. */
+const TRUTHY = new Set(['true', 'yes', 'y', '1', 'on']);
+const FALSY = new Set(['false', 'no', 'n', '0', 'off']);
+
+/**
+ * Coerce a value to a boolean, accepting the strings machines actually send.
+ * @param value - Raw value
+ * @param fallback - Value to use when `value` is not recognisably boolean
+ * @returns A boolean
+ */
+function coerceToggle(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const key = value.trim().toLowerCase();
+    if (TRUTHY.has(key)) return true;
+    if (FALSY.has(key)) return false;
+  }
+  return fallback;
+}
+
+/**
+ * Coerce a value into a field's numeric range, clamping and snapping to step.
+ *
+ * Clamping rather than rejecting matters: "12 columns" is a plausible thing to
+ * ask for and a broken thing to render, and the merchant is better served by a
+ * grid at the maximum the design supports than by silently getting the default.
+ *
+ * @param value - Raw value
+ * @param field - The range field descriptor
+ * @returns A number within the field's bounds
+ */
+function coerceRange(value: unknown, field: SettingField): number {
+  const fallback = typeof field.default === 'number' ? field.default : 0;
+  const raw = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (!Number.isFinite(raw)) return fallback;
+
+  const min = typeof field.min === 'number' ? field.min : -Infinity;
+  const max = typeof field.max === 'number' ? field.max : Infinity;
+  let out = Math.min(Math.max(raw, min), max);
+
+  if (typeof field.step === 'number' && field.step > 0 && Number.isFinite(min)) {
+    out = min + Math.round((out - min) / field.step) * field.step;
+    out = Math.min(Math.max(out, min), max);
+  }
+  // Guard against a step that lands on a float such as 3.0000000000000004.
+  return Number.isInteger(field.step ?? 1) ? Math.round(out) : out;
+}
+
+/**
+ * Trim a string and cap its length, returning null when it is not a string.
+ * @param value - Raw value
+ * @param max - Maximum length after trimming
+ * @returns The capped string, or null
+ */
+function asCappedString(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  return value.trim().slice(0, max);
+}
+
+/**
+ * Coerce an image setting, rejecting anything that is not a safe URL or path.
+ *
+ * Image fields end up in `src`, where a `javascript:` or `data:` value is an
+ * XSS vector rather than a broken picture.
+ *
+ * @param value - Raw value
+ * @returns A safe URL or path, or the empty string
+ */
+function coerceImage(value: unknown): string {
+  const text = asCappedString(value, 2_048);
+  if (!text) return '';
+  if (text.length === 0) return '';
+  return isSafeNavHref(text) && !/^(?:mailto|tel):/i.test(text) ? text : '';
+}
+
+/**
+ * Coerce one item of a repeatable list against the shape of a template item.
+ *
+ * The template comes from the field's own default, so a section can grow a new
+ * item key without this function learning about it.
+ *
+ * @param value - Raw item
+ * @param template - One item from the field's default, used for its keys
+ * @returns An item carrying exactly the template's keys, or null if unusable
+ */
+function coerceListItem(
+  value: unknown,
+  template: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+
+  for (const [key, sample] of Object.entries(template)) {
+    const supplied = raw[key];
+    if (typeof sample === 'boolean') {
+      out[key] = coerceToggle(supplied, sample);
+    } else if (typeof sample === 'number') {
+      const parsed = typeof supplied === 'number' ? supplied : Number(String(supplied ?? ''));
+      out[key] = Number.isFinite(parsed) ? parsed : sample;
+    } else {
+      // Every list item key in the registry today is a short string: an icon
+      // name, a title, a line of copy, a question or an answer.
+      out[key] = asCappedString(supplied, SETTING_LIMITS.textarea) ?? String(sample ?? '');
+    }
+  }
+
+  // An item with nothing in it renders as an empty card, which looks broken.
+  const hasContent = Object.values(out).some(
+    (entry) => typeof entry === 'string' && entry.trim().length > 0,
+  );
+  return hasContent ? out : null;
+}
+
+/**
+ * Coerce one setting value against its field descriptor.
+ *
+ * Returns the field's default whenever the supplied value cannot be made legal,
+ * because a section rendering its default is a design choice the merchant can
+ * see and change, while a section carrying an illegal value is a bug they
+ * cannot.
+ *
+ * @param value - Raw value from an untrusted source
+ * @param field - The field descriptor from the section's settings schema
+ * @returns A value the renderer can use
+ */
+function coerceSettingValue(
+  value: unknown,
+  field: SettingField,
+): { value: unknown; corrected: boolean } {
+  // A field whose default is an array is a repeatable list, whatever control
+  // type it declares — `items` on value-props is a `textarea` with an array
+  // default, and treating it by its declared type would flatten it to a string.
+  if (Array.isArray(field.default)) {
+    const template = field.default.find(
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' && item !== null && !Array.isArray(item),
+    );
+    if (!Array.isArray(value)) return { value: field.default, corrected: true };
+
+    if (!template) {
+      // A list of scalars, such as a product-list of ids.
+      const max =
+        field.type === 'product-list' ? SETTING_LIMITS.productList : SETTING_LIMITS.listItems;
+      const kept = value
+        .map((entry) => asCappedString(entry, SETTING_LIMITS.text))
+        .filter((entry): entry is string => Boolean(entry))
+        .slice(0, max);
+      return { value: kept, corrected: kept.length !== value.length };
+    }
+
+    const coerced = value.map((entry) => coerceListItem(entry, template));
+    const items = coerced
+      .filter((entry): entry is Record<string, unknown> => entry !== null)
+      .slice(0, SETTING_LIMITS.listItems);
+    // An empty list means the merchant deleted every item, which is legitimate;
+    // an unusable list means the payload was wrong, and the default is kinder.
+    if (value.length > 0 && items.length === 0) return { value: field.default, corrected: true };
+    return { value: items, corrected: items.length !== value.length };
+  }
+
+  switch (field.type) {
+    case 'select': {
+      const allowed = new Set((field.options ?? []).map((option) => option.value));
+      const text = asCappedString(value, SETTING_LIMITS.text);
+      return text !== null && allowed.has(text)
+        ? { value: text, corrected: false }
+        : { value: field.default, corrected: true };
+    }
+    case 'toggle': {
+      const fallback = field.default === true;
+      const coerced = coerceToggle(value, fallback);
+      return { value: coerced, corrected: typeof value !== 'boolean' };
+    }
+    case 'range': {
+      const coerced = coerceRange(value, field);
+      return { value: coerced, corrected: coerced !== value };
+    }
+    case 'color': {
+      const text = asCappedString(value, 9);
+      return text && HEX_SETTING.test(text)
+        ? { value: text, corrected: false }
+        : { value: field.default, corrected: true };
+    }
+    case 'image': {
+      const coerced = coerceImage(value);
+      const supplied = asCappedString(value, 2_048);
+      return { value: coerced, corrected: coerced !== supplied };
+    }
+    case 'richtext':
+    case 'textarea': {
+      const max = field.type === 'richtext' ? SETTING_LIMITS.richtext : SETTING_LIMITS.textarea;
+      const text = asCappedString(value, max);
+      if (text === null) return { value: field.default, corrected: true };
+      return { value: text, corrected: typeof value === 'string' && value.trim().length > max };
+    }
+    case 'product-list': {
+      if (!Array.isArray(value)) return { value: field.default, corrected: true };
+      const kept = value
+        .map((entry) => asCappedString(entry, SETTING_LIMITS.text))
+        .filter((entry): entry is string => Boolean(entry))
+        .slice(0, SETTING_LIMITS.productList);
+      return { value: kept, corrected: kept.length !== value.length };
+    }
+    case 'collection':
+    case 'text':
+    default: {
+      const text = asCappedString(value, SETTING_LIMITS.text);
+      if (text === null) return { value: field.default, corrected: true };
+      // Fields whose value is a link are held to the same rule as a menu item:
+      // a headline cannot smuggle `javascript:` into an anchor's href.
+      if (/href$/i.test(field.id) && text.length > 0 && !isSafeNavHref(text)) {
+        return { value: field.default, corrected: true };
+      }
+      const overLong = typeof value === 'string' && value.trim().length > SETTING_LIMITS.text;
+      return { value: text, corrected: overLong };
+    }
+  }
+}
+
+/**
+ * Validate a settings object against a section type's schema.
+ *
+ * `normalizeSections` spreads supplied settings over the defaults, which is
+ * right for settings this codebase wrote and wrong for settings it did not:
+ * `hero.layout: 'centered'` is not a layout this renderer has, and because
+ * `Section['settings']` is `Record<string, unknown>` no compiler catches it.
+ * That defect shipped once in hand-written page templates; a language model
+ * asked to compose a page produces it routinely.
+ *
+ * Keys the schema does not declare are dropped rather than kept, so an invented
+ * setting cannot accumulate in the database and read as supported.
+ *
+ * @param type - Section type whose schema to validate against
+ * @param settings - Raw settings from an untrusted source
+ * @returns Legal settings plus a human-readable list of what was corrected
+ */
+export function coerceSectionSettings(
+  type: SectionType,
+  settings: unknown,
+): { settings: Record<string, unknown>; problems: string[] } {
+  const definition = SECTION_REGISTRY[type];
+  const problems: string[] = [];
+  const raw =
+    typeof settings === 'object' && settings !== null && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : {};
+
+  const out: Record<string, unknown> = {};
+  for (const field of definition.settingsSchema) {
+    if (!(field.id in raw)) {
+      out[field.id] = field.default;
+      continue;
+    }
+    const { value, corrected } = coerceSettingValue(raw[field.id], field);
+    if (corrected) {
+      problems.push(`${definition.label}: "${field.label}" was not usable and was corrected.`);
+    }
+    out[field.id] = value;
+  }
+
+  const declared = new Set(definition.settingsSchema.map((field) => field.id));
+  for (const key of Object.keys(raw)) {
+    if (!declared.has(key)) {
+      problems.push(`${definition.label}: dropped unknown setting "${key}".`);
+    }
+  }
+
+  return { settings: out, problems };
 }

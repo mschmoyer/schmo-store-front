@@ -235,7 +235,12 @@ prove the seed is idempotent.
 - **Blog System**: Per-store blog with markdown support
 - **Responsive Design**: Mobile-optimized interface
 - **Social Sharing**: Share products and blog posts
-- **Theme System**: 10 customizable color themes for personalization
+- **Theme System**: Six preset designs, each with its own composition, over a token engine with
+  auto-contrast; merchant CSS is sanitised on every render
+- **Custom Pages**: Merchant-authored pages (About, Shipping & returns, Contact, FAQ, ...) built
+  from the same section engine as the home page, with eight starter templates
+- **Store Navigation**: Merchant-defined header and footer menus, published in the same
+  transaction as the sections that link to them
 - **Product Search**: Real-time search with analytics tracking
 
 ### Admin Dashboard
@@ -250,6 +255,9 @@ prove the seed is idempotent.
 - **Purchase Orders**: Create, manage, and receive inventory against that ledger
 - **Analytics**: Store performance and visitor tracking
 - **Coupon System**: Create and manage discount codes
+- **AI Page Composer**: Describe the business and get a validated draft home page - preset,
+  palette, section composition and copy - to edit before publishing. Never writes to the published
+  theme, and every setting the model returns is checked against the section registry
 - **AI Content Generation**: Auto-generate product descriptions and blog posts
 - **Integration Management**: Configure ShipStation and other services
 

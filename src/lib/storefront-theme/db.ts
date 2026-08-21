@@ -11,7 +11,8 @@
 
 import { db } from '@/lib/database';
 
-import { presetSections } from './presets';
+import type { StoreNavigation } from './navigation';
+import { presetSections, themeFromLegacyName } from './presets';
 import { defaultSections, normalizeSections } from './sections';
 import { resolveTheme } from './resolve';
 import type { ResolvedTheme, Section, StorefrontTheme, StorefrontThemeInput } from './types';
@@ -24,6 +25,11 @@ export interface StorefrontThemeRecord {
   /** The stored (partial) theme, exactly as persisted. */
   theme: StorefrontThemeInput;
   sections: Section[];
+  /**
+   * Header and footer menus. An absent menu means "derive from categories" —
+   * see `navigation.ts`, where the distinction from an empty menu is load-bearing.
+   */
+  navigation: StoreNavigation;
   /** Monotonic revision, bumped on every write. */
   version: number;
   updatedAt: Date | null;
@@ -42,6 +48,7 @@ interface ThemeRow extends Record<string, unknown> {
   status: ThemeStatus;
   theme: unknown;
   sections: unknown;
+  navigation: unknown;
   version: number | string;
   updated_at: Date | null;
   published_at: Date | null;
@@ -101,11 +108,13 @@ function parseJson(value: unknown): unknown {
 function toRecord(row: ThemeRow): StorefrontThemeRecord {
   const theme = (parseJson(row.theme) ?? {}) as StorefrontThemeInput;
   const { sections } = normalizeSections(parseJson(row.sections) ?? []);
+  const navigation = (parseJson(row.navigation) ?? {}) as StoreNavigation;
   return {
     storeId: row.store_id,
     status: row.status,
     theme,
     sections,
+    navigation,
     version: Number(row.version) || 1,
     updatedAt: row.updated_at ?? null,
     publishedAt: row.published_at ?? null,
@@ -126,7 +135,7 @@ function resolveRecord(record: StorefrontThemeRecord): ResolvedThemeRecord {
 }
 
 const SELECT_COLUMNS =
-  'store_id, status, theme, sections, version, updated_at, published_at';
+  'store_id, status, theme, sections, navigation, version, updated_at, published_at';
 
 /* ------------------------------------------------------------------ *
  * Reads
@@ -249,12 +258,14 @@ function withPresetComposition(
  * @param storeId - Store UUID
  * @param theme - The theme patch to persist, or undefined to keep the current one
  * @param sections - The section list to persist, or undefined to keep the current one
+ * @param navigation - The header/footer menus to persist, or undefined to keep the current ones
  * @returns The saved draft record
  */
 export async function saveDraft(
   storeId: string,
   theme?: StorefrontThemeInput,
   sections?: Section[],
+  navigation?: StoreNavigation,
 ): Promise<ResolvedThemeRecord> {
   if (!storeId) throw new Error('saveDraft requires a storeId');
 
@@ -262,18 +273,53 @@ export async function saveDraft(
 
   const themeJson = theme === undefined ? null : JSON.stringify(theme);
   const sectionsJson = resolvedSections === undefined ? null : JSON.stringify(resolvedSections);
-  const fallbackSections = JSON.stringify(presetSections(theme?.preset));
+  const navigationJson = navigation === undefined ? null : JSON.stringify(navigation);
+
+  // Which composition a *brand new* draft row starts from.
+  //
+  // This only applies on INSERT — an existing row keeps its own sections
+  // through the COALESCE below. It matters because a store that has never
+  // saved a draft renders from the legacy `stores.theme_name` mapping, and
+  // `presetSections(undefined)` is the generic starter page, not that store's
+  // preset composition.
+  //
+  // The symptom was real and silent: saving *navigation* on such a store
+  // created its first draft row and, in doing so, replaced the shop's actual
+  // home page with the generic one. A merchant renaming a menu item would have
+  // lost their layout. Reading the legacy name costs one query, once, on the
+  // first save a store ever makes.
+  let fallbackPreset = theme?.preset;
+  if (fallbackPreset === undefined) {
+    const existing = await db.query<{ theme_name: string | null }>(
+      `SELECT s.theme_name
+         FROM stores s
+        WHERE s.id = $1
+          AND NOT EXISTS (
+                SELECT 1 FROM storefront_themes t
+                 WHERE t.store_id = s.id AND t.status = 'draft'
+              )
+        LIMIT 1`,
+      [storeId],
+    );
+    // A row means there is no draft yet, so this insert is the store's first.
+    if (existing.rows.length > 0) {
+      fallbackPreset = themeFromLegacyName(existing.rows[0].theme_name).preset;
+    }
+  }
+  const fallbackSections = JSON.stringify(presetSections(fallbackPreset));
 
   const result = await db.query<ThemeRow>(
-    `INSERT INTO storefront_themes (store_id, status, theme, sections, version)
-     VALUES ($1, 'draft', COALESCE($2::jsonb, '{}'::jsonb), COALESCE($3::jsonb, $4::jsonb), 1)
+    `INSERT INTO storefront_themes (store_id, status, theme, sections, navigation, version)
+     VALUES ($1, 'draft', COALESCE($2::jsonb, '{}'::jsonb), COALESCE($3::jsonb, $4::jsonb),
+             COALESCE($5::jsonb, '{}'::jsonb), 1)
      ON CONFLICT (store_id, status) DO UPDATE
         SET theme      = COALESCE($2::jsonb, storefront_themes.theme),
             sections   = COALESCE($3::jsonb, storefront_themes.sections),
+            navigation = COALESCE($5::jsonb, storefront_themes.navigation),
             version    = storefront_themes.version + 1,
             updated_at = NOW()
      RETURNING ${SELECT_COLUMNS}`,
-    [storeId, themeJson, sectionsJson, fallbackSections],
+    [storeId, themeJson, sectionsJson, fallbackSections, navigationJson],
   );
 
   return resolveRecord(toRecord(result.rows[0]));
@@ -300,16 +346,22 @@ export async function publishDraft(storeId: string): Promise<ResolvedThemeRecord
 
     const row = draft.rows[0];
     const result = await client.query<ThemeRow>(
-      `INSERT INTO storefront_themes (store_id, status, theme, sections, version, published_at)
-       VALUES ($1, 'published', $2::jsonb, $3::jsonb, 1, NOW())
+      `INSERT INTO storefront_themes (store_id, status, theme, sections, navigation, version, published_at)
+       VALUES ($1, 'published', $2::jsonb, $3::jsonb, $4::jsonb, 1, NOW())
        ON CONFLICT (store_id, status) DO UPDATE
           SET theme        = EXCLUDED.theme,
               sections     = EXCLUDED.sections,
+              navigation   = EXCLUDED.navigation,
               version      = storefront_themes.version + 1,
               updated_at   = NOW(),
               published_at = NOW()
        RETURNING ${SELECT_COLUMNS}`,
-      [storeId, JSON.stringify(parseJson(row.theme) ?? {}), JSON.stringify(parseJson(row.sections) ?? [])],
+      [
+        storeId,
+        JSON.stringify(parseJson(row.theme) ?? {}),
+        JSON.stringify(parseJson(row.sections) ?? []),
+        JSON.stringify(parseJson(row.navigation) ?? {}),
+      ],
     );
     return result.rows[0] ?? null;
   });
@@ -347,8 +399,21 @@ export async function resetDraft(storeId: string): Promise<ResolvedThemeRecord> 
   const sections = publishedRow
     ? normalizeSections(parseJson(publishedRow.sections) ?? []).sections
     : presetSections(theme.preset);
+  // Reset means "make the draft the live shop again", so the menus have to come
+  // back too. Restoring theme and sections but leaving an edited navigation in
+  // place would hand the merchant a draft that is not what they asked to
+  // return to — and the menu is the part most likely to be pointing at a page
+  // they have since abandoned.
+  const navigation = publishedRow
+    ? ((parseJson(publishedRow.navigation) ?? {}) as StoreNavigation)
+    : ({} as StoreNavigation);
 
-  return saveDraft(storeId, theme, sections.length > 0 ? sections : presetSections(theme.preset));
+  return saveDraft(
+    storeId,
+    theme,
+    sections.length > 0 ? sections : presetSections(theme.preset),
+    navigation,
+  );
 }
 
 /**
