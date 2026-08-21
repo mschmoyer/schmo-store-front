@@ -44,9 +44,20 @@
  * *and* actually paid — with the booked-but-unpaid remainder reported beside it as
  * `unsettledCents` rather than silently dropped.
  *
- * "Customized" is not defined here. It comes from `src/lib/platform/customization.ts`, which is
- * shared with the overview, because three screens quietly holding three definitions of the same
- * word is how a dashboard tells a reader two contradictory things at once.
+ * **This module owns the console's order vocabulary.** {@link RECEIVED_ORDER_PREDICATE},
+ * {@link SETTLED_ORDER_PREDICATE}, {@link UNSETTLED_ORDER_PREDICATE},
+ * {@link CANCELLED_ORDER_PREDICATE} and {@link REFUNDED_ORDER_PREDICATE} are defined here and
+ * imported by `src/lib/platform/metrics.ts`, and the two rates derived from them —
+ * {@link fulfillmentRatePct} and {@link averageCents} — are functions rather than expressions
+ * repeated at each call site. That is not tidiness. Three screens had independently decided what
+ * "received" meant and the console reported the platform's fulfilment rate as 75%, 68% and 63% on
+ * adjacent pages; before that, two definitions of "customized" put "0 stores customized" above a
+ * table in which every row said "Customized". Both defects have the same cause — no module owned
+ * the word — so the fix is a module that does.
+ *
+ * "Customized" is not defined here either. It comes from `src/lib/platform/customization.ts`,
+ * which is shared with the overview, because three screens quietly holding three definitions of
+ * the same word is how a dashboard tells a reader two contradictory things at once.
  *
  * Secrets never leave this module. `store_integrations.api_key_encrypted`,
  * `webhook_secret_encrypted`, `shipstation_password_hash` and `users.password_hash` are read only
@@ -79,6 +90,100 @@ import { CUSTOMIZED_THEME_JOIN, customizedPredicate } from '@/lib/platform/custo
  */
 export const SETTLED_ORDER_PREDICATE =
   "o.status <> 'cancelled' AND o.payment_status IN ('paid', 'completed', 'refunded')";
+
+/**
+ * What counts as an order the platform **received**: every row in `orders`, cancellations included.
+ *
+ * This constant exists because the word had three meanings on three adjacent screens. The overview
+ * counted `status <> 'cancelled'` (65 orders), the customers list counted `COUNT(*)` (72) and the
+ * store detail counted `COUNT(*)` again but divided a shipped count by it — so one platform, one
+ * afternoon, reported fulfilment as 75%, 68% and 63%. None of those numbers was arithmetically
+ * wrong. What was wrong is that no module owned the word, so every query author re-decided it.
+ *
+ * **The definition is "the merchant took the order".** A cancelled order was still received: a
+ * buyer placed it, the merchant saw it, and it then fell through. Excluding it makes cancellation
+ * invisible in exactly the place an operator would look for it, and it flatters the fulfilment
+ * rate by removing orders that were never going to ship. Cancellations are reported as their own
+ * figure beside every received count ({@link CANCELLED_ORDER_PREDICATE}), which is the honest
+ * treatment: visible in the denominator, and separately countable.
+ *
+ * The predicate is literally `TRUE`, and that is the point. It is not decoration — it is the seam.
+ * Every received count and every fulfilment rate on the console is written through this constant
+ * and {@link fulfillmentRatePct}, so if "received" ever has to narrow (a spam/test-order flag, say)
+ * it narrows in one place and every screen follows. A fourth definition cannot appear by someone
+ * typing `COUNT(*)` in a new query, because the reviewer's question — "why is this not using
+ * RECEIVED_ORDER_PREDICATE?" — now has somewhere to point.
+ *
+ * Written against the alias `o`, like its neighbours.
+ */
+export const RECEIVED_ORDER_PREDICATE = 'TRUE';
+
+/**
+ * Orders the merchant or the buyer cancelled.
+ *
+ * Reported beside every received count rather than subtracted from it. Cancelled orders are inside
+ * {@link RECEIVED_ORDER_PREDICATE} and outside {@link SETTLED_ORDER_PREDICATE}, which is why a
+ * fulfilment rate has a ceiling below 100% on a platform with cancellations — a real fact about
+ * the platform, not an artefact.
+ */
+export const CANCELLED_ORDER_PREDICATE = "o.status = 'cancelled'";
+
+/**
+ * Orders where money went back to the buyer.
+ *
+ * `refunded_amount > 0` rather than `payment_status = 'refunded'`: a partial refund leaves the
+ * payment status at `'paid'`, and a rule that reads the status alone would report the partially
+ * refunded order as un-refunded while reporting a fully refunded one as refunded in full.
+ *
+ * This set **overlaps** the cancelled set — in the demo data it is exactly the cancelled set — so
+ * the two are never rendered as independent columns without the overlap beside them. "Cancelled 3"
+ * next to "Refunded 3" reads as six bad orders; it is three.
+ */
+export const REFUNDED_ORDER_PREDICATE = 'o.refunded_amount > 0';
+
+/**
+ * The one fulfilment-rate calculation on the operator console.
+ *
+ * Shipped ÷ received, where "received" is {@link RECEIVED_ORDER_PREDICATE} on both sides of the
+ * screen. Every rate the console shows — overview headline, all-time panel, list totals, per-store
+ * row, store detail — calls this, so two of them cannot disagree by a few points and leave a
+ * reader to guess which is real.
+ *
+ * **`null`, not `0`, when nothing was received.** Zero received orders means the rate is unknown,
+ * and `0%` claims we measured a total failure to ship. That is the same class of lie as an average
+ * order value of `$0.00` on a window with no orders, and `CLAUDE.md` forbids both.
+ *
+ * @param shipped - Orders dispatched over the period being described.
+ * @param received - Orders received over that same period, cancellations included.
+ * @returns The percentage to two decimals, or `null` when `received` is zero, negative or not a
+ *          number. Not clamped: shipped and received can be different populations (an order
+ *          received last month can ship this one), so a throughput rate above 100% is reported as
+ *          measured rather than massaged.
+ */
+export function fulfillmentRatePct(shipped: number, received: number): number | null {
+  if (!Number.isFinite(shipped) || !Number.isFinite(received) || received <= 0) return null;
+  return Math.round((shipped / received) * 10000) / 100;
+}
+
+/**
+ * The one average-order-value calculation on the operator console.
+ *
+ * Deliberately takes the *settled* order count rather than the received one: the numerator is
+ * settled GMV, so dividing by every received order would quietly average money that was never
+ * taken into a figure labelled "average order value".
+ *
+ * **`null`, not `0`, when there are no orders to average.** An empty window has no average; a
+ * console that prints `$0.00` there is stating a measurement it does not have. This is the exact
+ * defect that shipped on the revenue panel at `?days=7`.
+ *
+ * @param totalCents - Summed order value in integer cents, over the same set `orderCount` counts.
+ * @param orderCount - How many orders that sum covers.
+ * @returns The mean rounded to the nearest whole cent, or `null` when there is nothing to average.
+ */
+export function averageCents(totalCents: number, orderCount: number): number | null {
+  if (!Number.isFinite(totalCents) || !Number.isFinite(orderCount) || orderCount <= 0) return null;
+  return Math.round(totalCents / orderCount);
+}
 
 /**
  * The complement: booked but not settled.
@@ -233,8 +338,29 @@ export interface CustomerListItem {
   createdAt: string;
   isActive: boolean;
   isPublic: boolean;
-  orders: { received: number; shipped: number; last30d: number };
+  /**
+   * Order counts for this merchant, every one of them over
+   * {@link RECEIVED_ORDER_PREDICATE}'s population.
+   *
+   * `settled` and `cancelled` are here so the UI can label `gmvCents` with the order count it was
+   * actually divided by. "72 orders received" beside "$9,017.31 GMV" invited a reader to compute
+   * an average order value of $125.24 while the console printed $236.68, because the money is
+   * settled-only and the count was not.
+   */
+  orders: {
+    received: number;
+    shipped: number;
+    last30d: number;
+    /** Orders backing `gmvCents`: not cancelled and actually paid. */
+    settled: number;
+    /** Cancelled orders. Inside `received`, outside `settled`. */
+    cancelled: number;
+  };
+  /** Shipped ÷ received, all time, from {@link fulfillmentRatePct}. `null` when nothing was received. */
+  fulfillmentRatePct: number | null;
   gmvCents: number;
+  /** `gmvCents / orders.settled`, or `null` when no order settled. Never `0` for "unknown". */
+  aovCents: number | null;
   /** Non-cancelled orders that were never paid. Not part of `gmvCents`; reported so it is visible. */
   unsettledCents: number;
   clicks: { allTime: number; last30d: number };
@@ -256,9 +382,18 @@ export interface CustomerListItem {
 /** Aggregates over the whole filtered set — deliberately not the page. */
 export interface CustomerListTotals {
   customers: number;
+  /** Orders received: {@link RECEIVED_ORDER_PREDICATE}, the same population every screen uses. */
   orders: number;
   shipped: number;
+  /** Of `orders`, the ones that settled — the count `gmvCents` is the sum over. */
+  settledOrders: number;
+  /** Of `orders`, the ones cancelled. Inside `orders`, never subtracted from it silently. */
+  cancelled: number;
+  /** `shipped / orders`, from {@link fulfillmentRatePct}. `null` when nothing was received. */
+  fulfillmentRatePct: number | null;
   gmvCents: number;
+  /** `gmvCents / settledOrders`, or `null`. The pair the UI must label together. */
+  aovCents: number | null;
   unsettledCents: number;
   clicks: number;
 }
@@ -337,20 +472,56 @@ export interface CustomerDetail {
     lastLoginTracked: boolean;
   };
   orders: {
+    /** {@link RECEIVED_ORDER_PREDICATE}: every order this merchant took, cancellations included. */
     received: number;
     shipped: number;
     delivered: number;
+    /** Cancelled orders. A subset of `received`, disjoint from `settledOrders`. */
     cancelled: number;
+    /** Value of those cancelled orders, in integer cents. Never part of `gmvCents`. */
+    cancelledCents: number;
+    /** Orders with any money refunded — {@link REFUNDED_ORDER_PREDICATE}. */
     refundedCount: number;
+    /**
+     * Orders that are **both** cancelled and refunded.
+     *
+     * The overlap, returned explicitly, because `cancelled` and `refundedCount` are not disjoint —
+     * in the demo data they are the same three rows. Rendered as two independent stat columns they
+     * read as six bad orders out of twenty-seven; with this field the UI can say "3 cancelled, all
+     * of them refunded".
+     */
+    refundedCancelledCount: number;
     gmvCents: number;
     /** Non-cancelled, never paid. Excluded from `gmvCents`; shown so it cannot go unnoticed. */
     unsettledCents: number;
     /** How many orders make up `unsettledCents`. */
     unsettledOrders: number;
+    /** Orders backing `gmvCents`, i.e. the denominator of `aovCents`. */
+    settledOrders: number;
+    /** Every cent refunded to a buyer, whatever the order's state. The total money-back figure. */
     refundedCents: number;
-    aovCents: number;
+    /**
+     * The part of `refundedCents` that came out of an order inside `gmvCents`.
+     *
+     * This is the only refund figure that may be subtracted from GMV. The rest sits in
+     * `refundedCancelledCents`, on money GMV never contained.
+     */
+    refundedSettledCents: number;
+    /** The part of `refundedCents` on cancelled orders — refunds of money never counted as GMV. */
+    refundedCancelledCents: number;
+    /** `gmvCents / settledOrders`, or `null` when nothing settled. Never `0` for "unknown". */
+    aovCents: number | null;
+    /** Shipped ÷ received, from {@link fulfillmentRatePct}. `null` when nothing was received. */
+    fulfillmentRatePct: number | null;
     avgHoursToShip: number | null;
-    last30d: { received: number; shipped: number; gmvCents: number; unsettledCents: number };
+    last30d: {
+      received: number;
+      shipped: number;
+      gmvCents: number;
+      unsettledCents: number;
+      /** The same rate over the last 30 days only. `null` when nothing was received in them. */
+      fulfillmentRatePct: number | null;
+    };
     recent: CustomerOrderSummary[];
   };
   catalog: {
@@ -658,10 +829,16 @@ function buildBaseCte(filterPredicate: string): string {
   return `
     WITH order_agg AS (
       SELECT o.store_id,
-             COUNT(*)::bigint AS orders_received,
+             -- "Received" is RECEIVED_ORDER_PREDICATE, not COUNT(*) spelled out again. The literal
+             -- is the same today; the seam is what stops it drifting the next time somebody adds a
+             -- count here.
+             COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE})::bigint AS orders_received,
              COUNT(*) FILTER (WHERE o.shipped_at IS NOT NULL)::bigint AS orders_shipped,
+             COUNT(*) FILTER (WHERE ${SETTLED_ORDER_PREDICATE})::bigint AS orders_settled,
+             COUNT(*) FILTER (WHERE ${CANCELLED_ORDER_PREDICATE})::bigint AS orders_cancelled,
              COUNT(*) FILTER (
-               WHERE o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
+               WHERE ${RECEIVED_ORDER_PREDICATE}
+                 AND o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
              )::bigint AS orders_last_30d,
              -- Dollars -> cents at the boundary. See SETTLED_ORDER_PREDICATE: not cancelled AND
              -- actually paid. The unsettled remainder is reported beside it, not discarded.
@@ -707,6 +884,8 @@ function buildBaseCte(filterPredicate: string): string {
              u.email AS owner_email,
              COALESCE(oa.orders_received, 0)::bigint AS orders_received,
              COALESCE(oa.orders_shipped, 0)::bigint AS orders_shipped,
+             COALESCE(oa.orders_settled, 0)::bigint AS orders_settled,
+             COALESCE(oa.orders_cancelled, 0)::bigint AS orders_cancelled,
              COALESCE(oa.orders_last_30d, 0)::bigint AS orders_last_30d,
              COALESCE(oa.gmv_cents, 0)::bigint AS gmv_cents,
              COALESCE(oa.unsettled_cents, 0)::bigint AS unsettled_cents,
@@ -757,6 +936,8 @@ interface TotalsRow extends Record<string, unknown> {
   customers: string;
   orders: string;
   shipped: string;
+  settled_orders: string;
+  cancelled: string;
   gmv_cents: string;
   unsettled_cents: string;
   clicks: string;
@@ -776,6 +957,8 @@ interface CustomerListRow extends Record<string, unknown> {
   owner_email: string;
   orders_received: string;
   orders_shipped: string;
+  orders_settled: string;
+  orders_cancelled: string;
   orders_last_30d: string;
   gmv_cents: string;
   unsettled_cents: string;
@@ -820,6 +1003,8 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
      SELECT COUNT(*)::bigint                            AS customers,
             COALESCE(SUM(orders_received), 0)::bigint   AS orders,
             COALESCE(SUM(orders_shipped), 0)::bigint    AS shipped,
+            COALESCE(SUM(orders_settled), 0)::bigint    AS settled_orders,
+            COALESCE(SUM(orders_cancelled), 0)::bigint  AS cancelled,
             COALESCE(SUM(gmv_cents), 0)::bigint         AS gmv_cents,
             COALESCE(SUM(unsettled_cents), 0)::bigint   AS unsettled_cents,
             COALESCE(SUM(clicks_all_time), 0)::bigint   AS clicks
@@ -828,11 +1013,21 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
   );
 
   const totalsRow = totalsResult.rows[0];
+  const totalReceived = toNumber(totalsRow?.orders);
+  const totalShipped = toNumber(totalsRow?.shipped);
+  const totalSettled = toNumber(totalsRow?.settled_orders);
+  const totalGmvCents = toNumber(totalsRow?.gmv_cents);
+
   const totals: CustomerListTotals = {
     customers: toNumber(totalsRow?.customers),
-    orders: toNumber(totalsRow?.orders),
-    shipped: toNumber(totalsRow?.shipped),
-    gmvCents: toNumber(totalsRow?.gmv_cents),
+    orders: totalReceived,
+    shipped: totalShipped,
+    settledOrders: totalSettled,
+    cancelled: toNumber(totalsRow?.cancelled),
+    // The same helper the overview and the detail call, so the three cannot print three rates.
+    fulfillmentRatePct: fulfillmentRatePct(totalShipped, totalReceived),
+    gmvCents: totalGmvCents,
+    aovCents: averageCents(totalGmvCents, totalSettled),
     unsettledCents: toNumber(totalsRow?.unsettled_cents),
     clicks: toNumber(totalsRow?.clicks),
   };
@@ -881,7 +1076,13 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
     [pattern, pagination.pageSize, offset]
   );
 
-  const customers = pageResult.rows.map((row) => ({
+  const customers = pageResult.rows.map((row): CustomerListItem => {
+    const received = toNumber(row.orders_received);
+    const shipped = toNumber(row.orders_shipped);
+    const settled = toNumber(row.orders_settled);
+    const gmvCents = toNumber(row.gmv_cents);
+
+    return {
     storeId: row.store_id,
     storeName: row.store_name,
     storeSlug: row.store_slug,
@@ -893,11 +1094,15 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
     isActive: row.is_active === true,
     isPublic: row.is_public === true,
     orders: {
-      received: toNumber(row.orders_received),
-      shipped: toNumber(row.orders_shipped),
+      received,
+      shipped,
       last30d: toNumber(row.orders_last_30d),
+      settled,
+      cancelled: toNumber(row.orders_cancelled),
     },
-    gmvCents: toNumber(row.gmv_cents),
+    fulfillmentRatePct: fulfillmentRatePct(shipped, received),
+    gmvCents,
+    aovCents: averageCents(gmvCents, settled),
     unsettledCents: toNumber(row.unsettled_cents),
     clicks: {
       allTime: toNumber(row.clicks_all_time),
@@ -916,7 +1121,8 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
     plan: row.plan_key,
     subscriptionStatus: row.subscription_status,
     lastOrderAt: toIso(row.last_order_at),
-  }));
+    };
+  });
 
   return { customers, pagination, totals };
 }
@@ -1016,11 +1222,15 @@ interface OrderStatsRow extends Record<string, unknown> {
   shipped: string;
   delivered: string;
   cancelled: string;
+  cancelled_cents: string;
   refunded_count: string;
+  refunded_cancelled_count: string;
   gmv_cents: string;
   unsettled_cents: string;
   unsettled_orders: string;
   refunded_cents: string;
+  refunded_settled_cents: string;
+  refunded_cancelled_cents: string;
   revenue_orders: string;
   avg_hours_to_ship: string | null;
   received_30d: string;
@@ -1199,11 +1409,20 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
   const [orderStats, catalogStats, recentOrders, topProducts, daily, trafficTotals, topPages, topReferrers, subscription] =
     await Promise.all([
       db.query<OrderStatsRow>(
-        `SELECT COUNT(*)::bigint AS received,
+        // "Received" is the shared predicate, and every count below states which population it
+        // is over. `cancelled` and `refunded_count` overlap, so the overlap is selected too:
+        // rendering the two as independent columns is what made three bad orders read as six.
+        `SELECT COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE})::bigint AS received,
                 COUNT(*) FILTER (WHERE o.shipped_at IS NOT NULL)::bigint AS shipped,
                 COUNT(*) FILTER (WHERE o.delivered_at IS NOT NULL)::bigint AS delivered,
-                COUNT(*) FILTER (WHERE o.status = 'cancelled')::bigint AS cancelled,
-                COUNT(*) FILTER (WHERE o.refunded_amount > 0)::bigint AS refunded_count,
+                COUNT(*) FILTER (WHERE ${CANCELLED_ORDER_PREDICATE})::bigint AS cancelled,
+                COALESCE(ROUND(SUM(o.total_amount) FILTER (
+                  WHERE ${CANCELLED_ORDER_PREDICATE}
+                ) * 100), 0)::bigint AS cancelled_cents,
+                COUNT(*) FILTER (WHERE ${REFUNDED_ORDER_PREDICATE})::bigint AS refunded_count,
+                COUNT(*) FILTER (
+                  WHERE ${REFUNDED_ORDER_PREDICATE} AND ${CANCELLED_ORDER_PREDICATE}
+                )::bigint AS refunded_cancelled_count,
                 COALESCE(
                   ROUND(SUM(o.total_amount) FILTER (WHERE ${SETTLED_ORDER_PREDICATE}) * 100), 0
                 )::bigint AS gmv_cents,
@@ -1211,14 +1430,26 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
                   ROUND(SUM(o.total_amount) FILTER (WHERE ${UNSETTLED_ORDER_PREDICATE}) * 100), 0
                 )::bigint AS unsettled_cents,
                 COUNT(*) FILTER (WHERE ${UNSETTLED_ORDER_PREDICATE})::bigint AS unsettled_orders,
+                -- Three refund figures, because one number cannot answer both questions an
+                -- operator has. refunded_cents is every cent that went back to a buyer.
+                -- refunded_settled_cents is the part that came out of an order inside GMV - the
+                -- only part it is legitimate to subtract from GMV. refunded_cancelled_cents is
+                -- the rest: money GMV never contained, so subtracting it would double-count.
                 COALESCE(ROUND(SUM(o.refunded_amount) * 100), 0)::bigint AS refunded_cents,
+                COALESCE(ROUND(SUM(o.refunded_amount) FILTER (
+                  WHERE ${SETTLED_ORDER_PREDICATE}
+                ) * 100), 0)::bigint AS refunded_settled_cents,
+                COALESCE(ROUND(SUM(o.refunded_amount) FILTER (
+                  WHERE ${CANCELLED_ORDER_PREDICATE}
+                ) * 100), 0)::bigint AS refunded_cancelled_cents,
                 -- AOV divides by the orders that make up GMV, so aov x revenue_orders = gmv.
                 COUNT(*) FILTER (WHERE ${SETTLED_ORDER_PREDICATE})::bigint AS revenue_orders,
                 AVG(EXTRACT(EPOCH FROM (o.shipped_at - o.created_at)) / 3600.0)
                   FILTER (WHERE o.shipped_at IS NOT NULL AND o.shipped_at >= o.created_at)
                   AS avg_hours_to_ship,
                 COUNT(*) FILTER (
-                  WHERE o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
+                  WHERE ${RECEIVED_ORDER_PREDICATE}
+                    AND o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
                 )::bigint AS received_30d,
                 COUNT(*) FILTER (
                   WHERE o.shipped_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
@@ -1381,6 +1612,9 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
   const gmvCents = toNumber(orderRow?.gmv_cents);
   const revenueOrders = toNumber(orderRow?.revenue_orders);
   const ordersReceived = toNumber(orderRow?.received);
+  const ordersShipped = toNumber(orderRow?.shipped);
+  const received30d = toNumber(orderRow?.received_30d);
+  const shipped30d = toNumber(orderRow?.shipped_30d);
   const productCount = toNumber(catalogRow?.products);
   const sectionCount = toNumber(header.theme_section_count);
   const lastSyncIso = toIso(header.shipstation_last_sync_at);
@@ -1495,23 +1729,33 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
     },
     orders: {
       received: ordersReceived,
-      shipped: toNumber(orderRow?.shipped),
+      shipped: ordersShipped,
       delivered: toNumber(orderRow?.delivered),
       cancelled: toNumber(orderRow?.cancelled),
+      cancelledCents: toNumber(orderRow?.cancelled_cents),
       refundedCount: toNumber(orderRow?.refunded_count),
+      refundedCancelledCount: toNumber(orderRow?.refunded_cancelled_count),
       gmvCents,
       unsettledCents: toNumber(orderRow?.unsettled_cents),
       unsettledOrders: toNumber(orderRow?.unsettled_orders),
+      settledOrders: revenueOrders,
       refundedCents: toNumber(orderRow?.refunded_cents),
-      // Averaged over the orders that make up GMV, so AOV x revenue orders = GMV. Dividing by
-      // every order, cancellations included, would understate it.
-      aovCents: revenueOrders > 0 ? Math.round(gmvCents / revenueOrders) : 0,
+      refundedSettledCents: toNumber(orderRow?.refunded_settled_cents),
+      refundedCancelledCents: toNumber(orderRow?.refunded_cancelled_cents),
+      // Averaged over the orders that make up GMV, so AOV x settled orders = GMV. Dividing by
+      // every order, cancellations included, would understate it. `null`, never `0`, when the
+      // merchant has no settled order to average.
+      aovCents: averageCents(gmvCents, revenueOrders),
+      // The shared helper, over the shared received population: this store's rate is computed the
+      // same way as the platform's, so 17 of 27 here and the list's column agree by construction.
+      fulfillmentRatePct: fulfillmentRatePct(ordersShipped, ordersReceived),
       avgHoursToShip: toNumberOrNull(orderRow?.avg_hours_to_ship),
       last30d: {
-        received: toNumber(orderRow?.received_30d),
-        shipped: toNumber(orderRow?.shipped_30d),
+        received: received30d,
+        shipped: shipped30d,
         gmvCents: toNumber(orderRow?.gmv_cents_30d),
         unsettledCents: toNumber(orderRow?.unsettled_cents_30d),
+        fulfillmentRatePct: fulfillmentRatePct(shipped30d, received30d),
       },
       recent: recentOrders.rows.map(mapOrderSummary),
     },
@@ -1623,7 +1867,9 @@ export async function listCustomerOrders(
   params: CustomerOrdersParams
 ): Promise<CustomerOrdersResult> {
   const countResult = await db.query<{ total: string }>(
-    `SELECT COUNT(*)::bigint AS total
+    // Unfiltered, this is the same population as `received` on the detail — the tab's pagination
+    // total and the header's order count are the same fact and must not disagree.
+    `SELECT COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE})::bigint AS total
        FROM orders o
       WHERE o.store_id = $1
         AND ($2::text IS NULL OR o.status = $2)`,

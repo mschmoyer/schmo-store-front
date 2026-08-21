@@ -12,6 +12,19 @@
  *
  * The meter is a real `progressbar` with its value in the accessible name, not
  * a coloured bar with the number rendered elsewhere on the screen.
+ *
+ * ## One denominator per card
+ *
+ * The meter used to be drawn from `customization.completenessPct` — a score
+ * over eight storefront signals — while the sentence beside it counted the six
+ * items in this list. So the card read "63%" above "4 of 6 checks passing", and
+ * 4/6 is 67%. The bar corresponded to nothing else on the card, and a reader
+ * who noticed the mismatch had no way to tell which of the two numbers was
+ * wrong. The meter is now the checklist's own ratio and nothing else: the bar,
+ * the percentage and the sentence are three renderings of one fraction, and
+ * they cannot disagree. `completenessPct` is still on screen — it is the
+ * "Setup complete" field in the storefront customisation panel, where it is
+ * labelled as the separate measurement it is.
  */
 
 import React from 'react';
@@ -24,19 +37,19 @@ import styles from './checklistPanel.module.css';
 export interface ChecklistPanelProps {
   /** The checks, in the order the API returns them. */
   items: PlatformChecklistItem[];
-  /** 0–100. The store's setup completeness. */
-  completenessPct: number;
 }
 
 /**
- * Renders the setup checklist and its completeness meter.
+ * Renders the setup checklist and the meter for how much of it is passing.
  *
  * @param props - {@link ChecklistPanelProps}
  * @returns The checklist panel.
  */
-export function ChecklistPanel({ items, completenessPct }: ChecklistPanelProps): React.ReactElement {
+export function ChecklistPanel({ items }: ChecklistPanelProps): React.ReactElement {
   const done = items.filter((item) => item.done).length;
-  const pct = Math.max(0, Math.min(100, Math.round(completenessPct)));
+  /* The one fraction on this card. The bar, the percentage and the sentence in
+     the panel description are all rendered from it. */
+  const pct = items.length === 0 ? 0 : Math.round((done / items.length) * 100);
 
   return (
     <Panel
@@ -55,7 +68,7 @@ export function ChecklistPanel({ items, completenessPct }: ChecklistPanelProps):
           aria-valuenow={pct}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label="Storefront setup completeness"
+          aria-label={`${done} of ${items.length} setup checks passing`}
         >
           {/* The width is data, not styling: it is the value being drawn, and
               it cannot live in a stylesheet. `StatCard` sets its meter the

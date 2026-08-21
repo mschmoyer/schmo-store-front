@@ -19,3 +19,17 @@
     gap: var(--space-4);
   }
 }
+
+/*
+ * The heading's right-hand slot: the "as of" line and the control that refreshes it.
+ *
+ * They belong together because they are one statement — how old this reading is, and how to take a
+ * new one. A Refresh button on its own implies staleness and then refuses to quantify it.
+ */
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

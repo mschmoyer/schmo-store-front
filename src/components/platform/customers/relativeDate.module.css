@@ -1,0 +1,22 @@
+/*
+ * The two-line timestamp.
+ *
+ * A `<time>` is inline by default, so the stacked variant has to declare its own block flow — the
+ * two readings are one element and one announced string, and the line break between them is
+ * presentation rather than markup. See the note in `RelativeDate.tsx` for why they are not two
+ * separate elements.
+ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.25;
+  /* "17 May 2026" wrapping to "17 May 202 / 6" is worse than the column being wide. */
+  white-space: nowrap;
+}
+
+.absolute {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}

@@ -27,6 +27,8 @@ import { db } from '@/lib/database/connection';
 import {
   COMPLETENESS_SIGNALS,
   DEFAULT_FILTER,
+  averageCents,
+  fulfillmentRatePct,
   DEFAULT_PAGE_SIZE,
   DEFAULT_SORT,
   MAX_PAGE_SIZE,
@@ -46,6 +48,11 @@ interface Fixture {
   storeSlug: string;
   storeName: string;
   productIds: string[];
+  /** A second store with no orders at all, so "unknown" can be told from "zero". */
+  emptyStoreId: string;
+  emptyStoreSlug: string;
+  /** Its own owner, so a search by the first owner's email still matches exactly one store. */
+  emptyOwnerId: string;
 }
 
 const fixture: Fixture = {
@@ -55,6 +62,9 @@ const fixture: Fixture = {
   storeSlug: `zz-platform-test-${randomUUID().slice(0, 8)}`,
   storeName: `ZZ Platform Fixture ${randomUUID().slice(0, 8)}`,
   productIds: [],
+  emptyStoreId: randomUUID(),
+  emptyStoreSlug: `zz-platform-empty-${randomUUID().slice(0, 8)}`,
+  emptyOwnerId: randomUUID(),
 };
 
 /**
@@ -69,12 +79,17 @@ const ORDERS: Array<{
   status: string;
   paymentStatus: string;
   shippedDaysAgo: number | null;
+  /** Dollars refunded on this order. The cancelled one is refunded in full, as a real one is. */
+  refunded: string;
 }> = [
-  { total: '10.00', status: 'completed', paymentStatus: 'completed', shippedDaysAgo: 1 },
-  { total: '25.50', status: 'shipped', paymentStatus: 'paid', shippedDaysAgo: 2 },
-  { total: '4.50', status: 'processing', paymentStatus: 'pending', shippedDaysAgo: null },
-  { total: '99.99', status: 'cancelled', paymentStatus: 'refunded', shippedDaysAgo: null },
+  { total: '10.00', status: 'completed', paymentStatus: 'completed', shippedDaysAgo: 1, refunded: '0' },
+  { total: '25.50', status: 'shipped', paymentStatus: 'paid', shippedDaysAgo: 2, refunded: '0' },
+  { total: '4.50', status: 'processing', paymentStatus: 'pending', shippedDaysAgo: null, refunded: '0' },
+  { total: '99.99', status: 'cancelled', paymentStatus: 'refunded', shippedDaysAgo: null, refunded: '99.99' },
 ];
+
+/** Cents refunded on the cancelled order: real money back, and never part of GMV. */
+const EXPECTED_REFUNDED_CENTS = 9999;
 
 /** Settled dollars: 10.00 (completed) + 25.50 (paid). The pending 4.50 is not revenue. */
 const EXPECTED_GMV_CENTS = 3550;
@@ -122,11 +137,13 @@ beforeAll(async () => {
                            customer_last_name, shipping_first_name, shipping_last_name,
                            shipping_address_line1, shipping_city, shipping_state,
                            shipping_postal_code, subtotal, total_amount, status,
-                           payment_status, fulfillment_status, created_at, shipped_at)
+                           payment_status, fulfillment_status, created_at, shipped_at,
+                           refunded_amount)
        VALUES ($1, $2, $3, 'buyer@example.test', 'Buyer', 'One', 'Buyer', 'One',
                '1 Test Way', 'Testville', 'TS', '00000', $4, $4, $5, $6, $7,
                NOW() - ($8 || ' days')::interval,
-               CASE WHEN $9::int IS NULL THEN NULL ELSE NOW() - ($9 || ' days')::interval END)`,
+               CASE WHEN $9::int IS NULL THEN NULL ELSE NOW() - ($9 || ' days')::interval END,
+               $10::numeric)`,
       [
         orderId,
         fixture.storeId,
@@ -137,6 +154,7 @@ beforeAll(async () => {
         order.shippedDaysAgo === null ? 'unfulfilled' : 'fulfilled',
         String(index + 3),
         order.shippedDaysAgo,
+        order.refunded,
       ]
     );
 
@@ -156,6 +174,19 @@ beforeAll(async () => {
       ]
     );
   }
+
+  // A second tenant with nothing in it. "No orders" must read as an unknown rate, not as 0%.
+  // It gets its own owner so that searching the first owner's email still matches one store.
+  await db.query(
+    `INSERT INTO users (id, email, password_hash, first_name, last_name, is_active)
+     VALUES ($1, $2, 'not-a-real-hash', 'Empty', 'Fixture', TRUE)`,
+    [fixture.emptyOwnerId, `platform-empty-${fixture.emptyOwnerId}@example.test`]
+  );
+  await db.query(
+    `INSERT INTO stores (id, owner_id, store_name, store_slug, is_active, is_public, created_at)
+     VALUES ($1, $2, $3, $4, TRUE, FALSE, NOW())`,
+    [fixture.emptyStoreId, fixture.emptyOwnerId, `ZZ Empty ${fixture.emptyStoreSlug}`, fixture.emptyStoreSlug]
+  );
 
   // Click events. The AFTER INSERT trigger maintains storefront_click_daily, so the rollup the
   // list reads is populated by writing events exactly as the storefront does.
@@ -178,7 +209,9 @@ beforeAll(async () => {
 afterAll(async () => {
   // `stores` and `users` cascade to orders, order_items, products and click events.
   await db.query('DELETE FROM stores WHERE id = $1', [fixture.storeId]);
+  await db.query('DELETE FROM stores WHERE id = $1', [fixture.emptyStoreId]);
   await db.query('DELETE FROM users WHERE id = $1', [fixture.ownerId]);
+  await db.query('DELETE FROM users WHERE id = $1', [fixture.emptyOwnerId]);
   await db.close();
 });
 
@@ -275,9 +308,17 @@ describe('listCustomers', () => {
 
     expect(result.totals).toEqual({
       customers: 1,
+      // Four orders received, cancellation included: the same population the detail and the
+      // overview count. The three used to disagree.
       orders: ORDERS.length,
       shipped: 2,
+      settledOrders: 2,
+      cancelled: 1,
+      fulfillmentRatePct: fulfillmentRatePct(2, ORDERS.length),
       gmvCents: EXPECTED_GMV_CENTS,
+      // GMV is settled-only, so the average is over the settled count and not over `orders`.
+      // Publishing the pair is what lets the UI label them without a reader deriving $8.88.
+      aovCents: averageCents(EXPECTED_GMV_CENTS, 2),
       unsettledCents: EXPECTED_UNSETTLED_CENTS,
       clicks: 4,
     });
@@ -459,17 +500,62 @@ describe('getCustomerDetail', () => {
     expect(detail.owner.lastLogin).toBeNull();
     expect(detail.owner.lastLoginTracked).toBe(false);
 
+    // Received includes the cancellation: the merchant did receive that order.
     expect(detail.orders.received).toBe(ORDERS.length);
     expect(detail.orders.shipped).toBe(2);
     expect(detail.orders.cancelled).toBe(1);
+    expect(detail.orders.cancelledCents).toBe(9999);
     expect(detail.orders.gmvCents).toBe(EXPECTED_GMV_CENTS);
     expect(detail.orders.unsettledCents).toBe(EXPECTED_UNSETTLED_CENTS);
     expect(detail.orders.unsettledOrders).toBe(1);
+    expect(detail.orders.settledOrders).toBe(2);
     // AOV is over the two settled orders that make up GMV, not over all four.
     expect(detail.orders.aovCents).toBe(Math.round(EXPECTED_GMV_CENTS / 2));
+    // One rate, from the shared helper, over the shared received population.
+    expect(detail.orders.fulfillmentRatePct).toBe(fulfillmentRatePct(2, ORDERS.length));
     expect(typeof detail.orders.avgHoursToShip).toBe('number');
     expect(detail.orders.recent).toHaveLength(ORDERS.length);
     expect(Number.isInteger(detail.orders.recent[0].totalCents)).toBe(true);
+  });
+
+
+  it('shows cancelled and refunded as the overlapping sets they are', async () => {
+    const detail = await getCustomerDetail(fixture.storeId);
+    if (!detail) throw new Error('fixture store missing');
+
+    // "Cancelled 1" beside "Refunded 1 · $99.99" reads as two bad orders. It is one, and the
+    // payload now says so rather than leaving the console to imply otherwise.
+    expect(detail.orders.cancelled).toBe(1);
+    expect(detail.orders.refundedCount).toBe(1);
+    expect(detail.orders.refundedCancelledCount).toBe(1);
+
+    // Every cent that went back to a buyer, split by whether GMV ever contained it.
+    expect(detail.orders.refundedCents).toBe(EXPECTED_REFUNDED_CENTS);
+    expect(detail.orders.refundedCancelledCents).toBe(EXPECTED_REFUNDED_CENTS);
+    expect(detail.orders.refundedSettledCents).toBe(0);
+    expect(detail.orders.refundedSettledCents + detail.orders.refundedCancelledCents).toBe(
+      detail.orders.refundedCents
+    );
+    // Only the settled part may be subtracted from GMV, and here it is zero: this refund was of
+    // money GMV never held.
+    expect(detail.orders.gmvCents - detail.orders.refundedSettledCents).toBe(EXPECTED_GMV_CENTS);
+  });
+
+  it('answers "unknown" rather than "0%" for a merchant with no orders', async () => {
+    const detail = await getCustomerDetail(fixture.emptyStoreId);
+    if (!detail) throw new Error('empty fixture store missing');
+
+    expect(detail.orders.received).toBe(0);
+    expect(detail.orders.fulfillmentRatePct).toBeNull();
+    expect(detail.orders.aovCents).toBeNull();
+    expect(detail.orders.last30d.fulfillmentRatePct).toBeNull();
+    expect(detail.orders.avgHoursToShip).toBeNull();
+
+    const listed = (await listCustomers(normalizeCustomerListParams({ q: fixture.emptyStoreSlug })))
+      .customers[0];
+    expect(listed.orders.received).toBe(0);
+    expect(listed.fulfillmentRatePct).toBeNull();
+    expect(listed.aovCents).toBeNull();
   });
 
   it('counts the catalogue and ranks top products by units sold', async () => {
@@ -608,11 +694,35 @@ describe('the list and the detail describe the same merchant', () => {
     expect(listed.customized).toBe(detail.customization.themeCustomized);
     expect(listed.orders.received).toBe(detail.orders.received);
     expect(listed.orders.shipped).toBe(detail.orders.shipped);
+    expect(listed.orders.settled).toBe(detail.orders.settledOrders);
+    expect(listed.orders.cancelled).toBe(detail.orders.cancelled);
+    // One fulfilment rate for one merchant, whichever screen asks for it. The list said 68% and
+    // the detail said 63% about the same platform because each divided its own numbers.
+    expect(listed.fulfillmentRatePct).toBe(detail.orders.fulfillmentRatePct);
+    expect(listed.aovCents).toBe(detail.orders.aovCents);
     expect(listed.gmvCents).toBe(detail.orders.gmvCents);
     expect(listed.products).toBe(detail.catalog.products);
     expect(listed.inventoryUnits).toBe(detail.catalog.inventoryUnits);
     expect(listed.clicks.allTime).toBe(detail.traffic.clicksAllTime);
     expect(listed.integrations.shipstation).toBe(detail.integrations.shipstation.connected);
+  });
+
+  it('counts the same orders on the detail header and in the orders tab', async () => {
+    const detail = await getCustomerDetail(fixture.storeId);
+    if (!detail) throw new Error('fixture store missing');
+    const orders = await listCustomerOrders(
+      fixture.storeId,
+      normalizeCustomerOrdersParams({ pageSize: '100' })
+    );
+
+    // The tab's pagination total and the header's "orders received" are the same fact. An
+    // unfiltered order list that pages 4 rows under a header saying 3 is the same defect class as
+    // the three fulfilment rates, one screen further in.
+    expect(orders.pagination.total).toBe(detail.orders.received);
+    expect(orders.orders).toHaveLength(detail.orders.received);
+    expect(orders.orders.filter((order) => order.status === 'cancelled')).toHaveLength(
+      detail.orders.cancelled
+    );
   });
 });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { NavLink, ScrollArea, Stack, Text } from '@mantine/core';
+import { NavLink, ScrollArea, Stack } from '@mantine/core';
 import {
   IconArrowBackUp,
   IconBuildingStore,
@@ -27,6 +27,8 @@ interface PlatformNavItem {
 }
 
 interface PlatformNavGroup {
+  /** Stable slug, used to wire the group's label to the group it names. */
+  id: string;
   heading: string;
   items: PlatformNavItem[];
 }
@@ -45,6 +47,7 @@ interface PlatformNavGroup {
  */
 const NAV_GROUPS: PlatformNavGroup[] = [
   {
+    id: 'console',
     heading: 'Console',
     items: [
       {
@@ -62,6 +65,7 @@ const NAV_GROUPS: PlatformNavGroup[] = [
     ],
   },
   {
+    id: 'sections',
     heading: 'Overview sections',
     items: [
       {
@@ -115,10 +119,20 @@ export function PlatformNav({ onNavClick }: PlatformNavProps): React.ReactElemen
       <ScrollArea className={styles.navScroll} scrollbarSize={6}>
         <Stack gap={22} p="md">
           {NAV_GROUPS.map((group) => (
-            <div key={group.heading}>
-              <Text component="h2" className={styles.navHeading}>
+            /*
+              A group label, not a heading.
+              These two labels used to be `<h2>`s, and because the sidebar precedes the routed page
+              in the DOM they arrived before the page's `<h1>` — so the console's heading outline
+              opened with "CONSOLE" and "OVERVIEW SECTIONS" and only then reached the title of the
+              screen. An outline that starts below the top level is worse than no outline: a screen
+              reader user navigating by heading lands in the furniture. The label is now a `<p>`
+              that names a `role="group"`, which is what these actually are — a set of related
+              links — and the page keeps a single `<h1>` at its root.
+            */
+            <div key={group.heading} role="group" aria-labelledby={`platform-nav-${group.id}`}>
+              <p className={styles.navHeading} id={`platform-nav-${group.id}`}>
                 {group.heading}
-              </Text>
+              </p>
               <Stack gap={2} mt={8}>
                 {group.items.map((item) => {
                   const active = isActive(item.href);

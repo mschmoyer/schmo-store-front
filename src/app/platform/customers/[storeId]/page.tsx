@@ -19,13 +19,20 @@
  * about credentials, never the credentials themselves; if a payload ever
  * carries an API key or a webhook secret, that is a defect in the route handler
  * to be reported and fixed there rather than masked here.
+ *
+ * The orders panel's status filter lives in the query string (`?orders=`), not
+ * in component state. The console's stuck-order alerts link straight into it,
+ * and a link that promises a filtered list has to arrive at one; keeping it in
+ * the URL also means the Back button undoes the filter and the view can be
+ * pasted into a ticket.
  */
 
-import React, { Suspense } from 'react';
-import { useParams } from 'next/navigation';
+import React, { Suspense, useCallback } from 'react';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { IconRefresh } from '@tabler/icons-react';
 import { PanelSkeleton, StatGridSkeleton } from '@/components/admin/AdminSkeletons';
 import { Button } from '@/components/ui';
+import { DataFreshness } from '@/components/platform';
 import {
   CatalogPanel,
   ChecklistPanel,
@@ -68,8 +75,28 @@ function CustomerDetailView(): React.ReactElement {
   const params = useParams<{ storeId: string }>();
   const storeId = params?.storeId ?? '';
 
-  const { data, error, loading, refreshing, reload } = usePlatformFetch<PlatformCustomerDetail>(
-    storeId ? `/api/platform/customers/${encodeURIComponent(storeId)}` : null
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const orderStatus = searchParams.get('orders');
+
+  const { data, error, loading, refreshing, fetchedAt, reload } =
+    usePlatformFetch<PlatformCustomerDetail>(
+      storeId ? `/api/platform/customers/${encodeURIComponent(storeId)}` : null
+    );
+
+  const setOrderStatus = useCallback(
+    (next: string | null) => {
+      const query = new URLSearchParams(searchParams.toString());
+      if (next === null) query.delete('orders');
+      else query.set('orders', next);
+
+      const search = query.toString();
+      /* `scroll: false` keeps the operator on the orders panel they are filtering rather than
+         throwing them back to the top of a long detail page. */
+      router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
   );
 
   if (error) {
@@ -96,6 +123,7 @@ function CustomerDetailView(): React.ReactElement {
       />
 
       <div className={styles.toolbar}>
+        <DataFreshness fetchedAt={fetchedAt} label="Merchant record" refreshing={refreshing} />
         <Button
           variant="secondary"
           size="sm"
@@ -108,11 +136,13 @@ function CustomerDetailView(): React.ReactElement {
       </div>
 
       <div className={styles.panels}>
-        <ChecklistPanel
-          items={data.checklist}
-          completenessPct={data.customization.completenessPct}
+        <ChecklistPanel items={data.checklist} />
+        <OrdersPanel
+          storeId={data.store.storeId}
+          stats={data.orders}
+          status={orderStatus}
+          onStatusChange={setOrderStatus}
         />
-        <OrdersPanel storeId={data.store.storeId} stats={data.orders} />
         <CatalogPanel catalog={data.catalog} />
         <div className={styles.pair}>
           <IntegrationsPanel integrations={data.integrations} />

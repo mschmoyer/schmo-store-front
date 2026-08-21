@@ -54,6 +54,13 @@ export interface PlatformFetchState<T> {
   loading: boolean;
   /** True for every refetch after the first. Drives a dim, never a blank. */
   refreshing: boolean;
+  /**
+   * `Date.now()` when the last **successful** payload settled, or `null` if none has.
+   *
+   * Stamped on success only. A failed refetch leaves the numbers on screen exactly as old as they
+   * already were, and the "as of" line has to keep saying so rather than resetting to "just now".
+   */
+  fetchedAt: number | null;
   /** Refetch the current URL. */
   reload: () => void;
 }
@@ -94,6 +101,7 @@ export function usePlatformFetch<T>(url: string | null): PlatformFetchState<T> {
   const [error, setError] = useState<PlatformFetchError | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [nonce, setNonce] = useState(0);
 
   /* First paint gets the skeleton; every later fetch dims what is already on
@@ -143,6 +151,7 @@ export function usePlatformFetch<T>(url: string | null): PlatformFetchState<T> {
 
         setError(null);
         setData(payload.data);
+        setFetchedAt(Date.now());
       } catch (caught) {
         if (cancelled || (caught instanceof DOMException && caught.name === 'AbortError')) return;
         setError({ status: 0, kind: 'network', message: DEFAULT_MESSAGE.network });
@@ -166,5 +175,5 @@ export function usePlatformFetch<T>(url: string | null): PlatformFetchState<T> {
 
   const reload = useCallback(() => setNonce((value) => value + 1), []);
 
-  return { data, error, loading, refreshing, reload };
+  return { data, error, loading, refreshing, fetchedAt, reload };
 }

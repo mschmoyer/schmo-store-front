@@ -9,6 +9,8 @@
  */
 
 .tableBlock {
+  /* Drill-through links land on `#orders`; the app bar is 60px, so stop clear of it. */
+  scroll-margin-top: 84px;
   margin-top: var(--space-5);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
@@ -33,6 +35,18 @@
   background: var(--warning-subtle);
   font-size: var(--text-xs);
   color: var(--warning-text);
+}
+
+/*
+ * The quiet variant. Some notices qualify the data ("this list is truncated") and earn the amber;
+ * others simply define what the reader is looking at ("these two counts are subsets of that one").
+ * Painting a definition amber teaches the reader that amber means nothing.
+ */
+.notice[data-tone='quiet'] {
+  border-color: var(--border);
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  line-height: 1.55;
 }
 
 /*

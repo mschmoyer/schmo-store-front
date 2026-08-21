@@ -129,6 +129,12 @@ function summarise(
  * Each chart carries a summary sentence directly under it. That sentence is also the canvas's
  * `aria-label`, so a screen-reader user gets the totals and the peak instead of "graphic".
  *
+ * **The label goes on the canvas, not on a wrapper around it.** Chart.js renders its `<canvas>`
+ * with `role="img"`, so a wrapping `<div role="img" aria-label=…>` produced two image roles nested
+ * one inside the other, the inner one unnamed — an assistive technology reads an image, then
+ * another image with no name. `react-chartjs-2` forwards unknown props straight to the canvas
+ * element, so the name lands on the element that already carries the role.
+ *
  * @param props - {@link PlatformTrendChartsProps}
  * @returns Two line charts, or a single empty state when the window has no activity at all.
  */
@@ -216,8 +222,8 @@ export function PlatformTrendCharts({
         <figcaption className={styles.chartCaption}>
           <span className={styles.chartCaptionTitle}>Buyer clicks per day</span>
         </figcaption>
-        <div className={styles.chartBody} role="img" aria-label={clicksSummary}>
-          <Line data={clicksData} options={options} />
+        <div className={styles.chartBody}>
+          <Line data={clicksData} options={options} aria-label={clicksSummary} role="img" />
         </div>
         <p className={styles.chartSummary}>{clicksSummary}</p>
       </figure>
@@ -238,8 +244,8 @@ export function PlatformTrendCharts({
             </span>
           </span>
         </figcaption>
-        <div className={styles.chartBody} role="img" aria-label={ordersSummary}>
-          <Line data={ordersData} options={options} />
+        <div className={styles.chartBody}>
+          <Line data={ordersData} options={options} aria-label={ordersSummary} role="img" />
         </div>
         <p className={styles.chartSummary}>{ordersSummary}</p>
       </figure>

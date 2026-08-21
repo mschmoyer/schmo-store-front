@@ -37,6 +37,7 @@ export {
   parseDate,
 } from './format';
 export { RelativeDate, type RelativeDateProps } from './RelativeDate';
+export { EmailAddress, type EmailAddressProps } from './EmailAddress';
 
 /* -- List screen -------------------------------------------------------- */
 export { CustomersTable, type CustomersTableProps } from './CustomersTable';

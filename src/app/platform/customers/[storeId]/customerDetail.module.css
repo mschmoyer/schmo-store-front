@@ -19,9 +19,14 @@
   gap: var(--space-5);
 }
 
+/* The "as of" line and the control that changes it belong on one row: a Refresh button with
+   nothing beside it implies the reading might be stale and then declines to say by how much. */
 .toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   margin-top: calc(var(--space-3) * -1);
 }
 

@@ -12,6 +12,17 @@
  * and `--signal` is spent only where the design system allows it — a
  * successfully connected, successfully syncing integration is the "sync
  * success" case, not decoration.
+ *
+ * That claim used to be false for the pill that most needed it. {@link IntegrationBadge}
+ * rendered the literal text "ShipStation" for connected, failing *and* not
+ * connected, and distinguished the three by tone alone — mint, rose, neutral.
+ * The state was carried by colour and by nothing else, in the column an
+ * operator triages from. A screen reader read the whole cell as
+ * "ShipStation: | ShipStation | Stripe: | Stripe": the visually-hidden prefix
+ * repeated the label instead of naming the state, so it added a word and no
+ * information. The state is now in the words — "ShipStation connected",
+ * "ShipStation failing", "ShipStation not connected" — and the tone is the
+ * third cue rather than the only one.
  */
 
 import React from 'react';
@@ -87,10 +98,18 @@ export interface IntegrationBadgeProps {
 const FAILING_STATUSES = new Set(['failed', 'error', 'failing', 'disconnected']);
 
 /**
- * One integration's connection state.
+ * One integration's connection state, stated in words.
+ *
+ * The state word is part of the visible label rather than a hidden annotation:
+ * a sighted operator scanning the column and a screen-reader user hearing it
+ * read out get the same three facts in the same three words. There is no
+ * `srOnly` text, because there is nothing left for it to say that the label
+ * does not already say — and a hidden string that merely repeats the visible
+ * one is noise charged entirely to the people who cannot skip it.
  *
  * @param props - {@link IntegrationBadgeProps}
- * @returns A pill reading connected, failing, or not connected.
+ * @returns A pill reading "<name> connected", "<name> failing" or
+ *   "<name> not connected".
  */
 export function IntegrationBadge({
   label,
@@ -101,8 +120,7 @@ export function IntegrationBadge({
   if (!connected) {
     return (
       <Badge tone="neutral" size={size} className={styles.mutedBadge} dot>
-        <span className={styles.srOnly}>{label}: </span>
-        {label}
+        {label} not connected
       </Badge>
     );
   }
@@ -112,7 +130,7 @@ export function IntegrationBadge({
 
   return (
     <Badge tone={tone} size={size} dot title={status ? humanizeStatus(status) : undefined}>
-      {label}
+      {label} {failing ? 'failing' : 'connected'}
     </Badge>
   );
 }

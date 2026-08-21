@@ -31,6 +31,7 @@ import { IconRefresh, IconUsers } from '@tabler/icons-react';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
 import { Button, EmptyState } from '@/components/ui';
+import { DataFreshness } from '@/components/platform';
 import {
   CUSTOMER_FILTERS,
   CustomerToolbar,
@@ -65,9 +66,8 @@ function CustomersSkeleton(): React.ReactElement {
  */
 function CustomersView(): React.ReactElement {
   const { params, update, toggleSort, apiQuery, hasFilters, clearFilters } = useCustomerParams();
-  const { data, error, loading, refreshing, reload } = usePlatformFetch<PlatformCustomersPayload>(
-    `/api/platform/customers?${apiQuery}`
-  );
+  const { data, error, loading, refreshing, fetchedAt, reload } =
+    usePlatformFetch<PlatformCustomersPayload>(`/api/platform/customers?${apiQuery}`);
 
   const activeFilter = useMemo(
     () => CUSTOMER_FILTERS.find((option) => option.value === params.filter),
@@ -116,15 +116,20 @@ function CustomersView(): React.ReactElement {
       title="Customers"
       description="Every merchant on the platform, what they have connected, and what it has produced."
       actions={
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={reload}
-          loading={refreshing}
-          leftIcon={<IconRefresh size={16} />}
-        >
-          Refresh
-        </Button>
+        <div className={styles.headerActions}>
+          {/* A Refresh button implies the reading might be stale; without this line it declines to
+              say by how much. */}
+          <DataFreshness fetchedAt={fetchedAt} label="Merchant list" refreshing={refreshing} />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={reload}
+            loading={refreshing}
+            leftIcon={<IconRefresh size={16} />}
+          >
+            Refresh
+          </Button>
+        </div>
       }
     />
   );

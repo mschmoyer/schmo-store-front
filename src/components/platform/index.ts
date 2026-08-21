@@ -32,10 +32,13 @@ export type {
   PlatformResponse,
   PlatformTimeseries,
   PlatformTimeseriesDay,
+  PlatformUnfulfilledBacklog,
+  PlatformUnfulfilledStore,
   PlatformWindowDays,
 } from './types';
 
 /* -- Numbers ------------------------------------------------------------- */
+export { formatAgeHours, formatDurationHours, NO_DURATION } from './formatDuration';
 export {
   conversionPct,
   formatPct,
@@ -67,3 +70,9 @@ export { ConversionFunnel, type ConversionFunnelProps, type FunnelStep } from '.
 export { RevenuePanel, type RevenuePanelProps } from './RevenuePanel';
 export { FulfilmentPanel, type FulfilmentPanelProps } from './FulfilmentPanel';
 export { HealthStrip, type HealthStripProps } from './HealthStrip';
+export { AttentionPanel, type AttentionPanelProps } from './AttentionPanel';
+export { ReadinessPanel, type ReadinessPanelProps } from './ReadinessPanel';
+export { DataFreshness, describeAge, type DataFreshnessProps } from './DataFreshness';
+
+/* -- Drill-through ------------------------------------------------------- */
+export { customersFilterHref, storeOrdersHref, UNSHIPPED_ORDER_STATUS } from './drillThrough';

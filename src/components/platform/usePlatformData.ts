@@ -46,6 +46,13 @@ export interface PlatformDataState<T> {
   error: PlatformFetchError | null;
   /** True while a request is in flight. */
   isLoading: boolean;
+  /**
+   * `Date.now()` at the instant the last **successful** payload settled, or `null` if none has.
+   *
+   * The console renders this as an "as of" line. It is stamped on success only: a failed refetch
+   * must not advance the age of the numbers still on screen, because they are as old as they were.
+   */
+  fetchedAt: number | null;
   /** Re-runs the request. Wire this to the retry button. */
   reload: () => void;
 }
@@ -139,7 +146,9 @@ export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
     key: string;
     data: T | null;
     error: PlatformFetchError | null;
-  }>({ key: '', data: null, error: null });
+    /** When `data` was received. Carried in the same object so it cannot drift from the payload. */
+    fetchedAt: number | null;
+  }>({ key: '', data: null, error: null, fetchedAt: null });
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
 
@@ -154,7 +163,15 @@ export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
     let cancelled = false;
 
     const finish = (data: T | null, error: PlatformFetchError | null) => {
-      if (!cancelled) setSettled({ key, data, error });
+      if (cancelled) return;
+      setSettled((previous) => ({
+        key,
+        data,
+        error,
+        /* Only a successful read moves the clock. A 500 on refresh leaves the visible numbers
+           exactly as stale as they already were, and the line must keep saying so. */
+        fetchedAt: data === null ? previous.fetchedAt : Date.now(),
+      }));
     };
 
     const run = async () => {
@@ -216,6 +233,7 @@ export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
     data: isLoading ? null : settled.data,
     error: isLoading ? null : settled.error,
     isLoading,
+    fetchedAt: settled.fetchedAt,
     reload,
   };
 }

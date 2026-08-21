@@ -14,10 +14,29 @@
  * carried, and **says so** rather than presenting ten rows as if they were the
  * whole history. Silently showing a truncated list as a complete one is the
  * dishonest-result failure this codebase has shipped before.
+ *
+ * ## The status filter is in the URL
+ *
+ * The console's stuck-order alerts drill through to this panel with a status
+ * already applied, so the filter has to be addressable — a link that says
+ * "these four orders" and lands on an unfiltered list of forty has not
+ * answered the question. It lives in the page's query string beside the
+ * anchor, which also makes the filtered view bookmarkable and undoable with
+ * the Back button.
+ *
+ * ## Received, cancelled and refunded do not add up
+ *
+ * `received` counts **every** order this merchant has taken, cancellations
+ * included. `cancelled` and `refunded` are subsets of it, and they can be the
+ * same orders — a refund is very often issued on the order that was cancelled.
+ * Rendered as a plain row of counters, "Received 27 · Cancelled 3 · Refunded 3"
+ * reads as six bad orders out of twenty-seven, which is up to twice the truth.
+ * The note under the figures says what the sets are, because there is no field
+ * in the payload from which the overlap could be computed and printed.
  */
 
 import React, { useState } from 'react';
-import { Table, Text } from '@mantine/core';
+import { Select, Table, Text } from '@mantine/core';
 import { Badge, EmptyState, Price } from '@/components/ui';
 import type { BadgeTone } from '@/components/ui';
 import { TableSkeleton } from '@/components/admin/AdminSkeletons';
@@ -31,6 +50,27 @@ import styles from './detailTables.module.css';
 
 /** Rows per page in the orders table. Small: this is a panel, not a list screen. */
 const PAGE_SIZE = 10;
+
+/**
+ * The statuses the filter offers.
+ *
+ * These are `orders.status` values, passed to the API verbatim as a bound parameter. There is
+ * deliberately no "unshipped" entry: the backlog the console alerts on is a predicate across three
+ * columns (settled, no `shipped_at`, older than 48 hours) and the endpoint filters on one column.
+ * `Processing` is the closest available answer and a superset of it, and the caption says so rather
+ * than letting the label imply an equivalence the query cannot deliver.
+ */
+const STATUS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'processing', label: 'Processing' },
+  { value: 'shipped', label: 'Shipped' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+/** The `<Select>` value that means "no filter". Mantine cannot carry `null` as an option value. */
+const ANY_STATUS = 'all';
 
 /** Status pill tone. Only a genuinely bad state earns a warm colour (§2). */
 const STATUS_TONE: Record<string, BadgeTone> = {
@@ -48,6 +88,10 @@ export interface OrdersPanelProps {
   storeId: string;
   /** Counters and money from the detail payload. */
   stats: PlatformOrderStats;
+  /** The `orders.status` currently filtered to, from the URL, or `null` for every status. */
+  status?: string | null;
+  /** Writes a new status to the URL. Omitted when the host screen has no query string to write. */
+  onStatusChange?: (status: string | null) => void;
 }
 
 /**
@@ -56,19 +100,50 @@ export interface OrdersPanelProps {
  * @param props - {@link OrdersPanelProps}
  * @returns The orders panel.
  */
-export function OrdersPanel({ storeId, stats }: OrdersPanelProps): React.ReactElement {
+export function OrdersPanel({
+  storeId,
+  stats,
+  status = null,
+  onStatusChange,
+}: OrdersPanelProps): React.ReactElement {
   const [page, setPage] = useState(1);
+
+  /* The status lives in the URL, so it can change under this component without it re-mounting.
+     Resetting the page during render (rather than in an effect) keeps the request that fires from
+     ever being "page 4 of the previous filter" — React's adjust-state-during-render pattern, the
+     same one `CustomerToolbar` uses for its search draft. */
+  const [syncedStatus, setSyncedStatus] = useState(status);
+  if (status !== syncedStatus) {
+    setSyncedStatus(status);
+    setPage(1);
+  }
+
+  const query = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+  if (status) query.set('status', status);
+
   const { data, error, loading } = usePlatformFetch<PlatformOrdersPayload>(
-    `/api/platform/customers/${storeId}/orders?page=${page}&pageSize=${PAGE_SIZE}`
+    `/api/platform/customers/${storeId}/orders?${query.toString()}`
   );
+
+  const statusLabel = STATUS_OPTIONS.find((option) => option.value === status)?.label ?? null;
 
   /* The detail payload's `recent` is the fallback, and it is only honest as one
      while the operator has not asked for a later page. */
   const usingFallback = Boolean(error) && page === 1;
   const rows: PlatformOrderRow[] = data?.orders ?? (usingFallback ? stats.recent : []);
 
+  /* The API's rate, not a second division performed here. Three screens used to compute their own
+     from three different populations and print three different percentages for one platform. */
   const fulfillment =
-    stats.received > 0 ? Math.round((stats.shipped / stats.received) * 100) : null;
+    stats.fulfillmentRatePct === undefined
+      ? stats.received > 0
+        ? Math.round((stats.shipped / stats.received) * 100)
+        : null
+      : stats.fulfillmentRatePct;
+
+  /* How many of the refunds sat on an order that was also cancelled. The API publishes the overlap
+     rather than leaving the reader to guess whether the two counters describe the same orders. */
+  const overlap = stats.refundedCancelledCount;
 
   return (
     <Panel
@@ -78,6 +153,23 @@ export function OrdersPanel({ storeId, stats }: OrdersPanelProps): React.ReactEl
           ? 'This merchant has never received an order.'
           : `${formatCount(stats.last30d.received)} received in the last 30 days.`
       }
+      actions={
+        onStatusChange ? (
+          <Select
+            size="xs"
+            label="Order status"
+            allowDeselect={false}
+            value={status ?? ANY_STATUS}
+            data={[
+              { value: ANY_STATUS, label: 'Every status' },
+              ...STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+            ]}
+            onChange={(value) =>
+              onStatusChange(value === null || value === ANY_STATUS ? null : value)
+            }
+          />
+        ) : undefined
+      }
     >
       <Metrics
         items={[
@@ -85,27 +177,38 @@ export function OrdersPanel({ storeId, stats }: OrdersPanelProps): React.ReactEl
           {
             label: 'Shipped',
             value: formatCount(stats.shipped),
-            hint: fulfillment === null ? undefined : `${fulfillment}% of received`,
+            hint: fulfillment === null ? 'nothing received yet' : `${Math.round(fulfillment)}% of received`,
           },
           { label: 'Delivered', value: formatCount(stats.delivered) },
           {
             label: 'Cancelled',
             value: formatCount(stats.cancelled),
+            hint: `of the ${formatCount(stats.received)} received`,
             tone: stats.cancelled > 0 ? 'warning' : 'neutral',
           },
           {
             label: 'Refunded',
             value: formatCount(stats.refundedCount),
             hint:
-              stats.refundedCents > 0 ? (
-                <Price value={centsToPrice(stats.refundedCents)} size="sm" />
-              ) : undefined,
+              stats.refundedCount === 0 ? (
+                'nothing refunded'
+              ) : (
+                <>
+                  <Price value={centsToPrice(stats.refundedCents)} size="sm" />
+                  {overlap === undefined
+                    ? null
+                    : ` · ${formatCount(overlap)} of these ${overlap === 1 ? 'is' : 'are'} also in Cancelled`}
+                </>
+              ),
             tone: stats.refundedCount > 0 ? 'warning' : 'neutral',
           },
           {
             label: 'GMV',
             value: <Price value={centsToPrice(stats.gmvCents)} size="lg" />,
-            hint: 'Paid orders only',
+            hint:
+              stats.settledOrders === undefined
+                ? 'Paid orders only'
+                : `${formatCount(stats.settledOrders)} settled orders`,
           },
           {
             /* The complement of GMV. Booked, not cancelled, never paid — a
@@ -122,9 +225,12 @@ export function OrdersPanel({ storeId, stats }: OrdersPanelProps): React.ReactEl
           {
             label: 'Average order',
             value: <Price value={centsToPrice(stats.aovCents)} size="lg" />,
+            hint: 'Settled GMV over settled orders',
           },
           {
-            label: 'Time to ship',
+            /* Same name and same unit as the overview's fulfilment panel. The two used to read
+               "Time to ship 1.2 days" and "Average time to ship 33.6 hours" for one metric. */
+            label: 'Average time to ship',
             value: formatHours(stats.avgHoursToShip),
             hint: stats.avgHoursToShip === null ? 'Nothing shipped yet' : 'Mean, order to dispatch',
             tone:
@@ -133,8 +239,29 @@ export function OrdersPanel({ storeId, stats }: OrdersPanelProps): React.ReactEl
         ]}
       />
 
-      <div className={styles.tableBlock}>
-        <h3 className={styles.subhead}>Recent orders</h3>
+      <p className={styles.notice} data-tone="quiet">
+        Received counts every order this merchant has taken, cancellations included. Cancelled and
+        Refunded are subsets of it, and{' '}
+        {overlap === undefined
+          ? 'they overlap — a refund is usually issued on the order that was cancelled'
+          : overlap === 0
+            ? 'on this merchant they do not overlap: no refunded order was cancelled'
+            : `${formatCount(overlap)} order${overlap === 1 ? '' : 's'} ${overlap === 1 ? 'appears' : 'appear'} in both`}
+        . They do not add together and they do not subtract from Received.
+      </p>
+
+      <div className={styles.tableBlock} id="orders">
+        <h3 className={styles.subhead}>
+          {statusLabel ? `Orders with status “${statusLabel}”` : 'Recent orders'}
+        </h3>
+
+        {status === 'processing' ? (
+          <p className={styles.notice} data-tone="quiet">
+            Processing is the closest status to &ldquo;paid but not dispatched&rdquo; that the orders
+            endpoint can filter on, and it is a superset of the over-48-hours backlog: orders paid in
+            the last two days are in this list too.
+          </p>
+        ) : null}
 
         {usingFallback ? (
           <p className={styles.notice} role="status">

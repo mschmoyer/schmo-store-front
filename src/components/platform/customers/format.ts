@@ -16,6 +16,7 @@
 
 import { format, formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { centsToNumber, formatMoney } from '@/lib/billing/money';
+import { formatDurationHours } from '../formatDuration';
 
 /** An em dash, used for "this value does not exist" everywhere on these screens. */
 export const NOT_SET = '—';
@@ -117,13 +118,17 @@ export function formatPercent(value: number | null | undefined): string {
  * written in. Over a day it is days, because "76h" makes the reader do
  * arithmetic to learn that a merchant is three days behind.
  *
+ * Delegates to the console-wide {@link formatDurationHours}. The rule used to
+ * live here alone, and the overview screen — which cannot import from this
+ * lane's barrel — grew its own `toFixed(1) + ' hours'`, so the same metric read
+ * "33.6 hours" on one screen and "1.2 days" on the next. One definition, two
+ * callers.
+ *
  * @param hours - Mean hours, or `null` when nothing has shipped.
  * @returns e.g. `18.4h`, `3.2 days`, or an em dash.
  */
 export function formatHours(hours: number | null | undefined): string {
-  if (hours === null || hours === undefined || !Number.isFinite(hours)) return NOT_SET;
-  if (hours < 24) return `${hours.toFixed(1)}h`;
-  return `${(hours / 24).toFixed(1)} days`;
+  return formatDurationHours(hours);
 }
 
 /**

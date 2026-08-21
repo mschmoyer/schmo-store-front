@@ -159,21 +159,48 @@ export interface PlatformOwnerSummary {
 
 /** Order counters and money for one store. */
 export interface PlatformOrderStats {
+  /** Every order this merchant took, **cancellations included**. */
   received: number;
   shipped: number;
   delivered: number;
+  /** Cancelled orders. A subset of `received`, not a figure to subtract from it. */
   cancelled: number;
+  /** What those cancelled orders were worth. Never part of `gmvCents`. */
+  cancelledCents?: number;
+  /** Orders carrying a refund. Overlaps `cancelled`; see `refundedCancelledCount`. */
   refundedCount: number;
+  /**
+   * How many of the refunded orders were also cancelled — the overlap, published rather than left
+   * to the reader.
+   *
+   * Without it, "Cancelled 3" beside "Refunded 3" reads as six bad orders when it is three.
+   */
+  refundedCancelledCount?: number;
   gmvCents: number;
   /** Non-cancelled, never paid. Excluded from `gmvCents`; shown so it cannot go unnoticed. */
   unsettledCents: number;
   /** How many orders make up `unsettledCents`. */
   unsettledOrders: number;
+  /** Orders that settled — the population `aovCents` averages over. */
+  settledOrders?: number;
+  /** Every dollar returned to a buyer, cancelled orders included. */
   refundedCents: number;
+  /** Refunds on settled orders only — the figure `gmvCents − refunds` may be computed from. */
+  refundedSettledCents?: number;
+  /** Refunds on cancelled orders: real money out, of value `gmvCents` never contained. */
+  refundedCancelledCents?: number;
   aovCents: number;
+  /** Shipped ÷ received. `null` when nothing was received — an unmeasured rate, never `0%`. */
+  fulfillmentRatePct?: number | null;
   /** Mean hours between order creation and dispatch. `null` when nothing shipped. */
   avgHoursToShip: number | null;
-  last30d: { received: number; shipped: number; gmvCents: number; unsettledCents: number };
+  last30d: {
+    received: number;
+    shipped: number;
+    gmvCents: number;
+    unsettledCents: number;
+    fulfillmentRatePct?: number | null;
+  };
   recent: PlatformOrderRow[];
 }
 

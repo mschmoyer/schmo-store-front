@@ -28,7 +28,11 @@ export const CUSTOMER_FILTERS: ReadonlyArray<{
   { value: 'inactive', label: 'Inactive', scope: 'inactive merchants' },
   { value: 'connected', label: 'Connected', scope: 'merchants with an integration connected' },
   { value: 'unconnected', label: 'Unconnected', scope: 'merchants with no integration connected' },
-  { value: 'customized', label: 'Customized', scope: 'merchants who customised their theme' },
+  /* The key is the API's (`customized`); the label is the product's. This codebase writes British
+     English throughout — customisation, fulfilment, catalogue — and the badge on every row already
+     said "Customised", so a filter menu offering "Customized" made the two look like two different
+     ideas. The wire value is not a place to have an opinion about spelling. */
+  { value: 'customized', label: 'Customised', scope: 'merchants who customised their theme' },
   { value: 'has_orders', label: 'Has orders', scope: 'merchants with at least one order' },
   { value: 'no_orders', label: 'No orders', scope: 'merchants with no orders' },
 ];

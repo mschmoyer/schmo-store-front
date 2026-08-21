@@ -1,0 +1,14 @@
+/*
+ * Email wrapping.
+ *
+ * `break-word` rather than `anywhere`: the `<wbr>` marks in the markup are the break opportunities
+ * this rule is meant to use, and `anywhere` would ignore them in favour of breaking wherever the
+ * box ends — which is the defect the component exists to fix. `break-word` only falls back to
+ * splitting a run when one run on its own is wider than the column, which for an address means a
+ * local part longer than the whole cell.
+ */
+
+.email {
+  overflow-wrap: break-word;
+  word-break: normal;
+}

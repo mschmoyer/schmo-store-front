@@ -32,6 +32,7 @@ import {
   MAX_WINDOW_DAYS,
   MIN_WINDOW_DAYS,
   averageCents,
+  fulfillmentRatePct,
   getPlatformHealth,
   getPlatformOverview,
   getPlatformTimeseries,
@@ -70,7 +71,7 @@ function hoursAgo(hours: number): string {
 }
 
 /**
- * Insert the throwaway tenant: an owner, a store, an active product, three orders and five click
+ * Insert the throwaway tenant: an owner, a store, an active product, five orders and five click
  * events.
  *
  * The fixture is deliberately placed *inside* the window and away from its edges (25-50 hours old
@@ -104,10 +105,12 @@ async function seedFixture(): Promise<void> {
     [storeId, `FIXTURE-${SUFFIX}`, `fixture-widget-${SUFFIX}`, hoursAgo(30)],
   );
 
-  // Two orders that count as received, one cancellation that must not.
+  // Four orders inside the seven-day window, all four of them "received" — the cancellation
+  // included, because the merchant did receive it and it then fell through.
   //  * shipped 25h ago, 24h after it was placed -> contributes exactly 24.0 to hours-to-ship
   //  * settled 72h ago and never shipped        -> the 48-hour backlog
-  //  * cancelled                                -> excluded from every "received" figure
+  //  * cancelled and refunded in full           -> received and cancelled, never GMV, never a refund
+  //                                                against GMV
   //  * pending payment                          -> received, but booked-not-settled, not GMV
   await insertOrder({
     number: `FIX-${SUFFIX}-1`,
@@ -135,6 +138,10 @@ async function seedFixture(): Promise<void> {
     createdAt: hoursAgo(30),
     shippedAt: null,
     paidAt: null,
+    // Refunded in full, and cancelled: the overlap the console used to render as two separate
+    // bad-order columns. Its refund is money GMV never contained.
+    refundedAmount: '999.99',
+    refundedAt: hoursAgo(29),
   });
   // Booked but never paid: counts as received, must not count as revenue.
   await insertOrder({
@@ -145,6 +152,18 @@ async function seedFixture(): Promise<void> {
     createdAt: hoursAgo(31),
     shippedAt: null,
     paidAt: null,
+  });
+
+  // One order in the *previous* seven-day window, shipped inside it: the baseline the "Orders
+  // shipped" card had no field for and therefore claimed did not exist.
+  await insertOrder({
+    number: `FIX-${SUFFIX}-5`,
+    total: '60.00',
+    status: 'completed',
+    paymentStatus: 'paid',
+    createdAt: hoursAgo(12 * 24),
+    shippedAt: hoursAgo(10 * 24),
+    paidAt: hoursAgo(12 * 24),
   });
 
   // Five clicks from two identifiable visitors, spread across three event types.
@@ -179,19 +198,24 @@ async function insertOrder(order: {
   createdAt: string;
   shippedAt: string | null;
   paidAt: string | null;
+  /** Dollars refunded, as a `numeric` literal. Omitted means nothing was refunded. */
+  refundedAmount?: string | null;
+  /** When the refund happened; omitted falls back to the order's own date, as the SQL does. */
+  refundedAt?: string | null;
 }): Promise<void> {
   await db.query(
     `INSERT INTO orders (
        store_id, order_number, customer_email, customer_first_name, customer_last_name,
        shipping_first_name, shipping_last_name, shipping_address_line1, shipping_city,
        shipping_state, shipping_postal_code, subtotal, total_amount, status, payment_status,
-       created_at, updated_at, shipped_at, paid_at
+       created_at, updated_at, shipped_at, paid_at, refunded_amount, refunded_at
      ) VALUES (
        $1, $2, 'buyer@example.test', 'Buyer', 'Fixture',
        'Buyer', 'Fixture', '1 Test Way', 'Testville',
        'CA', '94000', $3, $3, $4, $5,
        $6::timestamptz AT TIME ZONE 'UTC', $6::timestamptz AT TIME ZONE 'UTC',
-       $7::timestamptz AT TIME ZONE 'UTC', $8::timestamptz AT TIME ZONE 'UTC'
+       $7::timestamptz AT TIME ZONE 'UTC', $8::timestamptz AT TIME ZONE 'UTC',
+       COALESCE($9::numeric, 0), $10::timestamptz AT TIME ZONE 'UTC'
      )`,
     [
       storeId,
@@ -202,6 +226,8 @@ async function insertOrder(order: {
       order.createdAt,
       order.shippedAt,
       order.paidAt,
+      order.refundedAmount ?? null,
+      order.refundedAt ?? null,
     ],
   );
 }
@@ -281,11 +307,28 @@ describe('coercion and arithmetic', () => {
     expect(sampledRatioPct(500, 10000, 100)).toBe(5);
   });
 
-  it('averages cents without producing NaN on an empty set', () => {
-    expect(averageCents(0, 0)).toBe(0);
-    expect(averageCents(25050, 0)).toBe(0);
+  it('answers "unknown", not "$0.00", when there is nothing to average', () => {
+    // The defect this replaces: `?days=7` had three orders received, $455.41 booked-but-unpaid and
+    // nothing settled, and the revenue panel printed "Average order value $0.00". Zero is a
+    // measurement; there was no measurement.
+    expect(averageCents(0, 0)).toBeNull();
+    expect(averageCents(25050, 0)).toBeNull();
+    expect(averageCents(25050, -1)).toBeNull();
+    expect(averageCents(Number.NaN, 2)).toBeNull();
     expect(averageCents(25050, 2)).toBe(12525);
-    expect(Number.isInteger(averageCents(1000, 3))).toBe(true);
+    expect(Number.isInteger(averageCents(1000, 3) as number)).toBe(true);
+  });
+
+  it('answers "unknown", not "0%", for a fulfilment rate with nothing received', () => {
+    expect(fulfillmentRatePct(0, 0)).toBeNull();
+    expect(fulfillmentRatePct(5, 0)).toBeNull();
+    expect(fulfillmentRatePct(5, -3)).toBeNull();
+    expect(fulfillmentRatePct(Number.NaN, 10)).toBeNull();
+    expect(fulfillmentRatePct(49, 72)).toBe(68.06);
+    expect(fulfillmentRatePct(17, 27)).toBe(62.96);
+    // Uncapped on purpose: shipped and received are different populations, so clearing a backlog
+    // legitimately reads above 100% rather than being clamped into a prettier number.
+    expect(fulfillmentRatePct(12, 10)).toBe(120);
   });
 });
 
@@ -320,15 +363,28 @@ describe('getPlatformOverview', () => {
     for (const group of groups) {
       for (const [key, value] of Object.entries(group)) {
         if (value === null) {
-          // Three fields are allowed to be null, and each null is a statement: nothing shipped, or
-          // the sample was too small to quote a rate. Everything else must be a real number.
+          // Every null is a statement: nothing shipped, nothing settled, or the sample was too
+          // small to quote a rate. Each of these fields answers "unknown" rather than "zero",
+          // which is the rule CLAUDE.md states and the revenue panel used to break.
           expect([
             'avgHoursToShip',
             'medianHoursToShip',
             'p90HoursToShip',
             'clickToOrderPct',
+            'storefrontViewToOrderPct',
             'cartToOrderPct',
+            'fulfillmentRatePct',
+            'fulfillmentRateAllTimePct',
+            'cohortFulfillmentRatePct',
+            'shippedWithin48hPct',
+            'avgOrderValueCents',
           ]).toContain(key);
+          continue;
+        }
+        if (typeof value === 'string') {
+          // One deliberately non-numeric field: which event type `clickSample` counts.
+          expect(key).toBe('clickSampleEvent');
+          expect(value).toBe('storefront_view');
           continue;
         }
         expect(typeof value).toBe('number');
@@ -364,8 +420,10 @@ describe('getPlatformOverview', () => {
       after.revenue.gmvCentsInWindow,
       after.revenue.gmvCentsPrevWindow,
       after.revenue.refundedCentsInWindow,
+      after.revenue.refundedTotalCentsInWindow,
+      after.revenue.refundedCancelledCentsInWindow,
       after.catalog.inventoryValueCents,
-      after.orders.avgOrderValueCents,
+      after.orders.avgOrderValueCents ?? 0,
     ]) {
       expect(Number.isInteger(value)).toBe(true);
     }
@@ -390,8 +448,11 @@ describe('getPlatformOverview', () => {
 
   it('cannot report more of a cohort shipped than the cohort contains', () => {
     // Throughput may exceed 100% while a backlog clears; the cohort rate never can.
-    expect(after.orders.cohortFulfillmentRatePct).toBeLessThanOrEqual(100);
-    expect(after.orders.shippedWithin48hPct).toBeLessThanOrEqual(after.orders.cohortFulfillmentRatePct);
+    expect(after.orders.cohortFulfillmentRatePct).not.toBeNull();
+    expect(after.orders.cohortFulfillmentRatePct as number).toBeLessThanOrEqual(100);
+    expect(after.orders.shippedWithin48hPct as number).toBeLessThanOrEqual(
+      after.orders.cohortFulfillmentRatePct as number,
+    );
   });
 
   it('separates money that settled from money that only got booked', () => {
@@ -472,6 +533,140 @@ describe('getPlatformOverview', () => {
     expect(after.integrations.themeCustomized).toBeLessThanOrEqual(after.merchants.total);
   });
 
+
+  it('counts a cancelled order as received, and reports the cancellation beside it', async () => {
+    // The defect: this query said received meant `status <> 'cancelled'` (65 platform-wide) while
+    // the customers list said COUNT(*) (72) and the store detail divided a shipped count by
+    // COUNT(*) again — 75%, 68% and 63% for one platform on three adjacent screens. One
+    // definition now, and cancellations are visible rather than silently removed.
+    const truth = await db.query<{ received: string; cancelled: string; shipped: string }>(
+      `SELECT COUNT(*)::text AS received,
+              COUNT(*) FILTER (WHERE status = 'cancelled')::text AS cancelled,
+              COUNT(*) FILTER (WHERE shipped_at IS NOT NULL)::text AS shipped
+         FROM orders`,
+    );
+
+    expect(after.orders.receivedAllTime).toBe(Number(truth.rows[0].received));
+    expect(after.orders.cancelledAllTime).toBe(Number(truth.rows[0].cancelled));
+    expect(after.orders.shippedAllTime).toBe(Number(truth.rows[0].shipped));
+    // The fixture's own cancellation is inside the window and inside `received`.
+    expect(after.orders.cancelledInWindow).toBeGreaterThanOrEqual(1);
+    expect(after.orders.receivedInWindow).toBeGreaterThanOrEqual(4);
+  }, 30000);
+
+  it('derives every fulfilment rate from the one helper, over the one population', () => {
+    // Not "the numbers look plausible" — the exact identity. If a future edit reintroduces a
+    // second definition anywhere in this payload, these fail rather than drifting quietly.
+    expect(after.orders.fulfillmentRateAllTimePct).toBe(
+      fulfillmentRatePct(after.orders.shippedAllTime, after.orders.receivedAllTime),
+    );
+    expect(after.orders.fulfillmentRatePct).toBe(
+      fulfillmentRatePct(after.orders.shippedInWindow, after.orders.receivedInWindow),
+    );
+  });
+
+  it('reports the previous window for shipments and refunds instead of claiming it does not exist', async () => {
+    // The console hard-coded `previous={null}` on "Orders shipped" because the contract had no
+    // field, and printed "No previous 30 days to compare against" over a period that existed and
+    // had shipments in it.
+    const bounds = resolveWindow(WINDOW_DAYS, NOW);
+    const truth = await db.query<{ shipped: string }>(
+      `SELECT COUNT(*)::text AS shipped
+         FROM orders
+        WHERE shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+          AND shipped_at <  ($2::timestamptz AT TIME ZONE 'UTC')`,
+      [bounds.prevStart.toISOString(), bounds.start.toISOString()],
+    );
+
+    expect(after.orders.shippedPrevWindow).toBe(Number(truth.rows[0].shipped));
+    // The fixture ships one order ten days ago, inside the previous seven-day window.
+    expect(after.orders.shippedPrevWindow).toBeGreaterThanOrEqual(1);
+    expect(typeof after.revenue.refundedCentsPrevWindow).toBe('number');
+  }, 30000);
+
+  it('says whether a zero baseline was measured or simply predates the platform', () => {
+    // "The baseline was zero" and "there is no baseline" are different facts, and the console had
+    // one sentence for both.
+    expect(after.comparison.start).toBe(resolveWindow(WINDOW_DAYS, NOW).prevStart.toISOString());
+    expect(after.comparison.end).toBe(after.window.start);
+    expect(after.comparison.platformSince).not.toBeNull();
+    expect(after.comparison.measured).toBe(true);
+  });
+
+  it('marks the comparison unmeasured for a window before the platform existed', async () => {
+    const ancient = await getPlatformOverview(1, new Date('1970-01-02T12:00:00.000Z'));
+
+    expect(ancient.comparison.measured).toBe(false);
+    // Every baseline in that payload is zero, and none of those zeros is a measurement.
+    expect(ancient.orders.shippedPrevWindow).toBe(0);
+    expect(ancient.revenue.gmvCentsPrevWindow).toBe(0);
+  }, 30000);
+
+  it('names a top of funnel that does not contain its own numerator', () => {
+    // `clicksInWindow` is the SUM of the stages, so dividing product views by it puts the
+    // numerator inside the denominator: 1,181 of 4,130 rather than 1,181 of 2,638.
+    expect(after.funnel.topOfFunnelKey).toBe('storefront_view');
+    expect(after.funnel.stages[0].key).toBe(after.funnel.topOfFunnelKey);
+    expect(after.funnel.stages[0].count).toBe(after.traffic.storefrontViews);
+    expect(after.funnel.allEventsInWindow).toBe(after.traffic.clicksInWindow);
+
+    const stageSum = after.funnel.stages
+      .filter((stage) => stage.key !== 'order')
+      .reduce((total, stage) => total + stage.count, 0);
+    // The event stages cannot exceed the total they are drawn from, and the total is not an entry
+    // count: it is at least as large as the entries, and larger whenever anything else happened.
+    expect(stageSum).toBeLessThanOrEqual(after.funnel.allEventsInWindow);
+    expect(after.funnel.allEventsInWindow).toBeGreaterThanOrEqual(after.funnel.stages[0].count);
+
+    // The conversion rate divides by the same denominator the funnel does, and says which one.
+    expect(after.conversion.clickSample).toBe(after.traffic.storefrontViews);
+    expect(after.conversion.clickSampleEvent).toBe('storefront_view');
+    expect(after.conversion.clickToOrderPct).toBe(after.conversion.storefrontViewToOrderPct);
+  });
+
+  it('keeps refunds against GMV apart from refunds of money GMV never held', async () => {
+    // The fixture refunds $999.99 on a cancelled order. That is real money back to a buyer and it
+    // is NOT deductible from GMV, because GMV never contained it.
+    expect(after.revenue.refundedCancelledCentsInWindow).toBeGreaterThanOrEqual(99999);
+    expect(after.revenue.refundedTotalCentsInWindow).toBe(
+      after.revenue.refundedSettledCentsInWindow + after.revenue.refundedCancelledCentsInWindow,
+    );
+    expect(after.revenue.refundedCentsInWindow).toBe(after.revenue.refundedSettledCentsInWindow);
+    expect(after.revenue.refundedOrdersInWindow).toBeGreaterThanOrEqual(1);
+    // The overlap is stated rather than left for a reader to assume away.
+    expect(after.revenue.refundedCancelledOrdersInWindow).toBeLessThanOrEqual(
+      after.revenue.refundedOrdersInWindow,
+    );
+
+    const truth = await db.query<{ settled: string }>(
+      `SELECT COALESCE(ROUND(SUM(refunded_amount) FILTER (
+                WHERE status <> 'cancelled' AND payment_status IN ('paid', 'completed', 'refunded')
+              ) * 100), 0)::text AS settled
+         FROM orders
+        WHERE COALESCE(refunded_at, created_at) >= ($1::timestamptz AT TIME ZONE 'UTC')`,
+      [resolveWindow(WINDOW_DAYS, NOW).start.toISOString()],
+    );
+    expect(after.revenue.refundedSettledCentsInWindow).toBe(Number(truth.rows[0].settled));
+  }, 30000);
+
+  it('counts units over the same orders the money came from', async () => {
+    // Units sold sits beside settled GMV, so counting them over a wider population would produce a
+    // revenue-per-unit an operator can compute and cannot trust.
+    const bounds = resolveWindow(WINDOW_DAYS, NOW);
+    const truth = await db.query<{ units: string }>(
+      `SELECT COALESCE(SUM(oi.quantity), 0)::text AS units
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id
+        WHERE o.status <> 'cancelled'
+          AND o.payment_status IN ('paid', 'completed', 'refunded')
+          AND o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+          AND o.created_at <  ($2::timestamptz AT TIME ZONE 'UTC')`,
+      [bounds.start.toISOString(), bounds.end.toISOString()],
+    );
+
+    expect(after.revenue.unitsSoldInWindow).toBe(Number(truth.rows[0].units));
+  }, 30000);
+
   it('degrades to zeros rather than errors on a window with nothing in it', async () => {
     // A single day, a century ago: every aggregate is over an empty set.
     const empty = await getPlatformOverview(1, new Date('1970-01-02T12:00:00.000Z'));
@@ -479,9 +674,15 @@ describe('getPlatformOverview', () => {
     expect(empty.merchants.newInWindow).toBe(0);
     expect(empty.traffic.clicksInWindow).toBe(0);
     expect(empty.orders.receivedInWindow).toBe(0);
-    expect(empty.orders.fulfillmentRatePct).toBe(0);
-    expect(empty.orders.avgOrderValueCents).toBe(0);
+    // Not zero: an empty window has no fulfilment rate and no average order value. Reporting `0`
+    // for either states a measurement that was never taken.
+    expect(empty.orders.fulfillmentRatePct).toBeNull();
+    expect(empty.orders.cohortFulfillmentRatePct).toBeNull();
+    expect(empty.orders.shippedWithin48hPct).toBeNull();
+    expect(empty.orders.avgOrderValueCents).toBeNull();
     expect(empty.orders.avgHoursToShip).toBeNull();
+    // All-time counts are not window-scoped, so this one is a real rate even on an empty window.
+    expect(empty.orders.fulfillmentRateAllTimePct).not.toBeNull();
     expect(empty.revenue.gmvCentsInWindow).toBe(0);
     expect(empty.revenue.gmvSettledCentsInWindow).toBe(0);
     expect(empty.revenue.gmvUnsettledCentsInWindow).toBe(0);

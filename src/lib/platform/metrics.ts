@@ -27,9 +27,20 @@
  * exact arithmetic; doing it in JavaScript would be float arithmetic on money, which the project's
  * rules forbid outright.
  *
- * **4. Ratios never divide by zero.** A brand-new platform has no clicks and no orders, and a
- * dashboard that renders `NaN%` or `Infinity%` on day one is worse than one that renders `0%`.
- * {@link ratioPct} is the only division in this file and it returns `0` for an empty denominator.
+ * **4. Ratios never divide by zero, and never answer `0` when they mean "unknown".** A brand-new
+ * platform has no clicks and no orders; `NaN%` and `Infinity%` are obviously wrong, and `0%` is
+ * quietly worse — it claims a measurement of total failure where there was no measurement at all.
+ * Every rate that can have an empty denominator is `number | null` and returns `null`, exactly as
+ * `avgHoursToShip` already did. {@link ratioPct} survives for the handful of ratios whose empty
+ * case genuinely is zero; {@link fulfillmentRatePct} and {@link averageCents} — both imported, not
+ * redefined — return `null`.
+ *
+ * **5. This module does not define what an order is.** `received`, `settled`, `unsettled`,
+ * `cancelled` and `refunded` are all imported from `src/lib/platform/customers.ts`, together with
+ * the two rates derived from them. Three surfaces had each decided for themselves what "received"
+ * meant and the console reported one platform's fulfilment as 75%, 68% and 63% on adjacent
+ * screens. The import is the fix: there is one definition, in one file, and a new query here that
+ * wants an order count has to name it.
  *
  * ### Time
  *
@@ -48,7 +59,22 @@
 
 import { db } from '@/lib/database/connection';
 import { CUSTOMIZED_THEME_JOIN, customizedPredicate } from '@/lib/platform/customization';
-import { SETTLED_ORDER_PREDICATE, UNSETTLED_ORDER_PREDICATE } from '@/lib/platform/customers';
+import {
+  CANCELLED_ORDER_PREDICATE,
+  RECEIVED_ORDER_PREDICATE,
+  REFUNDED_ORDER_PREDICATE,
+  SETTLED_ORDER_PREDICATE,
+  UNSETTLED_ORDER_PREDICATE,
+  averageCents,
+  fulfillmentRatePct,
+} from '@/lib/platform/customers';
+
+/**
+ * Re-exported so every consumer of the platform metrics can reach the shared definitions without
+ * importing the customers read model directly, and so there is visibly one implementation rather
+ * than a metrics copy and a customers copy that agree until someone edits one of them.
+ */
+export { averageCents, fulfillmentRatePct };
 
 /** Default reporting window, in days, when the caller does not ask for one. */
 export const DEFAULT_WINDOW_DAYS = 30;
@@ -136,47 +162,134 @@ export interface PlatformMerchantMetrics {
   withOrders: number;
 }
 
-/** Buyer traffic onto merchant storefronts. */
+/**
+ * Buyer traffic onto merchant storefronts.
+ *
+ * **`clicksInWindow` is every event row of every type, and is therefore not the top of the
+ * funnel.** It is the sum of `storefrontViews + productViews + addToCart + checkoutStarts` (plus
+ * any event type not broken out), so dividing `productViews` by it computes a stage's share of a
+ * total that already contains that stage — 1,181 product views out of 4,130 "clicks" reads as a
+ * 29% step-through when the real one is 1,181 of 2,638 storefront views, or 45%. The correct
+ * top-of-funnel is {@link storefrontViews}, and {@link PlatformFunnelMetrics} states that
+ * explicitly rather than leaving the next reader to work it out.
+ *
+ * `clicksInWindow` keeps its meaning — "how much buyer activity did the platform see" — because
+ * that is a real question and the tile that asks it is honest. It is simply not a denominator.
+ */
 export interface PlatformTrafficMetrics {
+  /** Every recorded storefront event, all time. */
   clicksAllTime: number;
+  /** Every recorded storefront event in the window, all types summed. Not a funnel denominator. */
   clicksInWindow: number;
   clicksPrevWindow: number;
+  /** Distinct people in the window. Never summed across windows. */
   uniqueVisitorsInWindow: number;
-  /** Event-type breakdown, all within the window. */
+  /** Event-type breakdown, all within the window. {@link storefrontViews} is the funnel's entry. */
   storefrontViews: number;
   productViews: number;
   addToCart: number;
   checkoutStarts: number;
 }
 
-/** Order flow. "Received" excludes cancellations, matching `ORDER_REVENUE_STATUSES`. */
+/** One stage of the buyer journey, with the count that reached it. */
+export interface PlatformFunnelStage {
+  /** Stable key: the `storefront_click_events.event_type`, or `order` for the last stage. */
+  key: string;
+  /** What the stage is, in an operator's words. */
+  label: string;
+  /** How many events of this type were recorded in the window. */
+  count: number;
+}
+
+/**
+ * The buyer funnel, with its denominator named.
+ *
+ * Returned as an ordered list rather than as loose fields so the console cannot pick its own top of
+ * funnel. `stages[0]` — storefront views — is the denominator every step rate divides by, and
+ * {@link topOfFunnelKey} says so in the payload. {@link allEventsInWindow} is
+ * `traffic.clicksInWindow` repeated under a name that cannot be mistaken for an entry count: it is
+ * the *sum* of the stages, which is why the funnel must not be measured against it.
+ *
+ * The stages are not a nested cohort — they are independent event counts — so a stage may exceed
+ * the one above it (a shopper adds to cart twice). The payload reports what was measured and the
+ * console clamps bar widths; neither massages the numbers to make the funnel narrow.
+ */
+export interface PlatformFunnelMetrics {
+  /** Widest first: storefront views → product views → add to cart → checkout start → orders. */
+  stages: PlatformFunnelStage[];
+  /** The key of `stages[0]`: the only honest denominator for a top-of-funnel rate. */
+  topOfFunnelKey: string;
+  /** Every event row in the window — the sum of the stages, never their denominator. */
+  allEventsInWindow: number;
+}
+
+/**
+ * Order flow.
+ *
+ * **"Received" is `RECEIVED_ORDER_PREDICATE`: every order the platform took, cancellations
+ * included.** It used to mean `status <> 'cancelled'` here and `COUNT(*)` on the two customer
+ * screens, which is how one platform reported its fulfilment rate as 75%, 68% and 63% depending on
+ * which page you were looking at. Cancellations are not hidden by the wider definition — they are
+ * returned as {@link cancelledInWindow} and {@link cancelledAllTime} beside it, which is the
+ * treatment that lets an operator see cancellation *and* keeps one meaning for one word.
+ */
 export interface PlatformOrderMetrics {
   receivedAllTime: number;
   receivedInWindow: number;
   receivedPrevWindow: number;
   shippedAllTime: number;
   shippedInWindow: number;
-  deliveredAllTime: number;
   /**
-   * Throughput: `shippedInWindow / receivedInWindow`, as a percentage.
+   * Orders dispatched in the equally-sized window immediately before this one.
+   *
+   * Present so the console can put a delta under "Orders shipped". Without it the card hard-coded
+   * "no previous period to compare against" — a sentence that claimed the period did not exist
+   * while it did, and had shipments in it.
+   */
+  shippedPrevWindow: number;
+  deliveredAllTime: number;
+  /** Orders cancelled, all time. Inside every `received*` figure, never subtracted from it. */
+  cancelledAllTime: number;
+  /** Orders cancelled inside the window. */
+  cancelledInWindow: number;
+  /** Orders inside the window that settled — the count `revenue.gmvCentsInWindow` sums over. */
+  settledInWindow: number;
+  /**
+   * Throughput: `shippedInWindow / receivedInWindow`, as a percentage, from
+   * {@link fulfillmentRatePct}.
    *
    * Two different populations — an order received before the window can ship inside it — so this
    * exceeds 100% while a backlog is cleared and understates service during growth. Read
-   * {@link cohortFulfillmentRatePct} beside it. `0` when nothing was received.
+   * {@link cohortFulfillmentRatePct} beside it. **`null`, not `0`, when nothing was received**: an
+   * empty window has no rate, and `0%` would report a fulfilment failure that never happened.
    */
-  fulfillmentRatePct: number;
+  fulfillmentRatePct: number | null;
+  /**
+   * `shippedAllTime / receivedAllTime`, the same helper over the all-time counts.
+   *
+   * Returned rather than left to the console to divide, because that division is exactly where the
+   * three disagreeing rates came from. `null` when the platform has never received an order.
+   */
+  fulfillmentRateAllTimePct: number | null;
   /** Of the orders *received* in the window, the percentage that have shipped. Never exceeds 100. */
-  cohortFulfillmentRatePct: number;
+  cohortFulfillmentRatePct: number | null;
   /** Of the orders received in the window, the percentage dispatched within 48 hours. */
-  shippedWithin48hPct: number;
+  shippedWithin48hPct: number | null;
   /** Mean hours between order creation and dispatch, for orders shipped in the window. */
   avgHoursToShip: number | null;
   /** Median hours to ship. The mean hides a long tail; this does not. */
   medianHoursToShip: number | null;
   /** 90th-percentile hours to ship — the slowest tenth of dispatches. */
   p90HoursToShip: number | null;
-  /** Mean settled order value: settled GMV over settled orders, in whole cents. */
-  avgOrderValueCents: number;
+  /**
+   * Mean settled order value: settled GMV over {@link settledInWindow}, in whole cents.
+   *
+   * `null` when no order settled in the window. It reported `0` there, so a seven-day window with
+   * three orders and $455.41 booked-but-unpaid printed "Average order value $0.00" — a measurement
+   * the data does not support, beside a sibling field that already got this right by returning
+   * `null` and rendering "Not measured yet".
+   */
+  avgOrderValueCents: number | null;
 }
 
 /**
@@ -208,7 +321,36 @@ export interface PlatformRevenueMetrics {
   gmvCentsInWindow: number;
   /** Alias of {@link gmvSettledCentsPrevWindow}. */
   gmvCentsPrevWindow: number;
+  /**
+   * Canonical. Refunds on orders that are **inside** GMV, in the window.
+   *
+   * This is the only refund figure `gmvSettledCentsInWindow − refunded` is a meaningful sentence
+   * about. On the current data it is `0`, and that `0` is a fact worth reading: every refunded
+   * order on this platform is also cancelled, so none of the refunded money was ever in GMV.
+   * Rendering "$1,159.36 refunded · 12% of GMV" — as the console did while this summed every
+   * order — invited an operator to subtract money from a total that never contained it.
+   */
+  refundedSettledCentsInWindow: number;
+  /** Canonical. The same figure for the equally-sized window immediately before this one. */
+  refundedSettledCentsPrevWindow: number;
+  /**
+   * Refunds on cancelled orders, in the window. Money GMV never contained.
+   *
+   * Its natural comparison is {@link gmvCancelledCentsInWindow} — "of the value cancelled, how
+   * much went back to buyers" — not GMV.
+   */
+  refundedCancelledCentsInWindow: number;
+  /** Every cent refunded in the window, whatever the order's state: settled + cancelled. */
+  refundedTotalCentsInWindow: number;
+  /** How many orders those refunds came from. */
+  refundedOrdersInWindow: number;
+  /** Of {@link refundedOrdersInWindow}, how many were also cancelled. The overlap, stated. */
+  refundedCancelledOrdersInWindow: number;
+  /** Alias of {@link refundedSettledCentsInWindow}, under the name the console contract uses. */
   refundedCentsInWindow: number;
+  /** Alias of {@link refundedSettledCentsPrevWindow}. */
+  refundedCentsPrevWindow: number;
+  /** Units on settled orders created in the window — the same population `gmv*InWindow` sums. */
   unitsSoldInWindow: number;
 }
 
@@ -242,12 +384,24 @@ export interface PlatformIntegrationMetrics {
  * The sample sizes are returned alongside so the UI can explain itself without a second request.
  */
 export interface PlatformConversionMetrics {
-  /** Orders per click, as a percentage, or `null` when the sample is too small to report. */
+  /**
+   * Canonical. Orders per **storefront view** in the window, as a percentage, or `null` when the
+   * sample is too small to report.
+   *
+   * The denominator is deliberately not `traffic.clicksInWindow`. That figure counts every event
+   * row, including the add-to-carts and checkout starts an order necessarily generated on its way
+   * to being an order — a numerator inside its own denominator. Storefront views are the arrivals,
+   * which is what a conversion rate is supposed to be a share of.
+   */
+  storefrontViewToOrderPct: number | null;
+  /** Alias of {@link storefrontViewToOrderPct}, under the name the console contract uses. */
   clickToOrderPct: number | null;
   /** Orders per add-to-cart, as a percentage, or `null` when the sample is too small. */
   cartToOrderPct: number | null;
-  /** Clicks the click-to-order ratio was computed from. */
+  /** Storefront views the ratio was computed from — the value of `clickSampleEvent`. */
   clickSample: number;
+  /** Which event type {@link clickSample} counts, so the console can label the rate honestly. */
+  clickSampleEvent: string;
   /** Add-to-cart events the cart-to-order ratio was computed from. */
   cartSample: number;
   /** The floor `clickSample` had to clear. */
@@ -256,11 +410,40 @@ export interface PlatformConversionMetrics {
   minCartSample: number;
 }
 
+/**
+ * What the `*PrevWindow` figures are a comparison *against*.
+ *
+ * Returned because "the baseline was zero" and "there is no baseline" are different facts and the
+ * console was printing one sentence for both. A `0` in a `*PrevWindow` field is a measurement when
+ * {@link measured} is true — the platform existed, nothing happened — and merely an absence of
+ * history when it is false. Only the second deserves "no previous period to compare against".
+ */
+export interface PlatformComparisonWindow {
+  /** Start of the previous, equally-sized window (inclusive), as an ISO instant. */
+  start: string;
+  /** End of it (exclusive) — the current window's start. */
+  end: string;
+  /**
+   * Whether the platform already existed during that window.
+   *
+   * `true` when the earliest store predates {@link end}, so every `*PrevWindow` figure is a real
+   * measurement of a period that happened. `false` on a platform younger than two windows, where a
+   * zero baseline means "we were not here yet".
+   */
+  measured: boolean;
+  /** When the platform's first store was created, or `null` when there are no stores at all. */
+  platformSince: string | null;
+}
+
 /** The `/api/platform/overview` payload. */
 export interface PlatformOverview {
   window: PlatformWindow;
+  /** The period every `*PrevWindow` figure measures, and whether it was measured at all. */
+  comparison: PlatformComparisonWindow;
   merchants: PlatformMerchantMetrics;
   traffic: PlatformTrafficMetrics;
+  /** The buyer journey with its denominator named. See {@link PlatformFunnelMetrics}. */
+  funnel: PlatformFunnelMetrics;
   orders: PlatformOrderMetrics;
   revenue: PlatformRevenueMetrics;
   catalog: PlatformCatalogMetrics;
@@ -338,8 +521,13 @@ export interface PlatformUnfulfilledStore {
   count: number;
   /** What that backlog is worth, in integer cents. */
   stuckCents: number;
-  /** Age of the oldest one, in hours. */
-  oldestAgeHours: number;
+  /**
+   * Age of the oldest one, in hours, or `null` when the age could not be computed.
+   *
+   * Nullable rather than `0`-when-unknown: a backlog row exists because an order is *old*, so
+   * reporting age zero would say the opposite of the only reason the row is here.
+   */
+  oldestAgeHours: number | null;
 }
 
 /** The stuck-order backlog, platform-wide and per store. */
@@ -434,7 +622,12 @@ export function toNullableNumber(value: unknown): number | null {
 }
 
 /**
- * A percentage that is safe on an empty platform.
+ * A percentage that is safe on an empty platform, for the ratios whose empty case really is zero.
+ *
+ * Most rates on this console are **not** in that category: an empty denominator usually means the
+ * question was not measured, and those go through {@link fulfillmentRatePct},
+ * {@link sampledRatioPct} or {@link averageCents}, all of which answer `null`. Reach for this one
+ * only when a zero denominator genuinely justifies printing `0%`.
  *
  * @param numerator - The part.
  * @param denominator - The whole.
@@ -465,18 +658,6 @@ export function sampledRatioPct(
 ): number | null {
   if (!Number.isFinite(denominator) || denominator < minimumSample || denominator <= 0) return null;
   return ratioPct(numerator, denominator);
-}
-
-/**
- * Mean value of a set of orders, in whole cents.
- *
- * @param totalCents - Summed order value, in integer cents.
- * @param orderCount - How many orders that sum covers.
- * @returns The mean rounded to the nearest cent, or `0` when there were no orders.
- */
-export function averageCents(totalCents: number, orderCount: number): number {
-  if (!Number.isFinite(totalCents) || !Number.isFinite(orderCount) || orderCount <= 0) return 0;
-  return Math.round(totalCents / orderCount);
 }
 
 /**
@@ -606,6 +787,25 @@ const ORDER_IN_PREV_WINDOW = `(o.created_at >= ($2::timestamptz AT TIME ZONE 'UT
 const SHIPPED_IN_WINDOW = `(o.shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
                             AND o.shipped_at <  ($3::timestamptz AT TIME ZONE 'UTC'))`;
 
+/** `orders` dispatched inside the comparison window — the baseline for "Orders shipped". */
+const SHIPPED_IN_PREV_WINDOW = `(o.shipped_at >= ($2::timestamptz AT TIME ZONE 'UTC')
+                                 AND o.shipped_at <  ($1::timestamptz AT TIME ZONE 'UTC'))`;
+
+/**
+ * When a refund happened.
+ *
+ * `refunded_at` where the writer recorded one, falling back to the order's own date. The fallback
+ * is conservative rather than clever: it dates the refund no later than it can possibly have
+ * happened, and it keeps refunds on seeded orders (which carry no `refunded_at`) inside the window
+ * their order belongs to instead of silently dropping every one of them.
+ */
+const REFUND_IN_WINDOW = `(COALESCE(o.refunded_at, o.created_at) >= ($1::timestamptz AT TIME ZONE 'UTC')
+                           AND COALESCE(o.refunded_at, o.created_at) <  ($3::timestamptz AT TIME ZONE 'UTC'))`;
+
+/** The same, for the comparison window. */
+const REFUND_IN_PREV_WINDOW = `(COALESCE(o.refunded_at, o.created_at) >= ($2::timestamptz AT TIME ZONE 'UTC')
+                                AND COALESCE(o.refunded_at, o.created_at) <  ($1::timestamptz AT TIME ZONE 'UTC'))`;
+
 /**
  * Hours between an order being placed and being dispatched.
  *
@@ -639,10 +839,19 @@ const SHIPPED_MEASURABLE = `(${SHIPPED_IN_WINDOW} AND o.shipped_at >= o.created_
  *
  * `launched` deliberately means more than `is_public`: a store toggled public with an empty
  * catalogue is not a storefront anyone can buy from, so it needs at least one active product.
+ *
+ * "At least one order" here is `RECEIVED_ORDER_PREDICATE`, the same population every other order
+ * count on the console uses. A merchant whose only order was cancelled did trade — a buyer placed
+ * an order with them — and, more to the point, "traded" must not be a fifth private definition of
+ * an order sitting in this one query.
+ *
+ * `first_store_at` comes along for free from the same scan. It is what tells the console whether a
+ * `*PrevWindow` figure of zero is a measured zero or a period before the platform existed.
  */
 const MERCHANTS_SQL = `
   SELECT
     COUNT(*) AS total,
+    MIN(s.created_at) AS first_store_at,
     COUNT(*) FILTER (WHERE COALESCE(o.window_order_count, 0) > 0) AS active,
     COUNT(*) FILTER (WHERE s.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
                        AND s.created_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS new_in_window,
@@ -662,7 +871,7 @@ const MERCHANTS_SQL = `
            COUNT(*) AS order_count,
            COUNT(*) FILTER (WHERE created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
                               AND created_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS window_order_count
-      FROM orders WHERE status <> 'cancelled' GROUP BY store_id
+      FROM orders o WHERE ${RECEIVED_ORDER_PREDICATE} GROUP BY store_id
   ) o ON o.store_id = s.id
 `;
 
@@ -725,11 +934,23 @@ const UNIQUE_VISITORS_SQL = `
  * figure rather than quietly dropped, because an operator who can only see settled revenue cannot
  * tell a slow sales month from a broken checkout.
  *
- * **"Received"** is `status <> 'cancelled'` — every order the platform took, paid or not. It is
- * deliberately a wider set than the settled one: order *count* measures demand, order *value*
- * measures revenue, and conflating them is how a dashboard reports a good month during an outage.
- * The merchant admin already shipped the opposite mistake once, filtering revenue to
- * `status = 'completed'` and hiding 61% of booked value.
+ * **"Received"** is `RECEIVED_ORDER_PREDICATE` — every order the platform took: paid or not,
+ * cancelled or not. It is deliberately a wider set than the settled one: order *count* measures
+ * demand, order *value* measures revenue, and conflating them is how a dashboard reports a good
+ * month during an outage. The merchant admin already shipped the opposite mistake once, filtering
+ * revenue to `status = 'completed'` and hiding 61% of booked value.
+ *
+ * This query used to exclude cancellations from "received" while the two customer screens counted
+ * them, which is how 65, 72 and 27-including-3 became three fulfilment rates. Cancellations are
+ * now counted *and* reported: `cancelled_in_window` and `cancelled_all_time` sit beside the
+ * received counts, so nothing is hidden by the wider definition.
+ *
+ * **Refunds come out in three parts, not one.** Refunds on settled orders are the only ones GMV
+ * ever contained; refunds on cancelled orders are money that was never in GMV. Summing them
+ * together and putting the result beside GMV invites a subtraction that double-counts. On this
+ * data every refunded order is cancelled, so the settled figure is `0` — which is the honest
+ * answer to "how much of GMV came back", and useless as an answer to "how much money went back to
+ * buyers", which is what the total is for.
  *
  * **Two fulfilment rates, because they answer different questions.**
  *   * `shipped_in_window / received_in_window` is throughput — what went out against what came in.
@@ -744,16 +965,20 @@ const UNIQUE_VISITORS_SQL = `
  */
 const ORDERS_SQL = `
   SELECT
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled') AS received_all_time,
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_WINDOW}) AS received_in_window,
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_PREV_WINDOW}) AS received_prev_window,
+    COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE}) AS received_all_time,
+    COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE} AND ${ORDER_IN_WINDOW}) AS received_in_window,
+    COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE} AND ${ORDER_IN_PREV_WINDOW}) AS received_prev_window,
     COUNT(*) FILTER (WHERE o.shipped_at IS NOT NULL) AS shipped_all_time,
     COUNT(*) FILTER (WHERE ${SHIPPED_IN_WINDOW}) AS shipped_in_window,
+    COUNT(*) FILTER (WHERE ${SHIPPED_IN_PREV_WINDOW}) AS shipped_prev_window,
     COUNT(*) FILTER (WHERE o.delivered_at IS NOT NULL) AS delivered_all_time,
 
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_WINDOW}
+    COUNT(*) FILTER (WHERE ${CANCELLED_ORDER_PREDICATE}) AS cancelled_all_time,
+    COUNT(*) FILTER (WHERE ${CANCELLED_ORDER_PREDICATE} AND ${ORDER_IN_WINDOW}) AS cancelled_in_window,
+
+    COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE} AND ${ORDER_IN_WINDOW}
                        AND o.shipped_at IS NOT NULL) AS cohort_shipped,
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_WINDOW}
+    COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE} AND ${ORDER_IN_WINDOW}
                        AND o.shipped_at IS NOT NULL
                        AND o.shipped_at <= o.created_at + INTERVAL '48 hours') AS cohort_shipped_within_48h,
 
@@ -776,18 +1001,26 @@ const ORDERS_SQL = `
     ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'cancelled' AND ${ORDER_IN_WINDOW}), 0) * 100)
       AS gmv_cancelled_cents_in_window,
 
-    -- Refunds are scoped to the SAME order set GMV is built from, so that GMV minus refunds is a
-    -- number an operator may legitimately compute. Summing refunds across every order instead
-    -- looks more complete and quietly breaks that: in the demo data every refunded order is also
-    -- cancelled, so its value is already excluded from GMV — reporting the refund beside GMV
-    -- invites the reader to subtract money that was never added. A refund on a cancelled order
-    -- nets to zero on both sides of the tile, which is the honest treatment; what it must not do
-    -- is appear on one side only.
+    -- Refunds, three ways. The settled figure is scoped to the SAME order set GMV is built from,
+    -- so GMV minus refunds is a number an operator may legitimately compute. The cancelled figure
+    -- is the rest - refunds of value GMV never contained - and the total is what an operator means
+    -- by "how much money went back to buyers". Publishing only the settled figure hides real
+    -- refunds; publishing only the total invites a subtraction from a number that never held it.
     ROUND(COALESCE(SUM(o.refunded_amount) FILTER (
-                     WHERE (${SETTLED_ORDER_PREDICATE})
-                       AND COALESCE(o.refunded_at, o.created_at) >= ($1::timestamptz AT TIME ZONE 'UTC')
-                       AND COALESCE(o.refunded_at, o.created_at) <  ($3::timestamptz AT TIME ZONE 'UTC')), 0) * 100)
-      AS refunded_cents_in_window
+                     WHERE (${SETTLED_ORDER_PREDICATE}) AND ${REFUND_IN_WINDOW}), 0) * 100)
+      AS refunded_settled_cents_in_window,
+    ROUND(COALESCE(SUM(o.refunded_amount) FILTER (
+                     WHERE (${SETTLED_ORDER_PREDICATE}) AND ${REFUND_IN_PREV_WINDOW}), 0) * 100)
+      AS refunded_settled_cents_prev_window,
+    ROUND(COALESCE(SUM(o.refunded_amount) FILTER (
+                     WHERE ${CANCELLED_ORDER_PREDICATE} AND ${REFUND_IN_WINDOW}), 0) * 100)
+      AS refunded_cancelled_cents_in_window,
+    ROUND(COALESCE(SUM(o.refunded_amount) FILTER (WHERE ${REFUND_IN_WINDOW}), 0) * 100)
+      AS refunded_total_cents_in_window,
+    COUNT(*) FILTER (WHERE ${REFUNDED_ORDER_PREDICATE} AND ${REFUND_IN_WINDOW})
+      AS refunded_orders_in_window,
+    COUNT(*) FILTER (WHERE ${REFUNDED_ORDER_PREDICATE} AND ${CANCELLED_ORDER_PREDICATE}
+                       AND ${REFUND_IN_WINDOW}) AS refunded_cancelled_orders_in_window
   FROM orders o
 `;
 
@@ -799,6 +1032,10 @@ const ORDERS_SQL = `
  * `store_id` disagrees with its order's is corruption, and this join surfaces it as a missing unit
  * rather than silently attributing it to the wrong merchant.
  *
+ * The population is the **settled** one, not merely the non-cancelled one, because this figure is
+ * returned inside the revenue block next to settled GMV. Units counted over a wider set than the
+ * money they sold for produces a revenue-per-unit an operator can compute and cannot trust.
+ *
  * The window is applied to `orders.created_at` and **never** to `order_items.created_at`. That
  * column holds a single distinct value across all 119 rows in the local database and 114 of them
  * disagree with their parent order's date — it records when the row was written, not when the sale
@@ -809,7 +1046,7 @@ const UNITS_SOLD_SQL = `
   SELECT COALESCE(SUM(oi.quantity), 0) AS units_sold_in_window
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id
-   WHERE o.status <> 'cancelled'
+   WHERE (${SETTLED_ORDER_PREDICATE})
      AND o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
      AND o.created_at <  ($2::timestamptz AT TIME ZONE 'UTC')
 `;
@@ -890,8 +1127,11 @@ const INTEGRATIONS_SQL = `
  * final bucket is the best it can offer. Mixing the two would put a click count and a visitor count
  * computed over different spans on the same row.
  *
- * `orders` counts every non-cancelled order; `gmv_cents` counts only the settled ones, exactly as
- * the overview does, so the series still sums to the tile above it.
+ * `orders` counts every order the platform received — `RECEIVED_ORDER_PREDICATE`, the same
+ * population the overview's `receivedInWindow` uses — while `gmv_cents` counts only the settled
+ * ones, exactly as the overview does. Both halves of that sentence matter: the series has to sum
+ * to the tile above it, and it can only do that if the two are written from the same definitions
+ * rather than from two people's memory of them.
  */
 const TIMESERIES_SQL = `
   WITH bounds AS (
@@ -924,10 +1164,10 @@ const TIMESERIES_SQL = `
   ),
   ordered AS (
     SELECT o.created_at::date AS day,
-           COUNT(*) FILTER (WHERE o.status <> 'cancelled') AS orders,
+           COUNT(*) FILTER (WHERE ${RECEIVED_ORDER_PREDICATE}) AS orders,
            ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE (${SETTLED_ORDER_PREDICATE})), 0) * 100) AS gmv_cents
       FROM orders o, bounds b
-     WHERE o.status <> 'cancelled'
+     WHERE ${RECEIVED_ORDER_PREDICATE}
        AND o.created_at >= (b.win_start AT TIME ZONE 'UTC')
        AND o.created_at <  (b.win_end   AT TIME ZONE 'UTC')
      GROUP BY 1
@@ -1113,35 +1353,68 @@ export async function getPlatformOverview(
     checkoutStarts: toNumber(clicksRow.checkout_starts),
   };
 
+  /*
+   * The funnel, with its denominator named. `traffic.clicksInWindow` is the SUM of these stages,
+   * which is why it appears here as `allEventsInWindow` and not as `stages[0]`: dividing product
+   * views by every event row puts the numerator inside its own denominator and understates every
+   * step. Storefront views are the arrivals, so they are the top of the funnel.
+   */
+  const funnel: PlatformFunnelMetrics = {
+    stages: [
+      { key: 'storefront_view', label: 'Storefront views', count: traffic.storefrontViews },
+      { key: 'product_view', label: 'Product views', count: traffic.productViews },
+      { key: 'add_to_cart', label: 'Add to cart', count: traffic.addToCart },
+      { key: 'checkout_start', label: 'Checkout started', count: traffic.checkoutStarts },
+      { key: 'order', label: 'Orders placed', count: toNumber(ordersRow.received_in_window) },
+    ],
+    topOfFunnelKey: 'storefront_view',
+    allEventsInWindow: traffic.clicksInWindow,
+  };
+
+  const receivedAllTime = toNumber(ordersRow.received_all_time);
   const receivedInWindow = toNumber(ordersRow.received_in_window);
+  const shippedAllTime = toNumber(ordersRow.shipped_all_time);
   const shippedInWindow = toNumber(ordersRow.shipped_in_window);
   const cohortShipped = toNumber(ordersRow.cohort_shipped);
   const settledInWindow = toNumber(ordersRow.settled_in_window);
   const gmvSettledCentsInWindow = toNumber(ordersRow.gmv_settled_cents_in_window);
 
   const orders: PlatformOrderMetrics = {
-    receivedAllTime: toNumber(ordersRow.received_all_time),
+    receivedAllTime,
     receivedInWindow,
     receivedPrevWindow: toNumber(ordersRow.received_prev_window),
-    shippedAllTime: toNumber(ordersRow.shipped_all_time),
+    shippedAllTime,
     shippedInWindow,
+    shippedPrevWindow: toNumber(ordersRow.shipped_prev_window),
     deliveredAllTime: toNumber(ordersRow.delivered_all_time),
+    cancelledAllTime: toNumber(ordersRow.cancelled_all_time),
+    cancelledInWindow: toNumber(ordersRow.cancelled_in_window),
+    settledInWindow,
     // Throughput. Two different populations, so it can exceed 100% while a merchant works through
     // a backlog. Left uncapped rather than clamped into a prettier lie; the cohort rate beside it
-    // is the one that cannot.
-    fulfillmentRatePct: ratioPct(shippedInWindow, receivedInWindow),
-    cohortFulfillmentRatePct: ratioPct(cohortShipped, receivedInWindow),
-    shippedWithin48hPct: ratioPct(toNumber(ordersRow.cohort_shipped_within_48h), receivedInWindow),
+    // is the one that cannot. Every rate on this screen and the two customer screens comes out of
+    // the same helper, over the same received population.
+    fulfillmentRatePct: fulfillmentRatePct(shippedInWindow, receivedInWindow),
+    fulfillmentRateAllTimePct: fulfillmentRatePct(shippedAllTime, receivedAllTime),
+    cohortFulfillmentRatePct: fulfillmentRatePct(cohortShipped, receivedInWindow),
+    shippedWithin48hPct: fulfillmentRatePct(
+      toNumber(ordersRow.cohort_shipped_within_48h),
+      receivedInWindow,
+    ),
     avgHoursToShip: roundHours(toNullableNumber(ordersRow.avg_hours_to_ship)),
     medianHoursToShip: roundHours(toNullableNumber(ordersRow.p50_hours_to_ship)),
     p90HoursToShip: roundHours(toNullableNumber(ordersRow.p90_hours_to_ship)),
     // Settled money over settled orders. Dividing settled GMV by *received* orders would deflate
-    // the average by every unpaid basket in the window.
+    // the average by every unpaid basket in the window; returning 0 when nothing settled would
+    // claim an average of nothing.
     avgOrderValueCents: averageCents(gmvSettledCentsInWindow, settledInWindow),
   };
 
   const gmvSettledCentsAllTime = toNumber(ordersRow.gmv_settled_cents_all_time);
   const gmvSettledCentsPrevWindow = toNumber(ordersRow.gmv_settled_cents_prev_window);
+
+  const refundedSettledCentsInWindow = toNumber(ordersRow.refunded_settled_cents_in_window);
+  const refundedSettledCentsPrevWindow = toNumber(ordersRow.refunded_settled_cents_prev_window);
 
   const revenue: PlatformRevenueMetrics = {
     gmvSettledCentsAllTime,
@@ -1154,12 +1427,32 @@ export async function getPlatformOverview(
     gmvCentsAllTime: gmvSettledCentsAllTime,
     gmvCentsInWindow: gmvSettledCentsInWindow,
     gmvCentsPrevWindow: gmvSettledCentsPrevWindow,
-    refundedCentsInWindow: toNumber(ordersRow.refunded_cents_in_window),
+    refundedSettledCentsInWindow,
+    refundedSettledCentsPrevWindow,
+    refundedCancelledCentsInWindow: toNumber(ordersRow.refunded_cancelled_cents_in_window),
+    refundedTotalCentsInWindow: toNumber(ordersRow.refunded_total_cents_in_window),
+    refundedOrdersInWindow: toNumber(ordersRow.refunded_orders_in_window),
+    refundedCancelledOrdersInWindow: toNumber(ordersRow.refunded_cancelled_orders_in_window),
+    // The contract name means the settled figure, because that is the only one it is safe to put
+    // beside GMV. The total and the cancelled split are their own fields, above.
+    refundedCentsInWindow: refundedSettledCentsInWindow,
+    refundedCentsPrevWindow: refundedSettledCentsPrevWindow,
     unitsSoldInWindow: toNumber(unitsRow.units_sold_in_window),
   };
 
+  const platformSince = toIsoOrNull((merchantsRow.first_store_at ?? null) as Date | string | null);
+
   return {
     window: describeWindow(bounds),
+    comparison: {
+      start: prevStartIso,
+      end: startIso,
+      // A zero baseline is a measurement when the platform existed to be measured. Anything
+      // earlier than the first store is an absence of history, and only that deserves the
+      // console's "no previous period to compare against".
+      measured: platformSince !== null && Date.parse(platformSince) < bounds.start.getTime(),
+      platformSince,
+    },
     merchants: {
       total: toNumber(merchantsRow.total),
       active: toNumber(merchantsRow.active),
@@ -1169,6 +1462,7 @@ export async function getPlatformOverview(
       withOrders: toNumber(merchantsRow.with_orders),
     },
     traffic,
+    funnel,
     orders,
     revenue,
     catalog: {
@@ -1185,14 +1479,7 @@ export async function getPlatformOverview(
       themeCustomized: toNumber(integrationsRow.theme_customized),
       publishedStores: toNumber(integrationsRow.published_stores),
     },
-    conversion: {
-      clickToOrderPct: sampledRatioPct(receivedInWindow, traffic.clicksInWindow, MIN_CLICK_SAMPLE),
-      cartToOrderPct: sampledRatioPct(receivedInWindow, traffic.addToCart, MIN_CART_SAMPLE),
-      clickSample: traffic.clicksInWindow,
-      cartSample: traffic.addToCart,
-      minClickSample: MIN_CLICK_SAMPLE,
-      minCartSample: MIN_CART_SAMPLE,
-    },
+    conversion: buildConversion(receivedInWindow, traffic),
   };
 }
 
@@ -1207,6 +1494,42 @@ export async function getPlatformOverview(
 function roundHours(hours: number | null): number | null {
   if (hours === null) return null;
   return Math.round(hours * 10) / 10;
+}
+
+/**
+ * The two funnel ratios, computed against denominators that do not contain their own numerators.
+ *
+ * `storefrontViews`, not `clicksInWindow`: the latter is every event row, orders' own add-to-cart
+ * and checkout-start events included, so it both flatters the arrival count and shrinks the rate.
+ * Storefront views are arrivals, which is the thing a conversion rate is a share of.
+ *
+ * @param ordersReceived - Orders received in the window — the numerator of both ratios.
+ * @param traffic - The window's traffic block, whose `storefrontViews` and `addToCart` are the
+ *                  denominators.
+ * @returns The conversion block, with each sample size and floor beside its rate so the console
+ *          can explain an em dash without a second request.
+ */
+function buildConversion(
+  ordersReceived: number,
+  traffic: PlatformTrafficMetrics,
+): PlatformConversionMetrics {
+  const storefrontViewToOrderPct = sampledRatioPct(
+    ordersReceived,
+    traffic.storefrontViews,
+    MIN_CLICK_SAMPLE,
+  );
+
+  return {
+    storefrontViewToOrderPct,
+    // The contract name, same number: one computation, two names, no way to drift.
+    clickToOrderPct: storefrontViewToOrderPct,
+    cartToOrderPct: sampledRatioPct(ordersReceived, traffic.addToCart, MIN_CART_SAMPLE),
+    clickSample: traffic.storefrontViews,
+    clickSampleEvent: 'storefront_view',
+    cartSample: traffic.addToCart,
+    minClickSample: MIN_CLICK_SAMPLE,
+    minCartSample: MIN_CART_SAMPLE,
+  };
 }
 
 /**
@@ -1291,15 +1614,22 @@ export async function getPlatformHealth(): Promise<PlatformHealth> {
     storeName: row.store_name,
     count: toNumber(row.unfulfilled),
     stuckCents: toNumber(row.stuck_cents),
-    oldestAgeHours: roundHours(toNullableNumber(row.oldest_age_hours)) ?? 0,
+    // Not `?? 0`: the row exists because an order is old, so an unknown age must not read as new.
+    oldestAgeHours: roundHours(toNullableNumber(row.oldest_age_hours)),
   }));
 
   const unfulfilled: PlatformUnfulfilledBacklog = {
     total: backlogStores.reduce((sum, entry) => sum + entry.count, 0),
     totalCents: backlogStores.reduce((sum, entry) => sum + entry.stuckCents, 0),
-    oldestAgeHours: backlogStores.length === 0
-      ? null
-      : backlogStores.reduce((oldest, entry) => Math.max(oldest, entry.oldestAgeHours), 0),
+    oldestAgeHours: backlogStores.reduce<number | null>(
+      (oldest, entry) =>
+        entry.oldestAgeHours === null
+          ? oldest
+          : oldest === null
+            ? entry.oldestAgeHours
+            : Math.max(oldest, entry.oldestAgeHours),
+      null,
+    ),
     stores: backlogStores,
   };
 
@@ -1360,13 +1690,18 @@ function buildAlerts(
   }
 
   for (const entry of backlog.slice(0, MAX_ALERTS_PER_KIND)) {
-    const oldestDays = Math.floor(entry.oldestAgeHours / 24);
-    const age = oldestDays >= 1
-      ? `${oldestDays} day${oldestDays === 1 ? '' : 's'}`
-      : `${Math.round(entry.oldestAgeHours)} hours`;
+    // An unknown age says so rather than rendering as "0 hours", which would describe a backlog
+    // row as brand new — the opposite of the reason it is a backlog row.
+    const oldestDays = entry.oldestAgeHours === null ? null : Math.floor(entry.oldestAgeHours / 24);
+    const age =
+      entry.oldestAgeHours === null || oldestDays === null
+        ? 'an unrecorded length of time'
+        : oldestDays >= 1
+          ? `${oldestDays} day${oldestDays === 1 ? '' : 's'}`
+          : `${Math.round(entry.oldestAgeHours)} hours`;
 
     alerts.push({
-      severity: entry.count >= 10 || oldestDays >= 7 ? 'critical' : 'warning',
+      severity: entry.count >= 10 || (oldestDays !== null && oldestDays >= 7) ? 'critical' : 'warning',
       title: `${entry.storeName} has ${entry.count} paid order${entry.count === 1 ? '' : 's'} unshipped`,
       detail: `${formatCents(entry.stuckCents)} of settled orders with no dispatch recorded, the oldest waiting ${age}. These are the customers about to email.`,
       storeId: entry.storeId,
