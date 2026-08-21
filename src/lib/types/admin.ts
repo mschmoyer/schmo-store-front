@@ -3,6 +3,12 @@ export interface AdminUser {
   id: string;
   storeId: string;
   email: string;
+  /**
+   * Platform operator. Controls whether the merchant sidebar shows the "Admin" door to
+   * `/platform`; it is never the thing that authorises the data behind it — every platform route
+   * re-checks `users.is_admin` server-side on each request.
+   */
+  isAdmin?: boolean;
   store: {
     id: string;
     name: string;
