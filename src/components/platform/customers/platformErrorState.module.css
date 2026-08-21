@@ -1,0 +1,11 @@
+/*
+ * Failure states get the same well as the empty states they sit in place of, so
+ * a page that fails has the same silhouette as one that succeeded with nothing
+ * in it. The mark inherits `--text-quaternary` from EmptyState rather than
+ * being tinted red: the colour belongs on the sentence that explains the
+ * failure, not on a decorative icon.
+ */
+
+.root {
+  margin-block: var(--space-4);
+}

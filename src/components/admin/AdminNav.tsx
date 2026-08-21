@@ -15,6 +15,7 @@ import {
   IconPalette,
   IconPlug,
   IconSettings,
+  IconShieldLock,
   IconShoppingCart,
   IconTicket,
   IconTruckDelivery,
@@ -188,6 +189,28 @@ export function AdminNav({ onNavClick }: AdminNavProps) {
       </ScrollArea>
 
       <div className={styles.navFooter}>
+        {/*
+         * The platform operator's door, and the only footer entry that is a destination rather
+         * than an action — so it leads. It is deliberately an ordinary `navItem`: no accent, no
+         * badge. A second colour here would say "this is a different product", and it is not; it
+         * is one more place this person can go.
+         *
+         * Hiding it is NOT access control. `/platform` and every `/api/platform/*` route call
+         * `requirePlatformAdmin`, which re-reads `users.is_admin` from the database on each
+         * request — a merchant who types the URL, or who forges `isAdmin: true` in their own
+         * browser memory, gets a 403 and no data. This flag only decides whether we bother
+         * drawing the link for someone who would be let through.
+         */}
+        {user?.isAdmin && (
+          <NavLink
+            href="/platform"
+            label="Admin"
+            leftSection={<IconShieldLock {...ICON_PROPS} />}
+            onClick={onNavClick}
+            className={styles.navItem}
+          />
+        )}
+
         {user?.store?.slug && (
           <NavLink
             component="button"

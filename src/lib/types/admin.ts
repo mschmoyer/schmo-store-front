@@ -33,6 +33,21 @@ export interface AdminAuthResponse {
   error?: string;
 }
 
+/**
+ * JSON body returned by `GET|POST /api/admin/auth/verify`.
+ *
+ * Modelled separately from {@link AdminAuthResponse} because verify is the only endpoint that
+ * reports `user.isAdmin` — it re-reads `users.is_admin` from the database on every call, so the
+ * flag can change inside the life of an already-signed session token.
+ */
+export interface AdminVerifyResponse {
+  success: boolean;
+  data?: {
+    user: AdminUser;
+  };
+  error?: string;
+}
+
 export interface AdminLoginRequest {
   email: string;
   password: string;

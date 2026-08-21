@@ -1,0 +1,35 @@
+/*
+ * The totals strip.
+ *
+ * The scope sentence sits above the figures rather than under them because it
+ * qualifies every one of them — read after the numbers, it is a correction; read
+ * before, it is a heading. The filter name is set in the primary ink so the one
+ * word that changes what the row means is the one word that is emphasised.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.scope {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.scopeLead {
+  color: var(--text-secondary);
+}
+
+.scopeFilter {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.scopeQuery {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}

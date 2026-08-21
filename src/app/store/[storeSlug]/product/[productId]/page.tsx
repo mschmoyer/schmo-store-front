@@ -4,6 +4,7 @@ import { notFound, permanentRedirect } from 'next/navigation';
 import { IconRuler2, IconTruck, IconWeight } from '@tabler/icons-react';
 
 import { ProductSchema } from '@/components/product/ProductSchema';
+import { StorefrontClickTracker } from '@/components/store/StorefrontClickTracker';
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import { BuyBox } from '@/components/store/product/BuyBox';
 import { ProductGallery } from '@/components/store/product/ProductGallery';
@@ -21,6 +22,7 @@ import {
 
 import { loadStorefront, type SearchParams } from '../../../_lib/load';
 import { getProduct, getRelatedProducts, getStoreBySlug } from '../../../_lib/queries';
+import { isMerchantSelfView } from '@/lib/analytics/storefront-clicks';
 import { resolveRetiredSlug } from '@/lib/catalog/slug';
 import { absoluteUrl, storefrontUrl } from '@/lib/seo/siteUrl';
 import { sanitizeRichText, toParagraphs } from '../../../_lib/html';
@@ -123,6 +125,9 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   }
 
   const related = await getRelatedProducts(product, 4);
+  // Same decision the layout makes for `storefront_view`, so a merchant browsing their own
+  // catalogue is suppressed from both events rather than half of one.
+  const ownerViewing = await isMerchantSelfView(store.id);
 
   const state = stockState(product);
   const purchasable = isPurchasable(product);
@@ -147,6 +152,18 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   return (
     <StorefrontShell {...result.data}>
       <ProductSchema product={product} store={store} path={path} />
+      {/*
+        `product_view` is recorded here rather than in the layout because only this page knows the
+        product's id — the URL carries a slug, and the click table's `product_id` is a real foreign
+        key. The layout's `storefront_view` still fires for this page too; the two events answer
+        different questions ("how much traffic" vs "which products get looked at").
+      */}
+      <StorefrontClickTracker
+        storeId={store.id}
+        eventType="product_view"
+        productId={product.id}
+        enabled={!ownerViewing}
+      />
 
       <StoreBand>
         <StoreContainer>

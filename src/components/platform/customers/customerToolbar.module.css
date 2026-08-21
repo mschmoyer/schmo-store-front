@@ -1,0 +1,42 @@
+/*
+ * The list's control bar.
+ *
+ * A well rather than a floating row: the controls change what the table below
+ * shows, and grouping them on `--surface` inside a hairline is what says so.
+ * Every control keeps a visible label — a filter whose current value is the
+ * only clue to what it filters is a puzzle, and this screen has three of them
+ * side by side.
+ */
+
+.root {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.search {
+  flex: 1 1 320px;
+  max-width: 420px;
+}
+
+.filter {
+  width: 200px;
+}
+
+.pageSize {
+  width: 96px;
+}
+
+@media (max-width: 640px) {
+  .search,
+  .filter {
+    flex: 1 1 100%;
+    max-width: none;
+    width: 100%;
+  }
+
+  .pageSize {
+    width: 100%;
+  }
+}
