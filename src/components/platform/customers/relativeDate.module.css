@@ -20,3 +20,24 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
+
+/*
+ * The separator between the two readings.
+ *
+ * Visually hidden rather than absent: the line break between "3 months ago" and "17 May 2026" is a
+ * layout fact and carries no text, so without this the element's text content is
+ * `3 months ago17 May 2026`. Clipped rather than `display: none`, because `display: none` removes it
+ * from the accessibility tree and from `textContent` alike, which is the bug rather than the fix.
+ */
+.separator {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

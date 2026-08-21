@@ -70,7 +70,10 @@ export function CustomizationPanel({
             },
             { label: 'Sections', value: formatCount(sectionCount) },
             { label: 'Blog posts', value: formatCount(blogPosts) },
-            { label: 'Setup complete', value: formatPercent(completenessPct) },
+            /* Named for what it measures, not "Setup complete". The checklist panel above shows a
+               different fraction — how many of its six checks pass — and two percentages labelled
+               with the same word on one screen read as one number rendered inconsistently. */
+            { label: 'Storefront completeness', value: formatPercent(completenessPct) },
           ]}
         />
       </div>

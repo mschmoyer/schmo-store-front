@@ -26,8 +26,8 @@ import {
   IconMail,
 } from '@tabler/icons-react';
 import { CustomizationBadge, StoreStateBadge } from './StoreBadges';
+import { EmailAddress } from './EmailAddress';
 import { RelativeDate } from './RelativeDate';
-import { formatDate } from './format';
 import type { PlatformCustomization, PlatformOwnerSummary, PlatformStoreSummary } from './types';
 import styles from './customerDetailHeader.module.css';
 
@@ -85,16 +85,16 @@ export function CustomerDetailHeader({
               <dt>Owner</dt>
               <dd>
                 {owner.name || 'Unnamed'}
-                <a className={styles.email} href={`mailto:${owner.email}`}>
-                  {owner.email}
-                </a>
+                {/* Break at the @ and the dots, not mid-word: see `EmailAddress`. */}
+                <EmailAddress address={owner.email} className={styles.email} asLink />
               </dd>
             </div>
             <div className={styles.fact}>
               <dt>Joined</dt>
               <dd>
-                <RelativeDate value={store.createdAt} />
-                <span className={styles.subtle}>{formatDate(store.createdAt)}</span>
+                {/* One element carrying both readings and the separator between them; two stacked
+                    elements read as "6 months ago9 Mar 2026" to anything consuming the text. */}
+                <RelativeDate value={store.createdAt} withAbsolute />
               </dd>
             </div>
             <div className={styles.fact}>

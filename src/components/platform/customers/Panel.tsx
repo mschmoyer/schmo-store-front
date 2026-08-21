@@ -45,7 +45,7 @@ export function Panel({
   return (
     <section className={styles.panel} aria-labelledby={headingId}>
       <header className={styles.head}>
-        <div>
+        <div className={styles.headCopy}>
           <h2 className={styles.title} id={headingId}>
             {title}
           </h2>

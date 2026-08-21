@@ -970,11 +970,15 @@ async function seed() {
       const storeIndex = STORES.indexOf(store);
       const storeCreatedAt = daysAgo(STORE_AGE_DAYS[storeIndex] ?? 120, false);
       await client.query(
+        // `is_demo` is the whole point of these rows being distinguishable: /platform leaves them
+        // out of every platform figure, because invented merchants inflate a real metric and do it
+        // in the flattering direction — this data is deliberately healthy. Set here rather than
+        // backfilled by a migration so a fourth demo store is marked the day someone adds one.
         `INSERT INTO public.stores
            (id, owner_id, store_name, store_slug, store_description, hero_title, hero_description,
             theme_name, currency, is_active, is_public, allow_guest_checkout,
-            meta_title, meta_description, logo_url, favicon_url, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'USD',true,true,true,$9,$10,$11,$11,$12)`,
+            meta_title, meta_description, logo_url, favicon_url, created_at, is_demo)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'USD',true,true,true,$9,$10,$11,$11,$12,TRUE)`,
         [store.id, store.ownerId, store.name, store.slug, store.description, store.heroTitle,
           store.heroDescription, store.themeName, store.metaTitle, store.metaDescription,
           `/demo/logo/${store.slug}.svg`, storeCreatedAt]

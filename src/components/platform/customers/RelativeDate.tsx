@@ -16,10 +16,15 @@
  * header — the two used to be separate elements stacked by CSS. That renders
  * correctly and reads as `3 months ago17 May 2026`: a line break is a layout
  * fact, not a text one, so anything consuming the element's text got the two
- * values run together with no separator. The pair is now one `<time>` carrying
- * an explicit accessible name ("17 May 2026, 3 months ago"), with the two
- * visible lines marked decorative. One element, one announced string, and no
- * way for the visual and the spoken forms to disagree.
+ * values run together with no separator.
+ *
+ * The fix is a real separator in the DOM, visually hidden. It is deliberately
+ * **not** an `aria-label` on the `<time>`: `time` exposes no role of its own, and
+ * ARIA prohibits naming a generic element — a label there is honoured by some
+ * screen readers and silently dropped by others, which is the worst of both. A
+ * hidden middle dot is plain text, so every consumer sees it: assistive
+ * technology, a copy-paste into a ticket, and the next person measuring this
+ * component in the DOM.
  */
 
 import React from 'react';
@@ -72,12 +77,11 @@ export function RelativeDate({
       className={className ? `${styles.stack} ${className}` : styles.stack}
       dateTime={date.toISOString()}
       title={exact}
-      aria-label={`${absolute}, ${relative}`}
     >
-      <span aria-hidden="true">{relative}</span>
-      <span className={styles.absolute} aria-hidden="true">
-        {absolute}
-      </span>
+      <span>{relative}</span>
+      {/* The separator the line break is not. Hidden from the layout, present in the text. */}
+      <span className={styles.separator}> · </span>
+      <span className={styles.absolute}>{absolute}</span>
     </time>
   );
 }
