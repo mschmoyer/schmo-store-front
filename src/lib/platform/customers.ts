@@ -55,6 +55,12 @@
  * table in which every row said "Customized". Both defects have the same cause — no module owned
  * the word — so the fix is a module that does.
  *
+ * **It owns the demo exclusion too.** {@link realStorePredicate} and {@link realStoreExists} say
+ * which stores a platform figure may count, and {@link describeScope} says what the payload
+ * actually did about it. Same reasoning: "leave the seeded demo merchants out" is one rule holding
+ * across roughly thirty aggregates on four screens, and one spelled out thirty times is one that
+ * will be spelled out twenty-nine times as soon as somebody adds a query.
+ *
  * "Customized" is not defined here either. It comes from `src/lib/platform/customization.ts`,
  * which is shared with the overview, because three screens quietly holding three definitions of
  * the same word is how a dashboard tells a reader two contradictory things at once.
@@ -197,6 +203,155 @@ export const UNSETTLED_ORDER_PREDICATE =
   "o.status <> 'cancelled' AND (o.payment_status IS NULL " +
   "OR o.payment_status NOT IN ('paid', 'completed'))";
 
+/**
+ * Which stores a platform figure is allowed to count.
+ *
+ * `scripts/seed-demo.js` creates three fully-populated storefronts, and they are the best thing in
+ * the repository for developing against: real catalogues, real orders, weeks of traffic. They are
+ * also poison in a platform metric. `/platform` exists to answer "how is the platform doing", and
+ * every figure it prints — merchants, GMV, fulfilment rate, click-to-order — is wrong the moment
+ * invented merchants are counted beside real ones. Wrong in the flattering direction, too: demo
+ * data is deliberately healthy, so it drags every rate upward and makes a platform with two
+ * struggling merchants look like a platform with five comfortable ones.
+ *
+ * So this predicate exists for the same reason {@link RECEIVED_ORDER_PREDICATE} does. "Excludes
+ * demo stores" is one rule that has to hold across roughly thirty aggregates on four screens, and
+ * a rule spelled out thirty times is a rule that is spelled out twenty-nine times after the next
+ * query is added. This branch has already grown two definitions of one concept three separate
+ * times — "customized", the fulfilment rate, "received" — and each time the fix was a seam rather
+ * than a sweep of corrections. This is that seam for demo stores.
+ *
+ * **`IS DISTINCT FROM TRUE`, not `= FALSE`.** The column is `NOT NULL DEFAULT FALSE` today, so the
+ * two agree; they stop agreeing the first time the flag is read through a `LEFT JOIN` where a
+ * missing row makes it `NULL`, and there the null-safe form keeps the store counted rather than
+ * silently dropping it. A store is a demo store only when something said so.
+ *
+ * **`TRUE` when `includeDemo`, not a missing clause.** The escape hatch is a value in the same
+ * position rather than a branch that assembles different SQL, so the two code paths are the same
+ * statement with one literal swapped — which is what makes "does the include path still filter
+ * anything else?" answerable by reading one line.
+ *
+ * @param alias - The `stores` alias the predicate is written against. A literal chosen by the call
+ *                site, never caller input; it is interpolated into SQL.
+ * @param includeDemo - When `true` the predicate is `TRUE` and demo stores are counted. Defaults
+ *                      to `false`: a query that forgets to pass the flag excludes them, which is
+ *                      the safe direction to be wrong in.
+ * @returns SQL predicate text, safe to interpolate into a `WHERE` or a `FILTER`.
+ */
+export function realStorePredicate(alias: string = 's', includeDemo: boolean = false): string {
+  return includeDemo ? 'TRUE' : `${alias}.is_demo IS DISTINCT FROM TRUE`;
+}
+
+/**
+ * The same rule, for the many aggregates that never touch `stores`.
+ *
+ * Most platform figures are summed from `orders`, `products`, `storefront_click_daily`,
+ * `storefront_click_events` or `job_queue`, none of which carries the flag. Those queries need the
+ * store's own row to know whether the numbers belong to a real merchant, and they get it through
+ * an `EXISTS` rather than a join: a join would have to be `LEFT` to be safe, would add a row source
+ * to every `FILTER` in the query, and — on the click and order tables specifically — is one typo
+ * away from fanning a count out. `EXISTS` is a semi-join; it cannot multiply rows.
+ *
+ * The alias is `demo_scope` everywhere, which is deliberately a name no query in this codebase uses
+ * for anything else, so a correlated reference can never bind to the wrong table.
+ *
+ * @param storeIdExpression - SQL naming the row's store column, e.g. `'o.store_id'`. A literal from
+ *                            the call site, never caller input.
+ * @param includeDemo - When `true` the predicate is `TRUE` and nothing is filtered.
+ * @returns SQL predicate text, safe to interpolate into a `WHERE` or a `FILTER`.
+ */
+export function realStoreExists(
+  storeIdExpression: string,
+  includeDemo: boolean = false
+): string {
+  if (includeDemo) return 'TRUE';
+  return `EXISTS (SELECT 1 FROM stores demo_scope
+                   WHERE demo_scope.id = ${storeIdExpression}
+                     AND ${realStorePredicate('demo_scope')})`;
+}
+
+/**
+ * What a platform payload says it did, as opposed to what the caller asked for.
+ *
+ * Every `/api/platform/*` response carries one of these. Hiding rows is defensible; hiding rows
+ * without saying so is the same class of dishonesty as rendering a failed fetch as a zero, which
+ * `CLAUDE.md` forbids outright — and it is worse here than elsewhere, because on a database whose
+ * every store is a demo store (a fresh dev container, exactly) the console would otherwise report
+ * a platform of nothing with total confidence. `demoStoresHidden` is what lets the screen say
+ * "3 demo stores hidden" instead.
+ */
+export interface PlatformScope {
+  /** Whether demo stores were counted. `false` unless the caller asked for `?includeDemo=1`. */
+  includeDemo: boolean;
+  /**
+   * How many demo stores this payload left out. `0` when `includeDemo` is `true`, because then
+   * nothing was left out — not because the platform has none.
+   */
+  demoStoresHidden: number;
+}
+
+/**
+ * The same, for the two endpoints that describe a single merchant.
+ *
+ * `demoStoresHidden` is `0` on these payloads and that is the literal truth: the store was served.
+ * See {@link describeStoreScope} for why a demo store is served rather than 404'd.
+ */
+export interface PlatformStoreScope extends PlatformScope {
+  /** Whether the store in this payload is itself a demo store, so the UI can label it. */
+  isDemoStore: boolean;
+}
+
+/**
+ * Read the `includeDemo` escape hatch off a query string.
+ *
+ * Deliberately narrow: `1`, `true` and `yes` turn demo stores on, and **anything else — including
+ * `includeDemo=0`, `includeDemo=false` and a typo — leaves them off**. The flag only ever widens
+ * what is counted, so an unparseable value falling through to "exclude" is the failure the reader
+ * of the resulting number is least likely to be misled by. It returns a `boolean` and nothing but
+ * a `boolean`, which is what keeps caller text out of SQL entirely.
+ *
+ * @param source - The request's search params, or an equivalent record.
+ * @returns `true` only when the caller explicitly asked for demo stores.
+ */
+export function resolveIncludeDemo(
+  source: URLSearchParams | Record<string, string | null | undefined>
+): boolean {
+  const raw = (readParam(source, 'includeDemo') ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
+/**
+ * How many demo stores exist.
+ *
+ * One count over the whole `stores` table, and the only place the number comes from — the alternative
+ * is each surface counting its own hidden rows, which would report different figures on the overview
+ * and the customers list for the same database.
+ *
+ * @returns The number of stores flagged `is_demo`, coerced from Postgres' `bigint` string.
+ */
+export async function countDemoStores(): Promise<number> {
+  const result = await db.query<{ demo_stores: string }>(
+    `SELECT COUNT(*)::bigint AS demo_stores FROM stores s WHERE s.is_demo IS TRUE`
+  );
+  return toNumber(result.rows[0]?.demo_stores);
+}
+
+/**
+ * Describe the scope a platform payload was computed under.
+ *
+ * The count query is skipped when `includeDemo` is `true`, because the honest answer is then `0`
+ * without asking: nothing was hidden.
+ *
+ * @param includeDemo - Whether demo stores were counted, from {@link resolveIncludeDemo}.
+ * @returns The scope block every platform payload carries.
+ */
+export async function describeScope(includeDemo: boolean): Promise<PlatformScope> {
+  return {
+    includeDemo,
+    demoStoresHidden: includeDemo ? 0 : await countDemoStores(),
+  };
+}
+
 /** Rows the list may be sorted by. Anything else falls back to {@link DEFAULT_SORT}. */
 export const CUSTOMER_SORT_KEYS = [
   'created',
@@ -306,6 +461,11 @@ export interface CustomerListParams {
   sort: CustomerSortKey;
   dir: CustomerSortDirection;
   filter: CustomerFilterKey;
+  /**
+   * Whether seeded demo stores are part of the list. `false` unless the caller asked; see
+   * {@link realStorePredicate}.
+   */
+  includeDemo: boolean;
 }
 
 /** A normalised set of per-store order-list parameters. */
@@ -403,6 +563,12 @@ export interface CustomerListResult {
   customers: CustomerListItem[];
   pagination: PaginationEnvelope;
   totals: CustomerListTotals;
+  /**
+   * What this list actually counted. `totals` and `pagination.total` are both over the scoped set,
+   * so a console that renders "3 merchants" beside "3 demo stores hidden" is describing the same
+   * database rather than contradicting itself.
+   */
+  scope: PlatformScope;
 }
 
 /** One order as both the detail's `recent` list and the orders endpoint render it. */
@@ -448,6 +614,14 @@ export interface CustomerDetail {
     logoUrl: string | null;
     isActive: boolean;
     isPublic: boolean;
+    /**
+     * Whether this is a seeded demonstration store.
+     *
+     * The detail is served for a demo store even when the console is excluding them (see
+     * {@link describeStoreScope}), so the payload has to say what it is showing. A screen that
+     * renders a demo merchant's $9k of invented GMV with no label is the reason this field exists.
+     */
+    isDemo: boolean;
     createdAt: string;
   };
   owner: {
@@ -768,6 +942,7 @@ export function normalizeCustomerListParams(
     sort,
     dir,
     filter,
+    includeDemo: resolveIncludeDemo(source),
   };
 }
 
@@ -822,10 +997,17 @@ export function buildPagination(page: number, pageSize: number, total: number): 
  * columns the list can sort, filter or total by — those have to exist for the whole matched set
  * before paging can happen at all.
  *
+ * The three aggregate CTEs deliberately scan every store's rows rather than pre-filtering to real
+ * merchants. They reach the output only through the `LEFT JOIN` onto the already-scoped `stores`
+ * scan in `scored`, so a demo store's orders cannot appear in a row or a total; adding the same
+ * `EXISTS` to each of them would be a second copy of the rule that buys nothing but a chance to
+ * disagree with the first.
+ *
  * @param filterPredicate - A fragment from {@link FILTER_PREDICATES}.
+ * @param includeDemo - When `true`, seeded demo stores are listed alongside real merchants.
  * @returns SQL defining the `matched` CTE, ready to be followed by a `SELECT`.
  */
-function buildBaseCte(filterPredicate: string): string {
+function buildBaseCte(filterPredicate: string, includeDemo: boolean): string {
   return `
     WITH order_agg AS (
       SELECT o.store_id,
@@ -918,7 +1100,11 @@ function buildBaseCte(filterPredicate: string): string {
         LEFT JOIN product_agg pa ON pa.store_id = s.id
         LEFT JOIN click_agg ca ON ca.store_id = s.id
         LEFT JOIN (${CUSTOMIZED_THEME_JOIN}) cz ON cz.store_id = s.id
-       WHERE (
+       -- The demo exclusion sits on the one scan of the stores table that everything else hangs
+       -- off, so the page, the totals and the pagination count are scoped by construction rather
+       -- than by three predicates that have to agree.
+       WHERE ${realStorePredicate('s', includeDemo)}
+         AND (
          $1::text IS NULL
          OR s.store_name ILIKE $1
          OR s.store_slug ILIKE $1
@@ -995,7 +1181,7 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
   const filterPredicate = FILTER_PREDICATES[params.filter] ?? FILTER_PREDICATES[DEFAULT_FILTER];
   const sortColumn = SORT_COLUMNS[params.sort] ?? SORT_COLUMNS[DEFAULT_SORT];
   const direction = params.dir === 'asc' ? 'ASC' : 'DESC';
-  const baseCte = buildBaseCte(filterPredicate);
+  const baseCte = buildBaseCte(filterPredicate, params.includeDemo);
   const pattern = params.q === null ? null : `%${escapeLike(params.q)}%`;
 
   const totalsResult = await db.query<TotalsRow>(
@@ -1124,7 +1310,7 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
     };
   });
 
-  return { customers, pagination, totals };
+  return { customers, pagination, totals, scope: await describeScope(params.includeDemo) };
 }
 
 /** The projection both the detail's `recent` list and the orders endpoint select. */
@@ -1179,6 +1365,7 @@ function mapOrderSummary(row: OrderSummaryRow): CustomerOrderSummary {
 interface StoreHeaderRow extends Record<string, unknown> {
   store_id: string;
   store_name: string;
+  is_demo: boolean | null;
   store_slug: string;
   domain: string | null;
   store_description: string | null;
@@ -1339,6 +1526,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
   const headerResult = await db.query<StoreHeaderRow>(
     `SELECT s.id AS store_id,
             s.store_name,
+            s.is_demo,
             s.store_slug,
             s.domain,
             s.store_description,
@@ -1717,6 +1905,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
       logoUrl: header.logo_url,
       isActive: header.is_active === true,
       isPublic,
+      isDemo: header.is_demo === true,
       createdAt: toIsoRequired(header.created_at),
     },
     owner: {
@@ -1831,6 +2020,43 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
   };
 }
 
+/** What {@link describeStoreScope} found out about one store id. */
+export interface StoreScopeFacts {
+  /** Whether a store row with that id exists at all. */
+  exists: boolean;
+  /** Whether that store is a seeded demonstration store. `false` when it does not exist. */
+  isDemo: boolean;
+}
+
+/**
+ * Whether a store exists, and whether it is a demo store.
+ *
+ * Two facts from one round trip, because the two single-store endpoints need both and asking twice
+ * would be two chances to disagree.
+ *
+ * **A demo store is served, not hidden.** The list and every aggregate exclude demo merchants; a
+ * direct request for one — an operator following a link, a bookmark, an alert row from the health
+ * screen — returns the store. The alternative was a 404, and a 404 for a store that plainly exists
+ * is a worse lie than the one being fixed: it tells an operator the merchant is gone when the
+ * console simply chose not to count them. So the honest treatment is the same one the aggregates
+ * get: serve the data, and say what it is. `isDemo` on the payload and `isDemoStore` on the scope
+ * are what let the screen put a "demo store" badge on it, and the figures inside are that one
+ * store's own — they were never part of a platform total anyway.
+ *
+ * @param storeId - The store id to look up. A malformed id is "does not exist", not an error.
+ * @returns Existence and the demo flag. `{ exists: false, isDemo: false }` for an unknown id.
+ */
+export async function describeStoreScope(storeId: string): Promise<StoreScopeFacts> {
+  if (!validateUUID(storeId)) return { exists: false, isDemo: false };
+  const result = await db.query<{ is_demo: boolean | null }>(
+    'SELECT s.is_demo FROM stores s WHERE s.id = $1',
+    [storeId]
+  );
+  const row = result.rows[0];
+  if (!row) return { exists: false, isDemo: false };
+  return { exists: true, isDemo: row.is_demo === true };
+}
+
 /**
  * Whether a store exists at all.
  *
@@ -1838,16 +2064,15 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
  * "there is no such merchant" (a 404). Returning an empty page for a store id that does not exist
  * is the kind of confident lie this codebase has a rule against.
  *
+ * Delegates to {@link describeStoreScope} rather than running its own `EXISTS`, so there is one
+ * statement behind both questions. Deliberately **not** demo-aware: see that function for why a
+ * demo store is served rather than 404'd.
+ *
  * @param storeId - The store id to check.
  * @returns `true` when a store row with that id exists.
  */
 export async function storeExists(storeId: string): Promise<boolean> {
-  if (!validateUUID(storeId)) return false;
-  const result = await db.query<{ exists: boolean }>(
-    'SELECT EXISTS (SELECT 1 FROM stores WHERE id = $1) AS exists',
-    [storeId]
-  );
-  return result.rows[0]?.exists === true;
+  return (await describeStoreScope(storeId)).exists;
 }
 
 /**
