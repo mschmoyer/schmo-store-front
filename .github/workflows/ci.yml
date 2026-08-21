@@ -142,9 +142,13 @@ jobs:
       # Build-time only. Never a real secret — every Stripe/ShipStation entry
       # point is required to degrade gracefully when unconfigured, and this job
       # is part of how we keep that true.
-      # 32+ characters: `resolveSigningKey` in src/lib/auth/session.ts refuses anything shorter
-      # in a production build, which is what this job is.
-      JWT_SECRET: ci-build-only-not-a-secret-0000000000000000
+      #
+      # JWT_SECRET is the one variable that does NOT degrade:
+      # src/lib/auth/jwt-secret.ts throws on a missing, short (<32 char) or
+      # known-placeholder value, because a fallback secret lets anyone forge a
+      # session for any store. So this value has to clear the length floor even
+      # though it is public — it must never be used anywhere real.
+      JWT_SECRET: ci-build-only-not-a-secret-padded-to-clear-the-length-floor
       NEXT_PUBLIC_APP_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
@@ -155,3 +159,55 @@ jobs:
       - run: npm ci
       - run: node database/migrate.js
       - run: npm run build
+
+  # End-to-end. Added because a real regression walked straight through every
+  # other job in this file: making JWT_SECRET fail closed as a module-level
+  # const broke the customizer's preview pane, because a client component
+  # imports a module that transitively imports the secret and a browser bundle
+  # has no environment. Lint, typecheck, 922 unit tests and the production
+  # build were all green; six Playwright tests were red. Nothing here ran them.
+  #
+  # Chromium only, matching what a session container can run, and the two specs
+  # that cover the surfaces a merchant and a shopper actually touch.
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rebelshops_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rebelshops_ci
+      # Same rationale as the build job: public, build-time only, long enough
+      # to clear the floor.
+      JWT_SECRET: ci-e2e-only-not-a-secret-padded-to-clear-the-length-floor
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node database/migrate.js
+      - run: node scripts/seed-demo.js
+      # `playwright.config.js` starts (or reuses) the dev server itself.
+      - run: npx playwright test tests/e2e/storefront.spec.js tests/e2e/customizer.spec.js --project=chromium
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

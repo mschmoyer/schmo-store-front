@@ -1,4 +1,5 @@
 import { db } from '@/lib/database/connection';
+import { sellableStockExpression, sellableStockLateral } from '@/lib/inventory/sellable';
 
 import type {
   CatalogueQuery,
@@ -10,6 +11,7 @@ import type {
   StoreRecord,
 } from './types';
 import { SORT_KEYS } from './types';
+import { renderableImageUrl } from '@/lib/images/renderable';
 
 /**
  * Server-side catalogue reads for the storefront.
@@ -273,8 +275,12 @@ function resolvePricing(row: ProductRow): { price: number; compareAtPrice: numbe
  */
 function toProduct(row: ProductRow): ProductRecord {
   const { price, compareAtPrice } = resolvePricing(row);
-  const gallery = toStringArray(row.gallery_images);
-  const featured = row.featured_image_url || gallery[0] || null;
+  // Sanitise at the boundary: a hostile or unrenderable image URL in any of
+  // these fields would otherwise reach `next/image` and 500 the whole page.
+  const gallery = toStringArray(row.gallery_images)
+    .map((entry) => renderableImageUrl(entry))
+    .filter((entry): entry is string => entry !== null);
+  const featured = renderableImageUrl(row.featured_image_url) || gallery[0] || null;
 
   return {
     id: row.id,
@@ -326,7 +332,12 @@ const PRODUCT_COLUMNS = `p.id, p.store_id, p.sku, p.name, p.slug, p.short_descri
   --
   -- COALESCE to stock_quantity covers a product with no levels rows at all, which is what an
   -- untracked product looks like.
-  COALESCE(lv.sellable, p.stock_quantity) AS stock_quantity,
+  --
+  -- The lateral behind this comes from src/lib/inventory/sellable.ts, shared with the cart and the
+  -- checkout stock gate. It used to be spelled out here and differently there, and the two
+  -- disagreed: this side subtracted quarantined units and that side did not, so the shop refused a
+  -- sale the till would have allowed and the other way round.
+  ${sellableStockExpression('p', 'lv')} AS stock_quantity,
   p.allow_backorder, p.weight, p.weight_unit, p.length, p.width, p.height,
   p.dimension_unit, p.category_id, c.name AS category_name, c.slug AS category_slug,
   p.tags, p.featured_image_url, p.gallery_images, p.is_featured, p.requires_shipping,
@@ -338,18 +349,7 @@ const PRODUCT_COLUMNS = `p.id, p.store_id, p.sku, p.name, p.slug, p.short_descri
 
 const PRODUCT_FROM = `FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
-  LEFT JOIN LATERAL (
-    SELECT SUM(l.available)::int AS sellable
-      FROM inventory_levels l
-      JOIN inventory_locations loc
-        ON loc.id = l.location_id AND loc.store_id = l.store_id
-     WHERE l.product_id = p.id
-       AND l.store_id = p.store_id
-       -- A returns bay, a quarantine shelf or a closed location holds real stock that cannot be
-       -- sold from. Counting it is how a storefront promises what it cannot ship.
-       AND loc.is_fulfillable
-       AND loc.is_active
-  ) lv ON TRUE`;
+  ${sellableStockLateral('p', 'lv')}`;
 
 /** `ORDER BY` fragments, keyed by sort id. Never interpolate user input here. */
 const SORT_SQL: Record<SortKey, string> = {
@@ -642,9 +642,9 @@ export async function getCategories(storeId: string, limit = 12): Promise<Catego
     name: row.name,
     slug: row.slug,
     description: row.description,
-    imageUrl: row.image_url,
+    imageUrl: renderableImageUrl(row.image_url),
     productCount: Number.parseInt(row.product_count, 10) || 0,
-    sampleImageUrl: row.sample_image_url,
+    sampleImageUrl: renderableImageUrl(row.sample_image_url),
   }));
 }
 
@@ -698,7 +698,7 @@ export async function getBlogPosts(storeId: string, limit = 3): Promise<BlogPost
     title: row.title,
     slug: row.slug,
     excerpt: row.excerpt,
-    featuredImageUrl: row.featured_image_url,
+    featuredImageUrl: renderableImageUrl(row.featured_image_url),
     publishedAt: row.published_at,
   }));
 }

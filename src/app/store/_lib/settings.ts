@@ -142,7 +142,18 @@ export function imageSrc(settings: Record<string, unknown>, key: string): string
   if (typeof value !== 'string') return '';
   const raw = value.trim();
   if (raw === '') return '';
-  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  if (raw.startsWith('//')) return '';
+  if (raw.startsWith('/')) return raw;
   if (/^data:image\/(png|jpe?g|gif|webp|avif|svg\+xml);/i.test(raw)) return raw;
+  // An `https:` URL is valid merchant input: `next.config.ts` allows any https
+  // host for imagery, and until this branch existed a merchant who pasted their
+  // hero photograph's URL saw the customizer preview render it and the live site
+  // silently drop it — the value returned '' here. `http:` stays rejected as
+  // mixed content; `javascript:`, `blob:` and everything else fall through.
+  try {
+    if (new URL(raw).protocol === 'https:') return raw;
+  } catch {
+    return '';
+  }
   return '';
 }

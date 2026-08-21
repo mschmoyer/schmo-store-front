@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 
 import { StoreUnavailable } from '@/components/store/states/StoreUnavailable';
-import type { ResolvedTheme, Section } from '@/lib/storefront-theme';
+import type { ResolvedTheme, Section, StoreNavigation } from '@/lib/storefront-theme';
+
+import { getPublishedPages } from '@/lib/storefront-theme/pages.db';
 
 import { getCategories, getStoreBySlug } from './queries';
 import { getStorefrontTheme, readPreviewToken } from './theme';
@@ -12,6 +14,16 @@ export interface StorefrontData {
   store: StoreRecord;
   theme: ResolvedTheme;
   sections: Section[];
+  /** Header and footer menus. Absent menus are derived from `categories`. */
+  navigation: StoreNavigation;
+  /**
+   * Published custom pages, for the footer's Information column.
+   *
+   * Loaded here rather than per page so every storefront route links them:
+   * a returns policy nobody can reach from the footer is one Stripe cannot
+   * find either.
+   */
+  pages: { slug: string; title: string }[];
   categories: CategoryRecord[];
   isPreview: boolean;
 }
@@ -61,9 +73,15 @@ export async function loadStorefront(
   }
 
   const { store } = lookup;
-  const [themeResult, categories] = await Promise.all([
+  const [themeResult, categories, publishedPages] = await Promise.all([
     getStorefrontTheme(store, previewToken),
     getCategories(store.id),
+    // Never fatal: a shop with an unreadable pages table is a shop with no
+    // custom pages, not a broken one.
+    getPublishedPages(store.id).catch((error) => {
+      console.error('[storefront] page lookup failed', error);
+      return [];
+    }),
   ]);
 
   // A token that does not verify against *this* store must not reveal an
@@ -82,6 +100,8 @@ export async function loadStorefront(
     data: {
       store,
       theme: themeResult.theme,
+      navigation: themeResult.navigation,
+      pages: publishedPages.map((page) => ({ slug: page.slug, title: page.title })),
       sections: themeResult.sections,
       categories,
       isPreview: themeResult.isPreview,

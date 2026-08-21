@@ -1,19 +1,29 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { v4 as uuidv4 } from 'uuid';
+import { getJwtSecret } from '@/lib/auth/jwt-secret';
 
 // The cookie name and its clearing helper live in `./session-cookie` so routes that only expire a
 // cookie need not pull `jose` in with them. Re-exported here because this is where callers look.
 export { SESSION_COOKIE, clearSessionCookie } from './session-cookie';
 
-// The rule, and the reasoning behind it, live in `./jwt-secret` so they can be unit-tested without
-// loading `jose`. See that module before relaxing anything here.
-import { resolveSigningKey } from './jwt-secret';
 
 const JWT_ISSUER = 'schmo-store';
 const JWT_AUDIENCE = 'schmo-store-users';
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
-const secret = new TextEncoder().encode(resolveSigningKey());
+/**
+ * The signing key, encoded on first use rather than at module load.
+ *
+ * Lazy because `getJwtSecret()` throws on a missing or placeholder secret, and
+ * a throw at module scope fires wherever the module is merely imported —
+ * including client bundles that only want a type from here. See
+ * `jwt-secret.ts` for the customizer regression that taught us this.
+ *
+ * @returns The secret as bytes, ready for `jose`
+ */
+function secretBytes(): Uint8Array {
+  return new TextEncoder().encode(getJwtSecret());
+}
 
 export interface UserSession {
   userId: string;
@@ -46,7 +56,7 @@ export async function createSession(userData: UserSession): Promise<string> {
     .setIssuer(JWT_ISSUER)
     .setAudience(JWT_AUDIENCE)
     .setExpirationTime(expiresAt)
-    .sign(secret);
+    .sign(secretBytes());
   
   return jwt;
 }
@@ -63,7 +73,7 @@ export async function destroySession(_sessionToken: string): Promise<void> {
 export async function verifySession(sessionToken: string): Promise<UserSession | null> {
   try {
     // Verify JWT token
-    const { payload } = await jwtVerify(sessionToken, secret, {
+    const { payload } = await jwtVerify(sessionToken, secretBytes(), {
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
     });

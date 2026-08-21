@@ -2,38 +2,28 @@ import Link from 'next/link';
 import { IconSearch, IconUser } from '@tabler/icons-react';
 
 import type { CategoryRecord, StoreRecord } from '@/app/store/_lib/types';
-import type { ResolvedTheme } from '@/lib/storefront-theme';
+
+import {
+  resolveHeaderNav,
+  resolveNavHref,
+  type ResolvedTheme,
+  type StoreNavigation,
+} from '@/lib/storefront-theme';
 
 import { StoreContainer, cx, storeUi } from '../ui';
 import { CartBadge } from './CartBadge';
-import { MobileNav, type NavItem } from './MobileNav';
+import { MobileNav } from './MobileNav';
 import styles from './Chrome.module.css';
 
 export interface StoreHeaderProps {
   store: StoreRecord;
   theme: ResolvedTheme;
   categories: CategoryRecord[];
-}
-
-/**
- * Build the navigation for a shop from its own catalogue.
- *
- * A merchant has not configured a menu, so one is inferred: everything, then
- * their real categories. It is better than a hardcoded menu of links that may
- * not exist, and it changes as their catalogue does.
- *
- * @param base - The store's root path
- * @param categories - The store's non-empty categories
- * @returns Up to five navigation entries
- */
-function buildNav(base: string, categories: CategoryRecord[]): NavItem[] {
-  return [
-    { label: 'Shop all', href: `${base}/products` },
-    ...categories.slice(0, 4).map((category) => ({
-      label: category.name,
-      href: `${base}/products?category=${encodeURIComponent(category.slug)}`,
-    })),
-  ];
+  /**
+   * The merchant's menus. An absent header menu means "derive one from the
+   * categories" — which is exactly what this component used to hardcode.
+   */
+  navigation?: StoreNavigation;
 }
 
 /**
@@ -57,9 +47,17 @@ function buildNav(base: string, categories: CategoryRecord[]): NavItem[] {
  * @param props - {@link StoreHeaderProps}
  * @returns The storefront header
  */
-export function StoreHeader({ store, theme, categories }: StoreHeaderProps) {
+export function StoreHeader({ store, theme, categories, navigation }: StoreHeaderProps) {
   const base = `/store/${store.storeSlug}`;
-  const items = buildNav(base, categories);
+
+  // The merchant's menu when they have set one, otherwise the derived default.
+  // Stored hrefs are store-relative (`/pages/about`) so they survive the shop
+  // moving to a custom domain; `resolveNavHref` mounts them and collapses
+  // anything unsafe rather than emitting it.
+  const items = resolveHeaderNav(navigation, categories).map((item) => ({
+    label: item.label,
+    href: resolveNavHref(store.storeSlug, item.href),
+  }));
   const searchAction = `${base}/products`;
   const navBelow = theme.header.layout === 'logo-left-nav-below';
 

@@ -62,9 +62,19 @@ describe('imageSrc', () => {
     expect(imageSrc({ image: uri }, 'image')).toBe(uri);
   });
 
-  it('rejects remote and protocol-relative URLs', () => {
-    // A remote src in a merchant setting is both mixed content and a beacon.
-    expect(imageSrc({ image: 'https://tracker.example/pixel.gif' }, 'image')).toBe('');
+  it('accepts an https URL', () => {
+    // `next.config.ts` allows any https host for imagery, product images already
+    // render https, and a merchant who pasted their hero photograph's URL used
+    // to watch the customizer preview it and the live site silently drop it.
+    // https is legitimate merchant input, not a beacon to reject.
+    expect(imageSrc({ image: 'https://cdn.example.com/hero.jpg' }, 'image')).toBe(
+      'https://cdn.example.com/hero.jpg',
+    );
+  });
+
+  it('rejects http and protocol-relative URLs', () => {
+    // http is mixed content; `//host` is protocol-relative and unrenderable.
+    expect(imageSrc({ image: 'http://tracker.example/pixel.gif' }, 'image')).toBe('');
     expect(imageSrc({ image: '//tracker.example/pixel.gif' }, 'image')).toBe('');
   });
 

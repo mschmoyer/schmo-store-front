@@ -9,6 +9,7 @@ import {
 import { getThemeForRender } from '@/lib/storefront-theme/db';
 
 import type { StoreRecord } from './types';
+import type { StoreNavigation } from '@/lib/storefront-theme';
 
 /**
  * Deciding which theme a storefront request renders.
@@ -30,6 +31,15 @@ import type { StoreRecord } from './types';
 export interface StorefrontRenderTheme {
   theme: ResolvedTheme;
   sections: Section[];
+  /**
+   * The merchant's header and footer menus.
+   *
+   * An **absent** menu means "derive one from the categories", which is what
+   * every store did before navigation was editable; an **empty** menu is a
+   * merchant deliberately turning theirs off. `navigation.ts` keeps the two
+   * apart, and so must every layer between here and the header.
+   */
+  navigation: StoreNavigation;
   /** True when the draft is being rendered behind a valid preview token. */
   isPreview: boolean;
   /** Where the theme came from. Useful in tests and for the preview badge. */
@@ -58,6 +68,7 @@ export async function getStorefrontTheme(
     if (record) {
       return {
         theme: record.theme,
+        navigation: record.navigation,
         // A row with no sections falls back to the *preset's* page, not to one
         // generic list: the composition is part of the look the merchant chose.
         sections:
@@ -74,6 +85,8 @@ export async function getStorefrontTheme(
   const legacy = themeFromLegacyName(store.themeName);
   return {
     theme: resolveTheme(legacy),
+    // No stored row, so no stored menu either: the header derives one.
+    navigation: {},
     sections: presetSections(legacy.preset),
     isPreview: wantsDraft,
     source: 'legacy',

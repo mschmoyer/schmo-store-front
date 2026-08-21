@@ -106,13 +106,21 @@ export async function setFulfillmentSyncStatus(
   status: FulfillmentSyncStatus,
   options: { shipmentId?: string | null; error?: string | null; incrementAttempts?: boolean } = {}
 ): Promise<void> {
+  // Every `$2` is cast to text. Postgres infers a placeholder's type from its
+  // uses, and `$2` appears both assigned to `fulfillment_sync_status` (varchar)
+  // and compared to the text literal `'pushed'` — two incompatible deductions,
+  // which made every call throw `42P08 inconsistent types deduced for parameter
+  // $2`. Because all six push call sites route through here, no order could ever
+  // leave `pending`, and the merchant-visible "failed to reach ShipStation"
+  // signal this function exists to record never fired. Pinning `$2` to text
+  // removes the ambiguity; the varchar column accepts a text value implicitly.
   await db.query(
     `UPDATE orders
-        SET fulfillment_sync_status = $2,
+        SET fulfillment_sync_status = $2::text,
             fulfillment_sync_error = $3,
             shipstation_shipment_id = COALESCE($4, shipstation_shipment_id),
             shipstation_order_id = COALESCE($4, shipstation_order_id),
-            fulfillment_pushed_at = CASE WHEN $2 = 'pushed' THEN NOW() ELSE fulfillment_pushed_at END,
+            fulfillment_pushed_at = CASE WHEN $2::text = 'pushed' THEN NOW() ELSE fulfillment_pushed_at END,
             fulfillment_sync_attempts = fulfillment_sync_attempts + CASE WHEN $5 THEN 1 ELSE 0 END,
             updated_at = NOW()
       WHERE id = $1`,

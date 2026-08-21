@@ -48,6 +48,8 @@ export function StorefrontShell({
   store,
   theme,
   categories,
+  navigation,
+  pages,
   isPreview,
   suppressFooterNewsletter = false,
   children,
@@ -66,7 +68,12 @@ export function StorefrontShell({
           </a>
 
           <AnnouncementBar announcement={theme.header.announcement} storeSlug={store.storeSlug} />
-          <StoreHeader store={store} theme={theme} categories={categories} />
+          <StoreHeader
+            store={store}
+            theme={theme}
+            categories={categories}
+            navigation={navigation}
+          />
 
           <main id="store-main" className={styles.main}>
             {children}
@@ -76,6 +83,8 @@ export function StorefrontShell({
             store={store}
             theme={theme}
             categories={categories}
+            navigation={navigation}
+            pages={pages}
             suppressNewsletter={suppressFooterNewsletter}
           />
         </CartProvider>

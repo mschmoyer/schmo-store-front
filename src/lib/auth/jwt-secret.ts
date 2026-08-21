@@ -1,67 +1,119 @@
 /**
- * Where the session signing key comes from, and when the app refuses to start without one.
+ * The signing secret for session and preview tokens.
  *
- * Deliberately free of any JWT dependency, for the same reason `./session-cookie` is: `./session`
- * pulls in `jose`, which is ESM and cannot be re-imported under a Jest module registry. Keeping
- * this rule in a module of its own means the rule can be *tested* — and a security control nobody
- * can write a test for is a security control nobody can prove.
+ * This module exists to make one rule enforceable in one place: **auth fails
+ * closed.**
+ *
+ * Both `session.ts` and `storefront-theme/preview.ts` used to read
+ * `process.env.JWT_SECRET || 'your-secret-key-here'`. In any environment where
+ * the variable was unset, every session and preview token was therefore signed
+ * with a string that is published in this repository — so anyone could mint a
+ * token for any `storeId` and read or write any tenant's data. A missing
+ * environment variable silently became a total cross-tenant compromise.
+ *
+ * `CLAUDE.md` says every integration must degrade gracefully rather than crash.
+ * Authentication is the documented exception, alongside
+ * `SHIPSTATION_ENCRYPTION_KEY`: a storefront whose payment provider is
+ * unconfigured should render a labelled "not configured" state, but an app that
+ * cannot tell users apart must not boot at all. Degrading here means forging
+ * sessions, which is not a degraded service — it is an open door.
+ *
+ * **The check is lazy, and that is load-bearing.** The first version validated
+ * at module load, and it broke the customizer: `Customizer.tsx` is a client
+ * component that imports `previewUrl` from `@/lib/storefront-theme`, whose
+ * index re-exports `preview.ts`, which imports this module. `process.env.JWT_SECRET`
+ * is undefined in a browser bundle, so the throw fired on import and took the
+ * whole preview pane down — six customizer e2e tests, green on `main`, red on
+ * the branch. Validating on first *use* keeps the guarantee (nothing can sign
+ * or verify with a bad secret) while leaving the import harmless anywhere the
+ * secret is never touched, which is every client path.
  */
 
 /**
- * The signing key this codebase used to fall back to when `JWT_SECRET` was unset.
+ * Minimum acceptable length, in characters.
  *
- * It is a literal committed to this repository, so it is not a secret in any sense: anyone reading
- * the source can mint a session naming any user id. That was survivable while every session was
- * scoped to one store by a `storeId` in the `WHERE` clause. It stopped being survivable when
- * `/platform` shipped, because the operator console reads across every tenant and the only thing
- * in front of it is this signature.
- *
- * Note what does *not* save you here: the platform guard re-reads `users.is_admin` from the
- * database rather than trusting the token, which is the right design — but a forger does not claim
- * to be an admin, they claim to *be the admin*, and the database agrees.
+ * HS256 keys shorter than the 32-byte hash output add no security over a
+ * 32-byte one and are usually a human-chosen passphrase, which is the case that
+ * actually gets brute-forced. `.env.example` documents generating one with
+ * `openssl rand -base64 48`.
  */
-export const PUBLIC_FALLBACK_SECRET = 'your-secret-key-here';
-
-/** Shorter than this in production and the process refuses to start. */
-export const MIN_SECRET_LENGTH = 32;
+const MIN_SECRET_LENGTH = 32;
 
 /**
- * Resolve the session signing key, failing closed in production.
+ * Secrets that are public knowledge and must never sign a token.
  *
- * `JWT_SECRET` joins `SHIPSTATION_ENCRYPTION_KEY` as a variable that refuses to degrade. Every
- * integration in this codebase is required to render a labelled "not configured" state when its
- * key is missing, and for Stripe or ShipStation that is right: an unconfigured integration should
- * be visibly inert. Authentication cannot be inert. A missing key there does not disable sign-in —
- * it signs every session with a value published in this file, and the deployment comes up looking
- * perfectly healthy. Loud and broken beats quiet and forgeable.
- *
- * Outside production the fallback stands, because dev and CI run without ceremony and parts of the
- * unit suite sign tokens with it deliberately. `scripts/dev-local.js` already writes a random
- * 32-byte value into `.env.local`, so a local developer gets a real key without noticing.
- *
- * @param env - The environment to read. Defaults to `process.env`; injectable so the rule can be
- *              tested without mutating the real environment.
- * @returns The signing key to use.
- * @throws If running in production with a missing, published, or too-short key.
+ * The first is the old fallback literal from this repository's history; the
+ * others are placeholders `.env.example` has shipped. They are named rather
+ * than left to the length check because the check they would trip tells the
+ * operator the wrong thing: "too short" invites padding it, when the actual
+ * problem is that the value is public.
  */
-export function resolveSigningKey(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env.JWT_SECRET;
+const KNOWN_PLACEHOLDERS = new Set([
+  'your-secret-key-here',
+  'change-me-in-every-environment',
+  'change-me-in-every-environment-please',
+]);
 
-  if (env.NODE_ENV === 'production') {
-    if (!configured || configured === PUBLIC_FALLBACK_SECRET) {
-      throw new Error(
-        'JWT_SECRET is not set. Every session would be signed with a key published in this ' +
-          'repository, which lets anyone mint a session for any account — including a platform ' +
-          `operator. Set JWT_SECRET to a random value of at least ${MIN_SECRET_LENGTH} characters.`
-      );
-    }
-    if (configured.length < MIN_SECRET_LENGTH) {
-      throw new Error(
-        `JWT_SECRET is ${configured.length} characters. Use at least ${MIN_SECRET_LENGTH} random ` +
-          'characters.'
-      );
-    }
+/** Cached after the first successful read. */
+let cached: string | null = null;
+
+/**
+ * Read and validate `JWT_SECRET`.
+ *
+ * Call this at the point of signing or verifying, never at module scope — see
+ * the note in this file's header about the customizer.
+ *
+ * Under `NODE_ENV=test` a deterministic stand-in is returned instead of
+ * throwing, so the unit suite needs no environment. That stand-in is not a
+ * fallback for real environments: `NODE_ENV` is `test` only under Jest, and a
+ * production build never takes this branch.
+ *
+ * @returns The validated secret
+ * @throws When the secret is missing, too short, or a known placeholder
+ */
+export function getJwtSecret(): string {
+  if (cached !== null) return cached;
+
+  const raw = process.env.JWT_SECRET?.trim();
+
+  if (process.env.NODE_ENV === 'test' && !raw) {
+    cached = 'test-only-jwt-secret-not-used-outside-jest-runs';
+    return cached;
   }
 
-  return configured || PUBLIC_FALLBACK_SECRET;
+  if (!raw) {
+    throw new Error(
+      'JWT_SECRET is not set. Sessions and preview tokens cannot be signed safely without it. ' +
+        'Generate one with `openssl rand -base64 48` and add it to .env.local (see .env.example).',
+    );
+  }
+
+  // Placeholders are checked *before* length. Both known ones are shorter than
+  // the 32-character floor, so a length-first order made this branch
+  // unreachable and reported "too short" for a secret whose real problem is
+  // that it is published in this repository -- a much more useful thing to be
+  // told, and a much more urgent one.
+  if (KNOWN_PLACEHOLDERS.has(raw)) {
+    throw new Error(
+      'JWT_SECRET is still set to a placeholder value that appears in this repository. ' +
+        'Anyone could forge a session for any store. Generate a real one with `openssl rand -base64 48`.',
+    );
+  }
+
+  if (raw.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `JWT_SECRET is ${raw.length} characters; at least ${MIN_SECRET_LENGTH} are required. ` +
+        'Generate one with `openssl rand -base64 48`.',
+    );
+  }
+
+  cached = raw;
+  return cached;
+}
+
+/**
+ * Drop the cached secret. Tests only — nothing in the application rotates it.
+ */
+export function resetJwtSecretCache(): void {
+  cached = null;
 }

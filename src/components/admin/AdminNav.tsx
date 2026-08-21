@@ -12,6 +12,7 @@ import {
   IconExternalLink,
   IconLogout,
   IconPackage,
+  IconFileText,
   IconPalette,
   IconPlug,
   IconSettings,
@@ -102,6 +103,7 @@ const NAV_GROUPS: NavGroup[] = [
     heading: 'Selling',
     items: [
       { label: 'Page Design', icon: IconPalette, href: '/admin/design', enabled: true },
+      { label: 'Pages', icon: IconFileText, href: '/admin/pages', enabled: true },
       { label: 'Blog', icon: IconArticle, href: '/admin/blog', enabled: true },
       /* Three working generators behind four "Coming Soon" cards. Not a destination. */
       { label: 'AI Assistant', icon: IconBrain, href: '/admin/ai', enabled: false },
