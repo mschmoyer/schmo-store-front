@@ -90,6 +90,36 @@ If you ever suspect the rollup has drifted:
 SELECT rebuild_storefront_click_daily();
 ```
 
+## Demo stores are not merchants
+
+`scripts/seed-demo.js` creates three fully-populated storefronts, and every figure on the console
+excludes them. They are excellent for development and poison in a platform metric: the console
+exists to answer *how is the platform doing*, and the answer is wrong the moment invented merchants
+are counted beside real ones — wrong in the flattering direction, because the demo data is
+deliberately healthy and drags every rate upward.
+
+The flag is `stores.is_demo`. The seed sets it; nothing a merchant does sets it; and it changes
+nothing about how the storefront behaves — the store still renders, still takes orders, still
+syncs. It decides one thing: whether `/platform` counts it.
+
+Migration 041 backfills the three stores the seed has always created, by their fixed ids. Anything
+else — a demo store built through onboarding, a sales-demo tenant on a real deployment, a staging
+clone where some production stores should stop counting — is marked by hand:
+
+```bash
+node scripts/mark-demo-store.js <slug-or-uuid>          # stop counting it
+node scripts/mark-demo-store.js <slug-or-uuid> --real   # count it again
+node scripts/mark-demo-store.js --list                  # what is currently hidden
+```
+
+The console reports what it hid rather than hiding it silently — a hidden store is a fact about
+the reading, and an operator who cannot see that a figure is filtered cannot trust it. `?includeDemo=1`
+puts them back for a single request.
+
+**A local consequence worth expecting:** a development database seeded by `seed-demo.js` contains
+*only* demo stores, so the console legitimately reads zero there. That is the feature working, not
+a broken page.
+
 ## What the numbers mean
 
 The console exists to tell the truth about the platform, including when the truth is small. Each
