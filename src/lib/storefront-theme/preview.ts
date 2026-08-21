@@ -21,8 +21,9 @@
  */
 
 import jwt, { type JwtPayload } from 'jsonwebtoken';
+import { getJwtSecret } from '@/lib/auth/jwt-secret';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+
 const ISSUER = 'rebelshops-storefront';
 const AUDIENCE = 'rebelshops-storefront-preview';
 const TOKEN_TYPE = 'storefront_preview';
@@ -75,7 +76,7 @@ export async function mintPreviewToken(
       ...(options.userId ? { userId: options.userId } : {}),
       type: TOKEN_TYPE,
     },
-    JWT_SECRET,
+    getJwtSecret(),
     {
       algorithm: 'HS256',
       issuer: ISSUER,
@@ -104,7 +105,7 @@ export async function verifyPreviewToken(
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET, {
+    const payload = jwt.verify(token, getJwtSecret(), {
       algorithms: ['HS256'],
       issuer: ISSUER,
       audience: AUDIENCE,

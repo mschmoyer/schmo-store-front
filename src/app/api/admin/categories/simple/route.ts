@@ -20,13 +20,16 @@ export async function GET(request: NextRequest) {
       SELECT 
         c.id,
         c.name,
+        -- The storefront links categories by slug, so a selector returning
+        -- only ids and names cannot build a link.
+        c.slug,
         c.description,
         c.is_active,
         COUNT(p.id) as product_count
       FROM categories c
       LEFT JOIN products p ON c.id = p.category_id AND p.is_active = true
       WHERE c.store_id = $1
-      GROUP BY c.id, c.name, c.description, c.is_active
+      GROUP BY c.id, c.name, c.slug, c.description, c.is_active
       ORDER BY c.name ASC
     `;
 

@@ -2911,3 +2911,907 @@ Still open:
 - [ ] Nothing links "on order" back to the purchase order that created it
 - [ ] No skip-to-content link; every page costs 13 tab stops through the sidebar
 - [ ] No collections or metafields; `publish_at` remains a dead column
+
+## Adversarial merchant review, and the defects it found (2026-08-20)
+
+**User request**: "We have the WORLDS BEST and most customizable e-commerce storefront builder…
+Aggressively spawn adversarial reviewers in a variety of simulated use cases and industries who
+attempt to build the best e-commerce storefront for their site using our site builder."
+
+Seven reviewers were run against the real code and a live server: an apparel boutique, a coffee
+roaster with subscriptions, a B2B industrial distributor, a solo digital-goods creator, a fine
+jewelry house, a neighbourhood bakery, and an application security audit. Each was told to verify
+every claim with `file:line` and that a confident false finding was worse than no finding.
+
+The findings converged hard. Ranked by how many independent reviewers hit them:
+
+| Gap | Reviewers |
+|---|---|
+| No product variants (size/colour/grind) | apparel, coffee, bakery, jewelry, B2B |
+| No way to create a product manually | coffee, bakery, creator |
+| No custom pages — the builder composes only the home page | all six merchants |
+| No navigation editor — the menu is hardcoded | apparel, bakery, creator, jewelry |
+| No media library / image upload | apparel, B2B, jewelry, creator |
+| No structured product attributes or specs | B2B, coffee, jewelry |
+| Shipping assumed — no pickup, local delivery, or digital-only checkout | bakery, creator |
+| No customer accounts | B2B, coffee |
+
+This entry covers the security work and the defects that made the product unusable. The
+capability gaps above are the next tranche.
+
+### Security: three real vulnerabilities, one of them critical
+
+- [x] **Unauthenticated cross-tenant blog write and delete.** `PUT`/`DELETE /api/blog/[id]` read
+      the tenant from a **query parameter** and consulted the session only when that parameter was
+      absent — so `?storeId=<any store>` skipped authentication entirely. Store ids are publicly
+      enumerable from `GET /api/stores/public` and post ids from `GET /api/blog?storeId=…`. The
+      auditor demonstrated it against a running server: a `PUT` with no credentials returned 200
+      and changed the row. Both handlers are deleted; the authenticated equivalents live in
+      `/api/blog/admin/[id]`, where a `DELETE` was added because none existed. The admin UI's
+      delete button was repointed. Verified closed: both verbs now 405, the public `GET` still 200s
+- [x] The SQL underneath was correctly store-scoped, which is exactly why it did not help.
+      **Scoping a query is only a boundary when the scope comes from something the caller cannot
+      choose.** Worth remembering the next time a route takes `storeId` from input
+- [x] **Stored XSS on every storefront blog.** `blog_posts.content` reached
+      `dangerouslySetInnerHTML` with no sanitiser anywhere in the path. `innerHTML` does not run
+      `<script>`, but it runs `<img src=x onerror=…>` and `<svg onload=…>` — and chained with the
+      finding above, any anonymous caller could plant one on any merchant's shop, same-origin with
+      `/admin`. Now sanitised through `sanitizeRichText` on **write** (`createBlogPost`,
+      `updateBlogPost`) and on **read** (`/api/blog/by-slug/…`). Both, deliberately: rows written
+      before the guard existed are already in the database, and only the read boundary protects
+      those. Verified by poisoning a row directly in Postgres and confirming the API serves it clean
+- [x] `blogUtils.sanitizeHTML` was a decoy — it had no call sites and **returned its input
+      unchanged whenever `window` was undefined**, i.e. on every server render and every write. A
+      reviewer grepping "is blog HTML sanitised?" found a function that looked like a yes. It now
+      delegates to `sanitizeRichText`
+- [x] **`JWT_SECRET` failed open to a literal published in this repository.** Both
+      `auth/session.ts` and `storefront-theme/preview.ts` did
+      `process.env.JWT_SECRET || 'your-secret-key-here'`, so any environment missing the variable
+      signed every session with a public string — forge a token for any `storeId` and the whole
+      multi-tenant boundary is gone. New `src/lib/auth/jwt-secret.ts` throws at module load on a
+      missing, short (<32 char) or known-placeholder value, including the one `.env.example` ships.
+      This is the documented second exception to "everything degrades", alongside
+      `SHIPSTATION_ENCRYPTION_KEY`: an app that cannot tell users apart must not boot
+
+### Defects that made the product unusable
+
+- [x] **No merchant could create a product.** `POST /api/admin/products` inserted into a
+      `compare_price` column that does not exist, so every request 500'd — the endpoint can never
+      have worked. Two more bugs in the same statement: the required-field check validated
+      `base_price` while the values list read `body.price` (inserting `NaN` into a NOT NULL
+      numeric), and `tags`/`gallery_images` are `TEXT[]` but were passed through `JSON.stringify`.
+      All three fixed and verified end to end against the live database
+- [x] `PUT /api/admin/products/[id]` built `UPDATE products SET description = $n` for a column that
+      does not exist. Latent, since the bundled form never sends that key, but any script posting
+      the obvious field name got an unexplained 500. Now treated as an alias for `long_description`
+
+### Custom pages and navigation
+
+Two of the three most-cited gaps, built on the observation that the section renderer was already
+generic — so pages needed a place to keep a list and a route, and no new rendering primitives.
+
+- [x] **Migration 025**: `store_pages` (one draft row and one published row per `(store, slug)`,
+      mirroring `storefront_themes`) and a `navigation` JSONB column on `storefront_themes`
+- [x] Navigation rides on the theme rather than getting its own table: it is small, there is one
+      per store, and it must publish in the same transaction as the sections that link to it —
+      publishing a menu pointing at an unpublished page is exactly the inconsistency a separate
+      table would have allowed
+- [x] `navigation.ts` — `isSafeNavHref` rejects `javascript:`, `data:` and protocol-relative
+      `//evil.example` (absolute despite looking relative, and the case a naive `startsWith('/')`
+      waves through). An unsafe href collapses to the store home rather than rendering
+- [x] **An absent menu means "derive from categories", and is distinct from an empty one.** A store
+      that has never opened the editor gets exactly the header it had before; a merchant who
+      deliberately empties their nav gets an empty nav. Collapsing the two would make turning the
+      nav off impossible
+- [x] `resetDraft` restores navigation too — restoring theme and sections while leaving an edited
+      menu in place hands the merchant a draft that is not what they asked to return to
+- [x] **Page templates** (`page-templates.ts`): About, Shipping & returns, Contact, FAQ, Size guide,
+      Campaign landing, Wholesale, Blank. Essentials first in picker order
+- [x] **The template copy is scaffolding and says so.** Every placeholder that would state a
+      *commitment* is a visible bracketed prompt — `[How many days do customers have to return an
+      item?]` — never a finished-looking sentence. A merchant in a hurry publishes unread, and an
+      invented 30-day window is a term of sale a customer can hold them to. A test enforces it:
+      no template may contain "30-day", "free returns", "next-day" or similar outside a bracket
+- [x] `page-templates.test.ts` validates every setting in every template against the section
+      registry's own schema. This caught two real bugs — `hero.layout: 'centered'` and
+      `rich-text.width: 'default'`, neither of which exists. Both typecheck cleanly, because
+      section settings are `Record<string, unknown>` by design, and both would have silently
+      rendered a fallback the merchant never chose
+- [x] 850 tests, `tsc` clean, lint 0 errors (75 pre-existing warnings). App boots clean
+
+Open — the capability tranche, in the order the reviewers ranked it:
+
+- [ ] **Product variants.** Named "the one thing" by two reviewers independently and blocking for
+      five. `product_options` / `product_variants` with per-variant price, SKU and stock, threaded
+      from the buy box through the cart to `order_items.variant_id` and the ShipStation push
+- [ ] `/admin/products/add` does not exist — the Add Product button routes to a dynamic segment
+      that 404s. The POST endpoint now works and no UI reaches it
+- [ ] The pages work is half-shipped: lib, migration and the collection API are in, but the
+      `[slug]` routes, the storefront route, the nav-aware header/footer and the editor UI are not
+- [ ] `is_digital` / `requires_shipping` are rendered as a switch in the product form and silently
+      dropped by the PUT allowlist — the "wrote nothing, reported success" failure the working
+      rules forbid, in the UI layer
+- [ ] Checkout hard-requires a US street address and 5-digit ZIP even when nothing in the cart
+      requires shipping. `cart-pricing.ts` already computes `requiresShipping` correctly; the
+      checkout UI never reads it
+- [ ] **Preset copy makes factual claims on the merchant's behalf.** Publishing Marquee puts "One
+      mill, nine years" and "We do not run sales" — a public pricing commitment — on a shop that
+      may sell Lightroom presets. `presets.ts` already disabled the announcement bar for precisely
+      this reason; the section copy did not get the same treatment
+- [ ] No media library. Every image field is a URL text box, and `featured_image_url` is missing
+      from the product PUT allowlist, so a merchant cannot set their own hero shot
+- [ ] No structured product attributes; no faceted filtering; storefront search is a triple `ILIKE`
+      that cannot match `HF0375SS` against `HF-0375-SS`. Two GIN `to_tsvector` indexes exist in
+      migration 002 and nothing has ever queried them
+- [ ] No fulfilment methods: pickup and local delivery are unrepresentable, and the shipping-address
+      columns on `orders` are `NOT NULL`
+- [ ] No customer accounts. `/store/[slug]/account` is a live, publicly-linked page that renders
+      "This is a placeholder account page" to shoppers
+- [ ] No merchant font upload; the type ramp is capped at 58.24px; every section is inside a
+      centred container so full-bleed art direction is impossible
+- [ ] Categories are read-only (`GET` only, no admin UI), single-valued per product, and there is
+      no `/collections` route — while `sections.ts:62` help text tells merchants to link to
+      `/collections/new`, which 404s
+- [ ] Dead buttons: `/api/admin/products/bulk`, `/api/admin/products/import` and
+      `/api/admin/products/export` are all called by the products page and none exist
+- [ ] No CSP on `/store/*` — the one surface rendering merchant-authored content. The header rule
+      excludes it (`next.config.ts`), and the CSP elsewhere is Report-Only with `unsafe-inline`
+- [ ] The customizer preview iframe is `allow-same-origin allow-scripts`, which is no isolation.
+      A separate origin for merchant-authored execution is the prerequisite for any custom scripting
+
+## Product variants, end to end (2026-08-20)
+
+The gap five of six merchant reviewers were blocked by, and the one two of them
+named as "the one thing" independently. Built in three layers, each verified
+against the live database before the next went on top.
+
+- [x] **Migration 026**: `product_options` (axis name, ordered values, per-value
+      swatch/image metadata) and `product_variants` (three flat option columns,
+      nullable price, stock, image), plus `order_items.variant_id` and a
+      denormalised `variant_title`, plus a trigger-maintained
+      `products.variant_count`
+- [x] Three axes in flat `option1..3` columns, the Shopify model. An EAV table
+      would be more general and would turn every variant lookup into a
+      join-and-pivot; three columns are indexable, and the fourth axis does not
+      occur in retail
+- [x] **`price` is NULLable and NULL means "inherit the product".** A merchant
+      selling ten sizes at one price sets it once. Copying the product price
+      onto every variant would make a price change a ten-row update a failure
+      could leave half-applied, and would stop inheriting the day somebody
+      edited the product
+- [x] `NULLS NOT DISTINCT` on the option combination. Postgres counts NULLs as
+      distinct in a unique index, so a one-axis product could otherwise hold
+      unlimited duplicate rows for the same size. Verified by trying it
+- [x] `order_items.variant_id` is `ON DELETE SET NULL` with the title alongside.
+      Deleting a discontinued variant must not delete the orders that bought it,
+      and must not be blocked forever by them either
+
+### The money path
+
+- [x] `ClientCartItem` gains `variant_id` — identity only, like `product_id`.
+      The server looks it up store-scoped and takes the price from the row it
+      finds
+- [x] **A variant must belong to this store *and* to the product on its line.**
+      Without the second check a shopper could pair a cheap variant id with an
+      expensive product and the line would price at the variant
+- [x] **A product with options and no chosen variant is rejected, not guessed.**
+      Picking one on the shopper's behalf charges for something they did not
+      select
+- [x] Cart lines key on `(product, variant)`. Collapsing two sizes onto the
+      product would check one size's stock against the other's quantity
+- [x] Variant stock comes from the variant row. The `inventory` ledger is keyed
+      on the product SKU and knows nothing about variants, so it is not
+      consulted for a variant line
+- [x] The storefront and the checkout both price through the same
+      `resolveVariant`, so the displayed price and the charged price cannot
+      drift. Two rules there are about honesty rather than correctness: a
+      variant does not inherit a product sale price if it has overridden the
+      regular price (that would invent a discount nobody set), and a sale price
+      *above* the regular price is ignored rather than rendered as a discount
+
+### The shopper's half
+
+- [x] `VariantSelector` renders swatches or pills — **decided by the data, not
+      by the axis name.** Sniffing for "Colour" would guess wrong for "Finish"
+      or "Stain", and wrong in every language but English
+- [x] A combination that does not exist is **disabled**; one that exists but is
+      sold out stays **selectable and marked**. A shopper is entitled to learn
+      that their size exists and is gone, rather than watching it vanish and
+      concluding the shop never carried it
+- [x] Availability is computed against the *other* axes only, so choosing a
+      colour never greys out the colours — the behaviour that makes a selector
+      feel broken
+- [x] State is carried in the accessible name, not in colour: a greyed pill and
+      a struck-through pill are otherwise identical to a screen reader
+- [x] Every colour, radius and size reads from the `--st-*` theme tokens, so a
+      merchant's preset drives the selector. Three tokens were invented while
+      writing the CSS (`--st-space`, `--st-text-sm`, `--st-radius-control`) and
+      corrected against `resolve.ts` — the same class of error the page-template
+      test was written to catch
+- [x] A product with no options keeps the original server-rendered markup and
+      still works with JavaScript off
+
+### One bug worth recording
+
+`readStorage` rebuilds every stored cart line field by field, and the first
+version **dropped `variant_id`**. The failure was quiet and total: the stored
+line lost its variant, the next sync asked the server to price a product that
+has options without naming one, the server correctly refused, and the client
+pruned the line — so adding anything to the cart emptied it a second later.
+Found by driving a real browser through the flow, not by any test, and the
+reason the browser pass happened before the commit.
+
+- [x] Demo seed now ships one optioned product per store: a smartwatch (case x
+      band, with one combination sold out and one never made), a mug (single
+      axis, every glaze inheriting the product price) and a kettlebell (per
+      variant pricing, since 24 kg cannot cost what 12 kg costs). Idempotent;
+      re-running the seed leaves 12 variants
+- [x] 890 tests, `tsc` clean, lint 0 errors. Verified in a browser: picking Navy
+      moves the price to $99, picking Alpine Green moves it to $74, and the two
+      land in the cart as two lines totalling $173
+
+Open:
+
+- [ ] **No admin editor for variants yet.** They can only be created through the
+      seed or the persistence layer, which means the feature is not yet usable
+      by a merchant — the next thing to build
+- [ ] The catalogue grid does not yet show a price range for an optioned
+      product, so a card reads one price for a product whose variants run
+      $54-$96. `priceRange` exists and is tested; nothing calls it
+- [ ] ShipStation sync does not create or update variants
+- [ ] Variant images are stored and honoured by the panel, but there is still no
+      media library to put one there
+
+## The variant editor: merchants can now create variants (2026-08-20)
+
+Variants existed end to end for shoppers but could only be created through the
+seed or the persistence layer — which made the feature exactly the kind of
+half-built thing the review criticised elsewhere. This closes it.
+
+- [x] `GET`/`PUT /api/admin/products/[productId]/variants`. The store comes from
+      the session; the product is confirmed to belong to that store **inside the
+      write transaction**, so a product id from another tenant cannot have
+      variants attached to it. Verified live: a cross-tenant `PUT` returns 404
+      and writes nothing
+- [x] The cross-tenant case is a **404, not a 403 or a 500** — it must read the
+      same as a product that does not exist, or the endpoint becomes a way to
+      discover which ids are real in other stores
+- [x] `PUT` replaces the whole set rather than accepting a patch. A variant grid
+      is edited as a grid — a merchant adds a size, renames a colour and deletes
+      two rows in one sitting — and reconstructing that as a patch stream is
+      more ways to be wrong for no benefit
+- [x] `variant-schema.ts` holds the wire rules, out of the route so they can be
+      unit-tested without a request. The cross-field ones are the point: a
+      payload can be well-typed and still describe an impossible product, and
+      each of those would otherwise reach the database and come back as a
+      constraint error with no field attached to it. 25 tests
+- [x] Rejected with a pointed field error: a variant naming a value its axis
+      does not offer, an axis left unchosen, two variants covering one
+      combination, a SKU used twice, option positions with gaps, an axis with no
+      variants (and vice versa), and a sale price at or above the variant price
+- [x] The combination key is **JSON, not a joined string**. Option values are
+      free text, and any separator a merchant could also type would make
+      "Red/Blue" on one axis collide with `["Red", "Blue"]` across two
+- [x] A SKU colliding with one used elsewhere in the store is a field error
+      rather than a 500 — the in-payload case is caught by the schema, the
+      across-products case only the database knows about
+- [x] **`VariantEditor`**: declare the axes, then **Generate** builds every
+      combination *and keeps the rows that already exist*. Adding a colour to a
+      shirt that already has three sizes adds three rows and disturbs none of
+      the others — losing a merchant's stock counts because they added a colour
+      would be unforgivable
+- [x] A blank price means "inherit", and the field's placeholder is the
+      product's own price, so a merchant can see what an empty field will
+      charge. An empty field must never become 0: a variant priced at zero is
+      free, which is a much worse thing to publish by accident
+- [x] Removing an axis strips it from every row too — otherwise the rows keep a
+      value for an axis that no longer exists and the save fails with an error
+      the merchant cannot see the cause of
+- [x] Optional per-value swatches; setting them all is what makes the storefront
+      render colour circles instead of buttons
+- [x] Driven in a real browser: add option, generate, price one variant, save —
+      then confirmed in Postgres that the blank price stored NULL, the typed one
+      stored 39.50, and the storefront immediately rendered "White, sold out"
+      for the variant left at zero stock
+- [x] `admin/__tests__` caught `color="blue"` on an Alert: only the semantic
+      hues survive in this codebase. Removed
+- [x] 915 tests, `tsc` clean, lint 0 errors
+
+Still open on variants:
+
+- [ ] The catalogue grid still shows one price for an optioned product whose
+      variants run $54-$96. `priceRange` is written and tested; nothing calls it
+- [ ] No per-variant image picker in the editor — the column is stored and the
+      storefront honours it, but there is no media library to put one there
+- [ ] ShipStation sync neither creates nor updates variants
+- [ ] `/admin/products/add` still does not exist, so a merchant can create
+      variants on a product they cannot create
+
+## Creating a product, and cards that stop naming one price (2026-08-20)
+
+- [x] **`/admin/products/new`.** The Add Product button pointed at
+      `/admin/products/add`, a route that has never existed: it fell through to
+      the `[productId]` segment, fetched `/api/admin/products/add`, got a 404 and
+      rendered "Product not found". Three reviewers hit it independently. With
+      the `compare_price` bug fixed earlier, the POST worked and no UI reached
+      it — so the only way a product entered this platform was a ShipStation
+      sync or the demo seed
+- [x] The page asks for the six things a product cannot exist without and then
+      hands the merchant to the full editor, where images, SEO and variants
+      live. A single form carrying every field is a wall on the one screen where
+      a new merchant most needs momentum
+- [x] The slug is proposed from the name and **stops proposing the moment the
+      merchant edits it** — a slug that keeps overwriting itself after you have
+      corrected it is the most irritating thing a form like this can do
+- [x] Found while testing: `<Textarea autosize>` blanked the whole page with
+      "This page couldn't load". The admin theme sets `minHeight` on the
+      textarea input and `react-textarea-autosize` throws on a style
+      `minHeight` rather than ignoring it — `rebel-theme.ts:380` documents
+      exactly this, which is why `autosize` cannot be used with this theme
+- [x] Driven in a browser from the products list: the button navigates, the slug
+      auto-fills, the product saves with every field, the page redirects to the
+      full editor, and the product renders on the storefront
+
+- [x] **Catalogue cards quote a range.** `priceRange` was written and tested when
+      variants landed and nothing called it, so a card read one price for a
+      kettlebell whose variants run $54 to $96 — misleading in the direction
+      that costs trust at checkout, since the shopper finds out on the product
+      page after they have decided
+- [x] Implemented as a `LEFT JOIN LATERAL` on the listing query, gated on
+      `products.variant_count > 0`. The listing renders up to 48 cards and the
+      N+1 is the thing that query exists to avoid; the gate short-circuits the
+      join for the single-SKU majority
+- [x] The SQL mirrors `resolveVariant`: a variant with no price inherits the
+      product's effective price, and a sale price counts only when genuinely
+      below the regular one
+- [x] **"from" appears only when the range actually spans.** Every glaze of the
+      demo mug costs the same, so that card shows one figure; the kettlebell
+      shows "from $54.00". "from $54" on a product with one price is noise, and
+      slightly evasive noise
+- [x] Verified on the running site: exactly one "from" prefix in the fitness
+      store, none in the craft store
+
+Noted while running the suite, not caused by this work and not fixed here:
+`admin-products.spec.js` → "should test product preview functionality" fails on
+the unmodified branch too. `isProductActive()` uses `text=Listed`, which matches
+more than one node and trips Playwright's strict mode. CI does not run the e2e
+suite (lint, typecheck, unit, migrations and build only), so it is not going
+red on anything — but it is a broken test sitting in the repo.
+
+The add-product e2e test **was asserting the bug**: it waited for
+`/admin/products/add` and passed while that route rendered "Product not found".
+It now asserts the destination renders a usable form and that the slug proposal
+works, which is the thing a merchant actually needs.
+
+## No promises on a merchant's behalf, and a regression the unit suite could not see (2026-08-20)
+
+**The finding.** A reviewer picked "Marquee" during onboarding and published.
+Their live shop — selling Lightroom presets — then read "One mill, nine years"
+and, under a heading of its own, **"We do not run sales"**: a public pricing
+commitment they had never agreed to and would break with their first Black
+Friday bundle. Other presets promised same-day dispatch, 30-day returns, a
+two-year warranty, net-30 terms and free shipping over $75.
+
+`presets.ts` had already established the rule for the announcement bar — *sample
+copy inside a section is a starting point a merchant will edit; a promise is a
+commitment made on their behalf* — and the section copy had simply never been
+held to it.
+
+- [x] Every claim a customer could hold a merchant to is now a visible bracketed
+      prompt: delivery times, returns windows, warranty lengths, discount rates,
+      payment terms, free-shipping thresholds, and stated pricing policy
+- [x] **Brand voice is untouched.** "The Autumn Edit", "Built to last", "Cut
+      once, in a mill we have used for nine years" — evocative copy that commits
+      nobody to anything stays exactly as it was. A test asserts *both*
+      directions, so the patterns cannot quietly grow greedy enough to push
+      merchants towards placeholders where real copy belongs
+- [x] The trade is real and worth stating plainly: the value-prop cards read
+      less impressively in a screenshot now. That is the correct direction — a
+      merchant editing three cards beats a merchant unknowingly advertising a
+      returns window they never chose
+- [x] The duration rule needed a second pass. `\d+ (day|year)` flagged "a mill
+      we have used for nine years", which is history, not a promise. It now
+      requires the duration and a commitment noun (warranty, guarantee, return,
+      refund, exchange, trial) to appear together — in either order, since
+      "Two-year warranty" and "returns within 30 days" both occur
+- [x] Migration 019's inline default sections still carry the old copy. **Left
+      alone deliberately**: it has been applied, migrations are append-only, and
+      those rows belong to merchants who can edit them
+
+### An attempt that made things worse, and was reverted
+
+Filling the demo stores' value props from the seed looked like the way to keep
+the showcase sharp while leaving the shipped defaults honest. It called
+`backfill_storefront_themes()` to give the demo stores theme rows first — and
+that function writes **one generic section list for every store**. All three
+demo shops collapsed onto the same composition, destroying exactly the property
+`storefront.spec.js` guards ("three shops, not one page three colours") and the
+one reviewers singled out as hardest to retrofit. Reverted in full; the demo
+stores render from their preset compositions again, verified by diffing their
+section orders. The demo value-props bar shows prompts for now, which is
+cosmetic and honest.
+
+### The regression: `JWT_SECRET` broke the customizer
+
+The fail-closed check landed earlier as a module-level `const`. That was wrong
+in a way nothing in CI could see.
+
+- [x] `Customizer.tsx` is a **client component**. It imports `previewUrl` from
+      `@/lib/storefront-theme`, whose index re-exports `preview.ts`, which
+      imports the secret module. `process.env.JWT_SECRET` is undefined in a
+      browser bundle, so the throw fired **on import** and took the whole
+      preview pane down. Six customizer e2e tests, green on `main`, red on the
+      branch
+- [x] **CI would never have caught it**: the workflow runs lint, typecheck, unit
+      tests, migrations and a build. It does not run Playwright. `tsc` was
+      clean, 922 unit tests were green, and the build passed
+- [x] Fixed by making the read lazy — `getJwtSecret()` validates on first *use*
+      and caches. The guarantee is unchanged (nothing can sign or verify with a
+      bad secret) and importing is harmless wherever the secret is never touched,
+      which is every client path
+- [x] A unit test now asserts the storefront-theme entry point imports cleanly
+      with no secret present, so the failure mode is caught by the suite that
+      CI actually runs
+- [x] Writing those tests surfaced a second bug: **both known placeholders are
+      shorter than the 32-character floor**, so the length check fired first and
+      the placeholder branch was unreachable. Reordered — "this value is
+      published in the repo" is more useful and more urgent than "too short",
+      which merely invites padding it
+- [x] Diagnosed by bisecting against `main` rather than assuming: 7/7 passing
+      there, 1/7 on the branch, which is what identified the commit
+- [x] 931 tests, tsc clean, lint 0 errors, production build reproduced locally
+      with CI's exact environment
+
+## CI now runs the e2e suite (2026-08-20)
+
+The customizer regression above is the argument. It walked through lint,
+typecheck, 922 unit tests and a production build without a mark, and was caught
+only by Playwright — which CI did not run. A blind spot that lets a broken
+preview pane ship is not one to leave open once it has been demonstrated.
+
+- [x] New `e2e` job: Postgres 16 service, migrate, seed, then
+      `storefront.spec.js` and `customizer.spec.js` on Chromium. Those two cover
+      the surfaces a shopper and a merchant actually touch — the purchase
+      journey end to end, and the preview/viewport/reorder machinery that broke
+- [x] The Playwright report and traces upload as an artifact on failure, since
+      a red e2e job with no artifacts is barely more useful than no job
+- [x] Chromium only, matching what a session container can run, so a failure is
+      reproducible locally with the same command
+- [x] Fixed the one genuinely broken spec first, rather than adding a job that
+      would have started red: `isProductActive()` used `text=Listed`, which
+      matched both the status badge and the "Show on my storefront" copy, so
+      `isVisible()` threw a strict-mode violation instead of returning a
+      boolean. Scoped to the first match and made non-throwing — a missing badge
+      means "not listed", which is the answer the caller wants
+- [x] All 23 `admin-products` specs pass now, where two failed before
+- [x] The build job's comment about `JWT_SECRET` throwing "at module load" was
+      left stale by the lazy fix. Corrected
+
+## Custom pages reach the storefront (2026-08-20)
+
+The half-shipped pages work from earlier is now a whole feature for everything
+except the editor UI: a merchant can create, edit, publish, unpublish and delete
+a page through the API, and it renders in their theme with their chrome.
+
+- [x] `GET`/`PUT`/`DELETE /api/admin/pages/[slug]` and
+      `POST`/`DELETE /api/admin/pages/[slug]/publish`. Unpublishing is
+      deliberately **not** deletion — taking a page off the shop and throwing it
+      away are different decisions, and conflating them loses copy somebody wrote
+- [x] `/store/[storeSlug]/pages/[pageSlug]` renders the page's `Section[]`
+      through the **same registry** the home page uses. That was the whole
+      design: the section engine was already generic, so this needed a table and
+      a route rather than any new rendering primitive
+- [x] Behind a valid preview token the **draft** is served, matching the home
+      page's contract. Without one an unpublished page is a 404, not a hidden
+      page a guessed URL could reach
+- [x] `noindex` honoured, for thank-you and campaign pages that should not
+      compete with the shop in search
+- [x] **Navigation is live.** The header renders the merchant's menu when they
+      have set one and derives the old hardcoded list otherwise; the footer's
+      Shop column does the same. `resolveNavHref` mounts store-relative paths
+      and collapses anything unsafe rather than emitting it
+- [x] The footer lists published pages, so a returns policy is reachable from
+      every page — Stripe asks for that URL during Connect onboarding, and an
+      unlinked page satisfies neither Stripe nor a shopper
+
+### Two defects found by using it rather than by testing it
+
+- [x] **Publishing a page 404'd for up to a minute.** `pages.db.ts` had copied
+      `db.ts`'s in-process cache, and an in-process cache **cannot be
+      invalidated across instances** — the invalidate call reaches the module
+      registry it runs in, which on a serverless platform is one lambda out of
+      many. It was reproducible: publish, open the URL, get a 404. Cache
+      removed. Serving a stale theme is cosmetic for a minute; serving a 404 for
+      a page that exists is a broken shop at exactly the moment the merchant is
+      looking at it. The cost is one indexed lookup per render, on a page that
+      already queries the store, theme, categories and catalogue
+- [x] **The minimal footer layout skipped the page list entirely.** Voltage —
+      the preset the demo electronics store uses — has `footer.layout:
+      'minimal'`, and the Information column was only in the columns branch. So
+      a merchant on a minimal footer had no route to their own returns policy,
+      which is the exact problem the list exists to solve. The layout must not
+      be what decides whether it is solved
+
+Open on pages and navigation:
+
+- [ ] **No editor UI yet.** Both are API-only, so the feature is reachable by a
+      developer and not by a merchant — the same criticism the review made of
+      other half-built surfaces, and the next thing to close
+- [ ] The customizer's preview iframe is still hardcoded to the home page URL,
+      so a merchant cannot preview a custom page inside the editor
+
+## The Pages screen: merchants can now write their own pages (2026-08-20)
+
+The pages API existed and no merchant could reach it, which is the same
+criticism the review made of other half-built surfaces. `/admin/pages` closes it.
+
+- [x] Built **around the templates rather than around a blank page**. The
+      blank-page moment is where storefronts stall, and "what does a Shipping &
+      Returns page even contain" is a question the platform can answer once
+      instead of every merchant answering it badly
+- [x] Essentials first and labelled "Every shop needs these"; a template whose
+      slug is already taken reads "Already added" rather than failing on submit
+- [x] Publish/unpublish per page, with the distinction stated in the UI:
+      unpublishing takes the page off the shop, deleting destroys the copy.
+      The delete confirmation says which one the merchant probably wants
+- [x] Live pages link straight to the storefront, so "publish and check" is one
+      click rather than a URL to reconstruct
+- [x] Driven in a browser: create from a template, publish, see the Live badge,
+      and confirm the rows in Postgres
+
+Two things it turned up:
+
+- [x] The React compiler rejected the icon lookup — resolving a component from
+      a namespace import during render. Replaced with an explicit map, matching
+      `SectionIcon.tsx`, which keeps the whole icon package out of the bundle
+      too
+- [x] **The nav had a test pinning it at nine items.** An earlier audit trimmed
+      it from eleven, and adding Pages made ten. Rather than working around the
+      guard, the test now reads ten with the reasoning written down: the audit's
+      point was that a small merchant should be able to *find* what they need,
+      and a merchant who cannot reach Pages cannot write a returns policy. The
+      comment names ten as the ceiling, so the next addition has to argue for
+      itself rather than treat this as permission
+
+Open:
+
+- [ ] Section-level editing per page still goes through the API. The customizer
+      can compose the home page and only the home page; adding a page switcher
+      to its rail is the next step, and its preview iframe is hardcoded to the
+      home URL
+
+## The navigation editor, and a silent home-page wipe (2026-08-20)
+
+Navigation rendered from stored data but nothing could store any, so every menu
+was still the derived default. `NavigationEditor` closes that, and it lives on
+the Pages screen rather than in the customizer because that is where a merchant
+has just written a page and is looking for somewhere to link it.
+
+- [x] **"Use the automatic menu" is a real state, not an empty list.** Taking
+      over seeds the editor with the derived menu, so a merchant edits what they
+      already had rather than starting from nothing and losing their category
+      links. "Back to the automatic menu" returns to deriving, and the copy says
+      that a hand-built menu is one they will maintain by hand
+- [x] Link targets are offered as a picker — all products, each category, each
+      published page, cart, account — and a free-text field alongside for
+      anything else. Everything is stored **store-relative**, so a shop moving to
+      a custom domain does not take its menu down with it
+- [x] Save writes to the *draft*; the toast says to publish from Page Design
+      rather than implying the change is already live
+
+### Two defects, both found by using it
+
+- [x] **`/api/admin/categories/simple` returned no `slug`.** The storefront
+      links categories by slug, so a category picker built on that endpoint
+      could not produce a working link. Added — and the response shape is `data`
+      as a bare array, not `{ categories }`, which the first version of the
+      caller got wrong too
+- [x] **Saving navigation replaced the shop's home page.** A store that has
+      never saved a draft renders from the legacy `theme_name` mapping and has
+      no `storefront_themes` row. Saving *only navigation* created that row, and
+      the INSERT's fallback composition was `presetSections(undefined)` — the
+      generic starter page, not the store's own preset composition. So renaming
+      a menu item silently swapped the merchant's home page for a different one.
+      Nothing errored. `saveDraft` now reads the store's legacy theme name when
+      it is about to insert a first draft, and seeds from that preset instead.
+      One extra query, once, on the first save a store ever makes
+- [x] `save-draft-composition.test.ts` pins all of it, including that
+      `navigation` stays `null` when a caller does not send one — sending `{}`
+      would wipe a merchant's menus on every unrelated theme save
+- [x] Verified end to end in a browser: take over the menu, get five derived
+      items, add "Our story" pointing at `/pages/about`, save, publish, and see
+      it in the live header at the correctly-mounted URL
+
+Worth recording: the categories fix appeared not to work for several minutes.
+The file was right and the dev server was serving a stale bundle; restarting it
+fixed it. Not a code problem, but half an hour of confusion is worth one line
+in a log.
+
+- [x] 936 tests, 23/23 e2e, `tsc` clean, lint 0 errors
+
+## Places the product was lying, and the three buttons that did nothing (2026-08-20)
+
+A batch of defects the review found where the UI states something untrue. This
+codebase has a test file called `no-confident-lies.test.ts`; these had slipped
+past it because they live in copy and in missing routes rather than in
+responses.
+
+- [x] **The hero section's help text pointed at a 404.** "A path on your store,
+      such as /products or **/collections/new**" — there is no `/collections`
+      route anywhere in the codebase, and a merchant following that instruction
+      got a broken button. Now points at `/pages/about`, which exists as of this
+      branch
+- [x] **The checkout claimed tax was calculated from the delivery address.**
+      `computeTaxCents` returns 0 for every cart and every destination —
+      deliberately, so no order is silently mis-taxed by a guess — so the Tax
+      row's "From your address" promised a calculation that never happens and
+      then resolved to $0.00. It shows the figure directly now, and the notice
+      says tax is not added at checkout
+- [x] **And that shipping was too.** Shipping is a flat rate per method with a
+      free-over threshold on the subtotal; the address is collected to ship to
+      and never enters the price. The row now reads "From your delivery speed",
+      which is what actually determines it. The stale comment above
+      `hasDestination` said the same wrong thing and is corrected
+- [x] **The account page told shoppers the shop was unfinished.** It rendered
+      "Welcome Back!", a *My Account* heading, three cards styled
+      `cursor: pointer` with no handler, and body copy reading "This is a
+      placeholder account page. In a full implementation, this would show user
+      profile information, order history…" — on a public URL, linked from the
+      header and footer of every merchant's shop, in the platform's gradients
+      rather than the merchant's theme. Replaced with a short honest page in the
+      merchant's own chrome that says accounts are not set up, explains the
+      confirmation email covers the same ground, and offers two links. It stays
+      linked rather than 404ing, because a shopper who clicks a person icon
+      deserves an answer. 258 lines of inline-styled placeholder became 80
+
+### The three dead buttons
+
+Bulk actions, export and import all posted to routes that had never existed:
+405, 404 and 404. All three now work.
+
+- [x] **Export** (`GET .../export?format=csv`) emits the same columns the
+      importer reads, so an export is a round trip: pull the catalogue, edit it
+      in a spreadsheet, push it back. A merchant who cannot get their catalogue
+      out is a merchant who will not put one in
+- [x] **Bulk** (`POST .../bulk`) lists, unlists and deletes. Every statement
+      carries `store_id`, and the response reports rows actually touched rather
+      than the request's count. Deleting checks `order_items` first and **keeps
+      products that appear in past orders**, saying so — that is somebody's
+      order history, and the foreign key would have failed the whole request
+      anyway
+- [x] **Import** (`POST .../import`, multipart) upserts on `(store_id, sku)`, so
+      re-importing an edited export updates rather than duplicates. Categories
+      named in the file are created if missing — an import that silently dropped
+      them would look like it worked and produce an uncategorised catalogue.
+      One transaction: a half-applied catalogue is worse than a rejected one
+- [x] **Bad rows are reported, not fatal.** A merchant importing 4,000 rows
+      needs to know rows 12 and 3,900 are wrong, not that "the import failed".
+      Row numbers count the header, so they match what the spreadsheet shows
+- [x] The CSV parser is hand-rolled and dependency-free; the alternatives want a
+      stream or a Node-only API. 27 tests cover what a real spreadsheet emits and
+      a naive `split(',')` gets wrong: quoted commas, embedded newlines, doubled
+      quotes, a UTF-8 BOM, CRLF. Any of those wrong shifts every later column
+      and corrupts a catalogue quietly
+- [x] Exported fields beginning `=`, `+`, `-` or `@` are prefixed with a quote.
+      Excel and Sheets execute those, so without it a merchant opening their own
+      export could run a formula somebody had put in a product name
+- [x] Verified end to end: exported 12 products, imported a file with one new
+      row, one update and three bad rows — 1 added, 1 updated, 3 skipped with
+      correct line numbers, category auto-created, and a bulk delete that kept
+      the product with four order lines against it
+- [x] 963 tests, `tsc` clean, lint 0 errors
+
+## Round two: what the reviewers found by using it (2026-08-20)
+
+A second wave of adversarial industry reviewers (apparel, B2B distributor,
+bakery, digital foundry, home-goods photographer) and a security auditor
+exercised the running site. They found that the variant *foundation* was sound
+but not wired to the paths that make it work, plus a set of live defects. Every
+item below was reproduced against a running server before it was fixed.
+
+### Variants, made to actually work end to end
+
+- [x] **A variant product could not be added to a cart at all.** `cart/validate`
+      ran `isPurchasable(product)` — which reads `products.stock_quantity` — before
+      it looked at variants, so a product that keeps its stock on the variant rows
+      (0 at product level, which is the normal setup) had every line dropped as
+      "out of stock". Purchasability is now the variant's decision when a product
+      has options, and the product's only when it does not. Verified: a variant
+      with 5 in stock on a product with 0 product-stock now adds; an out-of-stock
+      variant and a variantless line on an optioned product are still refused
+- [x] **Variant stock never moved on a sale.** The `order_items` insert trigger
+      only ever called `update_product_stock(product_id)`, so a variant with one
+      unit sold to unlimited shoppers and two racers for the last size both won.
+      Migration 027 adds `update_variant_stock` and teaches the trigger to
+      decrement the variant row when the line names a variant. `assertStockAvailable`
+      — the `FOR UPDATE` re-check the webhook runs before writing the order — now
+      locks and re-reads the variant row, not the product. Verified: selling 3 of a
+      10-stock variant leaves it at 7 and the product untouched
+- [x] **The variant editor destroyed images and inherited settings on every save.**
+      It hard-coded `imageUrl: null` (and `salePriceCents`/`trackInventory`/
+      `allowBackorder` to null) in the full-replace PUT, so a green "20 variants
+      saved" toast silently wiped 20 images. The editor now has an image column,
+      loads and preserves the fields it does not surface controls for, and the
+      wire schema rejects an unrenderable image URL rather than storing a
+      `javascript:` value. Verified: an https image round-trips; a `javascript:`
+      one is refused with a field error
+- [x] **Picking a variant now moves the gallery to that variant's photograph.**
+      `VariantPurchasePanel` already emitted the selected image; the product page
+      never handed it to the gallery. A thin `ProductMedia` client component owns
+      the shared selection so the gallery and the panel stay in sync, while the
+      title, description and shipping facts stay server-rendered
+
+### Live defects the same reviews surfaced
+
+- [x] **SQL injection in `GET /api/admin/products`.** `sort_by` was cast with `as`
+      and interpolated into `ORDER BY`, so `?sort_by=(SELECT pg_sleep(2))` ran
+      verbatim (a 2.02s response proved it) and — an ORDER BY subquery carrying no
+      `store_id` — read across tenants. Replaced with a key→column allow-list
+- [x] **A hostile image URL 500'd the whole storefront.** A `javascript:` value in
+      an image column made `next/image` throw during server render, escaping the
+      section boundary. A single `renderableImageUrl` boundary now sanitises every
+      image the storefront queries and the cart build, so one bad row can no longer
+      take a page down. The customizer also stopped silently dropping https hero
+      images — `imageSrc` accepts https, which `next.config.ts` already allows
+- [x] **`setFulfillmentSyncStatus` threw on every call** (`$2` deduced as two
+      types), so no order could leave `pending` and the merchant-visible sync-error
+      signal never fired. Pinned `$2` to `::text`
+- [x] **The product create route dropped `is_digital`/`requires_shipping`** —
+      returning success for a write it discarded, the sibling update route's
+      already-fixed bug — and the min/max price filter referenced a non-existent
+      `price` column while admin search ignored SKU. All fixed
+- [x] **The product page's shipping notice was inverted for non-shipped items:**
+      it claimed "shipping is calculated from your address" for a product that does
+      not ship, and hid the honest "No shipping needed" exactly when it was true.
+      Now branches on `requires_shipping`
+
+### Still open, ranked by how many reviewers it blocked
+
+- [ ] **Media library / image upload** (4 reviewers). Every image field is still a
+      URL box; the "Upload Images" button mints an in-memory `blob:` URL behind a
+      green success toast and persists it. Needs a storage adapter (degrading to a
+      labelled "not configured" state), a `store_media` table, an upload route, and
+      a picker — replacing the two fake-upload handlers
+- [ ] **Fulfilment methods** (bakery: the one thing). The order model is welded to
+      "a parcel to an address" across a `NOT NULL` schema, a positional insert, an
+      API validator and the checkout form. Pickup and local delivery are
+      unrepresentable; a `fulfillment_method` on the order with a conditional
+      address is the unlock
+- [ ] **Digital delivery** (digital foundry: the one thing). Marking a product
+      digital only zeroes shipping; there is no asset table, no download route, no
+      email. A paid digital order hands the buyer an order number and nothing else
+- [ ] **Structured product attributes / spec tables and facet search** (B2B: the
+      one thing). Catalogue imports cleanly but as free text; buyers cannot filter
+      by thread size or match a mangled part number
+- [ ] **Collections CRUD** — `categories` API is GET-only, so "New In"/"Sale"
+      cannot be created; **variant CSV import**; **customer accounts / re-download**;
+      **per-variant restock from the inventory screen**
+
+## AI home-page builder: prompt in, a validated draft out (2026-08-20)
+
+The platform's goal named "using AI to help craft your site — prompt + fix up"
+as a headline feature. This is the prompt half, built so the fix-up half stays
+the merchant's: a merchant describes their shop in a sentence, a model proposes
+a home-page composition, and the result is saved as a **draft** they review in
+the customizer before anything goes live.
+
+- [x] **The model is never trusted.** Its output runs through `composeSections`
+      (`src/lib/storefront-theme/compose.ts`), which drops section types this
+      renderer cannot draw, coerces every setting against the registry schema via
+      `coerceSectionSettings`, rejects a `javascript:` image, honours per-type
+      instance caps, and clamps the page to one screen. What comes back satisfies
+      the same contract a hand-built page does — the goal's "LIMITED SECURE"
+      requirement made concrete. 10 tests pin the accept/reject decisions
+- [x] **`coerceSectionSettings`** was the load-bearing piece and is independently
+      tested (22 cases). `Section['settings']` is `Record<string, unknown>`, so
+      nothing typed catches `hero.layout: 'centered'` — a layout that does not
+      exist, which a model produces routinely and which shipped once in a
+      hand-written template. This is the one validator both the AI composer and,
+      later, any section import will share
+- [x] **It degrades, it does not crash.** `POST /api/admin/ai/compose-page`
+      returns a labelled 503 when `OPENAI_API_KEY` is unset — the same rule every
+      other integration follows, and what keeps CI's keyless build green. Verified
+      live: empty prompt 400, unconfigured 503 with a "not configured" message, no
+      auth 401
+- [x] **Rate limited and input capped.** A paid model call on a merchant's behalf
+      is a cost and a DoS surface. The prompt is capped at 2,000 characters and the
+      caller is limited per store (`src/lib/ai/rate-limit.ts`, time injected for
+      deterministic tests). The honest limitation — the limiter is per-instance —
+      is documented in the module rather than hidden
+- [x] **Saved as a draft, never published.** The route calls `saveDraft`, so the
+      AI proposes and the merchant disposes; the UI drops them into the customizer
+      to review and publish. Reachable from the AI admin page as "AI Home Page
+      Builder"
+- [ ] Follow-ups: a "regenerate this section" action (fix-up at section
+      granularity), and feeding the store's real categories and products into the
+      prompt so featured-collection and collection-grid sections point at things
+      that exist
+
+## A media library, and the end of the fake upload (2026-08-20)
+
+Four reviewers were blocked on the same thing: every image field was a URL text
+box, and the "Upload Images" button was a lie. It minted an in-browser `blob:`
+URL, showed a green "uploaded successfully" toast, and persisted a pointer that
+existed only in that one tab — which then 500'd the storefront when the row was
+rendered. A merchant who is not technical and does not own an image CDN could
+not get their own photographs onto their shop.
+
+- [x] **Real uploads, through real storage.** `POST /api/admin/media` stores an
+      image in object storage (Vercel Blob over its REST API — no SDK dependency)
+      and records it in a new `store_media` table, store-scoped from the session.
+      `GET` lists a store's library
+- [x] **Identified by bytes, not by claim.** `sniffImage` reads an upload's magic
+      number and returns the canonical type, or null. A `.jpg` that is actually
+      HTML, or an SVG that carries script, is refused — SVG deliberately, since
+      `next.config.ts` keeps `dangerouslyAllowSVG` off for that reason. 8 tests
+- [x] **It degrades, it does not crash.** With no `BLOB_READ_WRITE_TOKEN`,
+      `getStorage()` returns null, `GET /api/admin/media` reports
+      `configured: false`, and `POST` returns a labelled 503 — never a 500, never
+      a fake success. The URL box stays usable, so nothing that worked before
+      breaks. Verified live: list 200 unconfigured, upload 503, no auth 401
+- [x] **The fake handlers are gone.** The product image gallery, the blog featured
+      image, and the customizer's image control now upload through the endpoint
+      and set only a URL the server actually stored; on a 503 they say uploads are
+      not set up and point the merchant at the URL field, rather than toasting a
+      success that did not happen. The customizer control's hint no longer
+      recommends `/uploads/hero.jpg`, a path that could never exist
+- [x] **Image columns widened to TEXT.** `featured_image_url`, `logo_url`,
+      `favicon_url` and the variant `image_url` were `VARCHAR(500)`, so a long
+      signed CDN URL or a data URI failed the whole write with a raw Postgres
+      "value too long" error leaked to the client. Migration 028 widens them and
+      adds `store_media`
+- [ ] Follow-ups: a picker that browses the library rather than re-uploading each
+      time; alt-text editing and deletion; a store-scoped S3/R2 adapter for
+      merchants who bring their own bucket; wiring `logo_url`/`favicon_url` into
+      the store settings form so a merchant can set them at all
+
+## Merging main: three features superseded by the trunk (2026-08-20)
+
+While this branch was in flight, `main` merged its own product-and-inventory work (PR #8). The two
+lines of work had independently built **the same three features**, and the trunk's versions are the
+ones that survive.
+
+**Variants.** `main`'s `039_variants.sql` makes the variant the stock-keeping unit: a canonical
+`option_key` with a plain UNIQUE, a separate `product_option_values` table with a composite foreign
+key, deferred constraint triggers, and a "Default Title" variant for every product so there is no
+second code path for simple products. This branch's `026_product_variants.sql` used flat
+`option1..3` columns and a nullable price meaning "inherit the product". Both are defensible; only
+one can exist. The trunk's is more thorough and is already reviewed and merged, so this branch's
+variant work — migration, `src/lib/catalog/variants*.ts`, the selector, the admin editor, and the
+cart's variant threading — was **deleted rather than reconciled**.
+
+The collision would not have been caught by a merge conflict. Both migrations used
+`CREATE TABLE IF NOT EXISTS public.product_variants`, so whichever ran second would have been a
+silent no-op, leaving one schema in the database and the other side's code reading it. `main`'s own
+migration comment warns about exactly this trap. **A clean `git merge` is not evidence that two
+schemas are compatible.**
+
+**Media.** Both branches found and fixed the same lie — `ImageGalleryManager` wrote a
+`URL.createObjectURL()` `blob:` string into `gallery_images` and reported success — and both
+reached for Postgres with SHA-256 content addressing rather than an object store, for the same
+reason: `DATABASE_URL` is the only variable here with no working fallback. `main`'s
+`033_product_media.sql` (`product_media`) supersedes this branch's `028_media_library.sql`
+(`store_media`).
+
+**CSV.** `main`'s `src/lib/catalog/csv.ts` uses Shopify's column names, so a merchant can export
+from Shopify and import here without remapping, and it streams rather than assembling in memory.
+That is strictly better than this branch's `product-csv.ts`, which was deleted with its routes.
+
+### What this branch still carries
+
+- **Custom pages and navigation** — renumbered from `025` to `040` because `main` took 025-039.
+- **The AI page composer** and its rate limiter.
+- **The security fixes**: the unauthenticated cross-tenant blog write/delete, stored XSS on every
+  storefront blog, and `JWT_SECRET` failing open to a literal published in this repository.
+- **`renderableImageUrl`** — one bad image URL in one product row returned HTTP 500 for a whole
+  storefront page, because `next/image` throws during server render and the throw escapes the
+  section error boundary.
+- **The ShipStation `42P08` fix** in `setFulfillmentSyncStatus`, still absent on `main`: `$2` was
+  bound both to a varchar column and compared to a text literal, so every push threw and no order
+  ever left `pending`.
+- **The e2e CI job**, which exists because a `JWT_SECRET` regression took the customizer's preview
+  pane down while lint, typecheck, 922 unit tests and the production build were all green.
+
+Two README bullets claiming per-variant pricing and per-variant cart lines were **removed, not
+kept**: `main`'s variant migration is explicitly step one of five and nothing reads the tables yet,
+so on the merged branch those sentences would have described a feature the storefront does not have.

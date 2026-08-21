@@ -13,6 +13,8 @@
 
 import { z } from 'zod';
 
+import { storeNavigationSchema } from './navigation';
+
 /* ------------------------------------------------------------------ *
  * Fonts
  * ------------------------------------------------------------------ */
@@ -460,11 +462,18 @@ export const saveDraftBodySchema = z
   .object({
     theme: storefrontThemeInputSchema.optional(),
     sections: sectionsSchema.optional(),
+    /**
+     * Header and footer menus. Publishes in the same transaction as the
+     * sections that link to them — see migration 025 for why they are not a
+     * separate resource.
+     */
+    navigation: storeNavigationSchema.optional(),
   })
   .strict()
   .refine(
-    (body) => body.theme !== undefined || body.sections !== undefined,
-    'Provide at least one of "theme" or "sections"',
+    (body) =>
+      body.theme !== undefined || body.sections !== undefined || body.navigation !== undefined,
+    'Provide at least one of "theme", "sections" or "navigation"',
   );
 
 export type SaveDraftBody = z.infer<typeof saveDraftBodySchema>;

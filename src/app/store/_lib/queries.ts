@@ -10,6 +10,7 @@ import type {
   StoreRecord,
 } from './types';
 import { SORT_KEYS } from './types';
+import { renderableImageUrl } from '@/lib/images/renderable';
 
 /**
  * Server-side catalogue reads for the storefront.
@@ -273,8 +274,12 @@ function resolvePricing(row: ProductRow): { price: number; compareAtPrice: numbe
  */
 function toProduct(row: ProductRow): ProductRecord {
   const { price, compareAtPrice } = resolvePricing(row);
-  const gallery = toStringArray(row.gallery_images);
-  const featured = row.featured_image_url || gallery[0] || null;
+  // Sanitise at the boundary: a hostile or unrenderable image URL in any of
+  // these fields would otherwise reach `next/image` and 500 the whole page.
+  const gallery = toStringArray(row.gallery_images)
+    .map((entry) => renderableImageUrl(entry))
+    .filter((entry): entry is string => entry !== null);
+  const featured = renderableImageUrl(row.featured_image_url) || gallery[0] || null;
 
   return {
     id: row.id,
@@ -642,9 +647,9 @@ export async function getCategories(storeId: string, limit = 12): Promise<Catego
     name: row.name,
     slug: row.slug,
     description: row.description,
-    imageUrl: row.image_url,
+    imageUrl: renderableImageUrl(row.image_url),
     productCount: Number.parseInt(row.product_count, 10) || 0,
-    sampleImageUrl: row.sample_image_url,
+    sampleImageUrl: renderableImageUrl(row.sample_image_url),
   }));
 }
 
@@ -698,7 +703,7 @@ export async function getBlogPosts(storeId: string, limit = 3): Promise<BlogPost
     title: row.title,
     slug: row.slug,
     excerpt: row.excerpt,
-    featuredImageUrl: row.featured_image_url,
+    featuredImageUrl: renderableImageUrl(row.featured_image_url),
     publishedAt: row.published_at,
   }));
 }

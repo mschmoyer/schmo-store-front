@@ -2,6 +2,7 @@ import { BlogPost, BlogPostData, BlogFilters, PaginationData } from '@/types/blo
 import { db } from '@/lib/database/connection';
 import slugify from 'slugify';
 import readingTime from 'reading-time';
+import { sanitizeRichText } from '@/app/store/_lib/html';
 
 // Database result types
 interface BlogPostRow {
@@ -50,13 +51,10 @@ interface PopularPostResult {
   view_count: number;
 }
 
-// Dynamic import for DOMPurify to handle SSR
-let DOMPurify: typeof import('dompurify').default | null = null;
-if (typeof window !== 'undefined') {
-  import('dompurify').then((module) => {
-    DOMPurify = module.default;
-  });
-}
+// The browser-only DOMPurify handle that used to live here is gone along with
+// its only consumer. `sanitizeHTML` now delegates to `sanitizeRichText`, which
+// runs the same way on the server and in the browser -- which is the point,
+// since every write path that stores blog HTML is server-side.
 
 // Blog utility functions
 export const blogUtils = {
@@ -210,7 +208,14 @@ export const blogUtils = {
       storeId,
       postData.title,
       postData.slug,
-      postData.content,
+      // Sanitised on the way in. Blog content is rendered through
+      // `dangerouslySetInnerHTML`, and one of the writers here is the AI blog
+      // generator — whose prompt is built partly from product names and
+      // descriptions synced from ShipStation, i.e. text neither the merchant
+      // nor this platform fully controls. Model output is not merchant input
+      // and not platform output; it is untrusted, and the write boundary is
+      // where that gets settled.
+      sanitizeRichText(postData.content),
       postData.excerpt,
       postData.featured_image,
       postData.meta_title,
@@ -251,7 +256,8 @@ export const blogUtils = {
     }
     if (postData.content !== undefined) {
       updateFields.push(`content = $${paramIndex}`);
-      params.push(postData.content);
+      // Same reasoning as `createBlogPost` above: raw-HTML sink, untrusted writer.
+      params.push(sanitizeRichText(postData.content));
       paramIndex++;
     }
     if (postData.excerpt !== undefined) {
@@ -350,24 +356,28 @@ export const blogUtils = {
     return Math.ceil(stats.minutes);
   },
 
-  // Sanitize HTML content
+  /**
+   * Sanitise blog HTML.
+   *
+   * Delegates to `sanitizeRichText`, the single sanitiser this codebase uses
+   * for every raw-HTML sink.
+   *
+   * It used to be a private DOMPurify configuration that **returned its input
+   * unchanged whenever `window` was undefined** — that is, on every server
+   * render, in every API route, and during every write. It also had no call
+   * sites anywhere in the tree. So it was worse than absent: a reviewer
+   * grepping for "is blog HTML sanitised?" found a function that looked like a
+   * yes, and its permissive allow-list (`style`, `id`, and a URI regex
+   * admitting `data:`) would not have been a good yes even in the browser.
+   *
+   * Kept as a named export rather than deleted because it is part of the
+   * `blogUtils` surface; it now does what its name claims.
+   *
+   * @param html - Raw HTML from a post body
+   * @returns Sanitised HTML, safe for `dangerouslySetInnerHTML`
+   */
   sanitizeHTML(html: string): string {
-    if (typeof window === 'undefined') {
-      // Server-side fallback
-      return html;
-    }
-    return DOMPurify?.sanitize(html, {
-      ALLOWED_TAGS: [
-        'p', 'br', 'strong', 'em', 'u', 's', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a', 'img', 'hr',
-        'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'span'
-      ],
-      ALLOWED_ATTR: [
-        'href', 'src', 'alt', 'title', 'target', 'rel', 'class', 'id',
-        'width', 'height', 'style'
-      ],
-      ALLOWED_URI_REGEXP: /^(?:(?:https?|ftp|mailto|tel|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-    }) || html;
+    return sanitizeRichText(html);
   },
 
   // Generate excerpt from content

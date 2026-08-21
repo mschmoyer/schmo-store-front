@@ -164,18 +164,58 @@ export default function BlogPostForm({
     }
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // In a real implementation, you would upload the file to a server
-      // For now, we'll just use a placeholder URL
-      const imageUrl = URL.createObjectURL(file);
-      setFormData(prev => ({ ...prev, featured_image: imageUrl }));
+    if (!file) return;
+
+    // Upload for real through the media library. This used to mint an
+    // in-browser `blob:` URL and toast "Image Uploaded" while storing a pointer
+    // that vanished when the tab closed. Only a URL the server actually stored
+    // is set, and when uploads are not configured we say so rather than fake it.
+    try {
+      const token = localStorage.getItem('admin_token');
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch('/api/admin/media', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body,
+      });
+      const result = await response.json().catch(() => null);
+
+      if (response.status === 503) {
+        notifications.show({
+          title: 'Image uploads not set up',
+          message:
+            'This store has no image storage configured yet. Paste an image URL instead, or ask your administrator to enable uploads.',
+          color: 'orange',
+          autoClose: 6000,
+        });
+        return;
+      }
+      if (!response.ok || !result?.success) {
+        notifications.show({
+          title: 'Upload failed',
+          message: result?.error ?? 'The image could not be uploaded.',
+          color: 'red',
+          autoClose: 5000,
+        });
+        return;
+      }
+
+      setFormData(prev => ({ ...prev, featured_image: result.data.url }));
       notifications.show({
-        title: 'Image Uploaded',
+        title: 'Image uploaded',
         message: 'Featured image has been set.',
         color: 'green',
         autoClose: 3000,
+      });
+    } catch {
+      notifications.show({
+        title: 'Upload failed',
+        message: 'The image could not be uploaded. Please try again.',
+        color: 'red',
+        autoClose: 5000,
       });
     }
   };
