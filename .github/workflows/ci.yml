@@ -142,7 +142,9 @@ jobs:
       # Build-time only. Never a real secret — every Stripe/ShipStation entry
       # point is required to degrade gracefully when unconfigured, and this job
       # is part of how we keep that true.
-      JWT_SECRET: ci-build-only-not-a-secret
+      # 32+ characters: `resolveSigningKey` in src/lib/auth/session.ts refuses anything shorter
+      # in a production build, which is what this job is.
+      JWT_SECRET: ci-build-only-not-a-secret-0000000000000000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4

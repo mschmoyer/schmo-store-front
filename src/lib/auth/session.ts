@@ -5,12 +5,15 @@ import { v4 as uuidv4 } from 'uuid';
 // cookie need not pull `jose` in with them. Re-exported here because this is where callers look.
 export { SESSION_COOKIE, clearSessionCookie } from './session-cookie';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+// The rule, and the reasoning behind it, live in `./jwt-secret` so they can be unit-tested without
+// loading `jose`. See that module before relaxing anything here.
+import { resolveSigningKey } from './jwt-secret';
+
 const JWT_ISSUER = 'schmo-store';
 const JWT_AUDIENCE = 'schmo-store-users';
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
-const secret = new TextEncoder().encode(JWT_SECRET);
+const secret = new TextEncoder().encode(resolveSigningKey());
 
 export interface UserSession {
   userId: string;
