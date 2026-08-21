@@ -584,14 +584,32 @@ describe('getPlatformOverview', () => {
     expect(typeof after.revenue.refundedCentsPrevWindow).toBe('number');
   }, 30000);
 
-  it('says whether a zero baseline was measured or simply predates the platform', () => {
+  it('says whether a zero baseline was measured or simply predates the platform', async () => {
     // "The baseline was zero" and "there is no baseline" are different facts, and the console had
     // one sentence for both.
     expect(after.comparison.start).toBe(resolveWindow(WINDOW_DAYS, NOW).prevStart.toISOString());
     expect(after.comparison.end).toBe(after.window.start);
     expect(after.comparison.platformSince).not.toBeNull();
-    expect(after.comparison.measured).toBe(true);
-  });
+
+    /*
+     * `measured` is derived from the *whole* tenancy's first store, not from this fixture — so
+     * asserting it directly against the default window asserts a fact about whatever else happens
+     * to be in the database. That passed locally, where the seeded demo stores are 240 days old,
+     * and failed in CI, where the fixture's own 30-hour-old store is the oldest thing there and
+     * the previous window genuinely does predate it.
+     *
+     * The fixture store cannot simply be aged: another test needs it inside the window so it
+     * counts as a new merchant. So the rule is exercised instead of a value — ask for a window
+     * that provably begins after the first store existed, and the baseline must be a measurement.
+     * Deterministic no matter what else the database holds.
+     */
+    const since = Date.parse(after.comparison.platformSince as string);
+    const wellAfterLaunch = new Date(since + 60 * 24 * 60 * 60 * 1000);
+    const measuredWindow = await getPlatformOverview(WINDOW_DAYS, wellAfterLaunch);
+
+    expect(Date.parse(measuredWindow.comparison.start)).toBeGreaterThan(since);
+    expect(measuredWindow.comparison.measured).toBe(true);
+  }, 30000);
 
   it('marks the comparison unmeasured for a window before the platform existed', async () => {
     const ancient = await getPlatformOverview(1, new Date('1970-01-02T12:00:00.000Z'));
