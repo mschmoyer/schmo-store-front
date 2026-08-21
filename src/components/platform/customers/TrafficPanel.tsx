@@ -72,7 +72,11 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
           borderColor: CLICKS_COLOR,
           backgroundColor: withAlpha(CLICKS_COLOR, 0.08),
           fill: true,
-          tension: 0.32,
+          /* Straight segments, not a spline. These are daily integers, and a
+             smoothed curve draws values on days that have none — on the orders
+             series, which spends most of its month at zero and spikes to two,
+             the overshoot is visible enough to read as data. */
+          tension: 0,
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
@@ -84,7 +88,7 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
           borderColor: ORDERS_COLOR,
           backgroundColor: 'transparent',
           fill: false,
-          tension: 0.32,
+          tension: 0,
           borderWidth: 2,
           borderDash: [4, 3],
           pointRadius: 0,
@@ -93,7 +97,7 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
         },
       ],
     }),
-    [daily, labels]
+    [daily, labels],
   );
 
   const options = useMemo<ChartOptions<'line'>>(
@@ -119,7 +123,11 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
         x: {
           grid: { display: false },
           border: { color: CHART_INK.axis },
-          ticks: { color: CHART_INK.label, maxTicksLimit: 8, font: { size: 11 } },
+          ticks: {
+            color: CHART_INK.label,
+            maxTicksLimit: 8,
+            font: { size: 11 },
+          },
         },
         clicks: {
           type: 'linear',
@@ -139,7 +147,7 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
         },
       },
     }),
-    []
+    [],
   );
 
   const summary = useMemo(() => {
@@ -157,8 +165,14 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
     >
       <Metrics
         items={[
-          { label: 'Clicks, all time', value: formatCount(traffic.clicksAllTime) },
-          { label: 'Clicks, last 30 days', value: formatCount(traffic.clicksLast30d) },
+          {
+            label: 'Clicks, all time',
+            value: formatCount(traffic.clicksAllTime),
+          },
+          {
+            label: 'Clicks, last 30 days',
+            value: formatCount(traffic.clicksLast30d),
+          },
           {
             label: 'Unique visitors, 30 days',
             value: formatCount(traffic.uniqueVisitorsLast30d),
@@ -178,7 +192,11 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
           />
         ) : (
           <figure className={styles.figure}>
-            <div className={styles.canvas} role="img" aria-label={`Clicks and orders by day. ${summary}`}>
+            <div
+              className={styles.canvas}
+              role="img"
+              aria-label={`Clicks and orders by day. ${summary}`}
+            >
               <Line data={chartData} options={options} />
             </div>
 
@@ -201,27 +219,35 @@ export function TrafficPanel({ traffic }: TrafficPanelProps): React.ReactElement
               copying a figure into a ticket. This is visually hidden rather
               than absent.
             */}
-            <table className={styles.srOnly}>
-              <caption>Daily storefront clicks, unique visitors and orders</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Day</th>
-                  <th scope="col">Clicks</th>
-                  <th scope="col">Unique visitors</th>
-                  <th scope="col">Orders</th>
-                </tr>
-              </thead>
-              <tbody>
-                {daily.map((day) => (
-                  <tr key={day.day}>
-                    <th scope="row">{format(parseISO(day.day), 'd MMM yyyy')}</th>
-                    <td>{formatCount(day.clicks)}</td>
-                    <td>{formatCount(day.uniqueVisitors)}</td>
-                    <td>{formatCount(day.orders)}</td>
+            {/* The wrapper carries the visually-hidden geometry, not the table.
+                `width: 1px` on a `<table>` is only a suggestion — a table sizes
+                to its content unless `table-layout` is fixed — so a hidden
+                table laid itself out at full data width and pushed the document
+                7px wider than the viewport at 390px. A block wrapper genuinely
+                collapses to 1px and clips it. */}
+            <div className={styles.srOnly}>
+              <table>
+                <caption>Daily storefront clicks, unique visitors and orders</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Day</th>
+                    <th scope="col">Clicks</th>
+                    <th scope="col">Unique visitors</th>
+                    <th scope="col">Orders</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {daily.map((day) => (
+                    <tr key={day.day}>
+                      <th scope="row">{format(parseISO(day.day), 'd MMM yyyy')}</th>
+                      <td>{formatCount(day.clicks)}</td>
+                      <td>{formatCount(day.uniqueVisitors)}</td>
+                      <td>{formatCount(day.orders)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </figure>
         )}
       </div>

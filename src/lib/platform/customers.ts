@@ -67,10 +67,18 @@ import { CUSTOMIZED_THEME_JOIN, customizedPredicate } from '@/lib/platform/custo
  * deliberately *not* used — nothing in the codebase writes it, so keying off it would render every
  * demo store's GMV as zero, which is the same class of lie in the other direction.
  *
+ * `'refunded'` is included, and that is deliberate: the money *did* move, and it is reported gross
+ * with `refundedCents` as the separate offset — which is what `docs/platform-admin.md` promises and
+ * what GMV means everywhere else in commerce. Excluding it produced an asymmetry that would have
+ * been very hard to spot later: a *partially* refunded order keeps `payment_status = 'paid'` and so
+ * stayed in GMV in full, while a *fully* refunded one flipped to `'refunded'` and vanished
+ * entirely. Two orders for the same amount, refunded by different amounts, moved GMV by wildly
+ * different amounts in a direction nobody could predict from the tile.
+ *
  * Written against the alias `o`, which every order query in this module uses.
  */
 export const SETTLED_ORDER_PREDICATE =
-  "o.status <> 'cancelled' AND o.payment_status IN ('paid', 'completed')";
+  "o.status <> 'cancelled' AND o.payment_status IN ('paid', 'completed', 'refunded')";
 
 /**
  * The complement: booked but not settled.

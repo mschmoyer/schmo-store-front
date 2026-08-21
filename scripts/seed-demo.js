@@ -921,6 +921,32 @@ async function seed() {
       await client.query(`DELETE FROM public.${table} WHERE store_id = ANY($1::uuid[])`, [storeIds]);
     }
     await client.query('DELETE FROM public.stores WHERE id = ANY($1::uuid[])', [storeIds]);
+
+    /*
+     * Carry the platform-admin grant across the wipe.
+     *
+     * The demo users are deleted and recreated on every run, and `users.is_admin` defaults to
+     * false -- so re-seeding silently revoked whatever `scripts/grant-admin.js` had granted, and
+     * the /platform console started answering 403 to the account the README tells you to sign in
+     * with. Re-granting here would be wrong (the migration is explicit that only a deliberate
+     * write sets that flag); preserving what was already there is not a grant, it is the wipe
+     * declining to take something with it.
+     *
+     * Guarded on the column existing, so the seed still runs against a database that predates
+     * migration 040 instead of aborting its transaction on an unknown column.
+     */
+    const adminFlags = new Map();
+    const hasIsAdmin = await client.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'is_admin'`
+    );
+    if (hasIsAdmin.rows.length > 0) {
+      const existing = await client.query(
+        'SELECT id, is_admin FROM public.users WHERE id = ANY($1::uuid[])', [userIds]
+      );
+      for (const row of existing.rows) adminFlags.set(row.id, row.is_admin === true);
+    }
+
     await client.query('DELETE FROM public.users WHERE id = ANY($1::uuid[])', [userIds]);
 
     // ---- Users ----
@@ -934,6 +960,9 @@ async function seed() {
          VALUES ($1, $2, $3, $4, $5, true, true, $6)`,
         [u.id, u.email, PASSWORD_HASH, u.first_name, u.last_name, daysAgo(signedUpDaysAgo, false)]
       );
+      if (adminFlags.get(u.id) === true) {
+        await client.query('UPDATE public.users SET is_admin = TRUE WHERE id = $1', [u.id]);
+      }
     }
 
     for (const store of STORES) {

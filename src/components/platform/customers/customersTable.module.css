@@ -176,7 +176,17 @@
   display: block;
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  word-break: break-all;
+  /* `anywhere` rather than `break-all`: an address only breaks when it has to,
+     and it breaks at the @ or a dot before it breaks mid-word. `break-all`
+     produced "another.user@exa / mple.com". */
+  overflow-wrap: anywhere;
+}
+
+/* The joined column carries two lines that must not wrap: "3 months ago" and
+   the date it stands for. Wrapping the year onto its own line ("17 May 202 /
+   6") is worse than the column being wide. */
+.dateCell {
+  white-space: nowrap;
 }
 
 .badgeStack {
@@ -256,6 +266,7 @@
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

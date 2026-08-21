@@ -103,9 +103,14 @@ SQL:
 | Unique visitors | `COUNT(DISTINCT COALESCE(visitor_id, ip_hash))` over the window. Never summed across windows: two 30-day counts do not add up to a 60-day count. |
 | Orders received | Rows in `orders` created in the window, across all stores. |
 | Orders shipped | Orders whose `shipped_at` falls in the window. An order received in one window and shipped in the next counts once in each — they answer different questions. |
-| Fulfilment rate | Shipped ÷ received over the same window. **Zero when received is zero**, never `NaN`. |
+| Fulfilment rate | Shipped ÷ received over the same window. **Zero when received is zero**, never `NaN`. Because the two are different populations, cohort fulfilment (of orders *received* in the window, what fraction shipped) and % shipped within 48h are reported alongside it — a growing month makes the simple ratio look like degrading service when it is not. |
+| Conversion rates | `null`, not `0%`, below a denominator floor of 100 clicks / 30 add-to-carts. A rate computed from 23 clicks is arithmetically correct and reads as a lie; the UI renders "—" with the raw counts instead. |
+| Order backlog | Unshipped **settled** orders older than 48h, reported per store with money and age. An unpaid order is not a fulfilment failure, so it is excluded here and surfaced as unsettled instead. |
 | Avg hours to ship | Mean of `shipped_at - created_at` over orders shipped in the window. `null`, not `0`, when there are none. |
-| GMV | `SUM(total_amount)` converted to integer cents at the SQL boundary. Gross: refunds are reported separately rather than netted silently. |
+| GMV | `SUM(total_amount)` over **settled** orders, converted to integer cents at the SQL boundary. Settled means `status <> 'cancelled' AND payment_status IN ('paid','completed','refunded')`. Three payment values because three writers populate the column: real checkout writes `'paid'`, the demo seed writes `'completed'`, and `'refunded'` is included because the money did move. `paid_at` is deliberately not used — nothing writes it. |
+| Unsettled | Placed, not cancelled, not paid. Its own figure, never folded into GMV. ~23% of what the first draft called GMV was this. An order sitting here is a checkout or payment-capture problem. |
+| Cancelled | Its own figure. A refund on a cancelled order sits here, not in GMV and not in refunds. |
+| Refunded | `SUM(refunded_amount)` over **the same order set GMV is built from**, so `GMV − refunded` is a number an operator may legitimately compute. Summing refunds across every order looks more complete and quietly breaks that: it would invite the reader to subtract money that was never added. |
 | Click → order | Orders ÷ storefront clicks over the window. A rate, not a promise; it is a platform-wide average across merchants at very different stages. |
 
 Period-over-period deltas compare against the equally-sized window immediately before the current

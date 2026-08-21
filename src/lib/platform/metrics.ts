@@ -48,6 +48,7 @@
 
 import { db } from '@/lib/database/connection';
 import { CUSTOMIZED_THEME_JOIN, customizedPredicate } from '@/lib/platform/customization';
+import { SETTLED_ORDER_PREDICATE, UNSETTLED_ORDER_PREDICATE } from '@/lib/platform/customers';
 
 /** Default reporting window, in days, when the caller does not ask for one. */
 export const DEFAULT_WINDOW_DAYS = 30;
@@ -571,37 +572,27 @@ function describeWindow(bounds: WindowBounds): PlatformWindow {
 // ---------------------------------------------------------------------------
 
 /**
- * What counts as money that actually moved.
+ * What counts as money that actually moved — imported, not restated.
  *
- * Getting this wrong is not a rounding error: on the demo data, "every order created in the
- * window" is 310,505 cents while "every order whose payment settled" is 245,695 — a fifth of the
- * headline figure is cancellations and abandoned checkouts.
+ * {@link SETTLED_ORDER_PREDICATE} and {@link UNSETTLED_ORDER_PREDICATE} live in
+ * `src/lib/platform/customers.ts` because the per-store list needs them too, and the two surfaces
+ * *must* agree: the customers table sums to the number in the overview tile, and an operator who
+ * finds it does not will stop trusting both. This module therefore imports them rather than
+ * keeping a second copy — the same mistake, made once already with the customization rule, that
+ * produced "0 stores customized" above a table where every row said "Customized".
  *
- * The predicate has to name **two** payment statuses because the platform has two writers and they
- * disagree. Real checkout (`src/lib/billing/orders.ts`) writes `payment_status = 'paid'` and stamps
- * `paid_at`. The demo seed writes `completed` and leaves `paid_at` NULL on every one of its rows.
- * A predicate that named only `'paid'` would report zero revenue in development; one that leaned on
- * `paid_at IS NOT NULL` would do the same. Naming both statuses is the only form that is true in
- * both environments.
+ * Why the rule is what it is (the full argument is at the definition): getting it wrong is not a
+ * rounding error. On the demo data, "every order created in the window" is 343,126 cents while
+ * "every order whose payment settled" is 260,347 — roughly a quarter of the headline figure is
+ * cancellations and checkouts that never completed. Two payment statuses are named because two
+ * writers populate the column: real checkout writes `'paid'`, the demo seed writes `'completed'`.
+ * `paid_at` is not used: nothing but real checkout writes it, so keying off it would report zero
+ * revenue in development.
  *
- * `refunded` is deliberately **not** settled. A refunded order's money came back, so counting it as
- * revenue and then reporting the refund separately would show it twice. GMV here is therefore net
- * of fully refunded orders; `refundedCentsInWindow` covers partial refunds against settled orders.
- *
- * This exact predicate is shared with `src/lib/platform/customers.ts`, so per-store GMV sums to the
- * platform figure. Do not fork it.
- *
- * @param alias - The alias `orders` is joined under.
- * @returns A parenthesised boolean SQL expression. Contains no user input.
+ * Both predicates are written against the alias `o`, which every order query below uses. Each is
+ * wrapped in parentheses at the call site: `UNSETTLED_ORDER_PREDICATE` contains an `OR`, and an
+ * unparenthesised `OR` inside a `FILTER (WHERE ...)` conjunction silently widens the filter.
  */
-function settledPredicate(alias: string): string {
-  return `(${alias}.status <> 'cancelled' AND ${alias}.payment_status IN ('paid', 'completed'))`;
-}
-
-/** Booked but not settled: not cancelled, and no successful payment recorded. */
-function unsettledPredicate(alias: string): string {
-  return `(${alias}.status <> 'cancelled' AND ${alias}.payment_status NOT IN ('paid', 'completed'))`;
-}
 
 /** `orders` created inside the current window. `$1` = window start, `$3` = window end. */
 const ORDER_IN_WINDOW = `(o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
@@ -772,21 +763,29 @@ const ORDERS_SQL = `
     percentile_cont(0.9) WITHIN GROUP (ORDER BY ${HOURS_TO_SHIP})
       FILTER (WHERE ${SHIPPED_MEASURABLE}) AS p90_hours_to_ship,
 
-    COUNT(*) FILTER (WHERE ${settledPredicate('o')} AND ${ORDER_IN_WINDOW}) AS settled_in_window,
+    COUNT(*) FILTER (WHERE (${SETTLED_ORDER_PREDICATE}) AND ${ORDER_IN_WINDOW}) AS settled_in_window,
 
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')}), 0) * 100)
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE (${SETTLED_ORDER_PREDICATE})), 0) * 100)
       AS gmv_settled_cents_all_time,
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')} AND ${ORDER_IN_WINDOW}), 0) * 100)
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE (${SETTLED_ORDER_PREDICATE}) AND ${ORDER_IN_WINDOW}), 0) * 100)
       AS gmv_settled_cents_in_window,
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')} AND ${ORDER_IN_PREV_WINDOW}), 0) * 100)
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE (${SETTLED_ORDER_PREDICATE}) AND ${ORDER_IN_PREV_WINDOW}), 0) * 100)
       AS gmv_settled_cents_prev_window,
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${unsettledPredicate('o')} AND ${ORDER_IN_WINDOW}), 0) * 100)
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE (${UNSETTLED_ORDER_PREDICATE}) AND ${ORDER_IN_WINDOW}), 0) * 100)
       AS gmv_unsettled_cents_in_window,
     ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'cancelled' AND ${ORDER_IN_WINDOW}), 0) * 100)
       AS gmv_cancelled_cents_in_window,
 
+    -- Refunds are scoped to the SAME order set GMV is built from, so that GMV minus refunds is a
+    -- number an operator may legitimately compute. Summing refunds across every order instead
+    -- looks more complete and quietly breaks that: in the demo data every refunded order is also
+    -- cancelled, so its value is already excluded from GMV — reporting the refund beside GMV
+    -- invites the reader to subtract money that was never added. A refund on a cancelled order
+    -- nets to zero on both sides of the tile, which is the honest treatment; what it must not do
+    -- is appear on one side only.
     ROUND(COALESCE(SUM(o.refunded_amount) FILTER (
-                     WHERE COALESCE(o.refunded_at, o.created_at) >= ($1::timestamptz AT TIME ZONE 'UTC')
+                     WHERE (${SETTLED_ORDER_PREDICATE})
+                       AND COALESCE(o.refunded_at, o.created_at) >= ($1::timestamptz AT TIME ZONE 'UTC')
                        AND COALESCE(o.refunded_at, o.created_at) <  ($3::timestamptz AT TIME ZONE 'UTC')), 0) * 100)
       AS refunded_cents_in_window
   FROM orders o
@@ -926,7 +925,7 @@ const TIMESERIES_SQL = `
   ordered AS (
     SELECT o.created_at::date AS day,
            COUNT(*) FILTER (WHERE o.status <> 'cancelled') AS orders,
-           ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')}), 0) * 100) AS gmv_cents
+           ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE (${SETTLED_ORDER_PREDICATE})), 0) * 100) AS gmv_cents
       FROM orders o, bounds b
      WHERE o.status <> 'cancelled'
        AND o.created_at >= (b.win_start AT TIME ZONE 'UTC')
@@ -1050,7 +1049,7 @@ const UNFULFILLED_SQL = `
     FROM orders o
     JOIN stores s ON s.id = o.store_id
    WHERE o.shipped_at IS NULL
-     AND ${settledPredicate('o')}
+     AND (${SETTLED_ORDER_PREDICATE})
      AND COALESCE(o.paid_at, o.created_at) < ((NOW() AT TIME ZONE 'UTC') - ($1::int * INTERVAL '1 hour'))
    GROUP BY o.store_id, s.store_name
    ORDER BY COUNT(*) DESC, s.store_name ASC

@@ -57,7 +57,7 @@ export function CustomersTable({
   return (
     <div className={styles.tableCard}>
       <div className={refreshing ? styles.refreshing : undefined} aria-busy={refreshing}>
-        <Table.ScrollContainer minWidth={1240}>
+        <Table.ScrollContainer minWidth={1320}>
           <Table highlightOnHover verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
@@ -153,9 +153,9 @@ export function CustomersTable({
                     <span className={styles.ownerEmail}>{row.ownerEmail}</span>
                   </Table.Td>
 
-                  <Table.Td>
+                  <Table.Td className={styles.dateCell}>
                     <RelativeDate value={row.createdAt} className={styles.ownerName} />
-                    <span className={styles.ownerEmail}>{formatDate(row.createdAt)}</span>
+                    <span className={styles.sub}>{formatDate(row.createdAt)}</span>
                   </Table.Td>
 
                   <Table.Td>
