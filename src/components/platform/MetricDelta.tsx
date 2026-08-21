@@ -72,7 +72,7 @@ export function MetricDelta({
 }: MetricDeltaProps): React.ReactElement {
   if (previous === null || previous === undefined) {
     return (
-      <span className={styles.deltaMuted}>Not compared — no {periodLabel} baseline is computed</span>
+      <span className={styles.deltaMuted}>Not compared — no {periodLabel} baseline computed</span>
     );
   }
 
@@ -82,8 +82,8 @@ export function MetricDelta({
     return (
       <span className={styles.deltaMuted}>
         {baselineMeasured === false
-          ? `No ${periodLabel} to compare against — the platform did not exist yet`
-          : `The ${periodLabel} measured zero, so there is no change to express as a percentage`}
+          ? `No ${periodLabel} — the platform did not exist yet`
+          : `The ${periodLabel} measured zero, so there is no percentage`}
       </span>
     );
   }

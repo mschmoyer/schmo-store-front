@@ -158,7 +158,7 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 232px;
+  min-width: 192px;
 }
 
 .stickyHead {
@@ -211,6 +211,24 @@
   }
 }
 
+/*
+ * Slightly tighter than Mantine's default gutter. Eleven columns of small numbers do not need 16px
+ * of air on both sides of every one, and reclaiming it is what lets the last column stay on screen
+ * at 1440 rather than sitting behind the scroll edge.
+ */
+.tableCard th,
+.tableCard td {
+  padding-inline: 9px;
+}
+
+/* Every cell top-aligns. The identity column is three lines tall and the badge columns are two, so
+   the default middle alignment floated single-line numbers into the vertical centre of a tall row
+   and broke the horizontal read across it. */
+.tableCard tbody th,
+.tableCard tbody td {
+  vertical-align: top;
+}
+
 /* Mantine paints its own row-hover fill, which would slide under the pinned
    cell and leave it the only white column in a highlighted row. */
 .tableCard tbody tr:hover .stickyCell {
@@ -239,8 +257,6 @@
 .ownerLine {
   display: block;
   margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
   min-width: 0;
 }
 

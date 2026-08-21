@@ -22,9 +22,13 @@
  * nothing on the page said so. At 390px it was two and a half columns and roughly 900px of
  * horizontal scroll in an unmarked container.
  *
- * 1. **The owner moved under the store name.** Owner was a whole column carrying a name and an
- *    address that both belong to the row's subject, and the subject already has a column. Folding
- *    it in removes ~180px of the overflow rather than hiding it behind a scrollbar.
+ * 1. **The owner moved under the store name, and Theme merged into State.** Owner was a whole
+ *    column carrying a name and an address that both belong to the row's subject, and the subject
+ *    already has a column. Theme was a second column of a single badge describing the same thing
+ *    State does — what condition this storefront is in — so the two share one column and one
+ *    header. Together that is ~275px of intrinsic width removed rather than hidden behind a
+ *    scrollbar, which is what brings the table inside a 1440px viewport instead of clipping
+ *    Clicks mid-number.
  * 2. **The scroll has an affordance.** A fade and an edge appear on whichever side has content
  *    beyond it, and only while there is something there — see {@link useScrollEdges}. The caption
  *    says the same thing in words for anyone the fade does not reach.
@@ -199,13 +203,13 @@ function MerchantCard({ row }: { row: PlatformCustomerRow }): React.ReactElement
 
       <div className={styles.cardBadges}>
         <StoreStateBadge isActive={row.isActive} isPublic={row.isPublic} />
+        <CustomizationBadge customized={row.customized} themeStatus={row.themeStatus} />
         <IntegrationBadge
           label="ShipStation"
           connected={row.integrations.shipstation}
           status={row.integrations.syncStatus}
         />
         <IntegrationBadge label="Stripe" connected={row.integrations.stripe} />
-        <CustomizationBadge customized={row.customized} themeStatus={row.themeStatus} />
       </div>
 
       <dl className={styles.cardFacts}>
@@ -220,6 +224,9 @@ function MerchantCard({ row }: { row: PlatformCustomerRow }): React.ReactElement
           <dd>
             {formatCount(row.orders.received)}
             <span className={styles.sub}>{formatCount(row.orders.last30d)} in 30d</span>
+            {row.orders.cancelled ? (
+              <span className={styles.sub}>{formatCount(row.orders.cancelled)} cancelled</span>
+            ) : null}
           </dd>
         </div>
         <div className={styles.cardFact}>
@@ -307,7 +314,7 @@ export function CustomersTable({
           data-at-start={edges.atStart ? 'true' : undefined}
           data-at-end={edges.atEnd ? 'true' : undefined}
         >
-          <Table.ScrollContainer minWidth={1120} type="native" ref={scrollRef}>
+          <Table.ScrollContainer minWidth={1060} type="native" ref={scrollRef}>
             <Table highlightOnHover verticalSpacing="sm" captionSide="top">
               <Table.Caption className={styles.caption}>
                 {caption}
@@ -330,7 +337,6 @@ export function CustomersTable({
                   </SortableColumn>
                   <Table.Th scope="col">State</Table.Th>
                   <Table.Th scope="col">Integrations</Table.Th>
-                  <Table.Th scope="col">Theme</Table.Th>
                   <SortableColumn
                     column="orders"
                     activeColumn={sort}
@@ -400,7 +406,13 @@ export function CustomersTable({
                     </Table.Td>
 
                     <Table.Td>
-                      <StoreStateBadge isActive={row.isActive} isPublic={row.isPublic} />
+                      <div className={styles.badgeStack}>
+                        <StoreStateBadge isActive={row.isActive} isPublic={row.isPublic} />
+                        <CustomizationBadge
+                          customized={row.customized}
+                          themeStatus={row.themeStatus}
+                        />
+                      </div>
                     </Table.Td>
 
                     <Table.Td>
@@ -414,17 +426,17 @@ export function CustomersTable({
                       </div>
                     </Table.Td>
 
-                    <Table.Td>
-                      <CustomizationBadge
-                        customized={row.customized}
-                        themeStatus={row.themeStatus}
-                      />
-                    </Table.Td>
-
                     <Table.Td className={styles.numeric}>
                       <div className={styles.stacked}>
                         <span>{formatCount(row.orders.received)}</span>
                         <span className={styles.sub}>{formatCount(row.orders.last30d)} in 30d</span>
+                        {/* Received includes cancellations, so a non-zero cancelled count is named
+                            under it rather than left as an unexplained gap against Shipped. */}
+                        {row.orders.cancelled ? (
+                          <span className={styles.sub}>
+                            {formatCount(row.orders.cancelled)} cancelled
+                          </span>
+                        ) : null}
                       </div>
                     </Table.Td>
 

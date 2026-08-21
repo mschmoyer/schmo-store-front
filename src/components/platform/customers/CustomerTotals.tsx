@@ -66,16 +66,28 @@ export function CustomerTotals({
           label="Orders received"
           value={totals.orders}
           icon={<IconShoppingCart size={16} />}
-          meta="All time"
+          /* "Received" includes cancellations by definition, so the cancelled count is named here
+             rather than left for a reader to discover as a discrepancy two screens later. */
+          meta={
+            totals.cancelled === undefined
+              ? 'All time'
+              : `All time, including ${formatCount(totals.cancelled)} cancelled`
+          }
         />
         <StatCard
           label="Orders shipped"
           value={totals.shipped}
           icon={<IconTruck size={16} />}
+          /* The API's rate. Dividing again here is how one platform ended up with three different
+             fulfilment percentages on three adjacent screens, each arithmetically correct. */
           meta={
-            totals.orders > 0
-              ? `${Math.round((totals.shipped / totals.orders) * 100)}% of orders received`
-              : 'Nothing received yet'
+            totals.fulfillmentRatePct === undefined
+              ? totals.orders > 0
+                ? `${Math.round((totals.shipped / totals.orders) * 100)}% of orders received`
+                : 'Nothing received yet'
+              : totals.fulfillmentRatePct === null
+                ? 'Nothing received yet'
+                : `${Math.round(totals.fulfillmentRatePct)}% of orders received`
           }
         />
         <StatCard

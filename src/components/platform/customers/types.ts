@@ -59,7 +59,16 @@ export interface PlatformCustomerRow {
   createdAt: string;
   isActive: boolean;
   isPublic: boolean;
-  orders: { received: number; shipped: number; last30d: number };
+  /** `received` includes cancellations; `cancelled` and `settled` are subsets of it. */
+  orders: {
+    received: number;
+    shipped: number;
+    last30d: number;
+    settled?: number;
+    cancelled?: number;
+  };
+  /** Shipped ÷ received, from the API. `null` when nothing was received. */
+  fulfillmentRatePct?: number | null;
   gmvCents: number;
   /**
    * Non-cancelled orders that were never paid. **Not part of `gmvCents`** — the
@@ -87,9 +96,18 @@ export interface PlatformCustomerRow {
 /** Aggregates over the whole filtered set — not over the visible page. */
 export interface PlatformCustomerTotals {
   customers: number;
+  /** Every order, cancellations included. */
   orders: number;
   shipped: number;
+  /** Orders that settled — the population `aovCents` averages over. */
+  settledOrders?: number;
+  /** Cancelled orders. Inside `orders`, not subtracted from it. */
+  cancelled?: number;
+  /** Shipped ÷ orders, from the API rather than divided again here. `null` when nothing landed. */
+  fulfillmentRatePct?: number | null;
   gmvCents: number;
+  /** Settled GMV over settled orders. `null` when nothing settled. */
+  aovCents?: number | null;
   /** Booked but never paid, across the filtered set. Excluded from `gmvCents`. */
   unsettledCents: number;
   clicks: number;

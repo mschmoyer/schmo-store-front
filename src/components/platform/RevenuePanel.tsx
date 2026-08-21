@@ -3,7 +3,7 @@
 import React from 'react';
 import { Price } from '@/components/ui';
 import { centsToNumber } from '@/lib/billing/money';
-import { conversionPct, formatPct } from './metricDelta';
+import { conversionPct } from './metricDelta';
 import { MetricDelta } from './MetricDelta';
 import type { PlatformOverview } from './types';
 import styles from './PlatformPanels.module.css';
@@ -60,7 +60,9 @@ export function RevenuePanel({
      when the API sends it keeps the two impossible to confuse at a glance. */
   const refundedSettled = revenue.refundedSettledCentsInWindow ?? revenue.refundedCentsInWindow;
   const refundedCancelled = revenue.refundedCancelledCentsInWindow;
-  const settledShare = conversionPct(refundedSettled, revenue.gmvCentsInWindow);
+  const settledRatio = conversionPct(refundedSettled, revenue.gmvCentsInWindow);
+  /* Whole points: a refund share quoted to one decimal implies a precision the reader cannot use. */
+  const settledShare = settledRatio === null ? null : `${Math.round(settledRatio)}%`;
 
   return (
     <div className={styles.revenue}>
@@ -139,7 +141,7 @@ export function RevenuePanel({
             <span className={styles.factNote}>
               {settledShare === null
                 ? 'no GMV to compare against'
-                : `${formatPct(settledShare)} of GMV — the only refund figure GMV may be netted against`}
+                : `${settledShare} of GMV · the only refunds GMV may be netted against`}
             </span>
           </dd>
         </div>
@@ -149,9 +151,7 @@ export function RevenuePanel({
             <dt className={styles.factTerm}>Refunded on cancelled orders</dt>
             <dd className={styles.factDefinition}>
               <Price value={centsToNumber(refundedCancelled)} size="sm" />
-              <span className={styles.factNote}>
-                money out of the business, of value GMV never held
-              </span>
+              <span className={styles.factNote}>money GMV never held</span>
             </dd>
           </div>
         )}

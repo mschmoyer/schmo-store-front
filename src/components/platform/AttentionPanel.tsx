@@ -19,15 +19,19 @@
  * behind the 4 was $898.04. A count is a workload; the money is the exposure, and the exposure is
  * what decides whether this is today's problem or this week's.
  *
- * ## Where an alert sends you
+ * ## Where the drill-through lives
  *
- * Each alert links to its own `href` — the store the API says the alert is about. Alerts for a
- * store that also has a stuck backlog get a **second, explicitly labelled** action into that
- * store's order list. The console deliberately does not re-point the primary link by guessing what
- * an alert is about: a failing-sync alert and an unshipped-orders alert are both `critical` and
- * both name a store, so inferring "this one is about orders" from severity would silently send an
- * operator chasing a sync failure into a list of orders. Until `PlatformAlert` carries a `kind`,
- * two labelled doors are the honest construction.
+ * The stuck-order backlog is the thing with an obvious next screen, so the per-store doors into
+ * "that store's unshipped orders" sit in the headline, built from `unfulfilled.stores[]` — the
+ * block that actually knows which stores have a backlog, how many orders and how much money.
+ *
+ * Each alert keeps its own `href` and nothing else. The console deliberately does not re-point an
+ * alert's link by guessing what it is about: a failing-sync alert and an unshipped-orders alert are
+ * both `critical` and both name a store, so inferring "this one is about orders" from severity
+ * would silently send an operator chasing a sync failure into a list of orders — and hanging an
+ * "unshipped orders" button on a *ShipStation-not-connected* alert, which is what doing it by
+ * store id produced, is the same error wearing a label. Until `PlatformAlert` carries a `kind`,
+ * the backlog owns the backlog's link.
  */
 
 import React from 'react';
@@ -41,7 +45,7 @@ import {
   IconXboxX,
 } from '@tabler/icons-react';
 import { Price } from '@/components/ui';
-import { centsToNumber } from '@/lib/billing/money';
+import { centsToNumber, formatMoney } from '@/lib/billing/money';
 import { formatAgeHours } from './formatDuration';
 import { storeOrdersHref, UNSHIPPED_ORDER_STATUS } from './drillThrough';
 import type { PlatformHealth, PlatformHealthAlert, PlatformUnfulfilledStore } from './types';
@@ -102,9 +106,6 @@ function StuckHeadline({
   oldestAgeHours: number | null;
 }): React.ReactElement {
   const storeCount = backlog.length;
-  /* One affected store means the headline itself has somewhere honest to go. More than one and it
-     does not — the per-store rows below carry the links instead. */
-  const singleStore = storeCount === 1 ? backlog[0] : null;
 
   return (
     <div className={styles.attentionHead}>
@@ -137,14 +138,21 @@ function StuckHeadline({
         </p>
       </div>
 
-      {singleStore ? (
-        <Link
-          className={styles.attentionAction}
-          href={storeOrdersHref(singleStore.storeId)}
-        >
-          Review {singleStore.storeName}&rsquo;s orders
-          <IconArrowRight size={15} stroke={1.9} aria-hidden="true" />
-        </Link>
+      {backlog.length > 0 ? (
+        <ul className={styles.attentionStores}>
+          {backlog.map((store) => (
+            <li key={store.storeId}>
+              <Link className={styles.attentionAction} href={storeOrdersHref(store.storeId)}>
+                <span className={styles.attentionActionName}>{store.storeName}</span>
+                <span className={styles.attentionActionMeta}>
+                  {store.count.toLocaleString('en-US')} order{store.count === 1 ? '' : 's'} ·{' '}
+                  {formatMoney(store.stuckCents)} · {formatAgeHours(store.oldestAgeHours)}
+                </span>
+                <IconArrowRight size={15} stroke={1.9} aria-hidden="true" />
+              </Link>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );
@@ -161,11 +169,6 @@ export function AttentionPanel({ health }: AttentionPanelProps): React.ReactElem
   const total = health.unfulfilled?.total ?? health.unfulfilledOver48h;
   const totalCents = health.unfulfilled?.totalCents ?? null;
   const oldestAgeHours = health.unfulfilled?.oldestAgeHours ?? null;
-
-  /* Which stores have a backlog, so their alerts can offer the order-list door as well. */
-  const stuckByStore = new Map<string, PlatformUnfulfilledStore>(
-    backlog.map((entry) => [entry.storeId, entry])
-  );
 
   const nothingWrong = total === 0 && health.alerts.length === 0;
 
@@ -200,7 +203,6 @@ export function AttentionPanel({ health }: AttentionPanelProps): React.ReactElem
           {health.alerts.map((alert, index) => {
             const Mark = severityIcon(alert.severity);
             const href = alertHref(alert);
-            const stuck = alert.storeId === null ? undefined : stuckByStore.get(alert.storeId);
 
             return (
               <li
@@ -224,26 +226,12 @@ export function AttentionPanel({ health }: AttentionPanelProps): React.ReactElem
                   <span className={styles.alertSeverity}>{alert.severity}</span>
                 </div>
 
-                {href || stuck ? (
+                {href ? (
                   <div className={styles.alertActions}>
-                    {stuck ? (
-                      <Link
-                        className={styles.alertAction}
-                        href={storeOrdersHref(stuck.storeId)}
-                        data-primary="true"
-                      >
-                        {stuck.count.toLocaleString('en-US')} unshipped order
-                        {stuck.count === 1 ? '' : 's'}
-                        <IconArrowRight size={14} stroke={1.9} aria-hidden="true" />
-                      </Link>
-                    ) : null}
-
-                    {href ? (
-                      <Link className={styles.alertAction} href={href}>
-                        {alert.storeName ? `Open ${alert.storeName}` : 'Open details'}
-                        <IconArrowRight size={14} stroke={1.9} aria-hidden="true" />
-                      </Link>
-                    ) : null}
+                    <Link className={styles.alertAction} href={href}>
+                      {alert.storeName ? `Open ${alert.storeName}` : 'Open details'}
+                      <IconArrowRight size={14} stroke={1.9} aria-hidden="true" />
+                    </Link>
                   </div>
                 ) : null}
               </li>
@@ -252,11 +240,14 @@ export function AttentionPanel({ health }: AttentionPanelProps): React.ReactElem
         </ul>
       )}
 
-      <p className={styles.attentionNote}>
-        The order list opens filtered to <span className={styles.attentionCode}>{UNSHIPPED_ORDER_STATUS}</span>{' '}
-        — the closest state the orders endpoint can filter on. It is a superset of the backlog: it
-        includes paid orders that have been waiting less than 48 hours.
-      </p>
+      {backlog.length > 0 ? (
+        <p className={styles.attentionNote}>
+          Those store links open the order list filtered to{' '}
+          <span className={styles.attentionCode}>{UNSHIPPED_ORDER_STATUS}</span> — the closest state
+          the orders endpoint can filter on, and a superset of the backlog: it also includes paid
+          orders that have been waiting less than 48 hours.
+        </p>
+      ) : null}
     </div>
   );
 }

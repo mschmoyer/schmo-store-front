@@ -23,7 +23,7 @@
  */
 
 import React from 'react';
-import { formatDateTime, formatRelative, NOT_SET, parseDate } from './format';
+import { formatDate, formatDateTime, formatRelative, NOT_SET, parseDate } from './format';
 import styles from './relativeDate.module.css';
 
 export interface RelativeDateProps {
@@ -52,12 +52,16 @@ export function RelativeDate({
   const date = parseDate(value);
   if (!date) return <span className={className}>{fallback}</span>;
 
-  const absolute = formatDateTime(value);
+  const exact = formatDateTime(value);
   const relative = formatRelative(value);
+  /* The visible second line is the calendar date only. The minute is still one hover away in
+     `title` and machine-readable in `dateTime`; spending 45px of a fifteen-column table on "02:12"
+     buys nothing an operator reads, and it was part of what pushed the last column off-screen. */
+  const absolute = formatDate(value);
 
   if (!withAbsolute) {
     return (
-      <time className={className} dateTime={date.toISOString()} title={absolute}>
+      <time className={className} dateTime={date.toISOString()} title={exact}>
         {relative}
       </time>
     );
@@ -67,7 +71,7 @@ export function RelativeDate({
     <time
       className={className ? `${styles.stack} ${className}` : styles.stack}
       dateTime={date.toISOString()}
-      title={absolute}
+      title={exact}
       aria-label={`${absolute}, ${relative}`}
     >
       <span aria-hidden="true">{relative}</span>

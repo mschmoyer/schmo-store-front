@@ -42,7 +42,7 @@ import {
 import { Price } from '@/components/ui';
 import { centsToNumber } from '@/lib/billing/money';
 import { customersFilterHref } from './drillThrough';
-import { conversionPct, formatPct } from './metricDelta';
+import { conversionPct } from './metricDelta';
 import type { PlatformOverview } from './types';
 import styles from './PlatformPanels.module.css';
 
@@ -90,6 +90,9 @@ function ReadinessRow({
 }: ReadinessRowProps): React.ReactElement {
   const share = conversionPct(value, total);
   const width = share === null ? 0 : Math.max(0, Math.min(100, share));
+  /* Whole points. These are ratios of small integers — "0.0%" of three merchants is false
+     precision, and it reads as a measurement rather than as a count. */
+  const shareLabel = share === null ? '—' : `${Math.round(share)}%`;
 
   return (
     <li className={styles.readinessRow} data-alarming={alarming ? 'true' : undefined}>
@@ -117,7 +120,7 @@ function ReadinessRow({
       </div>
 
       <p className={styles.readinessDetail}>
-        <span className={styles.readinessShare}>{formatPct(share)}</span> {detail}
+        <span className={styles.readinessShare}>{shareLabel}</span> {detail}
       </p>
 
       {action ? (
@@ -149,6 +152,9 @@ export function ReadinessPanel({
   const withAnyIntegration =
     integrations.shipstationConnected + integrations.stripeConnected - integrations.bothConnected;
   const noIntegration = Math.max(0, total - withAnyIntegration);
+
+  const outOfStockRatio = conversionPct(catalog.outOfStock, catalog.products);
+  const outOfStockShare = outOfStockRatio === null ? '—' : `${Math.round(outOfStockRatio)}%`;
 
   return (
     <div className={styles.readiness}>
@@ -247,9 +253,7 @@ export function ReadinessPanel({
               <span className={styles.factFigure} data-tone={catalog.outOfStock > 0 ? 'warning' : undefined}>
                 {catalog.outOfStock.toLocaleString('en-US')}
               </span>
-              <span className={styles.factNote}>
-                {formatPct(conversionPct(catalog.outOfStock, catalog.products))} of the catalogue
-              </span>
+              <span className={styles.factNote}>{outOfStockShare} of the catalogue</span>
             </dd>
           </div>
         </dl>
