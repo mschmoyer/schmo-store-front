@@ -23,7 +23,7 @@ export const CUSTOMER_FILTERS: ReadonlyArray<{
   /** Shown on the totals strip so the aggregate always names its own scope. */
   scope: string;
 }> = [
-  { value: 'all', label: 'All', scope: 'all merchants' },
+  { value: 'all', label: 'All', scope: 'merchants' },
   { value: 'active', label: 'Active', scope: 'active merchants' },
   { value: 'inactive', label: 'Inactive', scope: 'inactive merchants' },
   { value: 'connected', label: 'Connected', scope: 'merchants with an integration connected' },

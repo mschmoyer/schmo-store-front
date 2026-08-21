@@ -1,0 +1,50 @@
+/*
+ * The integrations panel.
+ *
+ * Three groups separated by a rule rather than by three nested cards: they are
+ * sections of one answer ("is this merchant wired up?"), and giving each its own
+ * border makes the panel read as a folder of unrelated things.
+ */
+
+.group + .group {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.groupTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+/* The error message is the one place in this panel where something is wrong,
+   so it is the one place that gets a warm colour. */
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-subtle);
+  font-size: var(--text-xs);
+  color: var(--danger-text);
+  overflow-wrap: anywhere;
+}
+
+.error svg {
+  flex: none;
+  margin-top: 1px;
+}

@@ -47,6 +47,7 @@
  */
 
 import { db } from '@/lib/database/connection';
+import { CUSTOMIZED_THEME_JOIN, customizedPredicate } from '@/lib/platform/customization';
 
 /** Default reporting window, in days, when the caller does not ask for one. */
 export const DEFAULT_WINDOW_DAYS = 30;
@@ -66,6 +67,18 @@ export const STALE_SYNC_HOURS = 24;
 
 /** A paid, unshipped order older than this many hours is worth an operator's attention. */
 export const UNFULFILLED_ALERT_HOURS = 48;
+
+/**
+ * Fewest clicks a click-to-order ratio may be computed from.
+ *
+ * Not a statistical threshold so much as an editorial one: below about a hundred clicks a single
+ * order moves the percentage by more than a point, and a number that jumpy presented as a headline
+ * is worse than no number at all.
+ */
+export const MIN_CLICK_SAMPLE = 100;
+
+/** Fewest add-to-cart events a cart-to-order ratio may be computed from. */
+export const MIN_CART_SAMPLE = 30;
 
 /**
  * Upper bound on the alert list. Health is a triage screen: fifty rows of "not connected" is not
@@ -106,7 +119,12 @@ export interface PlatformWindow {
 /** Merchant counts. "Merchant" means a row in `stores`, not a user. */
 export interface PlatformMerchantMetrics {
   total: number;
-  /** `stores.is_active`. */
+  /**
+   * Traded in the window: at least one non-cancelled order.
+   *
+   * Deliberately **not** `stores.is_active`, which is set true at creation and never set false by
+   * any code path — a tile sourced from it can only ever read 100%.
+   */
   active: number;
   newInWindow: number;
   /** The equally-sized window immediately before this one, so the UI can show a delta. */
@@ -138,17 +156,56 @@ export interface PlatformOrderMetrics {
   shippedAllTime: number;
   shippedInWindow: number;
   deliveredAllTime: number;
-  /** `shippedInWindow / receivedInWindow`, as a percentage. `0` when nothing was received. */
+  /**
+   * Throughput: `shippedInWindow / receivedInWindow`, as a percentage.
+   *
+   * Two different populations — an order received before the window can ship inside it — so this
+   * exceeds 100% while a backlog is cleared and understates service during growth. Read
+   * {@link cohortFulfillmentRatePct} beside it. `0` when nothing was received.
+   */
   fulfillmentRatePct: number;
+  /** Of the orders *received* in the window, the percentage that have shipped. Never exceeds 100. */
+  cohortFulfillmentRatePct: number;
+  /** Of the orders received in the window, the percentage dispatched within 48 hours. */
+  shippedWithin48hPct: number;
   /** Mean hours between order creation and dispatch, for orders shipped in the window. */
   avgHoursToShip: number | null;
+  /** Median hours to ship. The mean hides a long tail; this does not. */
+  medianHoursToShip: number | null;
+  /** 90th-percentile hours to ship — the slowest tenth of dispatches. */
+  p90HoursToShip: number | null;
+  /** Mean settled order value: settled GMV over settled orders, in whole cents. */
   avgOrderValueCents: number;
 }
 
-/** Gross merchandise value and refunds, in integer cents. */
+/**
+ * Gross merchandise value and refunds, in integer cents.
+ *
+ * **Every `gmv*` figure here is settled**: cancelled orders and orders whose payment never
+ * succeeded are excluded. The money those orders represent is not discarded — it is reported as
+ * {@link gmvUnsettledCentsInWindow} and {@link gmvCancelledCentsInWindow}, because an operator who
+ * can only see settled revenue cannot tell a slow sales month from a broken checkout.
+ *
+ * The `gmvSettledCents*` names are the canonical ones. `gmvCents*` are the same numbers under the
+ * names the console contract was written with, kept so the UI does not have to change in lockstep;
+ * they are equal by construction and cannot drift.
+ */
 export interface PlatformRevenueMetrics {
+  /** Canonical. Settled GMV, all time. */
+  gmvSettledCentsAllTime: number;
+  /** Canonical. Settled GMV inside the window. */
+  gmvSettledCentsInWindow: number;
+  /** Canonical. Settled GMV in the equally-sized window immediately before this one. */
+  gmvSettledCentsPrevWindow: number;
+  /** Booked but not settled inside the window: not cancelled, no successful payment recorded. */
+  gmvUnsettledCentsInWindow: number;
+  /** Value of orders cancelled inside the window. */
+  gmvCancelledCentsInWindow: number;
+  /** Alias of {@link gmvSettledCentsAllTime}. */
   gmvCentsAllTime: number;
+  /** Alias of {@link gmvSettledCentsInWindow}. */
   gmvCentsInWindow: number;
+  /** Alias of {@link gmvSettledCentsPrevWindow}. */
   gmvCentsPrevWindow: number;
   refundedCentsInWindow: number;
   unitsSoldInWindow: number;
@@ -173,10 +230,29 @@ export interface PlatformIntegrationMetrics {
   publishedStores: number;
 }
 
-/** Funnel ratios, as percentages rounded to two decimals. */
+/**
+ * Funnel ratios, as percentages rounded to two decimals.
+ *
+ * **`null` means "not enough traffic to say"**, and it is a deliberate answer rather than a missing
+ * one. A percentage computed from twenty-three clicks is arithmetically correct and editorially a
+ * lie: `82.61` reads as "82% of visitors buy" whether it came from 19 orders in 23 clicks or 8,261
+ * in 10,000. Below {@link MIN_CLICK_SAMPLE} clicks (or {@link MIN_CART_SAMPLE} add-to-carts) the
+ * API returns `null` so the console can render an em dash and the raw counts instead of a headline.
+ * The sample sizes are returned alongside so the UI can explain itself without a second request.
+ */
 export interface PlatformConversionMetrics {
-  clickToOrderPct: number;
-  cartToOrderPct: number;
+  /** Orders per click, as a percentage, or `null` when the sample is too small to report. */
+  clickToOrderPct: number | null;
+  /** Orders per add-to-cart, as a percentage, or `null` when the sample is too small. */
+  cartToOrderPct: number | null;
+  /** Clicks the click-to-order ratio was computed from. */
+  clickSample: number;
+  /** Add-to-cart events the cart-to-order ratio was computed from. */
+  cartSample: number;
+  /** The floor `clickSample` had to clear. */
+  minClickSample: number;
+  /** The floor `cartSample` had to clear. */
+  minCartSample: number;
 }
 
 /** The `/api/platform/overview` payload. */
@@ -253,11 +329,36 @@ export interface PlatformJobCounts {
   processing: number;
 }
 
+/** One store's stuck-order backlog. */
+export interface PlatformUnfulfilledStore {
+  storeId: string;
+  storeName: string;
+  /** Settled orders past the threshold with no dispatch recorded. */
+  count: number;
+  /** What that backlog is worth, in integer cents. */
+  stuckCents: number;
+  /** Age of the oldest one, in hours. */
+  oldestAgeHours: number;
+}
+
+/** The stuck-order backlog, platform-wide and per store. */
+export interface PlatformUnfulfilledBacklog {
+  total: number;
+  totalCents: number;
+  /** Age of the oldest stuck order anywhere, in hours, or `null` when there is no backlog. */
+  oldestAgeHours: number | null;
+  /** Worst first. One row per affected store; stores with no backlog do not appear. */
+  stores: PlatformUnfulfilledStore[];
+}
+
 /** The `/api/platform/health` payload. */
 export interface PlatformHealth {
   counts: PlatformHealthCounts;
   jobs: PlatformJobCounts;
+  /** Total stuck orders. Kept as a scalar for the contract; {@link unfulfilled} carries the detail. */
   unfulfilledOver48h: number;
+  /** The same backlog with the parts that make it actionable: value, age and which store. */
+  unfulfilled: PlatformUnfulfilledBacklog;
   stores: PlatformStoreHealth[];
   alerts: PlatformAlert[];
 }
@@ -293,6 +394,8 @@ type UnfulfilledRow = {
   store_id: string;
   store_name: string;
   unfulfilled: string;
+  stuck_cents: string;
+  oldest_age_hours: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -340,6 +443,27 @@ export function toNullableNumber(value: unknown): number | null {
 export function ratioPct(numerator: number, denominator: number): number {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 10000) / 100;
+}
+
+/**
+ * A percentage that refuses to answer on too small a sample.
+ *
+ * {@link ratioPct} already refuses to divide by zero. This refuses to *mislead*: a ratio drawn from
+ * a handful of clicks is arithmetically fine and editorially worthless, so below the floor it
+ * returns `null` and lets the caller render an em dash beside the raw counts.
+ *
+ * @param numerator - The part.
+ * @param denominator - The whole, which is also the sample size.
+ * @param minimumSample - Fewest observations the ratio may be computed from.
+ * @returns The percentage to two decimals, or `null` when the sample is below the floor.
+ */
+export function sampledRatioPct(
+  numerator: number,
+  denominator: number,
+  minimumSample: number,
+): number | null {
+  if (!Number.isFinite(denominator) || denominator < minimumSample || denominator <= 0) return null;
+  return ratioPct(numerator, denominator);
 }
 
 /**
@@ -447,6 +571,63 @@ function describeWindow(bounds: WindowBounds): PlatformWindow {
 // ---------------------------------------------------------------------------
 
 /**
+ * What counts as money that actually moved.
+ *
+ * Getting this wrong is not a rounding error: on the demo data, "every order created in the
+ * window" is 310,505 cents while "every order whose payment settled" is 245,695 — a fifth of the
+ * headline figure is cancellations and abandoned checkouts.
+ *
+ * The predicate has to name **two** payment statuses because the platform has two writers and they
+ * disagree. Real checkout (`src/lib/billing/orders.ts`) writes `payment_status = 'paid'` and stamps
+ * `paid_at`. The demo seed writes `completed` and leaves `paid_at` NULL on every one of its rows.
+ * A predicate that named only `'paid'` would report zero revenue in development; one that leaned on
+ * `paid_at IS NOT NULL` would do the same. Naming both statuses is the only form that is true in
+ * both environments.
+ *
+ * `refunded` is deliberately **not** settled. A refunded order's money came back, so counting it as
+ * revenue and then reporting the refund separately would show it twice. GMV here is therefore net
+ * of fully refunded orders; `refundedCentsInWindow` covers partial refunds against settled orders.
+ *
+ * This exact predicate is shared with `src/lib/platform/customers.ts`, so per-store GMV sums to the
+ * platform figure. Do not fork it.
+ *
+ * @param alias - The alias `orders` is joined under.
+ * @returns A parenthesised boolean SQL expression. Contains no user input.
+ */
+function settledPredicate(alias: string): string {
+  return `(${alias}.status <> 'cancelled' AND ${alias}.payment_status IN ('paid', 'completed'))`;
+}
+
+/** Booked but not settled: not cancelled, and no successful payment recorded. */
+function unsettledPredicate(alias: string): string {
+  return `(${alias}.status <> 'cancelled' AND ${alias}.payment_status NOT IN ('paid', 'completed'))`;
+}
+
+/** `orders` created inside the current window. `$1` = window start, `$3` = window end. */
+const ORDER_IN_WINDOW = `(o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+                          AND o.created_at <  ($3::timestamptz AT TIME ZONE 'UTC'))`;
+
+/** `orders` created inside the comparison window. `$2` = its start, `$1` = its end. */
+const ORDER_IN_PREV_WINDOW = `(o.created_at >= ($2::timestamptz AT TIME ZONE 'UTC')
+                               AND o.created_at <  ($1::timestamptz AT TIME ZONE 'UTC'))`;
+
+/** `orders` dispatched inside the current window. */
+const SHIPPED_IN_WINDOW = `(o.shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+                            AND o.shipped_at <  ($3::timestamptz AT TIME ZONE 'UTC'))`;
+
+/**
+ * Hours between an order being placed and being dispatched.
+ *
+ * Guarded everywhere it is used by `shipped_at >= created_at`: a dispatch that precedes the order
+ * is not a fast fulfilment, it is impossible, and one such row drags a mean negative.
+ */
+const HOURS_TO_SHIP = `(EXTRACT(EPOCH FROM (o.shipped_at - o.created_at)) / 3600.0)`;
+
+/** The measurable dispatch population: shipped inside the window, with a sane duration. */
+const SHIPPED_MEASURABLE = `(${SHIPPED_IN_WINDOW} AND o.shipped_at >= o.created_at)`;
+
+
+/**
  * Merchant counts.
  *
  * Plan: one scan of `stores` hash-joined to two grouped sub-selects (`products`, `orders`). The
@@ -454,14 +635,26 @@ function describeWindow(bounds: WindowBounds): PlatformWindow {
  * `LEFT JOIN` straight onto `products` would count each store once per product, which is the exact
  * shape of the inventory-tile defect this codebase already shipped once.
  *
+ * **`active` is behavioural, not a flag.** `stores.is_active` is set `TRUE` when a store is created
+ * and no code path in this repository ever sets it back — `grep` for it and every hit is a filter,
+ * never an update. A tile sourced from it can only ever read 100%, which is not a metric, it is a
+ * constant wearing a metric's clothes. So `active` here means *traded in the window*: at least one
+ * non-cancelled order. That number can go down, which is the whole point of putting it on a
+ * dashboard.
+ *
+ * Both new-merchant counts are bounded above as well as below. An open-ended `created_at >= start`
+ * is the same defect in miniature that the window exists to prevent: it silently means "and
+ * everything after", which reports the whole tenancy as new the moment the window is historical.
+ *
  * `launched` deliberately means more than `is_public`: a store toggled public with an empty
  * catalogue is not a storefront anyone can buy from, so it needs at least one active product.
  */
 const MERCHANTS_SQL = `
   SELECT
     COUNT(*) AS total,
-    COUNT(*) FILTER (WHERE s.is_active IS TRUE) AS active,
-    COUNT(*) FILTER (WHERE s.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')) AS new_in_window,
+    COUNT(*) FILTER (WHERE COALESCE(o.window_order_count, 0) > 0) AS active,
+    COUNT(*) FILTER (WHERE s.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+                       AND s.created_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS new_in_window,
     COUNT(*) FILTER (WHERE s.created_at >= ($2::timestamptz AT TIME ZONE 'UTC')
                        AND s.created_at <  ($1::timestamptz AT TIME ZONE 'UTC')) AS new_prev_window,
     COUNT(*) FILTER (WHERE s.is_active IS TRUE
@@ -474,7 +667,10 @@ const MERCHANTS_SQL = `
       FROM products GROUP BY store_id
   ) p ON p.store_id = s.id
   LEFT JOIN (
-    SELECT store_id, COUNT(*) AS order_count
+    SELECT store_id,
+           COUNT(*) AS order_count,
+           COUNT(*) FILTER (WHERE created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
+                              AND created_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS window_order_count
       FROM orders WHERE status <> 'cancelled' GROUP BY store_id
   ) o ON o.store_id = s.id
 `;
@@ -512,55 +708,83 @@ const CLICKS_SQL = `
  * `visitor_id` is the client-generated identifier; `ip_hash` is the salted fallback for a visitor
  * who arrived before one was issued. Rows with neither cannot be attributed to a person and are
  * excluded rather than collapsed into one phantom visitor by `COALESCE(NULL, NULL)`.
+ *
+ * Bounded by whole UTC **days**, not by the window's end instant, because the click figure it sits
+ * beside comes from a rollup keyed by date and cannot be sliced mid-day. Today's bucket is
+ * necessarily partial — it holds what has happened so far — and both numbers have to be partial in
+ * the same way, or the console shows clicks with no visitors attached to them.
+ *
+ * `$1::date AT TIME ZONE 'UTC'` yields the `timestamptz` of that UTC midnight, so the comparison
+ * stays sargable against `idx_click_events_time` instead of wrapping the column in a function.
  */
 const UNIQUE_VISITORS_SQL = `
   SELECT COUNT(DISTINCT COALESCE(visitor_id, ip_hash)) AS unique_visitors
     FROM storefront_click_events
-   WHERE occurred_at >= $1::timestamptz
-     AND occurred_at <  $2::timestamptz
+   WHERE occurred_at >= ($1::date AT TIME ZONE 'UTC')
+     AND occurred_at <  (($2::date + 1) AT TIME ZONE 'UTC')
      AND COALESCE(visitor_id, ip_hash) IS NOT NULL
 `;
 
 /**
- * Orders and revenue, in one pass over `orders`.
+ * Orders, fulfilment and revenue, in one pass over `orders`.
  *
- * Money: `total_amount` and `refunded_amount` are `numeric` dollars, multiplied and rounded to
- * integer cents inside Postgres. Nothing downstream ever sees a dollar float.
+ * **Money.** `total_amount` and `refunded_amount` are `numeric` *dollars*, multiplied and rounded
+ * to integer cents inside Postgres. Nothing downstream ever sees a dollar float. GMV uses
+ * {@link settledPredicate}; the difference between booked and settled is returned as its own
+ * figure rather than quietly dropped, because an operator who can only see settled revenue cannot
+ * tell a slow sales month from a broken checkout.
  *
- * "Received" is `status <> 'cancelled'`, matching `ORDER_REVENUE_STATUSES` in
- * `src/lib/services/orders.ts` — the merchant admin already shipped the narrower
- * `status = 'completed'` once and hid 61% of booked value behind it.
+ * **"Received"** is `status <> 'cancelled'` — every order the platform took, paid or not. It is
+ * deliberately a wider set than the settled one: order *count* measures demand, order *value*
+ * measures revenue, and conflating them is how a dashboard reports a good month during an outage.
+ * The merchant admin already shipped the opposite mistake once, filtering revenue to
+ * `status = 'completed'` and hiding 61% of booked value.
  *
- * `avg_hours_to_ship` excludes rows where `shipped_at` precedes `created_at`. Such a row is not a
- * fast fulfilment, it is impossible, and one of them drags the mean negative.
+ * **Two fulfilment rates, because they answer different questions.**
+ *   * `shipped_in_window / received_in_window` is throughput — what went out against what came in.
+ *     Different populations, so it exceeds 100% while a merchant clears a backlog and collapses
+ *     during a growth spurt. Useful, and misleading on its own.
+ *   * `cohort_shipped / received_in_window` is service: *of the orders that arrived in this window,
+ *     how many have gone out*. It cannot exceed 100% and it is the one to read during growth.
  *
- * Refunds are attributed to `refunded_at`, falling back to `created_at` for rows refunded before
- * that column existed.
+ * **Distribution, not just the mean.** On the demo data the mean time to ship is 36.7 hours, which
+ * sounds fine and hides four orders that have sat for more than sixty days. `percentile_cont`
+ * returns the median and p90 from the same pass, which is what makes the tail visible.
  */
 const ORDERS_SQL = `
   SELECT
     COUNT(*) FILTER (WHERE o.status <> 'cancelled') AS received_all_time,
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled'
-                       AND o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
-                       AND o.created_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS received_in_window,
-    COUNT(*) FILTER (WHERE o.status <> 'cancelled'
-                       AND o.created_at >= ($2::timestamptz AT TIME ZONE 'UTC')
-                       AND o.created_at <  ($1::timestamptz AT TIME ZONE 'UTC')) AS received_prev_window,
+    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_WINDOW}) AS received_in_window,
+    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_PREV_WINDOW}) AS received_prev_window,
     COUNT(*) FILTER (WHERE o.shipped_at IS NOT NULL) AS shipped_all_time,
-    COUNT(*) FILTER (WHERE o.shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
-                       AND o.shipped_at <  ($3::timestamptz AT TIME ZONE 'UTC')) AS shipped_in_window,
+    COUNT(*) FILTER (WHERE ${SHIPPED_IN_WINDOW}) AS shipped_in_window,
     COUNT(*) FILTER (WHERE o.delivered_at IS NOT NULL) AS delivered_all_time,
-    AVG(EXTRACT(EPOCH FROM (o.shipped_at - o.created_at)) / 3600.0)
-      FILTER (WHERE o.shipped_at >= ($1::timestamptz AT TIME ZONE 'UTC')
-                AND o.shipped_at <  ($3::timestamptz AT TIME ZONE 'UTC')
-                AND o.shipped_at >= o.created_at) AS avg_hours_to_ship,
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE o.status <> 'cancelled'), 0) * 100) AS gmv_cents_all_time,
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE o.status <> 'cancelled'
-                       AND o.created_at >= ($1::timestamptz AT TIME ZONE 'UTC')
-                       AND o.created_at <  ($3::timestamptz AT TIME ZONE 'UTC')), 0) * 100) AS gmv_cents_in_window,
-    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE o.status <> 'cancelled'
-                       AND o.created_at >= ($2::timestamptz AT TIME ZONE 'UTC')
-                       AND o.created_at <  ($1::timestamptz AT TIME ZONE 'UTC')), 0) * 100) AS gmv_cents_prev_window,
+
+    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_WINDOW}
+                       AND o.shipped_at IS NOT NULL) AS cohort_shipped,
+    COUNT(*) FILTER (WHERE o.status <> 'cancelled' AND ${ORDER_IN_WINDOW}
+                       AND o.shipped_at IS NOT NULL
+                       AND o.shipped_at <= o.created_at + INTERVAL '48 hours') AS cohort_shipped_within_48h,
+
+    AVG(${HOURS_TO_SHIP}) FILTER (WHERE ${SHIPPED_MEASURABLE}) AS avg_hours_to_ship,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY ${HOURS_TO_SHIP})
+      FILTER (WHERE ${SHIPPED_MEASURABLE}) AS p50_hours_to_ship,
+    percentile_cont(0.9) WITHIN GROUP (ORDER BY ${HOURS_TO_SHIP})
+      FILTER (WHERE ${SHIPPED_MEASURABLE}) AS p90_hours_to_ship,
+
+    COUNT(*) FILTER (WHERE ${settledPredicate('o')} AND ${ORDER_IN_WINDOW}) AS settled_in_window,
+
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')}), 0) * 100)
+      AS gmv_settled_cents_all_time,
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')} AND ${ORDER_IN_WINDOW}), 0) * 100)
+      AS gmv_settled_cents_in_window,
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')} AND ${ORDER_IN_PREV_WINDOW}), 0) * 100)
+      AS gmv_settled_cents_prev_window,
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${unsettledPredicate('o')} AND ${ORDER_IN_WINDOW}), 0) * 100)
+      AS gmv_unsettled_cents_in_window,
+    ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'cancelled' AND ${ORDER_IN_WINDOW}), 0) * 100)
+      AS gmv_cancelled_cents_in_window,
+
     ROUND(COALESCE(SUM(o.refunded_amount) FILTER (
                      WHERE COALESCE(o.refunded_at, o.created_at) >= ($1::timestamptz AT TIME ZONE 'UTC')
                        AND COALESCE(o.refunded_at, o.created_at) <  ($3::timestamptz AT TIME ZONE 'UTC')), 0) * 100)
@@ -575,6 +799,12 @@ const ORDERS_SQL = `
  * including it keeps the tenancy invariant true even in a cross-tenant aggregate — a row whose
  * `store_id` disagrees with its order's is corruption, and this join surfaces it as a missing unit
  * rather than silently attributing it to the wrong merchant.
+ *
+ * The window is applied to `orders.created_at` and **never** to `order_items.created_at`. That
+ * column holds a single distinct value across all 119 rows in the local database and 114 of them
+ * disagree with their parent order's date — it records when the row was written, not when the sale
+ * happened. Dating anything off it has already shipped as a bug here once
+ * (`docs/audits/admin-usefulness-critique.md`).
  */
 const UNITS_SOLD_SQL = `
   SELECT COALESCE(SUM(oi.quantity), 0) AS units_sold_in_window
@@ -623,23 +853,18 @@ const CATALOG_SQL = `
  * **What counts as Stripe connected**: a `payment_accounts` row with `charges_enabled`. An account
  * that exists but cannot take a charge has not finished Connect onboarding.
  *
- * **What counts as theme customization**: this is the subtle one. Onboarding calls `saveDraft()`
- * and then `publishDraft()` on the merchant's behalf, so a store that has never opened the
- * customizer still owns two `storefront_themes` rows, each with a full default section list. The
- * presence of a row therefore proves nothing, and neither does a non-empty `sections` array.
- * What onboarding never does is *edit*: it writes each row once, at `version = 1`, and leaves it.
- * The customizer's `ON CONFLICT DO UPDATE` bumps `version` on every subsequent save. So the rule
- * is "the row was written again after it was created" — `version > 1`, or an `updated_at` that has
- * drifted a minute past `created_at` (which catches a store whose first theme row came from the
- * customizer rather than from onboarding). A store that only ever completed onboarding does not
- * count.
+ * **What counts as theme customization**: not this module's call to make. The rule lives in
+ * `src/lib/platform/customization.ts` and is imported by both this file and the customers list,
+ * because the two had independently invented rules that disagreed completely — 0 of 3 stores here
+ * against 3 of 3 there, which would have rendered "0 stores customized" directly above a table in
+ * which every row said "Customized". One definition, one import, no second copy to keep in step.
  */
 const INTEGRATIONS_SQL = `
   SELECT
     COUNT(*) FILTER (WHERE ss.store_id IS NOT NULL) AS shipstation_connected,
     COUNT(*) FILTER (WHERE st.store_id IS NOT NULL) AS stripe_connected,
     COUNT(*) FILTER (WHERE ss.store_id IS NOT NULL AND st.store_id IS NOT NULL) AS both_connected,
-    COUNT(*) FILTER (WHERE th.store_id IS NOT NULL) AS theme_customized,
+    COUNT(*) FILTER (WHERE ${customizedPredicate('s', 'th')}) AS theme_customized,
     COUNT(*) FILTER (WHERE s.is_active IS TRUE AND s.is_public IS TRUE) AS published_stores
   FROM stores s
   LEFT JOIN (
@@ -649,10 +874,7 @@ const INTEGRATIONS_SQL = `
   LEFT JOIN (
     SELECT DISTINCT store_id FROM payment_accounts WHERE charges_enabled IS TRUE
   ) st ON st.store_id = s.id
-  LEFT JOIN (
-    SELECT DISTINCT store_id FROM storefront_themes
-     WHERE version > 1 OR updated_at > created_at + INTERVAL '1 minute'
-  ) th ON th.store_id = s.id
+  LEFT JOIN (${CUSTOMIZED_THEME_JOIN}) th ON th.store_id = s.id
 `;
 
 /**
@@ -660,12 +882,24 @@ const INTEGRATIONS_SQL = `
  *
  * `generate_series` produces the calendar and every metric is `LEFT JOIN`ed onto it, so a day with
  * no activity is a row of zeros rather than a gap the chart library has to guess at. Each metric
- * is grouped once, by UTC date, over exactly the same instant range the overview uses — which is
- * what makes the series sum to the headline figures instead of merely resembling them.
+ * is grouped once, by UTC date, over exactly the same range the overview uses — which is what makes
+ * the series sum to the headline figures instead of merely resembling them.
+ *
+ * Two ranges, deliberately. Orders, shipments and signups are bounded by the window's *instants*
+ * (`[start, now)`), because they are events with an exact time. Clicks and unique visitors are
+ * bounded by whole UTC **days**, because `storefront_click_daily` is keyed by date and a partial
+ * final bucket is the best it can offer. Mixing the two would put a click count and a visitor count
+ * computed over different spans on the same row.
+ *
+ * `orders` counts every non-cancelled order; `gmv_cents` counts only the settled ones, exactly as
+ * the overview does, so the series still sums to the tile above it.
  */
 const TIMESERIES_SQL = `
   WITH bounds AS (
-    SELECT $1::timestamptz AS win_start, $2::timestamptz AS win_end
+    SELECT $1::timestamptz AS win_start,
+           $2::timestamptz AS win_end,
+           $3::date        AS first_day,
+           $4::date        AS last_day
   ),
   calendar AS (
     SELECT generate_series(
@@ -677,22 +911,22 @@ const TIMESERIES_SQL = `
   clicks AS (
     SELECT d.day, SUM(d.clicks) AS clicks
       FROM storefront_click_daily d, bounds b
-     WHERE d.day >= (b.win_start AT TIME ZONE 'UTC')::date
-       AND d.day <= (b.win_end   AT TIME ZONE 'UTC')::date
+     WHERE d.day >= b.first_day AND d.day <= b.last_day
      GROUP BY d.day
   ),
   uniques AS (
     SELECT (e.occurred_at AT TIME ZONE 'UTC')::date AS day,
            COUNT(DISTINCT COALESCE(e.visitor_id, e.ip_hash)) AS unique_visitors
       FROM storefront_click_events e, bounds b
-     WHERE e.occurred_at >= b.win_start AND e.occurred_at < b.win_end
+     WHERE e.occurred_at >= (b.first_day AT TIME ZONE 'UTC')
+       AND e.occurred_at <  ((b.last_day + 1) AT TIME ZONE 'UTC')
        AND COALESCE(e.visitor_id, e.ip_hash) IS NOT NULL
      GROUP BY 1
   ),
   ordered AS (
     SELECT o.created_at::date AS day,
-           COUNT(*) AS orders,
-           ROUND(SUM(o.total_amount) * 100) AS gmv_cents
+           COUNT(*) FILTER (WHERE o.status <> 'cancelled') AS orders,
+           ROUND(COALESCE(SUM(o.total_amount) FILTER (WHERE ${settledPredicate('o')}), 0) * 100) AS gmv_cents
       FROM orders o, bounds b
      WHERE o.status <> 'cancelled'
        AND o.created_at >= (b.win_start AT TIME ZONE 'UTC')
@@ -790,21 +1024,33 @@ const JOBS_SQL = `
 `;
 
 /**
- * Paid orders that have sat unshipped past the alert threshold, per store.
+ * Settled orders that have sat unshipped past the alert threshold, broken down by store.
  *
- * Grouped rather than counted so the alerts can name the merchant with the backlog: "12 orders are
- * waiting" is a statistic, "Fernwood Goods has 12 orders waiting" is something to act on.
+ * This is the highest-value query in the console, and a single integer throws almost all of it
+ * away. "15 orders" is a statistic; "Ironline Fitness has 4 stuck orders worth $925, the oldest 87
+ * days" is a phone call someone can make. So the query returns count, value and age per store, and
+ * the total is folded from those rows.
  *
- * `paid_at` is null on every order written before that column existed, so the age falls back to
- * `created_at` — which for a paid order is at worst slightly conservative.
+ * The payment test is {@link settledPredicate}, not `payment_status = 'completed'`. That literal
+ * is the demo seed's success value; real checkout writes `'paid'`, so a query naming only the seed
+ * value returns a reassuring zero in production — the exact failure mode this codebase's
+ * "honest results" rule exists for.
+ *
+ * `paid_at` is NULL on every order the seed wrote, so the age falls back to `created_at`, which for
+ * a settled order is at worst slightly conservative.
  */
 const UNFULFILLED_SQL = `
-  SELECT o.store_id, s.store_name, COUNT(*) AS unfulfilled
+  SELECT
+    o.store_id,
+    s.store_name,
+    COUNT(*) AS unfulfilled,
+    ROUND(COALESCE(SUM(o.total_amount), 0) * 100) AS stuck_cents,
+    MAX(EXTRACT(EPOCH FROM ((NOW() AT TIME ZONE 'UTC') - COALESCE(o.paid_at, o.created_at))) / 3600.0)
+      AS oldest_age_hours
     FROM orders o
     JOIN stores s ON s.id = o.store_id
    WHERE o.shipped_at IS NULL
-     AND o.status <> 'cancelled'
-     AND o.payment_status = 'completed'
+     AND ${settledPredicate('o')}
      AND COALESCE(o.paid_at, o.created_at) < ((NOW() AT TIME ZONE 'UTC') - ($1::int * INTERVAL '1 hour'))
    GROUP BY o.store_id, s.store_name
    ORDER BY COUNT(*) DESC, s.store_name ASC
@@ -840,9 +1086,9 @@ export async function getPlatformOverview(
 
   const [merchantsResult, clicksResult, uniquesResult, ordersResult, unitsResult, catalogResult, integrationsResult] =
     await Promise.all([
-      db.query<CountRow>(MERCHANTS_SQL, [startIso, prevStartIso]),
+      db.query<CountRow>(MERCHANTS_SQL, [startIso, prevStartIso, endIso]),
       db.query<CountRow>(CLICKS_SQL, [bounds.startDay, bounds.endDay, bounds.prevStartDay]),
-      db.query<CountRow>(UNIQUE_VISITORS_SQL, [startIso, endIso]),
+      db.query<CountRow>(UNIQUE_VISITORS_SQL, [bounds.startDay, bounds.endDay]),
       db.query<CountRow>(ORDERS_SQL, [startIso, prevStartIso, endIso]),
       db.query<CountRow>(UNITS_SOLD_SQL, [startIso, endIso]),
       db.query<CountRow>(CATALOG_SQL),
@@ -870,7 +1116,9 @@ export async function getPlatformOverview(
 
   const receivedInWindow = toNumber(ordersRow.received_in_window);
   const shippedInWindow = toNumber(ordersRow.shipped_in_window);
-  const gmvCentsInWindow = toNumber(ordersRow.gmv_cents_in_window);
+  const cohortShipped = toNumber(ordersRow.cohort_shipped);
+  const settledInWindow = toNumber(ordersRow.settled_in_window);
+  const gmvSettledCentsInWindow = toNumber(ordersRow.gmv_settled_cents_in_window);
 
   const orders: PlatformOrderMetrics = {
     receivedAllTime: toNumber(ordersRow.received_all_time),
@@ -879,18 +1127,34 @@ export async function getPlatformOverview(
     shippedAllTime: toNumber(ordersRow.shipped_all_time),
     shippedInWindow,
     deliveredAllTime: toNumber(ordersRow.delivered_all_time),
-    // Two different cohorts: an order received before the window can ship inside it, so this can
-    // exceed 100% while a merchant works through a backlog. That is the true throughput reading
-    // and it is left uncapped rather than clamped into a prettier lie.
+    // Throughput. Two different populations, so it can exceed 100% while a merchant works through
+    // a backlog. Left uncapped rather than clamped into a prettier lie; the cohort rate beside it
+    // is the one that cannot.
     fulfillmentRatePct: ratioPct(shippedInWindow, receivedInWindow),
+    cohortFulfillmentRatePct: ratioPct(cohortShipped, receivedInWindow),
+    shippedWithin48hPct: ratioPct(toNumber(ordersRow.cohort_shipped_within_48h), receivedInWindow),
     avgHoursToShip: roundHours(toNullableNumber(ordersRow.avg_hours_to_ship)),
-    avgOrderValueCents: averageCents(gmvCentsInWindow, receivedInWindow),
+    medianHoursToShip: roundHours(toNullableNumber(ordersRow.p50_hours_to_ship)),
+    p90HoursToShip: roundHours(toNullableNumber(ordersRow.p90_hours_to_ship)),
+    // Settled money over settled orders. Dividing settled GMV by *received* orders would deflate
+    // the average by every unpaid basket in the window.
+    avgOrderValueCents: averageCents(gmvSettledCentsInWindow, settledInWindow),
   };
 
+  const gmvSettledCentsAllTime = toNumber(ordersRow.gmv_settled_cents_all_time);
+  const gmvSettledCentsPrevWindow = toNumber(ordersRow.gmv_settled_cents_prev_window);
+
   const revenue: PlatformRevenueMetrics = {
-    gmvCentsAllTime: toNumber(ordersRow.gmv_cents_all_time),
-    gmvCentsInWindow,
-    gmvCentsPrevWindow: toNumber(ordersRow.gmv_cents_prev_window),
+    gmvSettledCentsAllTime,
+    gmvSettledCentsInWindow,
+    gmvSettledCentsPrevWindow,
+    gmvUnsettledCentsInWindow: toNumber(ordersRow.gmv_unsettled_cents_in_window),
+    gmvCancelledCentsInWindow: toNumber(ordersRow.gmv_cancelled_cents_in_window),
+    // Contract-named aliases of the three above. Assigned from the same variables so they cannot
+    // drift apart the way two hand-maintained copies of a rule always eventually do.
+    gmvCentsAllTime: gmvSettledCentsAllTime,
+    gmvCentsInWindow: gmvSettledCentsInWindow,
+    gmvCentsPrevWindow: gmvSettledCentsPrevWindow,
     refundedCentsInWindow: toNumber(ordersRow.refunded_cents_in_window),
     unitsSoldInWindow: toNumber(unitsRow.units_sold_in_window),
   };
@@ -923,8 +1187,12 @@ export async function getPlatformOverview(
       publishedStores: toNumber(integrationsRow.published_stores),
     },
     conversion: {
-      clickToOrderPct: ratioPct(receivedInWindow, traffic.clicksInWindow),
-      cartToOrderPct: ratioPct(receivedInWindow, traffic.addToCart),
+      clickToOrderPct: sampledRatioPct(receivedInWindow, traffic.clicksInWindow, MIN_CLICK_SAMPLE),
+      cartToOrderPct: sampledRatioPct(receivedInWindow, traffic.addToCart, MIN_CART_SAMPLE),
+      clickSample: traffic.clicksInWindow,
+      cartSample: traffic.addToCart,
+      minClickSample: MIN_CLICK_SAMPLE,
+      minCartSample: MIN_CART_SAMPLE,
     },
   };
 }
@@ -962,6 +1230,8 @@ export async function getPlatformTimeseries(
   const result = await db.query<TimeseriesRow>(TIMESERIES_SQL, [
     bounds.start.toISOString(),
     bounds.end.toISOString(),
+    bounds.startDay,
+    bounds.endDay,
   ]);
 
   return {
@@ -1017,19 +1287,30 @@ export async function getPlatformHealth(): Promise<PlatformHealth> {
     processing: toNumber(jobsRow.processing),
   };
 
-  const backlog = unfulfilledResult.rows.map((row) => ({
+  const backlogStores: PlatformUnfulfilledStore[] = unfulfilledResult.rows.map((row) => ({
     storeId: row.store_id,
     storeName: row.store_name,
     count: toNumber(row.unfulfilled),
+    stuckCents: toNumber(row.stuck_cents),
+    oldestAgeHours: roundHours(toNullableNumber(row.oldest_age_hours)) ?? 0,
   }));
-  const unfulfilledOver48h = backlog.reduce((sum, entry) => sum + entry.count, 0);
+
+  const unfulfilled: PlatformUnfulfilledBacklog = {
+    total: backlogStores.reduce((sum, entry) => sum + entry.count, 0),
+    totalCents: backlogStores.reduce((sum, entry) => sum + entry.stuckCents, 0),
+    oldestAgeHours: backlogStores.length === 0
+      ? null
+      : backlogStores.reduce((oldest, entry) => Math.max(oldest, entry.oldestAgeHours), 0),
+    stores: backlogStores,
+  };
 
   return {
     counts,
     jobs,
-    unfulfilledOver48h,
+    unfulfilledOver48h: unfulfilled.total,
+    unfulfilled,
     stores,
-    alerts: buildAlerts(stores, jobs, backlog),
+    alerts: buildAlerts(stores, jobs, backlogStores),
   };
 }
 
@@ -1043,13 +1324,13 @@ export async function getPlatformHealth(): Promise<PlatformHealth> {
  *
  * @param stores - Per-store health rows, already ordered worst-first by the query.
  * @param jobs - Queue depth.
- * @param backlog - Per-store counts of paid orders unshipped past the threshold.
+ * @param backlog - Per-store settled orders unshipped past the threshold, with value and age.
  * @returns Alerts sorted critical → warning → info, capped at {@link MAX_ALERTS}.
  */
 function buildAlerts(
   stores: PlatformStoreHealth[],
   jobs: PlatformJobCounts,
-  backlog: Array<{ storeId: string; storeName: string; count: number }>,
+  backlog: PlatformUnfulfilledStore[],
 ): PlatformAlert[] {
   const alerts: PlatformAlert[] = [];
 
@@ -1080,10 +1361,15 @@ function buildAlerts(
   }
 
   for (const entry of backlog.slice(0, MAX_ALERTS_PER_KIND)) {
+    const oldestDays = Math.floor(entry.oldestAgeHours / 24);
+    const age = oldestDays >= 1
+      ? `${oldestDays} day${oldestDays === 1 ? '' : 's'}`
+      : `${Math.round(entry.oldestAgeHours)} hours`;
+
     alerts.push({
-      severity: entry.count >= 10 ? 'critical' : 'warning',
+      severity: entry.count >= 10 || oldestDays >= 7 ? 'critical' : 'warning',
       title: `${entry.storeName} has ${entry.count} paid order${entry.count === 1 ? '' : 's'} unshipped`,
-      detail: `Paid more than ${UNFULFILLED_ALERT_HOURS} hours ago with no dispatch recorded. These are the customers about to email.`,
+      detail: `${formatCents(entry.stuckCents)} of settled orders with no dispatch recorded, the oldest waiting ${age}. These are the customers about to email.`,
       storeId: entry.storeId,
       storeName: entry.storeName,
       href: `/platform/customers/${entry.storeId}`,
@@ -1115,6 +1401,19 @@ function buildAlerts(
 
   const rank: Record<PlatformAlertSeverity, number> = { critical: 0, warning: 1, info: 2 };
   return alerts.sort((a, b) => rank[a.severity] - rank[b.severity]).slice(0, MAX_ALERTS);
+}
+
+/**
+ * Render integer cents as a currency string for an alert body.
+ *
+ * Display only — the payload always carries the integer. Formatting here rather than in the console
+ * keeps the alert a complete sentence that reads the same wherever it is surfaced.
+ *
+ * @param cents - Integer cents.
+ * @returns A `$1,234.56`-style string.
+ */
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /**

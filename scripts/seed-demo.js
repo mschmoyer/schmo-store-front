@@ -25,6 +25,7 @@
  * than hand-maintained.
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -90,6 +91,33 @@ const daysAgo = (n, hourJitter = true) => {
   return d;
 };
 
+/**
+ * Pull a timestamp back behind `now` if the hour jitter pushed it into the future.
+ *
+ * `daysAgo(0)` picks an hour between 06:00 and 22:00 *today*, which is in the future whenever the
+ * seed is run in the morning. A demo database full of orders placed later today is not merely odd:
+ * anything comparing "received today" with "shipped today", or filtering to a window that ends
+ * now, silently disagrees with itself.
+ *
+ * @param {Date} date - A candidate timestamp
+ * @returns {Date} The same timestamp, or a recent one if it was in the future
+ */
+const clampToPast = (date) => {
+  const now = new Date();
+  if (date <= now) return date;
+  return new Date(now.getTime() - randInt(30, 300) * 60000);
+};
+
+/**
+ * The platform's take rate in the demo data, in basis points (2%).
+ *
+ * `STRIPE_APPLICATION_FEE_BPS` defaults to 0, so a demo seeded from the live default would report
+ * a platform that earns nothing on every order it processes -- structurally zero revenue in every
+ * screen that charts it. Two percent is a plausible marketplace take and is labelled here as the
+ * demo's assumption, not as a product decision.
+ */
+const DEMO_APPLICATION_FEE_BPS = 200;
+
 // ---------------------------------------------------------------------------
 // Fixed identities (do not change -- other parts of the app key off these)
 // ---------------------------------------------------------------------------
@@ -98,6 +126,23 @@ const USERS = [
   { id: '550e8400-e29b-41d4-a716-446655440002', email: 'store.owner@example.com', first_name: 'Store', last_name: 'Owner' },
   { id: '550e8400-e29b-41d4-a716-446655440003', email: 'another.user@example.com', first_name: 'Another', last_name: 'User' },
 ];
+// How long each demo store has existed, in days, indexed by position in STORES.
+//
+// Three separate values, and all of them older than the 90 days of order history, because both
+// facts are load-bearing for the platform console:
+//
+//   * A store created *after* its own orders makes "days to first order" negative, which is what
+//     the previous seed produced for 72 of its 74 orders. Every store here predates its oldest
+//     order by at least a week.
+//   * Three stores sharing one creation timestamp makes the signups time series a single spike and
+//     zero everywhere else, so nothing that charts merchant growth can be seen working. Staggering
+//     them gives that chart three real points, and gives the flagship store a longer history than
+//     the newcomer, which is also why its traffic is heavier.
+const STORE_AGE_DAYS = [240, 165, 96];
+
+/** Owners sign up shortly before they create their store, never after it. */
+const OWNER_SIGNUP_LEAD_DAYS = [6, 3, 9];
+
 // Every seeded demo user shares this password. The plaintext is 'rebeldev',
 // documented in README.md and docs/demo-data.md.
 //
@@ -610,6 +655,246 @@ function sqlLiteral(value) {
 }
 
 // ---------------------------------------------------------------------------
+// Storefront click history (demo data)
+//
+// The platform operator console at /platform charts buyer traffic out of
+// `storefront_click_events` and its trigger-maintained rollup
+// `storefront_click_daily`. With an empty table those screens render zeroes,
+// which is honest but tells a developer nothing about whether they work, so the
+// demo stores get six weeks of plausible traffic.
+//
+// Three rules this generator holds to:
+//
+//   1. **Obviously demo.** Every row carries a `demo-visitor-*` / `demo-sess-*`
+//      identity and a `(demo-seed)` user agent. Nothing here should ever be
+//      mistaken for a real shopper, in a database or in a dashboard.
+//   2. **Idempotent.** It writes nothing conditional and cleans nothing up on
+//      its own: `seed()` wipes both click tables for these three stores before
+//      any of this runs, so a second run replaces rather than accumulates. The
+//      counts are also deterministic, because the generator draws from its own
+//      seeded PRNG rather than the shared one -- so re-running produces the same
+//      numbers, not merely the same order of magnitude.
+//   3. **Shaped like real traffic.** Weekends are quieter than weekdays, the
+//      recent weeks are busier than the older ones, and the event mix is a
+//      funnel: many views, fewer product views, fewer carts, fewer checkouts.
+//      Clicks outnumber orders by roughly two orders of magnitude, which is what
+//      a real storefront looks like and what makes the console's conversion
+//      percentages land in a believable range.
+// ---------------------------------------------------------------------------
+
+// A separate PRNG instance, deliberately. Drawing from the shared `rng` would
+// shift every subsequent draw and silently regenerate the catalogue, orders and
+// blog posts of every store seeded after the first.
+const clickRng = mulberry32(20260821);
+const clickPick = (arr) => arr[Math.floor(clickRng() * arr.length)];
+const clickInt = (min, max) => Math.floor(clickRng() * (max - min + 1)) + min;
+const clickChance = (p) => clickRng() < p;
+
+/** How many weeks of history to generate. Enough to fill a 30-day window and its comparison. */
+const CLICK_DAYS = 45;
+
+/** Referrer hosts as the events table stores them: host only, no scheme, no `www.`. */
+const CLICK_REFERRERS = [
+  [null, 34], ['google.com', 22], ['instagram.com', 12], ['facebook.com', 8],
+  ['pinterest.com', 5], ['tiktok.com', 5], ['reddit.com', 4], ['bing.com', 3],
+  ['news.ycombinator.com', 2], ['duckduckgo.com', 2],
+];
+
+/** Paid/social campaigns, attached to the referrers that plausibly carry them. */
+const CLICK_CAMPAIGNS = [
+  { source: 'instagram', medium: 'social', campaign: 'spring-drop' },
+  { source: 'facebook', medium: 'cpc', campaign: 'retargeting-q3' },
+  { source: 'google', medium: 'cpc', campaign: 'brand-search' },
+  { source: 'newsletter', medium: 'email', campaign: 'weekly-digest' },
+  { source: 'tiktok', medium: 'social', campaign: 'creator-collab' },
+];
+
+/** Device mix, roughly matching what a small DTC storefront sees. `bot` never appears: crawlers are dropped at the API, not stored. */
+const CLICK_DEVICES = [['mobile', 52], ['desktop', 40], ['tablet', 8]];
+
+/** Where the traffic comes from. Weighted towards the US, with enough variety to exercise a breakdown. */
+const CLICK_COUNTRIES = [['US', 70], ['CA', 10], ['GB', 8], ['AU', 5], ['DE', 4], ['IE', 3]];
+
+/**
+ * Weighted pick from `[value, weight]` pairs using the click PRNG.
+ *
+ * @param {Array<[any, number]>} pairs - Value/weight pairs
+ * @returns {any} One value
+ */
+function clickWeighted(pairs) {
+  const total = pairs.reduce((sum, [, weight]) => sum + weight, 0);
+  let r = clickRng() * total;
+  for (const [value, weight] of pairs) {
+    if ((r -= weight) <= 0) return value;
+  }
+  return pairs[pairs.length - 1][0];
+}
+
+/**
+ * A salted SHA-256 over a documentation-range address, matching what the API writes.
+ *
+ * The addresses are from RFC 5737's TEST-NET blocks and belong to nobody. Hashing them anyway
+ * keeps the column's shape honest: `ip_hash` is CHAR(64) and every consumer may assume it.
+ *
+ * @returns {string} 64 hex characters
+ */
+function demoIpHash() {
+  const ip = `${clickPick(IP_POOLS)}.${clickInt(1, 254)}`;
+  return crypto.createHash('sha256').update(`demo-seed:${ip}`).digest('hex');
+}
+
+/**
+ * A timestamp inside a given day, skewed towards shopping hours.
+ *
+ * @param {number} daysBack - How many days before today
+ * @returns {Date} A UTC timestamp within that day
+ */
+function clickMoment(daysBack) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - daysBack);
+  // Two humps: a lunchtime one and a larger evening one.
+  const hour = clickChance(0.35) ? clickInt(10, 14) : clickInt(17, 23);
+  d.setUTCHours(hour, clickInt(0, 59), clickInt(0, 59), 0);
+  return d;
+}
+
+/**
+ * Generate and insert six weeks of buyer click history for one demo store.
+ *
+ * Rows are written in batches rather than one statement per event: a storefront's traffic is
+ * thousands of rows per store, and a round trip each would make `npm run db:seed-demo` noticeably
+ * slower for data nobody waits on. The AFTER INSERT trigger still fires per row, so
+ * `storefront_click_daily` comes out correct without this function ever touching it.
+ *
+ * @param {import('pg').PoolClient} client - The transaction the seed is running in
+ * @param {{ id: string, slug: string, name: string }} store - The store to generate traffic for
+ * @param {number} storeIndex - Position in STORES; scales one store busier than another
+ * @param {Array<{ id: string, slug: string }>} products - The store's products, for product_view rows
+ * @returns {Promise<number>} How many events were written
+ */
+async function seedStorefrontClicks(client, store, storeIndex, products) {
+  const base = `/store/${store.slug}`;
+  const productPaths = products.map((p) => ({ id: p.id, path: `${base}/product/${p.slug}` }));
+  const browsePaths = [base, base, `${base}/products`, `${base}/products?sort=newest`];
+
+  // Store 1 is the busy flagship, store 3 the quiet newcomer.
+  const scale = [1, 0.7, 0.45][storeIndex] ?? 0.5;
+
+  // A returning-visitor pool, sized with the store's traffic so the busiest shop also has the most
+  // distinct people. Reusing ids across days is what makes "unique visitors" a smaller number than
+  // "clicks", which is the whole reason the console reports both.
+  const visitorPool = Array.from(
+    { length: Math.round(320 * scale) },
+    (unused, i) => `demo-visitor-${storeIndex + 1}-${String(i).padStart(4, '0')}`,
+  );
+  const rows = [];
+  let sessionCounter = 0;
+
+  for (let daysBack = CLICK_DAYS - 1; daysBack >= 0; daysBack--) {
+    const day = new Date();
+    day.setUTCDate(day.getUTCDate() - daysBack);
+    const weekday = day.getUTCDay();
+    const weekendFactor = weekday === 0 || weekday === 6 ? 0.62 : 1;
+    // A gentle upward trend, so the console's "vs previous period" arrow has something to point at.
+    const trendFactor = 0.7 + 0.6 * ((CLICK_DAYS - daysBack) / CLICK_DAYS);
+    const sessions = Math.max(
+      1,
+      Math.round(clickInt(14, 26) * scale * weekendFactor * trendFactor),
+    );
+
+    for (let s = 0; s < sessions; s++) {
+      const visitorId = clickPick(visitorPool);
+      const sessionId = `demo-sess-${storeIndex + 1}-${String(sessionCounter++).padStart(6, '0')}`;
+      const device = clickWeighted(CLICK_DEVICES);
+      const country = clickWeighted(CLICK_COUNTRIES);
+      const referrer = clickWeighted(CLICK_REFERRERS);
+      // Campaigns arrive with a referrer, never on a direct visit.
+      const campaign = referrer && clickChance(0.28) ? clickPick(CLICK_CAMPAIGNS) : null;
+      const occurred = clickMoment(daysBack);
+
+      /**
+       * Queue one event for this session.
+       *
+       * @param {string} eventType - One of the five types the CHECK constraint allows
+       * @param {string} pagePath - The path the shopper was on
+       * @param {string|null} productId - The product, for product-scoped events
+       * @param {number} minuteOffset - Minutes after the session started
+       */
+      const push = (eventType, pagePath, productId, minuteOffset) => {
+        rows.push([
+          store.id,
+          new Date(occurred.getTime() + minuteOffset * 60000),
+          eventType,
+          pagePath,
+          productId,
+          visitorId,
+          sessionId,
+          referrer,
+          campaign ? campaign.source : null,
+          campaign ? campaign.medium : null,
+          campaign ? campaign.campaign : null,
+          country,
+          device,
+          demoIpHash(),
+          `Mozilla/5.0 (demo-seed; ${device})`,
+        ]);
+      };
+
+      // Every session starts with at least one storefront view.
+      let minute = 0;
+      const browseCount = clickWeighted([[1, 6], [2, 4], [3, 2], [4, 1]]);
+      for (let b = 0; b < browseCount; b++) {
+        push('storefront_view', clickPick(browsePaths), null, minute);
+        minute += clickInt(1, 4);
+      }
+
+      // ... which becomes a funnel for the fraction of sessions that keep going.
+      if (productPaths.length > 0 && clickChance(0.58)) {
+        const viewCount = clickWeighted([[1, 6], [2, 3], [3, 1]]);
+        let lastProduct = null;
+        for (let v = 0; v < viewCount; v++) {
+          lastProduct = clickPick(productPaths);
+          push('product_view', lastProduct.path, lastProduct.id, minute);
+          minute += clickInt(1, 5);
+        }
+
+        if (lastProduct && clickChance(0.22)) {
+          push('add_to_cart', lastProduct.path, lastProduct.id, minute);
+          minute += clickInt(1, 3);
+          push('storefront_view', `${base}/cart`, null, minute);
+          minute += clickInt(1, 3);
+
+          if (clickChance(0.42)) {
+            push('checkout_start', `${base}/checkout`, null, minute);
+          }
+        }
+      }
+
+      // A trickle of traffic sent from the platform's own marketing surfaces.
+      if (clickChance(0.03)) push('outbound_click', base, null, minute + 1);
+    }
+  }
+
+  // 15 columns * 400 rows = 6,000 parameters, comfortably inside Postgres's 65,535 limit.
+  const CHUNK = 400;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const values = chunk
+      .map((unusedRow, r) => `(${Array.from({ length: 15 }, (unusedCol, c) => `$${r * 15 + c + 1}`).join(',')})`)
+      .join(',');
+    await client.query(
+      `INSERT INTO public.storefront_click_events
+         (store_id, occurred_at, event_type, path, product_id, visitor_id, session_id,
+          referrer_domain, utm_source, utm_medium, utm_campaign, country, device, ip_hash, user_agent)
+       VALUES ${values}`,
+      chunk.flat(),
+    );
+  }
+
+  return rows.length;
+}
+
+// ---------------------------------------------------------------------------
 // Main seed routine
 // ---------------------------------------------------------------------------
 async function seed() {
@@ -624,6 +909,11 @@ async function seed() {
     const scopedTables = [
       'coupon_usage', 'order_items', 'orders', 'inventory_logs', 'inventory',
       'page_analytics', 'visitors', 'search_tracking', 'blog_posts', 'coupons',
+      // Both click tables are wiped here, and that is what makes the click seed
+      // idempotent: storefront_click_daily is maintained by an AFTER INSERT
+      // trigger, so clearing the events alone would leave the rollup holding
+      // counts for rows that no longer exist, and every re-seed would add to it.
+      'storefront_click_daily', 'storefront_click_events',
       'products', 'categories', 'store_config', 'store_analytics_summary',
       'store_integrations', 'sync_history',
     ];
@@ -634,25 +924,31 @@ async function seed() {
     await client.query('DELETE FROM public.users WHERE id = ANY($1::uuid[])', [userIds]);
 
     // ---- Users ----
-    for (const u of USERS) {
+    // `created_at` is set explicitly rather than defaulted to now: a user row created after the
+    // store it owns is impossible, and every "signups this month" or "time to first store" figure
+    // computed from it comes out nonsense.
+    for (const [index, u] of USERS.entries()) {
+      const signedUpDaysAgo = (STORE_AGE_DAYS[index] ?? 90) + (OWNER_SIGNUP_LEAD_DAYS[index] ?? 5);
       await client.query(
-        `INSERT INTO public.users (id, email, password_hash, first_name, last_name, email_verified, is_active)
-         VALUES ($1, $2, $3, $4, $5, true, true)`,
-        [u.id, u.email, PASSWORD_HASH, u.first_name, u.last_name]
+        `INSERT INTO public.users (id, email, password_hash, first_name, last_name, email_verified, is_active, created_at)
+         VALUES ($1, $2, $3, $4, $5, true, true, $6)`,
+        [u.id, u.email, PASSWORD_HASH, u.first_name, u.last_name, daysAgo(signedUpDaysAgo, false)]
       );
     }
 
     for (const store of STORES) {
       // ---- Store (trigger auto-creates default store_config + "All Products" category) ----
+      const storeIndex = STORES.indexOf(store);
+      const storeCreatedAt = daysAgo(STORE_AGE_DAYS[storeIndex] ?? 120, false);
       await client.query(
         `INSERT INTO public.stores
            (id, owner_id, store_name, store_slug, store_description, hero_title, hero_description,
             theme_name, currency, is_active, is_public, allow_guest_checkout,
-            meta_title, meta_description, logo_url, favicon_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'USD',true,true,true,$9,$10,$11,$11)`,
+            meta_title, meta_description, logo_url, favicon_url, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'USD',true,true,true,$9,$10,$11,$11,$12)`,
         [store.id, store.ownerId, store.name, store.slug, store.description, store.heroTitle,
           store.heroDescription, store.themeName, store.metaTitle, store.metaDescription,
-          `/demo/logo/${store.slug}.svg`]
+          `/demo/logo/${store.slug}.svg`, storeCreatedAt]
       );
 
       // Remove the trigger-created catch-all category -- we ship real ones.
@@ -757,8 +1053,11 @@ async function seed() {
               shipping_first_name, shipping_last_name, shipping_address_line1, shipping_city, shipping_state,
               shipping_postal_code, shipping_country, subtotal, tax_amount, shipping_amount, discount_amount,
               total_amount, payment_method, payment_status, status, fulfillment_status,
-              tracking_number, carrier, shipped_at, delivered_at, created_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'US',$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+              tracking_number, carrier, shipped_at, delivered_at, created_at,
+              payment_provider, amount_total, currency, application_fee_amount, paid_at,
+              refunded_amount, refunded_at, stripe_payment_intent_id, stripe_checkout_session_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'US',$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
+                   $27,$28,'USD',$29,$30,$31,$32,$33,$34)
            RETURNING id`,
           [store.id, order.orderNumber, order.customer.email, order.customer.first, order.customer.last,
             '+1-555-' + String(randInt(1000, 9999)).padStart(4, '0'),
@@ -766,7 +1065,11 @@ async function seed() {
             order.customer.state, order.customer.zip, order.subtotal, order.tax, order.shipping,
             order.discount, order.total, order.paymentMethod, order.paymentStatus, order.status,
             order.fulfillmentStatus, order.trackingNumber, order.carrier, order.shippedAt, order.deliveredAt,
-            order.createdAt]
+            order.createdAt,
+            // Paid orders carry the same payment columns real checkout writes, so platform revenue,
+            // take rate and refund totals are non-zero in a demo instead of structurally absent.
+            order.paidAt ? 'stripe' : null, order.amountTotal, order.applicationFee, order.paidAt,
+            order.refundedAmount, order.refundedAt, order.paymentIntentId, order.checkoutSessionId]
         );
         const orderId = orderRes.rows[0].id;
         for (const item of order.items) {
@@ -870,7 +1173,15 @@ async function seed() {
         [store.id]
       );
 
-      console.log(`Seeded ${store.name} (${store.slug}): ${store.products.length} products, ${orderPlan.length} orders, ${store.blog.length} blog posts.`);
+      // ---- Storefront click history (45 days) ----
+      // Real product ids, not the seed's slugs: storefront_click_events.product_id is a foreign
+      // key, and a dashboard that joins it needs rows that actually join.
+      const clickProducts = await client.query(
+        `SELECT id, slug FROM public.products WHERE store_id = $1 ORDER BY sku`, [store.id]
+      );
+      const clickCount = await seedStorefrontClicks(client, store, storeIndex, clickProducts.rows);
+
+      console.log(`Seeded ${store.name} (${store.slug}): ${store.products.length} products, ${orderPlan.length} orders, ${store.blog.length} blog posts, ${clickCount} storefront clicks.`);
     }
 
     await client.query('COMMIT');
@@ -891,8 +1202,21 @@ function buildOrderPlan(store, soldByProduct) {
   const orderCount = randInt(20, 28);
   let counter = 1001;
   for (let i = 0; i < orderCount; i++) {
-    const daysBack = Math.floor((1 - Math.pow(rng(), 1.6)) * 90); // skew recent
-    const createdAt = daysAgo(daysBack);
+    /*
+     * The status is drawn first because it decides how old the order has to be.
+     *
+     * An order that shipped a day after it was placed and was delivered three days after that
+     * cannot have been placed this morning, and the previous version of this function placed
+     * orders as recently as today and then dated their shipment into the future -- which is how a
+     * dashboard ends up reporting more parcels shipped today than orders received today. Each
+     * status now carries a minimum age big enough for its own timeline to fit behind `now`.
+     */
+    const status = pickWeighted([
+      ['completed', 40], ['shipped', 16], ['processing', 14], ['pending', 15], ['cancelled', 15],
+    ]);
+    const minAgeDays = status === 'completed' ? 9 : status === 'shipped' ? 4 : 0;
+    const daysBack = Math.max(minAgeDays, Math.floor((1 - Math.pow(rng(), 1.6)) * 90)); // skew recent
+    const createdAt = clampToPast(daysAgo(daysBack));
     const customer = pick(CUSTOMERS);
     const lineCount = pickWeighted([[1, 5], [2, 4], [3, 2]]);
     const chosenProducts = [];
@@ -911,9 +1235,6 @@ function buildOrderPlan(store, soldByProduct) {
     });
 
     const subtotal = Number(items.reduce((s, it) => s + it.unitPrice * it.quantity, 0).toFixed(2));
-    const status = pickWeighted([
-      ['completed', 40], ['shipped', 16], ['processing', 14], ['pending', 15], ['cancelled', 15],
-    ]);
     const hasDiscount = rng() < 0.25;
     const discount = hasDiscount ? Number((subtotal * pick([0.1, 0.15, 0.2])).toFixed(2)) : 0;
     const taxable = Math.max(subtotal - discount, 0);
@@ -921,24 +1242,33 @@ function buildOrderPlan(store, soldByProduct) {
     const shipping = subtotal >= store.shippingFreeThreshold ? 0 : store.shippingFlatRate;
     const total = Number((taxable + tax + shipping).toFixed(2));
 
+    /*
+     * `payment_status` here has to be the vocabulary real checkout writes, not a plausible-looking
+     * synonym. `src/lib/billing/orders.ts` records a paid order as `payment_status = 'paid'`,
+     * `payment_provider = 'stripe'`, `payment_method = 'card'`, and a refund as
+     * `payment_status = 'refunded'` with `status = 'cancelled'`. The previous seed wrote
+     * 'completed' and 'credit_card'/'paypal', so every admin filter written against the real
+     * values matched nothing in the demo data and every filter written against the demo data
+     * matched nothing in production -- each one looking correct to whoever wrote it.
+     */
     let paymentStatus, fulfillmentStatus, shippedAt, deliveredAt, trackingNumber, carrier;
     switch (status) {
       case 'completed':
-        paymentStatus = 'completed'; fulfillmentStatus = 'fulfilled';
+        paymentStatus = 'paid'; fulfillmentStatus = 'fulfilled';
         shippedAt = new Date(createdAt.getTime() + 86400000 * randInt(1, 2));
         deliveredAt = new Date(shippedAt.getTime() + 86400000 * randInt(2, 5));
         trackingNumber = '1Z' + randInt(100000000, 999999999);
         carrier = pick(['UPS', 'FedEx', 'USPS']);
         break;
       case 'shipped':
-        paymentStatus = 'completed'; fulfillmentStatus = 'fulfilled';
+        paymentStatus = 'paid'; fulfillmentStatus = 'fulfilled';
         shippedAt = new Date(createdAt.getTime() + 86400000 * randInt(1, 2));
         deliveredAt = null;
         trackingNumber = '1Z' + randInt(100000000, 999999999);
         carrier = pick(['UPS', 'FedEx', 'USPS']);
         break;
       case 'processing':
-        paymentStatus = 'completed'; fulfillmentStatus = 'unfulfilled';
+        paymentStatus = 'paid'; fulfillmentStatus = 'unfulfilled';
         shippedAt = null; deliveredAt = null; trackingNumber = null; carrier = null;
         break;
       case 'pending':
@@ -952,14 +1282,33 @@ function buildOrderPlan(store, soldByProduct) {
         break;
     }
 
+    // Money the platform actually captured, and its cut. `paid_at` is a few minutes after the
+    // order, which is what a Stripe redirect looks like; an unpaid order has none of it. The fee
+    // uses the same arithmetic as `computeApplicationFeeCents` in src/lib/billing/payment-accounts.ts.
+    const isPaid = paymentStatus === 'paid' || paymentStatus === 'refunded';
+    const paidAt = isPaid ? new Date(createdAt.getTime() + randInt(1, 9) * 60000) : null;
+    const amountTotal = isPaid ? total : null;
+    const applicationFee = isPaid
+      ? Number((Math.round(total * 100 * DEMO_APPLICATION_FEE_BPS / 10000) / 100).toFixed(2))
+      : null;
+    const refundedAmount = paymentStatus === 'refunded' ? total : 0;
+    const refundedAt = paymentStatus === 'refunded'
+      ? new Date(createdAt.getTime() + 86400000 * randInt(1, 5))
+      : null;
+
     orders.push({
       orderNumber: `${store.skuPrefix}-${counter++}`,
       customer,
       addressLine1: `${randInt(100, 9999)} ${pick(['Main St', 'Oak Ave', 'Pine Rd', 'Elm St', 'Market St', 'Broadway', 'Cedar Ln'])}`,
       items, subtotal, tax, shipping, discount, total,
-      paymentMethod: pick(['credit_card', 'credit_card', 'paypal']),
+      paymentMethod: 'card',
       paymentStatus, status, fulfillmentStatus, trackingNumber, carrier, shippedAt, deliveredAt,
       createdAt,
+      paidAt, amountTotal, applicationFee, refundedAmount, refundedAt,
+      // Clearly-fake identifiers in Stripe's shape. Real ones are 24 random characters; these say
+      // `demo` in the middle so nobody mistakes a seeded order for a live one in a support ticket.
+      paymentIntentId: isPaid ? `pi_demo_${store.skuPrefix.toLowerCase()}_${counter - 1}` : null,
+      checkoutSessionId: isPaid ? `cs_demo_${store.skuPrefix.toLowerCase()}_${counter - 1}` : null,
     });
   }
   return orders;
@@ -984,6 +1333,7 @@ async function dumpDevelopmentSql() {
   const scopedTables = [
     'coupon_usage', 'order_items', 'orders', 'inventory_logs', 'inventory',
     'page_analytics', 'visitors', 'search_tracking', 'blog_posts', 'coupons',
+    'storefront_click_daily', 'storefront_click_events',
     'products', 'categories', 'store_config', 'store_analytics_summary',
     'store_integrations', 'sync_history',
   ];
@@ -1034,6 +1384,9 @@ async function dumpDevelopmentSql() {
     [storeIds], null,
     ' ON CONFLICT (store_id, date) DO UPDATE SET unique_visitors = EXCLUDED.unique_visitors, page_views = EXCLUDED.page_views, total_orders = EXCLUDED.total_orders, total_revenue = EXCLUDED.total_revenue'
   );
+  out.push(`-- visitors, search_tracking and storefront_click_events are omitted from this`);
+  out.push(`-- snapshot (tens of thousands of low-value rows, and the click rollup is`);
+  out.push(`-- rebuilt by trigger on insert anyway)`);
   out.push(`-- visitors and search_tracking are omitted from this snapshot (thousands of`);
   out.push(`-- low-value rows) -- re-run \`node scripts/seed-demo.js\` to regenerate them.`);
   out.push('');

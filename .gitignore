@@ -52,3 +52,6 @@ next-env.d.ts
 
 # vercel — local project link (project/org ids), not shared state
 .vercel
+
+# Ad-hoc screenshot drivers used while building /platform. Scratch, never committed.
+.platform-shot*.cjs

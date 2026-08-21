@@ -14,7 +14,6 @@
  */
 
 import React from 'react';
-import Link from 'next/link';
 import { IconAlertTriangle, IconArrowLeft, IconLock, IconRefresh } from '@tabler/icons-react';
 import { Button, EmptyState } from '@/components/ui';
 import type { PlatformFetchError } from './usePlatformFetch';
@@ -44,7 +43,7 @@ export function PlatformErrorState({
   onRetry,
 }: PlatformErrorStateProps): React.ReactElement {
   const back = backHref ? (
-    <Button component={Link} href={backHref} variant="secondary" leftIcon={<IconArrowLeft size={16} />}>
+    <Button href={backHref} variant="secondary" leftIcon={<IconArrowLeft size={16} />}>
       Back to all merchants
     </Button>
   ) : undefined;
@@ -57,9 +56,7 @@ export function PlatformErrorState({
         title="Your session has expired"
         description="Sign in again to continue. The platform console does not keep a session open across a restart."
         action={
-          <Button component={Link} href="/login">
-            Sign in
-          </Button>
+          <Button href="/login">Sign in</Button>
         }
         secondaryAction={back}
       />
@@ -74,7 +71,7 @@ export function PlatformErrorState({
         title="This account is not a platform administrator"
         description="You are signed in, but the platform console is restricted to platform admins. Ask an existing admin to grant access, then reload this page."
         action={
-          <Button component={Link} href="/admin" variant="secondary">
+          <Button href="/admin" variant="secondary">
             Go to your store admin
           </Button>
         }

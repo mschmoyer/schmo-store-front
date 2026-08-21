@@ -1,0 +1,137 @@
+/*
+ * Operator-console page frame, and the three states the shell can be in before a page renders.
+ *
+ * The frame mirrors `admin.module.css` deliberately: 24px of padding, 16px under 768px, and a
+ * heading ceiling so `<h1>` does not arrive at the marketing site's 3.25rem. A console operator has
+ * a heading, a window selector, six stat cards and two charts above the fold; the least informative
+ * element on that screen must not be the largest.
+ *
+ * The console is wider than the merchant admin — 1600px rather than 1440px — because its tables are
+ * per-tenant rather than per-order, and squeezing a fleet view into a merchant's measure wastes the
+ * one advantage an internal tool has.
+ */
+
+.page {
+  padding: var(--space-6);
+  max-width: 1600px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.page :global(h1) {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.page :global(h2) {
+  font-size: 1.25rem;
+  line-height: 1.25;
+  letter-spacing: -0.018em;
+}
+
+.page :global(h3) {
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+}
+
+@media (max-width: 767px) {
+  .page {
+    padding: var(--space-4);
+  }
+}
+
+/* ============================================================== Gates ===== */
+
+/*
+ * The not-an-operator and verify-failed screens.
+ *
+ * Both render WITHOUT the console chrome. A merchant who lands here should not see the operator
+ * sidebar at all — showing them the shape of a place they cannot enter is worse than a plain
+ * sentence, and the sidebar's links would 403 under them anyway.
+ */
+
+.gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--surface);
+}
+
+.gateCard {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-7);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
+
+.gateMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.gateTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gateBody {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.gateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* =========================================================== Overview ===== */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/*
+ * The funnel and the money panel are peers and read side by side on a laptop. Below 900px of
+ * available width they stack rather than squeezing, because a funnel bar under 200px wide stops
+ * encoding anything.
+ */
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.headerNote {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}

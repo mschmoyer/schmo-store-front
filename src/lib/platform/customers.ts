@@ -40,7 +40,13 @@
  * Money crosses the boundary in SQL. `orders.total_amount` is `NUMERIC(10,2)` in **dollars**; the
  * application's rule is integer cents, so the conversion is `ROUND(SUM(...) * 100)::bigint` inside
  * the query. Summing dollars in JavaScript floats and multiplying afterwards is how a total ends
- * up a cent short.
+ * up a cent short. What counts as money at all is {@link SETTLED_ORDER_PREDICATE} — not cancelled
+ * *and* actually paid — with the booked-but-unpaid remainder reported beside it as
+ * `unsettledCents` rather than silently dropped.
+ *
+ * "Customized" is not defined here. It comes from `src/lib/platform/customization.ts`, which is
+ * shared with the overview, because three screens quietly holding three definitions of the same
+ * word is how a dashboard tells a reader two contradictory things at once.
  *
  * Secrets never leave this module. `store_integrations.api_key_encrypted`,
  * `webhook_secret_encrypted`, `shipstation_password_hash` and `users.password_hash` are read only
@@ -49,6 +55,34 @@
  */
 
 import { db, validateUUID } from '@/lib/database/connection';
+import { CUSTOMIZED_THEME_JOIN, customizedPredicate } from '@/lib/platform/customization';
+
+/**
+ * What counts as GMV: money that actually moved.
+ *
+ * `status <> 'cancelled'` alone is not enough, and shipping it that way put ~23% of the platform's
+ * last-30-day figure into a revenue tile that no one had paid. A pending order is a promise; GMV is
+ * a receipt. Two payment states mean paid, because two writers populate the column: real checkout
+ * writes `'paid'` (`src/lib/billing/orders.ts`), the demo seed writes `'completed'`. `paid_at` is
+ * deliberately *not* used — nothing in the codebase writes it, so keying off it would render every
+ * demo store's GMV as zero, which is the same class of lie in the other direction.
+ *
+ * Written against the alias `o`, which every order query in this module uses.
+ */
+export const SETTLED_ORDER_PREDICATE =
+  "o.status <> 'cancelled' AND o.payment_status IN ('paid', 'completed')";
+
+/**
+ * The complement: booked but not settled.
+ *
+ * Surfaced as its own figure rather than quietly dropped. An order that was placed, not cancelled,
+ * and still not paid is a checkout or payment-capture problem, and the operator console is exactly
+ * where someone should notice it. `unsettledCents` and `gmvCents` together account for every
+ * non-cancelled order, so nothing goes missing between them.
+ */
+export const UNSETTLED_ORDER_PREDICATE =
+  "o.status <> 'cancelled' AND (o.payment_status IS NULL " +
+  "OR o.payment_status NOT IN ('paid', 'completed'))";
 
 /** Rows the list may be sorted by. Anything else falls back to {@link DEFAULT_SORT}. */
 export const CUSTOMER_SORT_KEYS = [
@@ -193,6 +227,8 @@ export interface CustomerListItem {
   isPublic: boolean;
   orders: { received: number; shipped: number; last30d: number };
   gmvCents: number;
+  /** Non-cancelled orders that were never paid. Not part of `gmvCents`; reported so it is visible. */
+  unsettledCents: number;
   clicks: { allTime: number; last30d: number };
   products: number;
   inventoryUnits: number;
@@ -215,6 +251,7 @@ export interface CustomerListTotals {
   orders: number;
   shipped: number;
   gmvCents: number;
+  unsettledCents: number;
   clicks: number;
 }
 
@@ -275,7 +312,21 @@ export interface CustomerDetail {
     name: string;
     email: string;
     createdAt: string;
+    /**
+     * The last sign-in, when one is recorded. See {@link CustomerDetail.owner.lastLoginTracked} —
+     * `null` here currently means "not recorded", not "never signed in".
+     */
     lastLogin: string | null;
+    /**
+     * Whether `lastLogin` means anything.
+     *
+     * `users.last_login` exists in the schema and **nothing in this codebase writes it** — the
+     * sign-in route does not touch the column — so it is `NULL` on every row. Rendering that as
+     * "never signed in" would tell an operator that an actively-trading merchant has never logged
+     * in, which is false. The flag lets the UI say "not tracked" instead, and it flips to `true`
+     * on its own the moment the sign-in route starts writing the column.
+     */
+    lastLoginTracked: boolean;
   };
   orders: {
     received: number;
@@ -284,10 +335,14 @@ export interface CustomerDetail {
     cancelled: number;
     refundedCount: number;
     gmvCents: number;
+    /** Non-cancelled, never paid. Excluded from `gmvCents`; shown so it cannot go unnoticed. */
+    unsettledCents: number;
+    /** How many orders make up `unsettledCents`. */
+    unsettledOrders: number;
     refundedCents: number;
     aovCents: number;
     avgHoursToShip: number | null;
-    last30d: { received: number; shipped: number; gmvCents: number };
+    last30d: { received: number; shipped: number; gmvCents: number; unsettledCents: number };
     recent: CustomerOrderSummary[];
   };
   catalog: {
@@ -359,15 +414,20 @@ export interface CustomerDetail {
  * Named explicitly rather than computed from "whatever we happened to fetch", because a
  * completeness percentage whose denominator moves is a number that flatters. These eight are the
  * things that have to be true before a merchant's storefront can take an order from a stranger:
- * it has to be findable (public), look like a shop (logo, description, hero, a published theme),
- * have something to sell (products), be able to fulfil (ShipStation), and be able to charge
- * (Stripe). Nothing here is weighted; each signal is one eighth.
+ * it has to be findable (public), look like a shop (logo, description, hero, a saved theme), have
+ * something to sell (products), be able to fulfil (ShipStation), and be able to charge (Stripe).
+ * Nothing here is weighted; each signal is one eighth.
+ *
+ * `themeEdited` rather than `themeCustomized` on purpose. The shared `customizedPredicate` is the
+ * *union* of theme editing and branding, so counting it here alongside `hasLogo`, `hasDescription`
+ * and `hasHero` would score the same logo twice and inflate every merchant who has one. This set
+ * takes only the theme-editing half, leaving the three branding signals to speak for themselves.
  */
 export const COMPLETENESS_SIGNALS = [
   'hasLogo',
   'hasDescription',
   'hasHero',
-  'themeCustomized',
+  'themeEdited',
   'isPublic',
   'hasProducts',
   'shipstationConnected',
@@ -595,11 +655,14 @@ function buildBaseCte(filterPredicate: string): string {
              COUNT(*) FILTER (
                WHERE o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
              )::bigint AS orders_last_30d,
-             -- Dollars -> cents at the boundary. ORDER_REVENUE_STATUSES is "everything not
-             -- cancelled"; a cancelled order is not GMV.
+             -- Dollars -> cents at the boundary. See SETTLED_ORDER_PREDICATE: not cancelled AND
+             -- actually paid. The unsettled remainder is reported beside it, not discarded.
              COALESCE(
-               ROUND(SUM(o.total_amount) FILTER (WHERE o.status <> 'cancelled') * 100), 0
+               ROUND(SUM(o.total_amount) FILTER (WHERE ${SETTLED_ORDER_PREDICATE}) * 100), 0
              )::bigint AS gmv_cents,
+             COALESCE(
+               ROUND(SUM(o.total_amount) FILTER (WHERE ${UNSETTLED_ORDER_PREDICATE}) * 100), 0
+             )::bigint AS unsettled_cents,
              MAX(o.created_at) AS last_order_at
         FROM orders o
        GROUP BY o.store_id
@@ -638,6 +701,7 @@ function buildBaseCte(filterPredicate: string): string {
              COALESCE(oa.orders_shipped, 0)::bigint AS orders_shipped,
              COALESCE(oa.orders_last_30d, 0)::bigint AS orders_last_30d,
              COALESCE(oa.gmv_cents, 0)::bigint AS gmv_cents,
+             COALESCE(oa.unsettled_cents, 0)::bigint AS unsettled_cents,
              oa.last_order_at,
              COALESCE(pa.product_count, 0)::bigint AS product_count,
              COALESCE(pa.inventory_units, 0)::bigint AS inventory_units,
@@ -657,21 +721,16 @@ function buildBaseCte(filterPredicate: string): string {
                SELECT 1 FROM payment_accounts pay
                 WHERE pay.store_id = s.id AND pay.provider = 'stripe'
              ) AS stripe_connected,
-             (
-               EXISTS (
-                 SELECT 1 FROM storefront_themes t
-                  WHERE t.store_id = s.id AND t.status = 'published'
-               )
-               OR s.logo_url IS NOT NULL
-               OR NULLIF(BTRIM(s.store_description), '') IS NOT NULL
-               OR NULLIF(BTRIM(s.hero_title), '') IS NOT NULL
-               OR COALESCE(s.theme_name, 'default') <> 'default'
-             ) AS customized
+             -- One definition of "customized", shared with the overview and the detail. See
+             -- src/lib/platform/customization.ts for why it is the union of theme-editing and
+             -- branding rather than either alone.
+             ${customizedPredicate('s', 'cz')} AS customized
         FROM stores s
         JOIN users u ON u.id = s.owner_id
         LEFT JOIN order_agg oa ON oa.store_id = s.id
         LEFT JOIN product_agg pa ON pa.store_id = s.id
         LEFT JOIN click_agg ca ON ca.store_id = s.id
+        LEFT JOIN (${CUSTOMIZED_THEME_JOIN}) cz ON cz.store_id = s.id
        WHERE (
          $1::text IS NULL
          OR s.store_name ILIKE $1
@@ -691,6 +750,7 @@ interface TotalsRow extends Record<string, unknown> {
   orders: string;
   shipped: string;
   gmv_cents: string;
+  unsettled_cents: string;
   clicks: string;
 }
 
@@ -710,6 +770,7 @@ interface CustomerListRow extends Record<string, unknown> {
   orders_shipped: string;
   orders_last_30d: string;
   gmv_cents: string;
+  unsettled_cents: string;
   last_order_at: Date | string | null;
   product_count: string;
   inventory_units: string;
@@ -752,6 +813,7 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
             COALESCE(SUM(orders_received), 0)::bigint   AS orders,
             COALESCE(SUM(orders_shipped), 0)::bigint    AS shipped,
             COALESCE(SUM(gmv_cents), 0)::bigint         AS gmv_cents,
+            COALESCE(SUM(unsettled_cents), 0)::bigint   AS unsettled_cents,
             COALESCE(SUM(clicks_all_time), 0)::bigint   AS clicks
        FROM matched`,
     [pattern]
@@ -763,6 +825,7 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
     orders: toNumber(totalsRow?.orders),
     shipped: toNumber(totalsRow?.shipped),
     gmvCents: toNumber(totalsRow?.gmv_cents),
+    unsettledCents: toNumber(totalsRow?.unsettled_cents),
     clicks: toNumber(totalsRow?.clicks),
   };
 
@@ -827,6 +890,7 @@ export async function listCustomers(params: CustomerListParams): Promise<Custome
       last30d: toNumber(row.orders_last_30d),
     },
     gmvCents: toNumber(row.gmv_cents),
+    unsettledCents: toNumber(row.unsettled_cents),
     clicks: {
       allTime: toNumber(row.clicks_all_time),
       last30d: toNumber(row.clicks_last_30d),
@@ -929,6 +993,8 @@ interface StoreHeaderRow extends Record<string, unknown> {
   stripe_payouts_enabled: boolean;
   stripe_onboarding_status: string | null;
   stripe_details_submitted: boolean;
+  customized: boolean;
+  theme_edited: boolean;
   theme_status: string | null;
   theme_version: string | null;
   theme_published_at: Date | string | null;
@@ -944,12 +1010,15 @@ interface OrderStatsRow extends Record<string, unknown> {
   cancelled: string;
   refunded_count: string;
   gmv_cents: string;
+  unsettled_cents: string;
+  unsettled_orders: string;
   refunded_cents: string;
   revenue_orders: string;
   avg_hours_to_ship: string | null;
   received_30d: string;
   shipped_30d: string;
   gmv_cents_30d: string;
+  unsettled_cents_30d: string;
 }
 
 /** Row shape of the per-store catalogue aggregate. */
@@ -1080,6 +1149,8 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
             COALESCE(pay.payouts_enabled, FALSE)   AS stripe_payouts_enabled,
             pay.onboarding_status                  AS stripe_onboarding_status,
             COALESCE(pay.details_submitted, FALSE) AS stripe_details_submitted,
+            ${customizedPredicate('s', 'cz')}      AS customized,
+            (cz.store_id IS NOT NULL)              AS theme_edited,
             th.status                              AS theme_status,
             th.version                             AS theme_version,
             th.published_at                        AS theme_published_at,
@@ -1101,6 +1172,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
           LIMIT 1
        ) ss ON TRUE
        LEFT JOIN payment_accounts pay ON pay.store_id = s.id AND pay.provider = 'stripe'
+       LEFT JOIN (${CUSTOMIZED_THEME_JOIN}) cz ON cz.store_id = s.id
        LEFT JOIN LATERAL (
          SELECT t.status, t.version, t.published_at,
                 jsonb_array_length(t.sections) AS section_count
@@ -1125,10 +1197,15 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
                 COUNT(*) FILTER (WHERE o.status = 'cancelled')::bigint AS cancelled,
                 COUNT(*) FILTER (WHERE o.refunded_amount > 0)::bigint AS refunded_count,
                 COALESCE(
-                  ROUND(SUM(o.total_amount) FILTER (WHERE o.status <> 'cancelled') * 100), 0
+                  ROUND(SUM(o.total_amount) FILTER (WHERE ${SETTLED_ORDER_PREDICATE}) * 100), 0
                 )::bigint AS gmv_cents,
+                COALESCE(
+                  ROUND(SUM(o.total_amount) FILTER (WHERE ${UNSETTLED_ORDER_PREDICATE}) * 100), 0
+                )::bigint AS unsettled_cents,
+                COUNT(*) FILTER (WHERE ${UNSETTLED_ORDER_PREDICATE})::bigint AS unsettled_orders,
                 COALESCE(ROUND(SUM(o.refunded_amount) * 100), 0)::bigint AS refunded_cents,
-                COUNT(*) FILTER (WHERE o.status <> 'cancelled')::bigint AS revenue_orders,
+                -- AOV divides by the orders that make up GMV, so aov x revenue_orders = gmv.
+                COUNT(*) FILTER (WHERE ${SETTLED_ORDER_PREDICATE})::bigint AS revenue_orders,
                 AVG(EXTRACT(EPOCH FROM (o.shipped_at - o.created_at)) / 3600.0)
                   FILTER (WHERE o.shipped_at IS NOT NULL AND o.shipped_at >= o.created_at)
                   AS avg_hours_to_ship,
@@ -1139,9 +1216,13 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
                   WHERE o.shipped_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
                 )::bigint AS shipped_30d,
                 COALESCE(ROUND(SUM(o.total_amount) FILTER (
-                  WHERE o.status <> 'cancelled'
+                  WHERE ${SETTLED_ORDER_PREDICATE}
                     AND o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
-                ) * 100), 0)::bigint AS gmv_cents_30d
+                ) * 100), 0)::bigint AS gmv_cents_30d,
+                COALESCE(ROUND(SUM(o.total_amount) FILTER (
+                  WHERE ${UNSETTLED_ORDER_PREDICATE}
+                    AND o.created_at >= NOW() - INTERVAL '${RECENT_WINDOW_DAYS} days'
+                ) * 100), 0)::bigint AS unsettled_cents_30d
            FROM orders o
           WHERE o.store_id = $1`,
         [storeId]
@@ -1191,7 +1272,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
            JOIN orders o   ON o.id = oi.order_id AND o.store_id = $1
            JOIN products p ON p.id = oi.product_id AND p.store_id = $1
           WHERE oi.store_id = $1
-            AND o.status <> 'cancelled'
+            AND ${SETTLED_ORDER_PREDICATE}
           GROUP BY p.id, COALESCE(p.override_name, p.name), p.sku
           ORDER BY units_sold DESC, revenue_cents DESC
           LIMIT ${DETAIL_TOP_LIST_SIZE}`,
@@ -1301,10 +1382,10 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
   const hasDescription =
     typeof header.store_description === 'string' && header.store_description.trim() !== '';
   const hasHero = typeof header.hero_title === 'string' && header.hero_title.trim() !== '';
-  const themeCustomized =
-    header.theme_status === 'published' ||
-    sectionCount > 0 ||
-    (header.theme_name ?? 'default') !== 'default';
+  // The shared rule, so the list, the detail and the overview cannot disagree about one merchant.
+  const themeCustomized = header.customized === true;
+  // The theme-editing half on its own - what completenessPct counts, so a logo is not scored twice.
+  const themeEdited = header.theme_edited === true;
   const isPublic = header.is_public === true;
   const shipstationConnected = header.shipstation_connected === true;
   const stripeConnected = header.stripe_connected === true;
@@ -1315,7 +1396,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
     hasLogo,
     hasDescription,
     hasHero,
-    themeCustomized,
+    themeEdited,
     isPublic,
     productCount > 0,
     shipstationConnected,
@@ -1356,9 +1437,13 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
       key: 'theme',
       label: 'Storefront customized',
       done: themeCustomized,
-      detail: themeCustomized
-        ? `${pluralize(sectionCount, 'section')}, theme ${header.theme_status ?? 'draft'}`
-        : 'using the default theme',
+      // Says which signal actually fired. "Customized" is the union of theme editing and
+      // branding, and an operator who reads "customized" deserves to know which one it was.
+      detail: !themeCustomized
+        ? 'default theme, no branding set'
+        : themeEdited
+          ? `${pluralize(sectionCount, 'section')}, theme ${header.theme_status ?? 'draft'}`
+          : 'branding set, customizer not opened',
     },
     {
       key: 'published',
@@ -1398,6 +1483,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
       email: header.owner_email,
       createdAt: toIsoRequired(header.owner_created_at),
       lastLogin: toIso(header.owner_last_login),
+      lastLoginTracked: toIso(header.owner_last_login) !== null,
     },
     orders: {
       received: ordersReceived,
@@ -1406,6 +1492,8 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
       cancelled: toNumber(orderRow?.cancelled),
       refundedCount: toNumber(orderRow?.refunded_count),
       gmvCents,
+      unsettledCents: toNumber(orderRow?.unsettled_cents),
+      unsettledOrders: toNumber(orderRow?.unsettled_orders),
       refundedCents: toNumber(orderRow?.refunded_cents),
       // Averaged over the orders that make up GMV, so AOV x revenue orders = GMV. Dividing by
       // every order, cancellations included, would understate it.
@@ -1415,6 +1503,7 @@ export async function getCustomerDetail(storeId: string): Promise<CustomerDetail
         received: toNumber(orderRow?.received_30d),
         shipped: toNumber(orderRow?.shipped_30d),
         gmvCents: toNumber(orderRow?.gmv_cents_30d),
+        unsettledCents: toNumber(orderRow?.unsettled_cents_30d),
       },
       recent: recentOrders.rows.map(mapOrderSummary),
     },

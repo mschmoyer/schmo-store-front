@@ -1,0 +1,115 @@
+/*
+ * Tables nested inside a detail panel.
+ *
+ * They differ from the list screen's table in one way that matters: they sit
+ * *under* a `<h2>` that already names them, so their own heading is an `<h3>`
+ * and the block is separated by a rule rather than by another card edge. A
+ * second card border inside the panel would draw the eye to the container
+ * instead of to the rows.
+ */
+
+.tableBlock {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.subhead {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+/* A statement about the completeness of what is on screen. It is warning-toned
+   because it is qualifying data the reader would otherwise trust as complete. */
+.notice {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-subtle);
+  font-size: var(--text-xs);
+  color: var(--warning-text);
+}
+
+/*
+ * Row headers inside a panel table. The `!important` is fighting the Mantine
+ * theme's column-header treatment, which arrives as an inline style and would
+ * otherwise render an order number in muted small-caps and a product name in
+ * SHOUTING CAPS. See the note in `customersTable.module.css`.
+ */
+.rowHead {
+  font-family: var(--font-mono) !important;
+  font-size: var(--text-xs) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--text-primary) !important;
+  white-space: nowrap;
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  white-space: nowrap;
+}
+
+.numeric > * {
+  justify-content: flex-end;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.productName {
+  font-family: var(--font-sans) !important;
+  font-size: var(--text-sm) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--text-primary) !important;
+}
+
+/* -- Ranked lists (top pages, top referrers) ------------------------------ */
+
+.rankList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rankItem {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.rankItem:first-child {
+  border-top: 0;
+}
+
+.rankLabel {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.rankValue {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}

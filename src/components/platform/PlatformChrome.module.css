@@ -1,0 +1,237 @@
+/*
+ * Operator-console chrome — top bar, sidebar, and the skeletons that stand in for both.
+ *
+ * Not one hex literal, same as `AdminChrome.module.css`. The console's whole visual departure from
+ * the merchant admin is two token swaps — a `--surface-sunken` rail instead of a white one, and an
+ * `--surface-2` tag in the header — because §2 allows exactly one inverted block in the product and
+ * app chrome is not it. A grey rail is enough to say "different place"; a black one would have said
+ * "different product".
+ */
+
+/* ============================================================== Header ==== */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: 100%;
+  padding-inline: var(--space-4);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.headerLeft {
+  min-width: 0;
+  flex: 1;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-xs);
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.brandMark {
+  display: block;
+  height: 24px;
+  width: auto;
+}
+
+.headerRule {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+  flex: none;
+}
+
+/* The one word that says which console you are in. */
+.consoleTag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px var(--space-2-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.headerUser {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================= Sidebar ==== */
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* The console's ground. The merchant rail is `--surface`; this one is sunken. */
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border);
+}
+
+.navScroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.navHeading {
+  margin: 0;
+  padding-inline: var(--space-3);
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-quaternary);
+}
+
+.navItem:global(.mantine-NavLink-root) {
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition:
+    background-color var(--duration-micro) var(--ease-out),
+    color var(--duration-micro) var(--ease-out);
+}
+
+.navItem:global(.mantine-NavLink-root):hover {
+  /* One step lighter than the sunken rail, so hover reads as a lift. */
+  background-color: var(--surface);
+  color: var(--text-primary);
+}
+
+.navItem:global(.mantine-NavLink-root)[data-active] {
+  background-color: var(--surface);
+  color: var(--text-primary);
+  border-left: 2px solid var(--text);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.navItem:global(.mantine-NavLink-root)[data-active] :global(.mantine-NavLink-label) {
+  font-weight: 600;
+}
+
+.navItem:global(.mantine-NavLink-root) :global(.mantine-NavLink-description) {
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+.navItem:global(.mantine-NavLink-root):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.navFooter {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* =========================================================== Skeletons ==== */
+
+.shellSkeleton {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--surface);
+}
+
+.shellSkeletonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: 60px;
+  padding-inline: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.shellSkeletonBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.shellSkeletonNav {
+  flex: none;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-4);
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border);
+}
+
+.shellSkeletonMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6);
+}
+
+.shellSkeletonCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.overviewSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.overviewSkeletonSplit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+.chartSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.healthSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.healthSkeletonCounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 767px) {
+  .shellSkeletonNav {
+    display: none;
+  }
+
+  .shellSkeletonMain {
+    padding: var(--space-4);
+  }
+}

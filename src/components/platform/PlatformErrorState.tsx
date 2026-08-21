@@ -45,8 +45,12 @@ export function PlatformErrorState({
 
   const Mark = isMissing ? IconPlugOff : isForbidden ? IconShieldLock : IconAlertTriangle;
 
+  /* `what` is written as a mid-sentence noun phrase ("the platform overview"), so the one heading
+     that starts with it has to capitalise it rather than the caller passing two spellings. */
+  const sentenceCase = what.charAt(0).toUpperCase() + what.slice(1);
+
   const heading = isMissing
-    ? `${what} is not available yet`
+    ? `${sentenceCase} is not available yet`
     : isForbidden
       ? `You cannot read ${what}`
       : `Could not load ${what}`;

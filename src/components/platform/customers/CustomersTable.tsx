@@ -24,7 +24,7 @@ import { Price } from '@/components/ui';
 import { SortableColumn } from './SortableColumn';
 import { CustomizationBadge, IntegrationBadge, StoreStateBadge } from './StoreBadges';
 import { RelativeDate } from './RelativeDate';
-import { centsToPrice, formatCount, formatDate } from './format';
+import { centsToPrice, formatCents, formatCount, formatDate } from './format';
 import type { CustomerSortKey, PlatformCustomerRow, SortDirection } from './types';
 import styles from './customersTable.module.css';
 
@@ -190,7 +190,18 @@ export function CustomersTable({
                   <Table.Td className={styles.numeric}>{formatCount(row.orders.shipped)}</Table.Td>
 
                   <Table.Td className={styles.numeric}>
-                    <Price value={centsToPrice(row.gmvCents)} size="sm" />
+                    <div className={styles.stacked}>
+                      <Price value={centsToPrice(row.gmvCents)} size="sm" />
+                      {/* Booked but unpaid sits under GMV rather than in a column
+                          of its own: it is a qualifier on the number above it,
+                          and it is only worth the reader's attention when it is
+                          not zero. */}
+                      {row.unsettledCents > 0 ? (
+                        <span className={styles.unsettled}>
+                          {formatCents(row.unsettledCents)} unpaid
+                        </span>
+                      ) : null}
+                    </div>
                   </Table.Td>
 
                   <Table.Td className={styles.numeric}>

@@ -1,0 +1,598 @@
+/*
+ * Operator-console panels — the card, the delta, the charts, the funnel, the money panel and the
+ * health strip.
+ *
+ * Token-only, like the rest of the product's chrome. Two rules are load-bearing here and worth
+ * naming, because both are easy to break by accident:
+ *
+ * 1. **Tone is never the only cue.** Every place a colour appears — a delta, a health count, an
+ *    alert row — the markup also carries an icon and a word. Strip the colour and the panel still
+ *    reads. §7 requires it; a fleet-status row is exactly where a colour-blind operator would
+ *    otherwise be guessing.
+ * 2. **`--signal` stays money.** It tints prices and the shipped series, and nothing else. It is
+ *    not a decorative green.
+ */
+
+/* ============================================================== Panel ===== */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  /* The sidebar links into these sections; the app bar is 60px, so land clear of it. */
+  scroll-margin-top: 84px;
+}
+
+.panelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-5) var(--space-5) 0;
+}
+
+.panelCopy {
+  min-width: 0;
+}
+
+.panelTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.panelDescription {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.panelActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panelBody {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+/* ============================================================== Delta ===== */
+
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.deltaValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.delta[data-tone='good'] .deltaValue,
+.delta[data-tone='good'] svg {
+  color: var(--success-text);
+}
+
+.delta[data-tone='bad'] .deltaValue,
+.delta[data-tone='bad'] svg {
+  color: var(--danger-text);
+}
+
+.deltaLabel {
+  color: var(--text-secondary);
+}
+
+.deltaMuted {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-quaternary);
+}
+
+/* ====================================================== Window selector === */
+
+.windowSelector {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.windowLabel {
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-quaternary);
+}
+
+/* ============================================================== Error ===== */
+
+.errorState {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-lg);
+}
+
+.errorCompact {
+  padding: var(--space-4);
+}
+
+.errorMark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--danger-subtle);
+  color: var(--danger-text);
+}
+
+.errorCopy {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.errorTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.errorDetail {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.errorMeta {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+.errorActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ============================================================= Charts ===== */
+
+.chartStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.chartFigure {
+  margin: 0;
+}
+
+.chartCaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.chartCaptionTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chartBody {
+  height: 240px;
+  min-width: 0;
+}
+
+.chartSummary {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Line style, not just hue — the two series stay apart in greyscale. */
+.legendSolid,
+.legendDashed {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top-width: 2px;
+}
+
+.legendSolid {
+  border-top-style: solid;
+  border-top-color: var(--text);
+}
+
+.legendDashed {
+  border-top-style: dashed;
+  border-top-color: var(--signal);
+}
+
+/* ============================================================= Funnel ===== */
+
+.funnel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.funnelStep + .funnelStep {
+  margin-top: var(--space-3);
+}
+
+.funnelRate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+.funnelRateValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.funnelRateLabel {
+  color: var(--text-quaternary);
+}
+
+.funnelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: 6px;
+}
+
+.funnelLabel {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.funnelValue {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.funnelTrack {
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-inset);
+  overflow: hidden;
+}
+
+.funnelBar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--text);
+}
+
+/* ================================================= Revenue & fulfilment == */
+
+.revenue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.revenueHero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.revenueHeroLabel {
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.revenueHeroValue {
+  color: var(--success-text);
+}
+
+.fulfilmentHeroValue {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: var(--text-primary);
+}
+
+.factList {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.factRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2-5) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.factTerm {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.factDefinition {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  text-align: right;
+}
+
+.factFigure {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.factNote {
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+/* ============================================================= Health ===== */
+
+.health {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.healthCounts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+.healthCount {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.healthCountMark {
+  display: inline-flex;
+  color: var(--text-quaternary);
+}
+
+.healthCount[data-tone='danger'] .healthCountMark {
+  color: var(--danger-text);
+}
+
+.healthCount[data-tone='warning'] .healthCountMark {
+  color: var(--warning-text);
+}
+
+.healthCount[data-tone='good'] .healthCountMark {
+  color: var(--success-text);
+}
+
+.healthCountValue {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.healthCountLabel {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.healthJobs {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.healthClear {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-md);
+  background: var(--success-subtle);
+  font-size: var(--text-sm);
+  color: var(--success-text);
+}
+
+.alertList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.alert {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.alert[data-severity='critical'] {
+  border-color: var(--danger-border);
+}
+
+.alert[data-severity='warning'] {
+  border-color: var(--warning-border);
+}
+
+.alertLink {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  text-decoration: none;
+  color: inherit;
+  transition: background-color var(--duration-micro) var(--ease-out);
+}
+
+.alertLink:hover:not([data-static='true']) {
+  background: var(--surface-inset);
+}
+
+.alertLink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.alertMark {
+  flex: none;
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--text-quaternary);
+}
+
+.alert[data-severity='critical'] .alertMark {
+  color: var(--danger-text);
+}
+
+.alert[data-severity='warning'] .alertMark {
+  color: var(--warning-text);
+}
+
+.alertCopy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.alertTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.alertDetail {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.alertStore {
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+.alertSeverity {
+  flex: none;
+  align-self: flex-start;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-eyebrow);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 767px) {
+  .panelHead {
+    padding: var(--space-4) var(--space-4) 0;
+  }
+
+  .panelBody {
+    padding: var(--space-4);
+  }
+
+  .chartBody {
+    height: 200px;
+  }
+
+  /* The severity word wraps to its own line rather than being hidden: it is the
+     non-colour carrier of the alert's rank, so a narrow viewport must not drop it. */
+  .alertLink {
+    flex-wrap: wrap;
+  }
+}

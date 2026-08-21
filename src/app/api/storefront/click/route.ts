@@ -13,19 +13,35 @@
  * in the log. A storefront page renders whether or not this route answers, and the client ignores
  * the response body entirely (`navigator.sendBeacon` cannot read one).
  *
- * **It is still honest.** The repo rule is "never return `success: true` for work that wrote
- * nothing", and a beacon has three genuinely different outcomes, so the response distinguishes
- * them rather than flattening them to `{ success: true }`:
+ * **It must not answer questions it was not asked.** An earlier revision of this file reported
+ * each outcome precisely — `recorded: true`, or `404 unknown_store` — and a security review
+ * pointed out what that turns into on a public endpoint: a free store-slug oracle. `POST
+ * {storeSlug:"acme"}` answering differently from `POST {storeSlug:"acmf"}` lets anyone enumerate
+ * every shop on the platform, *including unpublished ones whose slug has not been shared yet*.
+ * Nothing legitimate depends on the distinction, because `navigator.sendBeacon` cannot read a
+ * response body at all. So every well-formed beacon now gets one uniform answer:
  *
- * | Outcome                                   | Status | Body                                                  |
- * |-------------------------------------------|--------|-------------------------------------------------------|
- * | Row written                               | 200    | `{ success: true, recorded: true }`                   |
- * | Deliberately not written (bot, DNT/GPC)   | 200    | `{ success: true, recorded: false, reason }`          |
- * | Rejected (bad type, no such store, …)     | 400/404| `{ success: false, error }`                           |
- * | Storage unavailable                       | 503    | `{ success: false, error: 'not_recorded' }`           |
+ * | Outcome                                                          | Status | Body                                  |
+ * |------------------------------------------------------------------|--------|---------------------------------------|
+ * | Well-formed: stored, or dropped as bot / DNT / rate-limited / no such store | 202 | `{ success: true }`         |
+ * | Malformed: bad JSON, unknown `eventType`, no store named          | 400    | `{ success: false, error }`            |
+ * | Storage unavailable                                               | 503    | `{ success: false, error: 'not_recorded' }` |
  *
- * `success: true, recorded: false` is not a fudge: the request was processed correctly and the
- * decision not to store it was the *point*. `recorded` is the field that never lies.
+ * The 4xx cases are kept distinct on purpose: they describe the *caller's own body*, reveal
+ * nothing about which stores exist, and are what a developer wiring up a new surface needs to see.
+ *
+ * **`202` and `success: true` mean "accepted", not "stored".** That is the honest reading, and it
+ * is why the field is not called `recorded`: this route deliberately declines to say whether a row
+ * was written. What actually happened is decided — and asserted in tests — inside
+ * `recordStorefrontClick`, whose return value distinguishes `recorded`, `skipped` (with a reason)
+ * and `rejected` in full.
+ *
+ * **It must not be a free write amplifier.** The endpoint is unauthenticated, so anyone can post
+ * events for a store they do not own; left unthrottled, a competitor could inflate a merchant's
+ * traffic or bend their conversion funnel by posting `add_to_cart` and `checkout_start`. A
+ * two-window in-process rate limit runs *before* the store lookup, so an abusive client costs no
+ * database work. Its limits — and the fact that it is per-instance rather than global — are
+ * documented on `createClickRateLimiter`.
  *
  * The interesting logic — validation, IP hashing, bot and device classification — lives in
  * `src/lib/analytics/storefront-clicks.ts` behind injected boundaries, so it is unit-tested for
@@ -49,9 +65,6 @@ import {
 
 // `node:crypto` hashes the address, so this cannot run on the edge runtime.
 export const runtime = 'nodejs';
-
-/** Rejections that mean "no such store", separated from the rest so they can be a 404. */
-const NOT_FOUND_REASONS = new Set(['unknown_store']);
 
 /**
  * Confirm a store exists, by id or by slug, and return its id.
@@ -143,16 +156,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { resolveStoreId, insertEvent },
     );
 
-    if (outcome.status === 'recorded') {
-      return NextResponse.json({ success: true, recorded: true });
+    /*
+     * One answer for every well-formed beacon. `unknown_store` is folded in here with the bots and
+     * the rate-limited: telling the caller a slug does not exist is exactly the enumeration oracle
+     * this endpoint must not be. Only complaints about the caller's own body get a distinct reply.
+     */
+    if (outcome.status === 'rejected' && outcome.reason !== 'unknown_store') {
+      return NextResponse.json({ success: false, error: outcome.reason }, { status: 400 });
     }
-    if (outcome.status === 'skipped') {
-      return NextResponse.json({ success: true, recorded: false, reason: outcome.reason });
-    }
-    return NextResponse.json(
-      { success: false, error: outcome.reason },
-      { status: NOT_FOUND_REASONS.has(outcome.reason) ? 404 : 400 },
-    );
+    return NextResponse.json({ success: true }, { status: 202 });
   } catch (error) {
     // The message only — never the payload, which carries a (hashed, but still) visitor identity,
     // and never the address, which is not in scope here at all.

@@ -68,3 +68,39 @@ export function PlatformOverviewSkeleton(): React.ReactElement {
     </div>
   );
 }
+
+/**
+ * Two stacked plots, in skeleton, at the height the real charts occupy.
+ *
+ * @returns The chart skeleton.
+ */
+export function PlatformChartSkeleton(): React.ReactElement {
+  return (
+    <div className={styles.chartSkeleton} role="status" aria-label="Loading the trend charts">
+      <Skeleton width={160} height={13} />
+      <Skeleton height={240} radius="var(--radius-md)" />
+      <Skeleton width={160} height={13} />
+      <Skeleton height={240} radius="var(--radius-md)" />
+    </div>
+  );
+}
+
+/**
+ * The fleet-health block, in skeleton: four count tiles over a short alert list.
+ *
+ * @returns The health skeleton.
+ */
+export function PlatformHealthSkeleton(): React.ReactElement {
+  return (
+    <div className={styles.healthSkeleton} role="status" aria-label="Loading platform health">
+      <div className={styles.healthSkeletonCounts}>
+        {[0, 1, 2, 3].map((index) => (
+          <Skeleton key={index} height={54} radius="var(--radius-md)" />
+        ))}
+      </div>
+      {[0, 1, 2].map((index) => (
+        <Skeleton key={index} height={64} radius="var(--radius-md)" motionless={index > 1} />
+      ))}
+    </div>
+  );
+}

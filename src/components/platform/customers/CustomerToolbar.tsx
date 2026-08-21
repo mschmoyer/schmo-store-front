@@ -51,13 +51,18 @@ export function CustomerToolbar({
   debounceMs = 300,
 }: CustomerToolbarProps): React.ReactElement {
   const [draft, setDraft] = useState(query);
+  const [syncedQuery, setSyncedQuery] = useState(query);
 
   /* Re-sync when the URL changes underneath the box — the Back button and the
      "clear filters" action both do that, and an input that keeps showing a
-     search term the list is no longer applying is worse than no box at all. */
-  useEffect(() => {
+     search term the list is no longer applying is worse than no box at all.
+     This is React's "adjust state during render" pattern rather than an
+     effect: an effect would paint the stale term for one frame first, and the
+     lint rule that forbids it is right about the cascading render. */
+  if (query !== syncedQuery) {
+    setSyncedQuery(query);
     setDraft(query);
-  }, [query]);
+  }
 
   useEffect(() => {
     if (draft === query) return;

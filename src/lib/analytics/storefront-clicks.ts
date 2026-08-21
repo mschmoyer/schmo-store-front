@@ -104,7 +104,7 @@ export interface StorefrontClickRecord {
 }
 
 /** Why a well-formed beacon was deliberately not written. Not an error. */
-export type StorefrontClickSkipReason = 'bot' | 'privacy_signal';
+export type StorefrontClickSkipReason = 'bot' | 'privacy_signal' | 'rate_limited';
 
 /** Why a beacon was rejected. Each maps to a 4xx in the route. */
 export type StorefrontClickRejectReason =
@@ -138,6 +138,24 @@ export interface StorefrontClickDeps {
    * @returns Nothing; throwing is the only way to report failure
    */
   insertEvent(record: StorefrontClickRecord): Promise<void>;
+  /**
+   * Ceiling on how much one client may write for one store.
+   *
+   * Optional: the shared process-wide limiter is used when this is omitted. Tests inject their own
+   * so they can drive the clock instead of sleeping.
+   */
+  rateLimiter?: StorefrontClickRateLimiter;
+}
+
+/** A ceiling on beacons per key. See {@link createClickRateLimiter}. */
+export interface StorefrontClickRateLimiter {
+  /**
+   * Count one beacon against a key and say whether it is allowed.
+   * @param key - Identifies the client/store pair being limited
+   * @param now - Epoch milliseconds, injectable so tests need not sleep
+   * @returns True when the beacon is within both windows
+   */
+  check(key: string, now?: number): boolean;
 }
 
 /**
@@ -323,6 +341,106 @@ export function isStorefrontClickEventType(value: unknown): value is StorefrontC
     && (STOREFRONT_CLICK_EVENT_TYPES as readonly string[]).includes(value);
 }
 
+/** Beacons one client may send for one store in a minute. A browsing session peaks well below this. */
+const RATE_LIMIT_PER_MINUTE = 30;
+
+/**
+ * Beacons one client may send for one store in a rolling day.
+ *
+ * Set high on purpose. Carrier-grade NAT and office networks put hundreds of genuine shoppers
+ * behind a single address, and this endpoint's whole job is an honest traffic number: dropping
+ * real buyers to be tidy about an abuser would trade a visible lie for an invisible one.
+ */
+const RATE_LIMIT_PER_DAY = 1500;
+
+/** How many keys to hold before the oldest are dropped, so an attacker cannot grow this map forever. */
+const RATE_LIMIT_MAX_KEYS = 20000;
+
+/** Per-key counters for the two windows. */
+interface RateLimitBucket {
+  minuteStart: number;
+  minuteCount: number;
+  dayStart: number;
+  dayCount: number;
+}
+
+/**
+ * Build a two-window rate limiter.
+ *
+ * ## Why there is a limit at all
+ *
+ * This endpoint is public and unauthenticated, which means anyone can post events *for a store
+ * they do not own*. Without a ceiling, a competitor can inflate a merchant's traffic, or — worse,
+ * because it is subtler — post `add_to_cart` and `checkout_start` events to bend the conversion
+ * funnel the platform console reports. The console's entire value is that its numbers are honest,
+ * so an unthrottled writer is not a nuisance, it is the product being wrong.
+ *
+ * ## Why it is in memory
+ *
+ * It has to be cheap enough to run *before* the store lookup, so a flood costs no database work at
+ * all. An in-process map is the only thing that fast. The trade-off is stated rather than hidden:
+ *
+ *  * On a single server the ceiling is exact.
+ *  * On Vercel each lambda instance holds its own map, so an attacker whose requests are spread
+ *    across N warm instances gets N times the ceiling. That still turns an unbounded forgery into
+ *    a bounded one, and it is the cheapest ceiling that cannot slow a storefront down.
+ *  * A shared, exact limit needs a counter table plus an index on `(store_id, ip_hash,
+ *    occurred_at)` that migration 040 does not have. Adding an index is a migration, and this
+ *    change is not one — recorded here so the next person sees the gap rather than assuming the
+ *    in-memory limit is authoritative.
+ *
+ * @param options.perMinute - Ceiling for the rolling minute window
+ * @param options.perDay - Ceiling for the rolling day window
+ * @param options.maxKeys - How many distinct keys to track before evicting the oldest
+ * @returns A limiter with a `check` method
+ */
+export function createClickRateLimiter({
+  perMinute = RATE_LIMIT_PER_MINUTE,
+  perDay = RATE_LIMIT_PER_DAY,
+  maxKeys = RATE_LIMIT_MAX_KEYS,
+}: { perMinute?: number; perDay?: number; maxKeys?: number } = {}): StorefrontClickRateLimiter {
+  const buckets = new Map<string, RateLimitBucket>();
+
+  return {
+    check(key: string, now: number = Date.now()): boolean {
+      const bucket = buckets.get(key);
+
+      if (!bucket) {
+        // A Map iterates in insertion order, so the first key is the oldest. Evicting a few at a
+        // time keeps the eviction itself O(1)-ish rather than a periodic stall.
+        if (buckets.size >= maxKeys) {
+          let toEvict = Math.max(1, Math.floor(maxKeys / 100));
+          for (const oldest of buckets.keys()) {
+            buckets.delete(oldest);
+            if (--toEvict <= 0) break;
+          }
+        }
+        buckets.set(key, { minuteStart: now, minuteCount: 1, dayStart: now, dayCount: 1 });
+        return true;
+      }
+
+      if (now - bucket.minuteStart >= 60_000) {
+        bucket.minuteStart = now;
+        bucket.minuteCount = 0;
+      }
+      if (now - bucket.dayStart >= 86_400_000) {
+        bucket.dayStart = now;
+        bucket.dayCount = 0;
+      }
+
+      // Counted even when refused, so a client that keeps hammering stays refused for the whole
+      // window rather than being let through the moment it stops for a second.
+      bucket.minuteCount += 1;
+      bucket.dayCount += 1;
+
+      return bucket.minuteCount <= perMinute && bucket.dayCount <= perDay;
+    },
+  };
+}
+
+/** The limiter every request shares, unless a caller injects its own. */
+const defaultRateLimiter = createClickRateLimiter();
+
 /**
  * Validate, classify and (usually) persist one storefront click beacon.
  *
@@ -366,6 +484,15 @@ export async function recordStorefrontClick(
     return { status: 'skipped', reason: 'bot' };
   }
 
+  const ipHash = hashClientIp(context.ip);
+
+  // Keyed on the *requested* store rather than the resolved one, so the ceiling applies before any
+  // database work: a flood must cost a hash and a map lookup, never a query.
+  const limiter = deps.rateLimiter ?? defaultRateLimiter;
+  if (!limiter.check(`${storeId ?? storeSlug}|${ipHash ?? 'no-ip'}`)) {
+    return { status: 'skipped', reason: 'rate_limited' };
+  }
+
   const resolvedStoreId = await deps.resolveStoreId(storeId ? { storeId } : { storeSlug });
   if (!resolvedStoreId) {
     return { status: 'rejected', reason: 'unknown_store' };
@@ -390,7 +517,7 @@ export async function recordStorefrontClick(
     utmCampaign: clip(input.utmCampaign, 128),
     country: country ? country.toUpperCase() : null,
     device,
-    ipHash: hashClientIp(context.ip),
+    ipHash,
     userAgent: clip(context.userAgent, 1024),
   };
 

@@ -46,18 +46,35 @@ export interface PlatformAccess {
  * @returns The {@link PlatformAccess} state for the console shell.
  */
 export function usePlatformAccess(): PlatformAccess {
-  const [status, setStatus] = useState<PlatformAccessStatus>('checking');
-  const [user, setUser] = useState<AdminUser | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /*
+   * Stamped with the attempt it answers, so "we are checking" is derived rather than being a state
+   * write at the top of the effect. A synchronous `setStatus('checking')` there would schedule a
+   * second render before first paint, and React's `set-state-in-effect` rule exists to stop exactly
+   * that. A retry bumps `attempt`, the stamp stops matching, and the shell falls back to its
+   * skeleton without anyone having to remember to reset a flag.
+   */
+  const [settled, setSettled] = useState<{
+    attempt: number;
+    status: PlatformAccessStatus;
+    user: AdminUser | null;
+  }>({ attempt: -1, status: 'checking', user: null });
 
   const recheck = useCallback(() => setAttempt((previous) => previous + 1), []);
+
+  const answered = settled.attempt === attempt;
+  const status: PlatformAccessStatus = answered ? settled.status : 'checking';
+  const user = answered ? settled.user : null;
 
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
 
+    const settle = (next: PlatformAccessStatus, nextUser: AdminUser | null) => {
+      if (!cancelled) setSettled({ attempt, status: next, user: nextUser });
+    };
+
     const verify = async () => {
-      setStatus('checking');
       try {
         const token = readAdminToken();
         const response = await fetch('/api/admin/auth/verify', {
@@ -69,14 +86,12 @@ export function usePlatformAccess(): PlatformAccess {
         if (cancelled) return;
 
         if (response.status === 401) {
-          setUser(null);
-          setStatus('signed-out');
+          settle('signed-out', null);
           return;
         }
 
         if (!response.ok) {
-          setUser(null);
-          setStatus('error');
+          settle('error', null);
           return;
         }
 
@@ -89,17 +104,14 @@ export function usePlatformAccess(): PlatformAccess {
 
         const verified = payload?.success ? (payload.data?.user ?? null) : null;
         if (!verified) {
-          setUser(null);
-          setStatus('signed-out');
+          settle('signed-out', null);
           return;
         }
 
-        setUser(verified);
-        setStatus(verified.isAdmin === true ? 'operator' : 'not-operator');
+        settle(verified.isAdmin === true ? 'operator' : 'not-operator', verified);
       } catch (caught) {
         if (cancelled || (caught instanceof DOMException && caught.name === 'AbortError')) return;
-        setUser(null);
-        setStatus('error');
+        settle('error', null);
       }
     };
 

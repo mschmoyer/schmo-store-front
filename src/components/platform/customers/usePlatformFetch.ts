@@ -1,24 +1,30 @@
 'use client';
 
 /**
- * The console's authenticated GET.
+ * The customers lane's authenticated GET.
  *
- * This is the customers lane's local fallback for the shared
- * `usePlatformData` hook. It reads the bearer token out of `localStorage`
- * exactly as `AdminContext` does rather than calling `useAdmin()`, so a
- * `/platform` page renders correctly whether or not an `AdminProvider` is
- * mounted above it — the console shell is a separate workstream, and a screen
- * that throws "useAdmin must be used within an AdminProvider" during that
- * window is indistinguishable from a broken page. The session cookie is sent
- * too, so the request still authenticates if the token was never written.
+ * The console shell ships `usePlatformData`, and these screens deliberately
+ * do not use it. It classifies every 404 as `not-implemented` — "this endpoint
+ * is not available on this deployment yet" — which is the right reading on the
+ * overview, where a 404 can only mean a missing route. On `/platform/customers/
+ * [storeId]` a 404 usually means *that merchant does not exist*, and telling an
+ * operator who followed a dead link that the platform has not shipped the
+ * feature sends them to the wrong place entirely. This hook keeps `not_found`
+ * as its own kind so the detail screen can render a real not-found state with a
+ * way back to the list.
  *
- * The other reason this exists rather than a bare `fetch` in each page: HTTP
- * status carries meaning the console has to act on, and collapsing it to one
- * "something went wrong" banner is the failure this codebase already shipped
- * once. 401 means sign in again, 403 means you are signed in but not a platform
- * admin, and 404 means the record does not exist — three different screens, and
- * a caller cannot tell them apart from an `Error` message. So the failure is
- * returned as a typed value with the status attached.
+ * Everything else matches the shared hook on purpose: the bearer token is read
+ * from `localStorage` exactly as `AdminContext` writes it, the session cookie
+ * goes along so the request still authenticates when the token was never
+ * written, and a superseded request is aborted so the numbers on screen always
+ * belong to the query the URL is showing.
+ *
+ * The rest of the classification exists because HTTP status carries meaning the
+ * console has to act on, and collapsing it to one "something went wrong" banner
+ * is a failure this codebase has already shipped. 401 means sign in again, 403
+ * means you are signed in but not a platform admin, and 404 means the record is
+ * gone — three different screens, and a caller cannot tell them apart from an
+ * `Error` message.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';

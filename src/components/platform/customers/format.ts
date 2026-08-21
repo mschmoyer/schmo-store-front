@@ -15,7 +15,7 @@
  */
 
 import { format, formatDistanceToNowStrict, parseISO } from 'date-fns';
-import { centsToNumber } from '@/lib/billing/money';
+import { centsToNumber, formatMoney } from '@/lib/billing/money';
 
 /** An em dash, used for "this value does not exist" everywhere on these screens. */
 export const NOT_SET = '—';
@@ -84,6 +84,19 @@ export function formatCount(value: number | null | undefined): string {
  */
 export function centsToPrice(cents: number | null | undefined): number {
   return centsToNumber(typeof cents === 'number' && Number.isFinite(cents) ? cents : 0);
+}
+
+/**
+ * Integer cents as a compact currency string, for the qualifying lines that sit
+ * under a `Price` and must not compete with it typographically.
+ *
+ * @param cents - Amount in integer cents.
+ * @param currency - ISO-4217 code. @default 'USD'
+ * @returns e.g. `$1,827.38`.
+ */
+export function formatCents(cents: number | null | undefined, currency = 'USD'): string {
+  if (cents === null || cents === undefined || !Number.isFinite(cents)) return NOT_SET;
+  return formatMoney(cents, currency);
 }
 
 /**

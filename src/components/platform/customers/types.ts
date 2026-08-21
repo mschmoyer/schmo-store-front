@@ -61,6 +61,13 @@ export interface PlatformCustomerRow {
   isPublic: boolean;
   orders: { received: number; shipped: number; last30d: number };
   gmvCents: number;
+  /**
+   * Non-cancelled orders that were never paid. **Not part of `gmvCents`** — the
+   * two together account for every order that was not cancelled, so an
+   * operator reading GMV alone is reading a smaller number than the merchant
+   * booked, and needs to be told where the rest went.
+   */
+  unsettledCents: number;
   clicks: { allTime: number; last30d: number };
   products: number;
   inventoryUnits: number;
@@ -83,6 +90,8 @@ export interface PlatformCustomerTotals {
   orders: number;
   shipped: number;
   gmvCents: number;
+  /** Booked but never paid, across the filtered set. Excluded from `gmvCents`. */
+  unsettledCents: number;
   clicks: number;
 }
 
@@ -136,6 +145,16 @@ export interface PlatformOwnerSummary {
   email: string;
   createdAt: string;
   lastLogin: string | null;
+  /**
+   * Whether `lastLogin` means anything.
+   *
+   * Nothing in this codebase writes `users.last_login`, so the column is `NULL`
+   * on every row. Rendering that as "never signed in" would tell an operator
+   * that an actively-trading merchant has never logged in, which is false. The
+   * flag lets the UI say "not tracked" instead, and flips to `true` on its own
+   * once the sign-in route starts writing the column.
+   */
+  lastLoginTracked: boolean;
 }
 
 /** Order counters and money for one store. */
@@ -146,11 +165,15 @@ export interface PlatformOrderStats {
   cancelled: number;
   refundedCount: number;
   gmvCents: number;
+  /** Non-cancelled, never paid. Excluded from `gmvCents`; shown so it cannot go unnoticed. */
+  unsettledCents: number;
+  /** How many orders make up `unsettledCents`. */
+  unsettledOrders: number;
   refundedCents: number;
   aovCents: number;
   /** Mean hours between order creation and dispatch. `null` when nothing shipped. */
   avgHoursToShip: number | null;
-  last30d: { received: number; shipped: number; gmvCents: number };
+  last30d: { received: number; shipped: number; gmvCents: number; unsettledCents: number };
   recent: PlatformOrderRow[];
 }
 

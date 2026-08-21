@@ -125,24 +125,37 @@ function toFetchError(status: number, serverMessage?: string): PlatformFetchErro
  * @returns The {@link PlatformDataState} for that endpoint.
  */
 export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<PlatformFetchError | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(path !== null);
   const [attempt, setAttempt] = useState(0);
+  /*
+   * One piece of state, stamped with the request it belongs to.
+   *
+   * `isLoading` is *derived* from that stamp rather than being a third `useState` toggled at the
+   * top of the effect. Setting state synchronously in an effect body schedules a second render
+   * before the browser paints — React's own `set-state-in-effect` lint rule flags it — and doing it
+   * per endpoint on a screen with three of them is three extra render passes on every window
+   * switch. Comparing a key costs nothing and cannot get out of sync with the fetch it describes.
+   */
+  const [settled, setSettled] = useState<{
+    key: string;
+    data: T | null;
+    error: PlatformFetchError | null;
+  }>({ key: '', data: null, error: null });
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
 
+  /* Identifies one request. `reload` bumps `attempt`, so retrying the same path is a new key. */
+  const key = path === null ? '' : `${attempt}::${path}`;
+  const isLoading = path !== null && settled.key !== key;
+
   useEffect(() => {
-    if (path === null) {
-      setIsLoading(false);
-      return;
-    }
+    if (path === null) return;
 
     const controller = new AbortController();
     let cancelled = false;
 
-    setIsLoading(true);
-    setError(null);
+    const finish = (data: T | null, error: PlatformFetchError | null) => {
+      if (!cancelled) setSettled({ key, data, error });
+    };
 
     const run = async () => {
       try {
@@ -162,27 +175,27 @@ export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
         if (cancelled) return;
 
         if (!response.ok || !payload?.success || payload.data === undefined) {
-          setData(null);
-          setError(
+          finish(
+            null,
             response.ok && payload && !payload.success
-              ? { kind: 'server', status: response.status, message: payload.error || 'The platform API could not answer.' }
+              ? {
+                  kind: 'server',
+                  status: response.status,
+                  message: payload.error || 'The platform API could not answer.',
+                }
               : toFetchError(response.status, payload?.error)
           );
           return;
         }
 
-        setData(payload.data);
-        setError(null);
+        finish(payload.data, null);
       } catch (caught) {
         if (cancelled || (caught instanceof DOMException && caught.name === 'AbortError')) return;
-        setData(null);
-        setError({
+        finish(null, {
           kind: 'network',
           status: 0,
           message: 'The console could not reach the platform API. Check your connection and retry.',
         });
-      } finally {
-        if (!cancelled) setIsLoading(false);
       }
     };
 
@@ -192,7 +205,17 @@ export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
       cancelled = true;
       controller.abort();
     };
-  }, [path, attempt]);
+  }, [path, key]);
 
-  return { data, error, isLoading, reload };
+  /*
+   * While a request is in flight the caller gets neither the previous window's numbers nor a stale
+   * error. Showing 30 days of data under a heading that now says "last 7 days" is a small lie, and
+   * the loading skeleton is the honest answer for the few hundred milliseconds it takes.
+   */
+  return {
+    data: isLoading ? null : settled.data,
+    error: isLoading ? null : settled.error,
+    isLoading,
+    reload,
+  };
 }

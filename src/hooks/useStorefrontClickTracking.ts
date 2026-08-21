@@ -371,8 +371,14 @@ export function useCartAddTracking({
   enabled?: boolean;
 }): void {
   const pathname = usePathname();
+  // The listener below is registered once per store and must not be torn down and re-added on
+  // every navigation — doing so would reset the quantity snapshot and replay the whole cart as
+  // fresh adds. So the current path reaches it through a ref, written in its own effect rather
+  // than during render.
   const pathRef = useRef(pathname);
-  pathRef.current = pathname;
+  useEffect(() => {
+    pathRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     if (!enabled || !storeId) return;

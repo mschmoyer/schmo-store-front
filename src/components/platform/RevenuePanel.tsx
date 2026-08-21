@@ -48,50 +48,40 @@ export function RevenuePanel({ revenue, orders, windowDays }: RevenuePanelProps)
         />
       </div>
 
-      <dl className={styles.revenueList}>
-        <div className={styles.revenueRow}>
-          <dt className={styles.revenueTerm}>GMV, all time</dt>
-          <dd className={styles.revenueDefinition}>
+      <dl className={styles.factList}>
+        <div className={styles.factRow}>
+          <dt className={styles.factTerm}>GMV, all time</dt>
+          <dd className={styles.factDefinition}>
             <Price value={centsToNumber(revenue.gmvCentsAllTime)} size="sm" />
           </dd>
         </div>
 
-        <div className={styles.revenueRow}>
-          <dt className={styles.revenueTerm}>Average order value</dt>
-          <dd className={styles.revenueDefinition}>
+        <div className={styles.factRow}>
+          <dt className={styles.factTerm}>Average order value</dt>
+          <dd className={styles.factDefinition}>
             <Price value={centsToNumber(orders.avgOrderValueCents)} size="sm" />
           </dd>
         </div>
 
-        <div className={styles.revenueRow}>
-          <dt className={styles.revenueTerm}>Refunded in window</dt>
-          <dd className={styles.revenueDefinition}>
+        <div className={styles.factRow}>
+          <dt className={styles.factTerm}>Refunded in window</dt>
+          <dd className={styles.factDefinition}>
             <Price value={centsToNumber(revenue.refundedCentsInWindow)} size="sm" />
-            <span className={styles.revenueNote}>
+            <span className={styles.factNote}>
               {refundShare === null ? 'no GMV to compare against' : `${formatPct(refundShare)} of GMV`}
             </span>
           </dd>
         </div>
 
-        <div className={styles.revenueRow}>
-          <dt className={styles.revenueTerm}>Units sold in window</dt>
-          <dd className={styles.revenueDefinition}>
-            <span className={styles.revenueFigure}>
+        <div className={styles.factRow}>
+          <dt className={styles.factTerm}>Units sold in window</dt>
+          <dd className={styles.factDefinition}>
+            <span className={styles.factFigure}>
               {revenue.unitsSoldInWindow.toLocaleString('en-US')}
             </span>
           </dd>
         </div>
 
-        <div className={styles.revenueRow}>
-          <dt className={styles.revenueTerm}>Average time to ship</dt>
-          <dd className={styles.revenueDefinition}>
-            <span className={styles.revenueFigure}>
-              {orders.avgHoursToShip === null
-                ? 'Not measured yet'
-                : `${orders.avgHoursToShip.toFixed(1)} hours`}
-            </span>
-          </dd>
-        </div>
       </dl>
     </div>
   );

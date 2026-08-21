@@ -43,6 +43,12 @@
   text-align: inherit;
   cursor: pointer;
   border-radius: var(--radius-xs);
+  /* Match the Mantine theme's `th` treatment. Browsers set `text-transform:
+     none` on form controls in the UA stylesheet, so a header whose contents
+     are a `<button>` silently opts out of the uppercase every other header
+     has — which is how a header row ends up half small-caps and half
+     sentence case. */
+  text-transform: uppercase;
 }
 
 .sortButton:hover {
@@ -98,11 +104,27 @@
 }
 
 .stickyHead {
-  background: var(--surface-2);
+  background: var(--surface-sunken);
 }
 
+/*
+ * The row header carries the store name, and it is a `<th scope="row">` because
+ * that is what associates every number in the row with the merchant it belongs
+ * to. Mantine's theme styles `th` as a *column* header — 12px, uppercase, 0.06em
+ * tracking, muted — through its `styles` API, which lands as an inline style and
+ * therefore outranks a class. A store name set in small-caps grey reads as
+ * furniture rather than as the row's subject, so this is one of the few places
+ * `!important` is the correct tool: the alternative is a raw `<th>` outside
+ * Mantine's table, which loses the row borders and the hover treatment.
+ */
 .stickyCell {
   background: var(--surface);
+  font-family: var(--font-sans) !important;
+  font-size: var(--text-sm) !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--text-primary) !important;
 }
 
 /* The edge only appears once the table has actually scrolled under it — a
@@ -181,6 +203,15 @@
 .sub {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Money that is booked but not collected. Amber rather than the money green:
+   it is the opposite of settled revenue, and painting it in the signal colour
+   would file it under "success". */
+.unsettled {
+  font-size: var(--text-xs);
+  color: var(--warning-text);
   white-space: nowrap;
 }
 

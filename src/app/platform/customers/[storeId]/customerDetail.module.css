@@ -1,0 +1,53 @@
+/*
+ * The merchant detail frame.
+ *
+ * As on the list, padding belongs to the console shell rather than to the
+ * route — a page that pads itself on top of the shell moves the left edge as
+ * you navigate. What lives here is the rhythm between the header and the panel
+ * stack, and the one two-up row.
+ *
+ * Integrations and customisation are paired because they are both short
+ * key/value panels and both answer "what has this merchant set up"; at full
+ * width each would be a wide band of whitespace with eight facts floating in
+ * it. Below 1080px they stack, because two columns of definition lists at
+ * 400px each is where the labels start wrapping.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: calc(var(--space-3) * -1);
+}
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 1080px) {
+  .pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .page,
+  .panels,
+  .pair {
+    gap: var(--space-4);
+  }
+}

@@ -15,7 +15,7 @@
 import React from 'react';
 import { IconClick, IconCoin, IconShoppingCart, IconTruck, IconUsers } from '@tabler/icons-react';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
-import { centsToPrice, formatCount } from './format';
+import { centsToPrice, formatCents, formatCount } from './format';
 import type { PlatformCustomerTotals } from './types';
 import styles from './customerTotals.module.css';
 
@@ -83,7 +83,15 @@ export function CustomerTotals({
           value={centsToPrice(totals.gmvCents)}
           format="currency"
           icon={<IconCoin size={16} />}
-          meta="Cancellations excluded"
+          /* Paid orders only. The unpaid remainder is named rather than
+             dropped: GMV and unsettled together account for every order that
+             was not cancelled, and an operator reading one without the other
+             is reading a smaller number than the merchants booked. */
+          meta={
+            totals.unsettledCents > 0
+              ? `Paid orders. ${formatCents(totals.unsettledCents)} booked but unpaid.`
+              : 'Paid orders, cancellations excluded'
+          }
         />
         <StatCard
           label="Storefront clicks"

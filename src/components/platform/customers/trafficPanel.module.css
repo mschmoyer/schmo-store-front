@@ -1,0 +1,91 @@
+/*
+ * The traffic chart and its lists.
+ *
+ * The legend is HTML rather than Chart.js's canvas legend so it inherits the
+ * type scale, is selectable, and exists for a screen reader. Each swatch is
+ * drawn the way its series is drawn — the orders line is dashed on the canvas,
+ * so its swatch is dashed too; matching only the colour makes a reader with low
+ * colour discrimination match the wrong line.
+ */
+
+.figure {
+  margin: 0;
+}
+
+.canvas {
+  height: 260px;
+}
+
+@media (max-width: 640px) {
+  .canvas {
+    height: 210px;
+  }
+}
+
+.legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatchClicks,
+.swatchOrders {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.swatchClicks {
+  border-top-color: var(--ink-900);
+}
+
+.swatchOrders {
+  border-top-color: var(--signal);
+  border-top-style: dashed;
+}
+
+.caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.none {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
