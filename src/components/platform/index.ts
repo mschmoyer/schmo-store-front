@@ -54,8 +54,9 @@ export {
 export { PlatformHeader, type PlatformHeaderProps } from './PlatformHeader';
 export { PlatformNav, type PlatformNavProps } from './PlatformNav';
 export {
+  PlatformAttentionSkeleton,
   PlatformChartSkeleton,
-  PlatformHealthSkeleton,
+  PlatformHealthCardsSkeleton,
   PlatformOverviewSkeleton,
   PlatformShellSkeleton,
 } from './PlatformSkeletons';
@@ -69,7 +70,7 @@ export { PlatformTrendCharts, type PlatformTrendChartsProps } from './PlatformTr
 export { ConversionFunnel, type ConversionFunnelProps, type FunnelStep } from './ConversionFunnel';
 export { RevenuePanel, type RevenuePanelProps } from './RevenuePanel';
 export { FulfilmentPanel, type FulfilmentPanelProps } from './FulfilmentPanel';
-export { HealthStrip, type HealthStripProps } from './HealthStrip';
+export { HealthCards, type HealthCardsProps } from './HealthCards';
 export { AttentionPanel, type AttentionPanelProps } from './AttentionPanel';
 export { ReadinessPanel, type ReadinessPanelProps } from './ReadinessPanel';
 export { DataFreshness, describeAge, type DataFreshnessProps } from './DataFreshness';

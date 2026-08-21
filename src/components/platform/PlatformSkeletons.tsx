@@ -54,6 +54,12 @@ export function PlatformShellSkeleton(): React.ReactElement {
 export function PlatformOverviewSkeleton(): React.ReactElement {
   return (
     <div className={styles.overviewSkeleton} role="status" aria-label="Loading platform numbers">
+      {/* The four health cards the console now opens with, then the six-card KPI strip. */}
+      <div className={styles.healthSkeletonCounts}>
+        {[0, 1, 2, 3].map((index) => (
+          <Skeleton key={index} height={116} radius="var(--radius-lg)" />
+        ))}
+      </div>
       <div className={styles.shellSkeletonCards}>
         {[0, 1, 2, 3, 4, 5].map((index) => (
           <Skeleton key={index} height={116} radius="var(--radius-lg)" />
@@ -86,18 +92,33 @@ export function PlatformChartSkeleton(): React.ReactElement {
 }
 
 /**
- * The fleet-health block, in skeleton: four count tiles over a short alert list.
+ * The fleet-health block, in skeleton: the four state cards at the height they occupy.
  *
  * @returns The health skeleton.
  */
-export function PlatformHealthSkeleton(): React.ReactElement {
+export function PlatformHealthCardsSkeleton(): React.ReactElement {
   return (
-    <div className={styles.healthSkeleton} role="status" aria-label="Loading platform health">
-      <div className={styles.healthSkeletonCounts}>
-        {[0, 1, 2, 3].map((index) => (
-          <Skeleton key={index} height={54} radius="var(--radius-md)" />
-        ))}
-      </div>
+    <div className={styles.healthSkeletonCounts} role="status" aria-label="Loading platform health">
+      {[0, 1, 2, 3].map((index) => (
+        <Skeleton key={index} height={116} radius="var(--radius-lg)" />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The worklist, in skeleton: the stuck-order headline over a short alert list.
+ *
+ * Separate from {@link PlatformHealthCardsSkeleton} since the two blocks moved to opposite ends of
+ * the console and stopped having the same shape. One placeholder standing in for two different
+ * geometries is the layout jump §5 asks skeletons to prevent.
+ *
+ * @returns The attention skeleton.
+ */
+export function PlatformAttentionSkeleton(): React.ReactElement {
+  return (
+    <div className={styles.healthSkeleton} role="status" aria-label="Loading the operator worklist">
+      <Skeleton height={80} radius="var(--radius-md)" />
       {[0, 1, 2].map((index) => (
         <Skeleton key={index} height={64} radius="var(--radius-md)" motionless={index > 1} />
       ))}

@@ -3953,3 +3953,47 @@ headline "82% click-to-order", which is arithmetically correct and reads as a li
       `orders.application_fee_amount` (decimal dollars — do not mix the units).
 - [ ] Alerts view over `integration_alerts`, which already models an inbox.
 - [ ] Monthly merchant cohort retention — write the query now, render it at three cohorts.
+
+---
+
+## The two operational screens name themselves, and the console reads top-down (2026-08-21)
+
+- [x] `/admin` titles its tab **RebelShops - Admin**, `/platform` titles its tab
+      **RebelShops - Operator Dashboard** - 2026-08-21
+- [x] Platform health moved to the top of the operator console, condensed into four cards, each with
+      a tooltip naming the stores behind its number - 2026-08-21
+- [x] "Needs an operator" moved to the foot of the console as its own section, with a sidebar link
+      straight to it - 2026-08-21
+
+**User request**: "Let's make the page title reflect what it is for the two operational pages…
+The 'Needs an operator' section of the operator dashboard should be moved to it's own section and
+put at the bottom. Platform Heath should move to the top and be condensed into the 4 cards. Each has
+a tooltip with more details."
+
+### Decisions
+
+**Both operational layouts became server components.** A file that opens with `'use client'` cannot
+export `metadata`, and both layouts did. The stateful halves are now `AdminAppShell` and
+`PlatformConsoleShell`, colocated beside their routes; the layouts hold the title and nothing else.
+Page-level titles still win — `/admin/design` keeps "Design your storefront".
+
+**The job queue moved into the health section's description, not into a fifth card.** `pending`,
+`processing` and `failed` belong to no single sync state, and they were the two lines of small print
+the four cards replaced. Dropping them would have removed the only place `pending` and `processing`
+are reported at all; only `failed` also raises an alert in the worklist.
+
+**Each health card's tooltip names the stores behind its number, and nothing lives only there.** The
+count, the state and what the state means are all on the card. The tooltip opens on focus and touch
+as well as hover, and its text is also carried for screen readers — Mantine mounts the floating layer
+only while it is open, so an `aria-describedby` on the card points at nothing until somebody hovers
+it, which is exactly the reader who never will.
+
+**The health cards use the KPI strip's figure size and grid, and their skeleton uses the same
+breakpoint.** Two figure sizes stacked in one column read as two kinds of number, and a skeleton that
+wraps at a different width than the thing it stands in for moves the page under the reader when the
+data lands.
+
+**The worklist got a sidebar link when it lost the top of the page.** The alerts once sat 1,600px
+down with nothing pointing at them, which is the failure this console's ordering was written to end.
+Now `PlatformNav` lists the overview's sections in the page's own order and carries "Needs an
+operator" straight to `#attention`.

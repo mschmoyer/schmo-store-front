@@ -220,10 +220,12 @@
   gap: var(--space-3);
 }
 
+/* The health cards' grid, exactly — a skeleton that wraps at a different width than the thing it
+   stands in for moves the page under the reader when the data lands. */
 .healthSkeletonCounts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
 }
 
 @media (max-width: 767px) {

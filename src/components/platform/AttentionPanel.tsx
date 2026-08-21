@@ -1,15 +1,20 @@
 'use client';
 
 /**
- * What needs an operator, at the top of the console.
+ * What needs an operator, at the foot of the console.
  *
- * ## Why this is the first thing on the page
+ * ## Where this sits, and why it is reachable without scrolling
  *
- * The overview used to open with six equal-weight KPI cards and two charts, and put the CRITICAL
- * alerts roughly 1,600px down a 2,952px page. That is the information hierarchy of a report, not of
- * a console. An operator's morning question is not "what is GMV" — it is "is anything on fire, and
- * whose". Merchants' customers are waiting on the orders named here; the KPI strip can wait a
- * screen.
+ * At the foot of the console, as its own section, and linked directly from the sidebar. The page
+ * opens with the four fleet-state cards instead, which answer "is anything wrong" in one reading;
+ * this answers "what do I do about it", and a worklist wants the room at the end of a page rather
+ * than the glance at the top of one.
+ *
+ * That only holds while the door stays open. The alerts once sat roughly 1,600px down a 2,952px
+ * page with nothing pointing at them, which is how a console ends up with alerts nobody reads — so
+ * `PlatformNav` carries a "Needs an operator" link straight to `#attention`, and the health cards
+ * above say plainly when something is failing. Merchants' customers are waiting on the orders named
+ * here; reaching them must never depend on somebody scrolling far enough.
  *
  * ## The money was computed and hidden
  *
