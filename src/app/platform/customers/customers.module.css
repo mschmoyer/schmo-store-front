@@ -1,0 +1,35 @@
+/*
+ * The merchant list's page frame.
+ *
+ * Padding deliberately is not declared here. The console shell owns the app
+ * frame the same way `admin.module.css` owns the admin's, and a route that pads
+ * itself on top of that produces a left edge that moves as you navigate. All
+ * this file contributes is the vertical rhythm between the four bands of the
+ * screen — header, totals, controls, table.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+@media (max-width: 640px) {
+  .page {
+    gap: var(--space-4);
+  }
+}
+
+/*
+ * The heading's right-hand slot: the "as of" line and the control that refreshes it.
+ *
+ * They belong together because they are one statement — how old this reading is, and how to take a
+ * new one. A Refresh button on its own implies staleness and then refuses to quantify it.
+ */
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

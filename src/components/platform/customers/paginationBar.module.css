@@ -1,0 +1,23 @@
+/*
+ * The pagination footer.
+ *
+ * The range sits on the left because it is read first — "of 312" is the answer
+ * to the question the operator arrived with, and the pager is the control they
+ * reach for afterwards.
+ */
+
+.root {
+  padding-block: var(--space-1);
+}
+
+.range {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.range strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}

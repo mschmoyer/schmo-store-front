@@ -3,6 +3,12 @@ export interface AdminUser {
   id: string;
   storeId: string;
   email: string;
+  /**
+   * Platform operator. Controls whether the merchant sidebar shows the "Admin" door to
+   * `/platform`; it is never the thing that authorises the data behind it — every platform route
+   * re-checks `users.is_admin` server-side on each request.
+   */
+  isAdmin?: boolean;
   store: {
     id: string;
     name: string;
@@ -24,6 +30,21 @@ export interface AdminAuthResponse {
   success: boolean;
   user?: AdminUser;
   session?: AdminSession;
+  error?: string;
+}
+
+/**
+ * JSON body returned by `GET|POST /api/admin/auth/verify`.
+ *
+ * Modelled separately from {@link AdminAuthResponse} because verify is the only endpoint that
+ * reports `user.isAdmin` — it re-reads `users.is_admin` from the database on every call, so the
+ * flag can change inside the life of an already-signed session token.
+ */
+export interface AdminVerifyResponse {
+  success: boolean;
+  data?: {
+    user: AdminUser;
+  };
   error?: string;
 }
 

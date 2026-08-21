@@ -150,6 +150,8 @@ docker inspect <name> --format '{{range .Config.Env}}{{println .}}{{end}}' | gre
 | `/store/fitness-pro` | **Ironline Fitness** — bright, roomy preset |
 | `/admin` | Merchant dashboard |
 | `/admin/design` | Storefront theme customizer with live preview |
+| `/platform` | **Platform operator console** — every tenant in one screen (needs `is_admin`) |
+| `/platform/customers` | Every merchant, paginated, with drill-through to one store |
 | `/create-store` | Merchant onboarding |
 | `/dev/design-system` | Every UI primitive in every state |
 
@@ -243,6 +245,34 @@ prove the seed is idempotent.
   transaction as the sections that link to them
 - **Product Search**: Real-time search with analytics tracking
 
+### Platform operator console (`/platform`)
+
+The view for whoever runs the platform, as opposed to `/admin`, which is one merchant's view of
+one store. Reached from an **Admin** item at the bottom of the merchant sidebar, shown only to a
+user carrying `users.is_admin`.
+
+- **Overview**: merchants, buyer clicks, orders received and shipped, GMV and fulfilment rate,
+  each against the equally-sized preceding period; the buyer funnel from click to order; and a
+  health strip naming the stores that need an operator, with the money and age of what is stuck
+- **Customers**: paginated, searchable and sortable merchant list with URL state, showing orders,
+  GMV, clicks, products, integration state and whether the storefront has been customized
+- **Customer detail**: orders received/shipped/delivered/cancelled/refunded with recent orders and
+  tracking, catalogue and inventory with top products, ShipStation and Stripe connection state,
+  customization and setup completeness, and per-store traffic with top pages and referrers
+- **Honest by construction**: GMV is settled money with unsettled and cancelled reported beside it,
+  rates return "—" rather than a percentage below a sample floor, and a failed fetch renders an
+  error with a retry — never a zero
+
+Access is granted deliberately, never by the product:
+
+```bash
+DATABASE_URL='<connection-string>' node scripts/grant-admin.js you@example.com
+node scripts/grant-admin.js --list          # who has it
+node scripts/grant-admin.js you@example.com --revoke
+```
+
+`docs/platform-admin.md` is the runbook, including what every figure on the console means.
+
 ### Admin Dashboard
 - **Store Management**: Create, configure, and manage stores
 - **Product Catalogue**: Saved views, inline editing, bulk actions, CSV import/export, real image
@@ -321,6 +351,14 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 `src/lib/shipstation/CLAUDE.md` and `src/lib/stripe/CLAUDE.md` for the two integrations.
 
 ## API Routes
+
+### Platform APIs (require `users.is_admin`, re-checked per request)
+- `/api/platform/overview` - Platform-wide metrics for a window, against the preceding one
+- `/api/platform/timeseries` - Daily clicks, orders, shipped, GMV and signups, zero-filled
+- `/api/platform/health` - Sync state per store, job queue depth, and the stuck-order backlog
+- `/api/platform/customers` - Paginated merchant list; sort, filter and search
+- `/api/platform/customers/[storeId]` - One merchant in full; `/orders` for their paged orders
+- `/api/storefront/click` - Public buyer-click beacon; rate limited, bot filtered, IP hashed
 
 ### Admin APIs
 - `/api/admin/products` - Catalogue list and create; `[productId]` for read, update and archive

@@ -1,0 +1,470 @@
+/*
+ * The merchant list.
+ *
+ * Eleven columns is a lot, and the honest answer to "how does this behave at 390px" used to be
+ * "it scrolls" — which was true and useless: two and a half columns of an eleven-column table with
+ * ~900px of hidden content behind an unmarked edge. So there are now two layouts. Above 700px it is
+ * a table whose identifying column never leaves the screen and whose overflow is *marked*, with a
+ * fade and an edge that appear only while something is genuinely hidden. Below 700px it is a list of
+ * cards, because comparison stops being possible long before the table stops being wide.
+ *
+ * A card layout was, correctly, rejected for the wide viewport: an operator there is comparing
+ * merchants against each other and cards destroy the column alignment that comparison depends on.
+ * That argument does not survive a viewport that can only show two columns — there is nothing left
+ * to align.
+ */
+
+.tableCard,
+.cardsCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* A refetch dims the rows; it never blanks them. Losing the whole table on
+   every keystroke of a debounced search is what makes a page feel broken. */
+.refreshing {
+  opacity: 0.55;
+  transition: opacity 120ms var(--ease-out, ease);
+  pointer-events: none;
+}
+
+/* -- Sortable headers ---------------------------------------------------- */
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  /* Match the Mantine theme's `th` treatment. Browsers set `text-transform:
+     none` on form controls in the UA stylesheet, so a header whose contents
+     are a `<button>` silently opts out of the uppercase every other header
+     has — which is how a header row ends up half small-caps and half
+     sentence case. */
+  text-transform: uppercase;
+}
+
+.sortButton:hover {
+  color: var(--text-primary);
+}
+
+.sortButton:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.sortActive {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sortIndicator {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.sortButton:hover .sortIndicator,
+.sortButton:focus-visible .sortIndicator,
+.sortActive .sortIndicator {
+  opacity: 1;
+}
+
+/* Faint on the columns that merely *could* be sorted, so the header row
+   advertises the affordance without becoming a wall of arrows. */
+.sortButton:not(.sortActive):hover .sortIndicator {
+  opacity: 0.45;
+}
+
+.numericHead {
+  text-align: right;
+}
+
+.numericHead .sortButton {
+  justify-content: flex-end;
+}
+
+/* -- Caption ------------------------------------------------------------- */
+
+/*
+ * A table's one element for saying what it is. It had none, so a screen-reader user arriving at the
+ * list met eleven column headers and no statement of what the rows were, how they were ordered, or
+ * that there was more of the table off to the right. It is visible rather than hidden: the same
+ * three facts are the ones a sighted reader was also missing.
+ */
+.caption {
+  caption-side: top;
+  text-align: left;
+  padding: var(--space-3) var(--space-4) 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* -- The scroll affordance ----------------------------------------------- */
+
+/*
+ * The fade sits on the frame, not on the scrolling element, so it does not scroll away with the
+ * content it is marking. Both edges are gated on a measured fact — `data-at-end` means there really
+ * is a column past the right edge — because a permanent shadow on a table that fits is how a reader
+ * learns to ignore the shadow.
+ */
+.scrollFrame {
+  position: relative;
+}
+
+.scrollFrame::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 40px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms var(--ease-out, ease);
+  /* An inset shadow plus a token border, not a gradient to a colour. A fade has to interpolate
+     from "transparent <ground>" to the ground, and the ground is a token that flips between
+     themes — a hard-coded transparent white produces a grey haze on the dark palette. A shadow
+     and a border read correctly on both because neither names a colour the theme owns. */
+  box-shadow: inset -14px 0 12px -12px rgba(16, 18, 22, 0.45);
+  border-right: 1px solid var(--border-strong);
+}
+
+.scrollFrame[data-at-end='true']::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollFrame::after {
+    transition: none;
+  }
+}
+
+/* -- The pinned identity column ------------------------------------------ */
+
+.stickyHead,
+.stickyCell {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 192px;
+}
+
+.stickyHead {
+  background: var(--surface-sunken);
+}
+
+/*
+ * The row header carries the store name, and it is a `<th scope="row">` because
+ * that is what associates every number in the row with the merchant it belongs
+ * to. Mantine's theme styles `th` as a *column* header — 12px, uppercase, 0.06em
+ * tracking, muted — through its `styles` API, which lands as an inline style and
+ * therefore outranks a class. A store name set in small-caps grey reads as
+ * furniture rather than as the row's subject, so this is one of the few places
+ * `!important` is the correct tool: the alternative is a raw `<th>` outside
+ * Mantine's table, which loses the row borders and the hover treatment.
+ */
+.stickyCell {
+  background: var(--surface);
+  font-family: var(--font-sans) !important;
+  font-size: var(--text-sm) !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--text-primary) !important;
+  vertical-align: top;
+}
+
+/* The edge only appears once the table has actually scrolled under it — a
+   permanent border on a table that fits reads as a stray hairline. */
+.stickyHead::after,
+.stickyCell::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 1px;
+  background: var(--border);
+  transition: box-shadow 160ms var(--ease-out, ease);
+}
+
+.scrollFrame[data-at-start='true'] .stickyHead::after,
+.scrollFrame[data-at-start='true'] .stickyCell::after {
+  box-shadow: 6px 0 10px -6px rgba(16, 18, 22, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stickyHead::after,
+  .stickyCell::after {
+    transition: none;
+  }
+}
+
+/*
+ * Slightly tighter than Mantine's default gutter. Eleven columns of small numbers do not need 16px
+ * of air on both sides of every one, and reclaiming it is what lets the last column stay on screen
+ * at 1440 rather than sitting behind the scroll edge.
+ */
+.tableCard th,
+.tableCard td {
+  padding-inline: 9px;
+}
+
+/* Every cell top-aligns. The identity column is three lines tall and the badge columns are two, so
+   the default middle alignment floated single-line numbers into the vertical centre of a tall row
+   and broke the horizontal read across it. */
+.tableCard tbody th,
+.tableCard tbody td {
+  vertical-align: top;
+}
+
+/* Mantine paints its own row-hover fill, which would slide under the pinned
+   cell and leave it the only white column in a highlighted row. */
+.tableCard tbody tr:hover .stickyCell {
+  background: var(--surface-hover);
+}
+
+/* -- Cells --------------------------------------------------------------- */
+
+.storeName {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.storeSlug {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+  margin-top: 2px;
+}
+
+/* The owner used to be a column of its own. It is a fact about the row's subject and the subject
+   already has a column, so folding it in bought back roughly 180px of the overflow that was pushing
+   Products and the storefront link off-screen. */
+.ownerLine {
+  display: block;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.ownerName {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.ownerEmail {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}
+
+/* `RelativeDate` stacks its own two lines and keeps them unwrapped; the cell only has to not
+   introduce a second wrapping opportunity of its own. */
+.dateCell {
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+/*
+ * The two integration pills now read "ShipStation connected" / "Stripe not connected" rather than
+ * naming the integration and leaving the state to the colour, so they are long enough that wrapping
+ * them side by side would split a pill mid-phrase. Stacked, each one gets its own line and the
+ * column has a predictable width.
+ */
+.badgeStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.mutedBadge {
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+/* A count with the figure that qualifies it underneath, never beside it —
+   side by side the two read as two columns of data. */
+.stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  line-height: 1.25;
+}
+
+.sub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Money that is booked but not collected. Amber rather than the money green:
+   it is the opposite of settled revenue, and painting it in the signal colour
+   would file it under "success". */
+.unsettled {
+  font-size: var(--text-xs);
+  color: var(--warning-text);
+  white-space: nowrap;
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.numeric > * {
+  justify-content: flex-end;
+}
+
+.openLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+}
+
+.openLink:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.openLink:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+/* -- The narrow layout --------------------------------------------------- */
+
+.cardSort {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.cardSortField {
+  flex: 1 1 auto;
+  min-width: 140px;
+}
+
+/* Target size ≥ 40px per §7 — this is a touch layout by definition. */
+.cardSortDirection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.cardSortDirection:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.card:first-child {
+  border-top: 0;
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cardIdentity {
+  min-width: 0;
+}
+
+.cardBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cardFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.cardFact {
+  min-width: 0;
+}
+
+.cardFact dt {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.cardFact dd {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cardFact dd .sub,
+.cardFact dd .unsettled {
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+
+/* -- Utility ------------------------------------------------------------- */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

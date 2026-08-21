@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import { storefrontUrl } from '@/lib/seo/siteUrl';
 import { notFound } from 'next/navigation';
 
+import { StorefrontClickTracker } from '@/components/store/StorefrontClickTracker';
+import { isMerchantSelfView } from '@/lib/analytics/storefront-clicks';
+
 import { getStoreBySlug } from '../_lib/queries';
 
 /**
@@ -28,9 +31,15 @@ import { getStoreBySlug } from '../_lib/queries';
  * Only *existence* is checked here. Whether an existing shop may be shown
  * depends on the preview token, which a layout cannot read.
  *
+ * It also mounts the buyer-click tracker, and this is the one place it can go: the layout is the
+ * only node that wraps every storefront page (home, products, product detail, cart, checkout,
+ * account) exactly once, so `storefront_view` is recorded once per page here instead of six times
+ * in six pages that would each drift. The tracker is a client leaf that renders nothing — see
+ * `components/store/StorefrontClickTracker.tsx` — so nothing above it stops being server-rendered.
+ *
  * @param props.children - The page being rendered
  * @param props.params - The route's store slug
- * @returns The children, untouched
+ * @returns The children, plus the tracking leaf
  */
 export default async function StoreLayout({
   children,
@@ -43,7 +52,18 @@ export default async function StoreLayout({
   const lookup = await getStoreBySlug(storeSlug, { allowUnpublished: true });
   if (!lookup.ok) notFound();
 
-  return <>{children}</>;
+  const ownerViewing = await isMerchantSelfView(lookup.store.id);
+
+  return (
+    <>
+      <StorefrontClickTracker
+        storeId={lookup.store.id}
+        enabled={!ownerViewing}
+        trackCartAdds
+      />
+      {children}
+    </>
+  );
 }
 
 /**

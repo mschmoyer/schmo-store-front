@@ -1,0 +1,131 @@
+/*
+ * The merchant identity band.
+ *
+ * The facts sit in a `<dl>` beside the title rather than under it: on a screen
+ * that is seven panels tall, every row of header pushes the first real number
+ * further below the fold. On a phone the same block stacks and the actions go
+ * full width, because a 40px target that is 90px wide is a target a thumb
+ * misses.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+}
+
+.back:hover {
+  color: var(--text-primary);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+
+.main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.identity {
+  min-width: 0;
+  flex: 1 1 420px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: var(--space-4) 0 0;
+}
+
+.fact {
+  min-width: 0;
+}
+
+.fact dt {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.fact dd {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.domain,
+.subtle {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.email {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.email:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .main {
+    gap: var(--space-4);
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .actions > * {
+    flex: 1 1 auto;
+  }
+}

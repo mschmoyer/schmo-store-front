@@ -49,6 +49,28 @@ jobs:
   test:
     name: Unit tests
     runs-on: ubuntu-latest
+    # The suite needs a real Postgres. `CLAUDE.md` says to prefer real data over mocks wherever a
+    # boundary can be injected, and the platform console's queries are exactly the case that rule
+    # is written for: they are almost entirely SQL, so a mocked `db.query` would assert that the
+    # code calls a function, not that the numbers are right. `src/lib/platform/__tests__` therefore
+    # calls `jest.unmock('@/lib/database/connection')` and talks to the database.
+    #
+    # This job had no database, so those tests passed locally and could only ever fail here.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rebelshops_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/rebelshops_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,6 +78,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Schema only. The tests seed and clean up their own rows, deliberately: a suite that asserts
+      # against demo data breaks whenever the demo data is edited, which is a different failure
+      # from the one it is supposed to report.
+      - run: node database/migrate.js
       - run: npm run test:ci
 
   migrations:

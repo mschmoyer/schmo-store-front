@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 
+import { StorefrontClickTracker } from '@/components/store/StorefrontClickTracker';
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import { CheckoutView } from '@/components/store/checkout/CheckoutView';
 import { SectionHeading, StoreBand, StoreContainer } from '@/components/store/ui';
+import { isMerchantSelfView } from '@/lib/analytics/storefront-clicks';
 
 import { loadStorefront, type SearchParams } from '../../_lib/load';
 
@@ -42,9 +44,20 @@ export default async function CheckoutPage({ params, searchParams }: CheckoutPag
 
   const { store } = result.data;
   const wasCancelled = search.checkout === 'cancelled';
+  const ownerViewing = await isMerchantSelfView(store.id);
 
   return (
     <StorefrontShell {...result.data}>
+      {/*
+        Reaching this page *is* the start of a checkout — it is where the shopper is first asked
+        for an address and a card — so the funnel step is recorded on arrival rather than on
+        submit. A shopper who abandons here is exactly the drop-off the funnel needs to show.
+      */}
+      <StorefrontClickTracker
+        storeId={store.id}
+        eventType="checkout_start"
+        enabled={!ownerViewing}
+      />
       <StoreBand>
         <StoreContainer>
           <SectionHeading heading="Checkout" level={2} />
