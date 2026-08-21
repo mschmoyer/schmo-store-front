@@ -32,8 +32,18 @@ const MERCHANT = { email: 'store.owner@example.com', password: 'rebeldev' };
  */
 const OTHER_TENANT_STORE_NAMES = ['Basecamp Audio', 'Ironline Fitness'];
 
-/** Wording a refusal page might plausibly use, in any of its likely forms. */
-const REFUSAL_PATTERN = /403|forbidden|not authori|unauthori|access denied|no access|permission|admin only|sign in/i;
+/**
+ * Wording a refusal page might plausibly use, in any of its likely forms.
+ *
+ * `not a platform operator` is the copy that actually shipped, and its absence here failed this
+ * test against a gate that was working perfectly — the page refused, named the signed-in account,
+ * and leaked nothing. Worth stating plainly, because the temptation on a red security test is to
+ * assume the security is broken: the assertion that matters is the one above it, that no other
+ * tenant's data appears. This one only checks that the refusal is *legible to a human*, so it has
+ * to know the vocabulary a human would actually be shown.
+ */
+const REFUSAL_PATTERN =
+  /403|forbidden|not authori|unauthori|access denied|no access|permission|admin only|sign in|not a platform operator|operator access/i;
 
 /**
  * Sign in through the real login form and wait for the merchant shell to render.
@@ -93,7 +103,20 @@ test.describe('Platform admin door', () => {
 
     const response = await page.goto('/platform');
     const status = response?.status() ?? 0;
-    await page.waitForLoadState('domcontentloaded');
+
+    /*
+     * Wait for the access decision, not merely for the document.
+     *
+     * The gate is client-side: the shell renders, calls `/api/admin/auth/verify`, and only then
+     * knows whether to draw the console or the refusal. Reading `body` at `domcontentloaded`
+     * sampled the page mid-decision — the assertion below saw an empty shell, reported "no refusal
+     * in the page", and pointed at a security gate that was in fact working correctly. A test that
+     * cries wolf about authorisation is worse than no test, because the first instinct on seeing it
+     * red is to go looking for a hole that isn't there.
+     *
+     * `networkidle` is the honest wait here: the decision is gated on a fetch completing.
+     */
+    await page.waitForLoadState('networkidle');
 
     const bodyText = await page.locator('body').innerText();
 
