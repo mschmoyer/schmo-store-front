@@ -405,67 +405,150 @@
 
 /* ============================================================= Health ===== */
 
-.health {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.healthCounts {
+/*
+ * Four cards, one per ShipStation sync state.
+ *
+ * They were a compact counts row at the foot of the console. The section now opens the page, and a
+ * strip of small tiles read as a footnote where a reading belongs — so the four counts get the same
+ * card geometry the KPI strip below them uses, and the per-store detail that used to be two lines
+ * of small text moved into a tooltip on each card.
+ */
+.healthCards {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
 }
 
-.healthCount {
+.healthCard {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-3-5);
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-4) var(--space-5) var(--space-5);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
 }
 
-.healthCountMark {
+/* The card takes focus so a keyboard can open its tooltip; it is not a control, so it gets the
+   focus ring and nothing else that would imply it can be activated. */
+.healthCard:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.healthCardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.healthCardLabel {
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* The mark is the second cue after the word, and the tint is the third. Never the only one. */
+.healthCardMark {
   display: inline-flex;
   color: var(--text-quaternary);
 }
 
-.healthCount[data-tone='danger'] .healthCountMark {
+.healthCard[data-tone='danger'] .healthCardMark {
   color: var(--danger-text);
 }
 
-.healthCount[data-tone='warning'] .healthCountMark {
+.healthCard[data-tone='warning'] .healthCardMark {
   color: var(--warning-text);
 }
 
-.healthCount[data-tone='good'] .healthCountMark {
+.healthCard[data-tone='good'] .healthCardMark {
   color: var(--success-text);
 }
 
-.healthCountValue {
+.healthCardValue {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  font-size: 1.25rem;
+  /* The KPI strip's figure, exactly: these cards sit directly above it and two figure sizes in
+     one column reads as two kinds of number. */
+  font-size: 1.75rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
   color: var(--text-primary);
 }
 
-.healthCountLabel {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
-.healthJobs {
+.healthCardMeta {
   margin: 0;
   font-size: var(--text-xs);
-  line-height: 1.6;
-  color: var(--text-secondary);
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+/* -- The card's tooltip ---------------------------------------------------- */
+
+.healthTip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+}
+
+.healthTipLead {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.healthTipList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.healthTipList li {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.healthTipName {
+  font-weight: 600;
+}
+
+.healthTipFact {
+  opacity: 0.8;
+  overflow-wrap: anywhere;
+}
+
+.healthTipMore {
+  margin: 0;
+  font-size: var(--text-xs);
+  opacity: 0.8;
+}
+
+/* Carries the tooltip's text for readers that never see the floating layer. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .healthClear {

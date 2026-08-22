@@ -3,6 +3,7 @@
 import React from 'react';
 import { NavLink, ScrollArea, Stack } from '@mantine/core';
 import {
+  IconAlertTriangle,
   IconArrowBackUp,
   IconBuildingStore,
   IconChartArrowsVertical,
@@ -22,7 +23,7 @@ interface PlatformNavItem {
   label: string;
   icon: typeof IconLayoutDashboard;
   href: string;
-  /** One line of what lives there. The console has five destinations; each can afford a sentence. */
+  /** One line of what lives there. The console has six destinations; each can afford a sentence. */
   description: string;
 }
 
@@ -68,6 +69,14 @@ const NAV_GROUPS: PlatformNavGroup[] = [
     id: 'sections',
     heading: 'Overview sections',
     items: [
+      /* Same order as the overview itself. A rail that lists a page's sections in an order the
+         page does not use is a map of a different building. */
+      {
+        label: 'Health',
+        icon: IconHeartRateMonitor,
+        href: '/platform#health',
+        description: 'Sync state across the fleet',
+      },
       {
         label: 'Traffic',
         icon: IconChartArrowsVertical,
@@ -80,11 +89,13 @@ const NAV_GROUPS: PlatformNavGroup[] = [
         href: '/platform#fulfilment',
         description: 'Orders received and shipped',
       },
+      /* The worklist is the last section on the overview, so this link is the thing that keeps it
+         one click from anywhere rather than one scroll. */
       {
-        label: 'Health',
-        icon: IconHeartRateMonitor,
-        href: '/platform#health',
-        description: 'Sync state and alerts',
+        label: 'Needs an operator',
+        icon: IconAlertTriangle,
+        href: '/platform#attention',
+        description: 'Stuck orders and open alerts',
       },
     ],
   },

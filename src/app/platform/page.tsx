@@ -18,11 +18,12 @@ import {
   ConversionFunnel,
   DataFreshness,
   FulfilmentPanel,
-  HealthStrip,
+  HealthCards,
   MetricDelta,
+  PlatformAttentionSkeleton,
   PlatformChartSkeleton,
   PlatformErrorState,
-  PlatformHealthSkeleton,
+  PlatformHealthCardsSkeleton,
   PlatformOverviewSkeleton,
   PlatformPanel,
   PlatformTrendCharts,
@@ -74,10 +75,12 @@ function readWindow(raw: string | null): PlatformWindowDays {
  *
  * ## The order of the page is the order of an operator's morning
  *
- * What needs a person comes first — the stuck-order exposure and every open alert — then whether
- * merchants can trade at all, then the KPI strip, then the analysis. The previous order put six
- * equal-weight KPI cards and two charts above two CRITICAL alerts sitting 1,600px down a 2,952px
- * page. Nobody scrolls to their alerts.
+ * The fleet's state comes first, as four cards: failing, stale, not connected, healthy. It is the
+ * one reading that answers "is anything wrong" without scrolling, and each card carries the stores
+ * behind its number in a tooltip. Then the KPI strip, then whether merchants can trade at all, then
+ * the analysis, and last the worklist — the stuck-order exposure and every open alert, with the
+ * per-store drill-through an operator actually works through. The console's sidebar links straight
+ * to that section, so reaching it never depends on scrolling to it.
  *
  * ## Three failure modes, three treatments
  *
@@ -127,6 +130,33 @@ function PlatformOverviewView(): React.ReactElement {
   const health = usePlatformData<PlatformHealth>('/api/platform/health');
 
   const periodLabel = `previous ${days} days`;
+
+  /*
+   * The health section's line carries the queue depth.
+   *
+   * The four cards below it are one per ShipStation sync state, and the job queue belongs to none
+   * of them — it is platform work, not a store's. It used to be a line of small print under the
+   * counts; a section that opens the page can afford to say it in its own description, and dropping
+   * it entirely would have removed the only place `pending` and `processing` are reported at all.
+   * `failed` also raises an alert in the worklist at the foot of the page; the other two do not.
+   */
+  const healthCounts = health.data?.counts;
+  const storesTracked = healthCounts
+    ? healthCounts.failing + healthCounts.stale + healthCounts.notConnected + healthCounts.healthy
+    : null;
+  const healthDescription =
+    health.data && storesTracked !== null ? (
+      <>
+        ShipStation sync state across {storesTracked.toLocaleString('en-US')} store
+        {storesTracked === 1 ? '' : 's'}. Job queue:{' '}
+        {health.data.jobs.pending.toLocaleString('en-US')} pending,{' '}
+        {health.data.jobs.processing.toLocaleString('en-US')} processing,{' '}
+        {health.data.jobs.failed.toLocaleString('en-US')} failed. Each card names the stores behind
+        its number.
+      </>
+    ) : (
+      'ShipStation sync state per store and the depth of the job queue. Each card names the stores behind its number.'
+    );
   const data = overview.data;
   /* `comparison.measured` separates "the previous window was observed and was empty" from "the
      platform did not exist yet". Both produce a zero baseline and they are not the same claim. */
@@ -220,16 +250,13 @@ function PlatformOverviewView(): React.ReactElement {
       {header}
 
       {/*
-        First on the page, deliberately. See the note on this component: everything below is
-        context, and this is the only region that asks somebody to do something.
+        First on the page: four cards, one per ShipStation sync state, each naming the stores behind
+        its number in a tooltip. The section's own line carries the job queue, which belongs to no
+        single state.
       */}
-      <PlatformPanel
-        id="attention"
-        title="Needs an operator"
-        description="Paid orders nobody has shipped, and every store currently reporting a problem. Worst first."
-      >
+      <PlatformPanel id="health" title="Platform health" description={healthDescription}>
         {health.isLoading && !health.data ? (
-          <PlatformHealthSkeleton />
+          <PlatformHealthCardsSkeleton />
         ) : health.error ? (
           <PlatformErrorState
             error={health.error}
@@ -238,7 +265,7 @@ function PlatformOverviewView(): React.ReactElement {
             compact
           />
         ) : health.data ? (
-          <AttentionPanel health={health.data} />
+          <HealthCards health={health.data} />
         ) : null}
       </PlatformPanel>
 
@@ -426,13 +453,18 @@ function PlatformOverviewView(): React.ReactElement {
         />
       </PlatformPanel>
 
+      {/*
+        Last on the page, and the only region that asks somebody to do something. The four health
+        cards at the top say whether anything is wrong; this says what to do about it, at the length
+        a worklist needs. `PlatformNav` links straight here.
+      */}
       <PlatformPanel
-        id="health"
-        title="Platform health"
-        description="ShipStation sync state per store and the depth of the job queue. Anything that needs acting on is at the top of this page."
+        id="attention"
+        title="Needs an operator"
+        description="Paid orders nobody has shipped, and every store currently reporting a problem. Worst first."
       >
         {health.isLoading && !health.data ? (
-          <PlatformHealthSkeleton />
+          <PlatformAttentionSkeleton />
         ) : health.error ? (
           <PlatformErrorState
             error={health.error}
@@ -441,7 +473,7 @@ function PlatformOverviewView(): React.ReactElement {
             compact
           />
         ) : health.data ? (
-          <HealthStrip health={health.data} />
+          <AttentionPanel health={health.data} />
         ) : null}
       </PlatformPanel>
     </div>

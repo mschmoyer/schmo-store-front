@@ -251,9 +251,11 @@ The view for whoever runs the platform, as opposed to `/admin`, which is one mer
 one store. Reached from an **Admin** item at the bottom of the merchant sidebar, shown only to a
 user carrying `users.is_admin`.
 
-- **Overview**: merchants, buyer clicks, orders received and shipped, GMV and fulfilment rate,
-  each against the equally-sized preceding period; the buyer funnel from click to order; and a
-  health strip naming the stores that need an operator, with the money and age of what is stuck
+- **Overview**: fleet health first — four cards, one per ShipStation sync state, each naming the
+  stores behind its number; then merchants, buyer clicks, orders received and shipped, GMV and
+  fulfilment rate, each against the equally-sized preceding period; the buyer funnel from click to
+  order; and, at the foot, **Needs an operator** — the stuck-order backlog with the money and age
+  of what is waiting, and every open alert
 - **Customers**: paginated, searchable and sortable merchant list with URL state, showing orders,
   GMV, clicks, products, integration state and whether the storefront has been customized
 - **Customer detail**: orders received/shipped/delivered/cancelled/refunded with recent orders and
