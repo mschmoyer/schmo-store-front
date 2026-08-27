@@ -1,9 +1,23 @@
 # Plan: platform signup coupons
 
-**Status:** built. **Phases 1-8 landed 2026-08-27.** The schema, the Stripe resolution, the
-operator console, the `/join` link, the billing attach, the redemption close-out, the merchant's
-alert ladder, the docs and `/pricing` are all in and green: 1377 unit tests, 21 schema invariants, a
-keyless production build. The staff review is outstanding.
+**Status:** built and reviewed. **Phases 1-8 landed 2026-08-27.** The schema, the Stripe
+resolution, the operator console, the `/join` link, the billing attach, the redemption close-out,
+the merchant's alert ladder, the docs and `/pricing` are all in and green: **1,445 unit tests across
+94 suites**, 21 schema invariants, a keyless production build, and all seven CI checks passing.
+
+**The staff review is complete.** It found nothing critical and three HIGH money bugs, all of them
+one root cause — a claim row was treated as an entitlement forever, and nothing re-validated the
+coupon behind it at the moment it was spent. A redeemed claim re-applied on every later checkout; a
+deactivated coupon did not stop the claims already attributed to it, and `releaseClaim` had no
+caller; a free-forever coupon quoted $19.99. All three are fixed, along with the MEDIUMs (`/join`
+rate limiting, the `$1.00` literal on the error path, "Forever" on unredeemed rows, and a create
+form that could be driven into a dead end).
+
+A screenshot pass afterwards found one more that no test caught: an expired invite link rendered
+**no banner at all**. `/join` redirected with `?coupon_error=expired` correctly and the wizard
+rendered the banner correctly when handed a reason — but the wizard fetched its state without
+forwarding the parameter, so the reason was dropped in between. Both halves were tested and passing;
+the wire between them was missing, and it took looking at the page to see it.
 **Goal:** hand a friend a link, they sign up, they get a year free, and the operator console can
 show who used what. Friends skip the card entirely; publicly-issued codes still take one.
 
