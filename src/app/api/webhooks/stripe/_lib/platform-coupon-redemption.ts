@@ -48,13 +48,21 @@ import { markRedeemed, type Queryable } from '@/lib/billing/coupon-claims';
  */
 const PLATFORM_SIGNUP_COUPON_SCOPE = 'platform_signup';
 
-/** Every outcome {@link closeOutPlatformCouponRedemption} can report. Never a thrown error. */
+/**
+ * Every outcome {@link closeOutPlatformCouponRedemption} can report. Never a thrown error.
+ *
+ * `'coupon_mismatch'` (finding 14) means a live claim exists for this user, but for a *different*
+ * coupon than the one Stripe just attached — `markRedeemed` refused rather than redeeming the wrong
+ * row. This should not happen given the schema's one-live-claim-per-user constraint, but it is
+ * checked and reported rather than assumed away.
+ */
 export type CloseOutOutcome =
   | 'redeemed'
   | 'already_redeemed'
   | 'no_active_claim'
   | 'no_owner'
   | 'no_platform_coupon'
+  | 'coupon_mismatch'
   | 'error';
 
 /** The result of {@link closeOutPlatformCouponRedemption}. */
@@ -150,6 +158,13 @@ function toDate(seconds: number | null | undefined): Date | null {
  * facts, and `markRedeemed` leaves an already-`redeemed` claim untouched (`'already_redeemed'`),
  * never a second write and never an error.
  *
+ * Staff-review finding 14: `markRedeemed` is called with `expectedCouponId` read off the Stripe
+ * coupon's own `platform_coupon_id` metadata (the same field `describeStripeCouponFor` stamps on
+ * every coupon this feature creates) — not matched on `user_id` alone. And when `already_redeemed`
+ * comes back for a *different* Stripe subscription than the claim already recorded, that is logged
+ * distinctly: a second subscription trying to close out an already-spent redemption is worth seeing
+ * in the logs, not a silent no-op indistinguishable from an ordinary webhook redelivery.
+ *
  * @param input - The subscription's owner and the Stripe subscription Stripe just confirmed.
  * @param options - Injectable boundaries for tests — see {@link CloseOutPlatformCouponRedemptionOptions}.
  * @returns A typed outcome. **Never throws** — every failure is caught, logged, and reported as
@@ -173,6 +188,8 @@ export async function closeOutPlatformCouponRedemption(
 
     const startedAt = toDate(input.subscription.start_date) ?? new Date();
     const discountEndsAt = computeDiscountEndsAt(startedAt, coupon.duration_in_months ?? null);
+    const expectedCouponId =
+      typeof coupon.metadata?.platform_coupon_id === 'string' ? coupon.metadata.platform_coupon_id : null;
 
     const result = await markRedeemed(
       {
@@ -180,6 +197,7 @@ export async function closeOutPlatformCouponRedemption(
         stripeSubscriptionId: input.subscription.id,
         stripeCouponId: coupon.id,
         discountEndsAt,
+        expectedCouponId,
       },
       options.executor
     );
@@ -190,6 +208,31 @@ export async function closeOutPlatformCouponRedemption(
           `${coupon.id} but user ${input.ownerId} has no active claim to close out.`
       );
       return { outcome: 'no_active_claim' };
+    }
+
+    if (result.reason === 'coupon_mismatch') {
+      console.warn(
+        `[stripe webhook] subscription ${input.subscription.id} carries platform coupon ` +
+          `${coupon.id} (platform_coupon_id ${expectedCouponId}) but user ${input.ownerId}'s live ` +
+          `claim ${result.claim.id} is for a different coupon (${result.claim.couponId}) - refusing ` +
+          `to redeem the wrong claim.`
+      );
+      return { outcome: 'coupon_mismatch' };
+    }
+
+    if (
+      result.reason === 'already_redeemed' &&
+      result.claim.stripeSubscriptionId !== input.subscription.id
+    ) {
+      // Finding 14: this is not an ordinary webhook redelivery (same subscription id redelivered) -
+      // it is a *different* subscription trying to close out a claim that already paid out on an
+      // earlier one. `markRedeemed` correctly refuses to redeem it a second time; this log line is
+      // what makes that a distinguishable event instead of indistinguishable from a normal retry.
+      console.warn(
+        `[stripe webhook] subscription ${input.subscription.id} carries platform coupon ${coupon.id}, ` +
+          `but claim ${result.claim.id} was already redeemed by a different subscription ` +
+          `(${result.claim.stripeSubscriptionId}). Not re-redeeming.`
+      );
     }
 
     return { outcome: result.reason === 'ok' ? 'redeemed' : 'already_redeemed' };

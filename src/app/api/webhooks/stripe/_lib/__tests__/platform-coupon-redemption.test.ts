@@ -294,4 +294,72 @@ describe('closeOutPlatformCouponRedemption', () => {
     expect(result.outcome).toBe('error');
     expect(result.errorMessage).toBe('connection terminated');
   });
+
+  describe('Finding 14: matches on the coupon\'s platform_coupon_id metadata, not user_id alone', () => {
+    it('passes the Stripe coupon\'s platform_coupon_id metadata through to markRedeemed as expectedCouponId', async () => {
+      const { executor, query } = fakeExecutor();
+      query
+        .mockResolvedValueOnce({ rows: [claimRow({ status: 'attributed', coupon_id: 'coupon-1' })] })
+        .mockResolvedValueOnce({ rows: [claimRow({ status: 'redeemed' })] });
+
+      const subscription = subscriptionWithCoupon(
+        platformCoupon({ metadata: { managed_by: 'rebelshops', scope: 'platform_signup', platform_coupon_id: 'coupon-1', code: 'FRIENDS12' } })
+      );
+
+      const result = await closeOutPlatformCouponRedemption({ ownerId: 'user-1', subscription }, { executor });
+
+      expect(result).toEqual({ outcome: 'redeemed' });
+    });
+
+    it('reports coupon_mismatch, without throwing, when the live claim is for a different coupon', async () => {
+      const { executor, query } = fakeExecutor();
+      query.mockResolvedValueOnce({ rows: [claimRow({ status: 'attributed', coupon_id: 'coupon-1' })] });
+
+      const spy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const subscription = subscriptionWithCoupon(
+        platformCoupon({ metadata: { managed_by: 'rebelshops', scope: 'platform_signup', platform_coupon_id: 'coupon-999', code: 'OTHER' } })
+      );
+
+      const result = await closeOutPlatformCouponRedemption({ ownerId: 'user-1', subscription }, { executor });
+
+      expect(result).toEqual({ outcome: 'coupon_mismatch' });
+      expect(spy).toHaveBeenCalled();
+      // Only the lookup ran - the mismatched claim was never written to.
+      expect(query).toHaveBeenCalledTimes(1);
+      spy.mockRestore();
+    });
+
+    it('logs distinctly when an already-redeemed claim is closed out again by a *different* ' +
+      'subscription, rather than treating it as an ordinary redelivery', async () => {
+      const { executor, query } = fakeExecutor();
+      query.mockResolvedValueOnce({
+        rows: [claimRow({ status: 'redeemed', coupon_id: 'coupon-1', stripe_subscription_id: 'sub_original' })],
+      });
+
+      const spy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const subscription = subscriptionWithCoupon(platformCoupon(), { id: 'sub_a_second_subscription' });
+
+      const result = await closeOutPlatformCouponRedemption({ ownerId: 'user-1', subscription }, { executor });
+
+      expect(result).toEqual({ outcome: 'already_redeemed' });
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('different subscription'));
+      spy.mockRestore();
+    });
+
+    it('does not warn about a different subscription for an ordinary same-subscription redelivery', async () => {
+      const { executor, query } = fakeExecutor();
+      query.mockResolvedValueOnce({
+        rows: [claimRow({ status: 'redeemed', coupon_id: 'coupon-1', stripe_subscription_id: 'sub_123' })],
+      });
+
+      const spy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const subscription = subscriptionWithCoupon(platformCoupon(), { id: 'sub_123' });
+
+      const result = await closeOutPlatformCouponRedemption({ ownerId: 'user-1', subscription }, { executor });
+
+      expect(result).toEqual({ outcome: 'already_redeemed' });
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+  });
 });

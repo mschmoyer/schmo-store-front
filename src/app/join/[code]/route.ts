@@ -32,10 +32,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPlatformCouponByCode } from '@/lib/platform/coupons';
 import { isRedeemable, type PlatformCoupon } from '@/lib/billing/platform-coupons';
+import { rateLimit } from '@/lib/ai/rate-limit';
+import { clientIpFromHeaders } from '@/lib/analytics/storefront-clicks';
 import {
   PLATFORM_COUPON_COOKIE,
   PLATFORM_COUPON_COOKIE_MAX_AGE_SECONDS,
 } from '@/app/api/onboarding/_lib/coupon-cookie';
+
+/**
+ * Plan §9: "`/join/[code]` and `/api/billing/coupon/preview` are the two places an attacker can
+ * guess codes. Both need rate limiting" — this route shipped with none (staff review finding 4).
+ * Unlike the preview endpoint, `/join` is public and unauthenticated, so the key is the caller's IP
+ * rather than a merchant id.
+ *
+ * `rateLimit` (`src/lib/ai/rate-limit.ts`) is an in-process fixed window — its own module says so.
+ * On Vercel, where each request can land on a different serverless instance, this is a *soft*
+ * limit: an attacker spread across instances sees up to `JOIN_RATE_LIMIT` requests per instance per
+ * window, not globally. That is still worth having — it raises the cost of the single-instance case
+ * and of any one warm instance being hammered — but it is not a guarantee, and nothing here should
+ * be read as one.
+ */
+const JOIN_RATE_LIMIT = 20;
+/** Five-minute fixed window for {@link JOIN_RATE_LIMIT}. */
+const JOIN_RATE_WINDOW_MS = 5 * 60 * 1000;
 
 /** Re-exported so callers (and this route's own handler) need only one import for the cookie name. */
 export { PLATFORM_COUPON_COOKIE, PLATFORM_COUPON_COOKIE_MAX_AGE_SECONDS };
@@ -60,7 +79,7 @@ export interface JoinDecision {
  * @param reason - Why the code did not validate.
  * @returns The `/create-store` path carrying it.
  */
-function failureRedirect(reason: JoinFailureReason): JoinDecision {
+export function failureRedirect(reason: JoinFailureReason): JoinDecision {
   return { cookieCode: null, redirectPath: `/create-store?coupon_error=${reason}` };
 }
 
@@ -130,7 +149,16 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ): Promise<NextResponse> {
   const { code } = await params;
-  const decision = await decideJoin(code, getPlatformCouponByCode);
+
+  // Rate-limited *before* the lookup runs, and on a trip this returns the same ordinary failure
+  // redirect a bad code gets — never a distinct rate-limit response, which would itself tell an
+  // attacker their guessing was noticed (plan §11 invariant 7's "never a silent tell" reasoning,
+  // applied to the oracle itself rather than to the discount). See the module note on why this is a
+  // soft, per-instance limit rather than a guarantee.
+  const ip = clientIpFromHeaders(request.headers) ?? 'unknown';
+  const withinLimit = rateLimit(`join:${ip}`, JOIN_RATE_LIMIT, JOIN_RATE_WINDOW_MS).ok;
+
+  const decision = withinLimit ? await decideJoin(code, getPlatformCouponByCode) : failureRedirect('unknown');
 
   const response = NextResponse.redirect(new URL(decision.redirectPath, request.url), 302);
 

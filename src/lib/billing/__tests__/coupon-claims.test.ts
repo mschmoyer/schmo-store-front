@@ -372,6 +372,53 @@ describe('markRedeemed: the attributed -> redeemed transition', () => {
 
     expect(result.reason).toBe('already_redeemed');
   });
+
+  describe('Finding 14: expectedCouponId cross-checks the live claim, not just user_id', () => {
+    it('redeems normally when expectedCouponId matches the live claim', async () => {
+      const { executor, query } = fakeExecutor();
+      query
+        .mockResolvedValueOnce({ rows: [claimRow({ status: 'attributed', coupon_id: 'coupon-1' })] })
+        .mockResolvedValueOnce({ rows: [claimRow({ status: 'redeemed' })] });
+
+      const result = await markRedeemed({ ...input, expectedCouponId: 'coupon-1' }, executor);
+
+      expect(result.reason).toBe('ok');
+    });
+
+    it('refuses as coupon_mismatch, without writing, when the live claim is for a different coupon', async () => {
+      const { executor, query } = fakeExecutor();
+      query.mockResolvedValueOnce({ rows: [claimRow({ status: 'attributed', coupon_id: 'coupon-1' })] });
+
+      const result = await markRedeemed({ ...input, expectedCouponId: 'coupon-999' }, executor);
+
+      expect(result).toEqual({
+        reason: 'coupon_mismatch',
+        claim: expect.objectContaining({ couponId: 'coupon-1' }),
+      });
+      // Only the lookup ran - the mismatched claim was never touched.
+      expect(query).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses as coupon_mismatch even for an already-redeemed claim on a different coupon', async () => {
+      const { executor, query } = fakeExecutor();
+      query.mockResolvedValueOnce({ rows: [claimRow({ status: 'redeemed', coupon_id: 'coupon-1' })] });
+
+      const result = await markRedeemed({ ...input, expectedCouponId: 'coupon-999' }, executor);
+
+      expect(result.reason).toBe('coupon_mismatch');
+    });
+
+    it('skips the cross-check entirely when the caller has no expectedCouponId to give', async () => {
+      const { executor, query } = fakeExecutor();
+      query
+        .mockResolvedValueOnce({ rows: [claimRow({ status: 'attributed', coupon_id: 'coupon-1' })] })
+        .mockResolvedValueOnce({ rows: [claimRow({ status: 'redeemed' })] });
+
+      const result = await markRedeemed(input, executor);
+
+      expect(result.reason).toBe('ok');
+    });
+  });
 });
 
 describe('releaseClaim: attributed -> released, and the illegal transitions', () => {

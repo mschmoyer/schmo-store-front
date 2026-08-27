@@ -52,18 +52,32 @@ deliberately kept apart. Do not merge a code path across them.
    a client bundle is unrecoverable. Do not route around it.
 10. **Keep `HANDLED_EVENT_TYPES` and the event matrix in `docs/payments.md` in sync.** They drift
     silently otherwise.
+11. **Never set `max_redemptions` on a platform signup coupon's Stripe object.** The
+    `platform_coupon_redemptions` ledger is the cap; Stripe only prices. A second counter there
+    would drift from ours the first time a checkout session is abandoned after the discount attached.
+12. **A platform signup coupon's economics are immutable the instant it has a `stripe_coupon_id`.**
+    Stripe coupons cannot be edited, so `percentOff` / `durationMonths` / `collectPaymentMethod` are
+    refused by `updatePlatformCoupon()` in every patch, not merely after the first redemption. Fix a
+    pre-redemption typo by deactivating the row and creating a new code — never by patching the row
+    Stripe already resolved.
 
 ## How the pieces fit
 
 ```
 Flow A — platform billing ───────────────────────────────────────────────────
-  /admin/billing → POST /api/billing/checkout
+  /admin/billing → POST /api/billing/checkout { couponCode? }
       → ensurePlatformPlan()            product + price + repeating intro coupon
+      → resolve one discount, highest first:
+            couponCode in this request  → ensureStripeCouponFor() (lazy resolve-or-create)
+            coupon already attributed   → resolveActiveClaim()
+            neither                     → the intro coupon
       → stripe.checkout.sessions.create (mode: 'subscription', discounts: [{coupon}])
       → merchant pays on Stripe
-      → webhook: customer.subscription.* / invoice.*  → subscriptions (mirror)
+      → webhook: checkout.session.completed  → subscriptions (mirror)
+                                              → platform coupon? attributed → redeemed
+                webhook: customer.subscription.* / invoice.*  → subscriptions (mirror)
   POST /api/billing/portal → stripe.billingPortal.sessions.create  (card, invoices, cancel)
-  GET  /api/billing/status → plan, price now, price later, next charge, configured?
+  GET  /api/billing/status → plan, price now, price later, next charge, which discount, configured?
 
 Flow B — storefront checkout ────────────────────────────────────────────────
   /store/<slug>/checkout
@@ -109,10 +123,14 @@ Connect (payouts to merchants) ────────────────�
 | `billing/checkout-sessions.ts` | The server-priced snapshot the webhook consumes. | Recompute prices in the webhook. |
 | `billing/orders.ts` | `createPaidOrder` — order + items + inventory, one transaction. `recordRefund`. | Split it across transactions. |
 | `billing/payment-accounts.ts` | Connect mirror, `computeApplicationFeeCents`. | |
-| `billing/subscriptions.ts` | Subscription mirror, `isEntitled`, invoice outcomes. | |
+| `billing/subscriptions.ts` | Subscription mirror, `isEntitled`, invoice outcomes. `readIntroDiscount` also resolves an unexpanded coupon id against `platform_coupons` before giving up — see "The intro offer" gap below. | |
 | `billing/webhook-events.ts` | The idempotency ledger: claim / handled / failed. | Act before claiming. |
-| `billing/coupon-claims.ts` | The platform-coupon claim lifecycle (flow A, `docs/plans/platform-coupons.md` §6): `attributeCoupon`, `markRedeemed`, `releaseExpiredClaims`, `resolveActiveClaim`, `backfillStoreId`. | Write `platform_coupon_redemptions.status` anywhere else. |
-| `webhooks/stripe/_lib/platform-coupon-redemption.ts` | Redemption close-out: reads a platform coupon off a subscription's discount and calls `coupon-claims.ts`'s `markRedeemed`. Called from `checkout.session.completed`'s platform-billing branch only. | Throw. Every failure is caught and reported as a typed outcome — a coupon problem must never fail the webhook. |
+| `billing/platform-coupons.ts` | The pure signup-coupon model (flow A, `docs/plans/platform-coupons.md` §2): normalisation, `describePlatformCoupon`, `isRedeemable`, `requiresPaymentMethod`, `computeDiscountedPriceCents`/`computeDiscountEndsAt`. No Stripe, no database — same shape as `intro-offer.ts`. | Re-derive this arithmetic inline anywhere else, including `/pricing`. |
+| `billing/coupon-codes.ts` | Signup-code generation: `node:crypto`'s `randomInt` (never `Math.random`), an alphabet with `0/O/1/I/L` removed (~4.95 bits/char — documented rather than rounded up to a flattering 5). | |
+| `billing/coupon-windows.ts` | The three window constants — `PLATFORM_CLAIM_RESERVATION_DAYS`, `PLATFORM_DISCOUNT_WARNING_DAYS`, `PLATFORM_DISCOUNT_GRACE_DAYS` — in a module with zero imports, so a client component (the dashboard's reservation banner) can read them without dragging in `pg` via `coupon-claims.ts`. `coupon-claims.ts` and `discount-notice.ts` re-export from here under their historical names. | Duplicate one of these three numbers anywhere, with or without a comment pointing back here. |
+| `billing/discount-notice.ts` | The `/admin` / `/admin/billing` free-window alert ladder as one pure function, `resolveDiscountNotice(discountEndsAt, hasPaymentMethod, now, status)` — plan §5.1/§5.2. Never produces a grace state with a card on file: Stripe's own dunning is that grace. | Fold the reservation clock (`attributed_at`) into this — it only ever reads `discount_ends_at`. |
+| `billing/coupon-claims.ts` | The platform-coupon claim lifecycle (flow A, `docs/plans/platform-coupons.md` §6): `attributeCoupon`, `markRedeemed`, `releaseClaim`, `releaseExpiredClaims`, `resolveActiveClaim`, `backfillStoreId`. | Write `platform_coupon_redemptions.status` anywhere else. |
+| `webhooks/stripe/_lib/platform-coupon-redemption.ts` | Redemption close-out: reads a platform coupon off a subscription's discount (falling back to `coupons.retrieve` when it arrives unexpanded) and calls `coupon-claims.ts`'s `markRedeemed`. Called from `checkout.session.completed`'s platform-billing branch only — see "Platform signup coupons" below for why not `customer.subscription.created`. | Throw. Every failure is caught and reported as a typed outcome — a coupon problem must never fail the webhook. |
 
 ## Outbound API surface (Stripe SDK)
 
@@ -125,13 +143,15 @@ Every call in the codebase, and where it lives:
 | `coupons.retrieve` / `coupons.create` | `stripe/prices.ts` (intro, repeating) | A |
 | `coupons.create` | `stripe/discounts.ts` (one-time, storefront) | B |
 | `coupons.retrieve` / `coupons.create` | `stripe/platform-coupons.ts` (signup coupon, repeating/forever) | A |
+| `coupons.retrieve` | `webhooks/stripe/_lib/platform-coupon-redemption.ts` (fallback when a subscription's discount arrives as an unexpanded coupon id) | A |
 | `customers.create` | `api/billing/checkout/route.ts` | A |
-| `checkout.sessions.create` | `api/billing/checkout/route.ts` (mode `subscription`) | A |
+| `checkout.sessions.create` | `api/billing/checkout/route.ts` (mode `subscription`, carrying exactly one discount — a platform coupon or the intro offer) | A |
 | `checkout.sessions.create` | `api/checkout/session/route.ts` (mode `payment`) | B |
 | `checkout.sessions.retrieve` | `api/checkout/confirm/route.ts` | B |
 | `subscriptions.retrieve` | `api/webhooks/stripe/route.ts` (two handlers) | A |
-| `subscriptions.list` | `api/billing/status/route.ts` | A |
+| `subscriptions.list` | `api/billing/status/route.ts` (now with `expand: ['data.discounts']` — see "The intro offer" below) | A |
 | `billingPortal.sessions.create` | `api/billing/portal/route.ts` | A |
+| `paymentMethods.list` | `api/billing/coupon/notice/route.ts` (card-on-file check, for the `/admin` alert ladder) | A |
 | `accounts.create` / `accounts.retrieve` / `accounts.createLoginLink` | `stripe/connect.ts` | Connect |
 | `accountLinks.create` | `stripe/connect.ts` | Connect |
 | `webhooks.constructEvent` | `stripe/webhooks.ts` | both |
@@ -145,9 +165,11 @@ snapshot rows, and never calls Stripe.
 | Method | Route | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/webhooks/stripe` | Stripe signature | The only webhook endpoint, for both flows. |
-| POST | `/api/billing/checkout` | `requireMerchant` | Subscription Checkout Session with the intro coupon. |
+| POST | `/api/billing/checkout` | `requireMerchant` | Subscription Checkout Session carrying exactly one discount: an optional `couponCode` in the request, else a coupon already attributed to this user, else the intro coupon. |
+| POST | `/api/billing/coupon/preview` | `requireMerchant`, rate-limited (20 / 10 min / user) | Validate and describe a platform coupon code. **Writes nothing** — a preview that consumed a single-use code would burn it on a typo-and-retry. |
+| GET | `/api/billing/coupon/notice` | `requireMerchant` | Which of the two coupon clocks ("Platform signup coupons" below) the merchant's live claim is on, plus card-on-file, for the `/admin` alert ladder. Read-only. |
 | POST | `/api/billing/portal` | `requireMerchant` | Billing Portal URL. Cancellation happens entirely in Stripe. |
-| GET | `/api/billing/status` | `requireMerchant` | Plan, price now, price later, next charge, `configured`. Never throws on a missing key. |
+| GET | `/api/billing/status` | `requireMerchant` | Plan, price now, price later, next charge, `configured`, and now *which* discount is live — a platform coupon by name, or the intro offer. Never throws on a missing key. |
 | POST | `/api/checkout/quote` | public | Server-authoritative pricing preview. Same logic as `session`, creates nothing. |
 | POST | `/api/checkout/session` | public | The storefront charge. Free carts complete here without Stripe. |
 | GET | `/api/checkout/confirm?session_id=` | public | Resolves the session against our tables; consults Stripe only to tell "paid, webhook pending" from "never paid". |
@@ -159,6 +181,11 @@ snapshot rows, and never calls Stripe.
 `/api/connect/return` and `/api/connect/refresh` are browser navigations, so they cannot require the
 bearer token the API routes use. That is intentional; neither one trusts its own invocation as proof
 of anything.
+
+Not in this table because they never call Stripe: `GET /join/[code]` (sets the signup cookie),
+`/api/platform/coupons*` (the operator console's CRUD), and the coupon attribution on
+`POST /api/onboarding/account` / `POST /api/onboarding/store`. Out of this file's declared scope —
+see `docs/platform-admin.md` and `docs/plans/platform-coupons.md` §9 for their full route tables.
 
 ## Webhook events
 
@@ -184,6 +211,57 @@ it into a schedule without reading that.
 Constants live in `billing/intro-offer.ts` (`PLATFORM_LIST_AMOUNT_CENTS`,
 `PLATFORM_INTRO_AMOUNT_CENTS`, `PLATFORM_INTRO_MONTHS`). Derive from those in code; never inline a
 literal. The figures above are documentation, and will go stale before the constants do.
+
+**A platform signup coupon replaces this offer outright** rather than stacking with it — see
+"Platform signup coupons" below. `readIntroDiscount()` (`billing/subscriptions.ts`) used to write
+`intro_ends_at = NULL` for any coupon that was not the one well-known intro coupon, because its
+unexpanded-coupon branch treated an unrecognised string id as "no discount" rather than looking it
+up. It now checks `platform_coupons.stripe_coupon_id` before giving up, and `GET
+/api/billing/status` expands `discounts` on every subscription read so the string branch is hit far
+less often in the first place. Fixed as part of the coupon work, not a coupon-only bug: any future
+coupon type reaching this function unexpanded would have hit it too.
+
+## Platform signup coupons
+
+Flow A only — `docs/plans/platform-coupons.md` is the spec, `docs/payments.md` §8 is the longer
+narrative. This section is the contract: what a change here must not break.
+
+* **Resolved lazily, once, keyed on our UUID.** `ensureStripeCouponFor()` creates a coupon's Stripe
+  object the first time it is actually used at `POST /api/billing/checkout` — never when an operator
+  creates the row in `/platform/coupons`. A deterministic id derived from the row's UUID makes a
+  retry idempotent, and a coupon deleted out from under us in the Stripe dashboard is recreated
+  rather than wedging the feature.
+* **Immutable the instant it has a `stripe_coupon_id`.** Stripe coupons cannot be edited, so
+  `updatePlatformCoupon()` refuses `percentOff` / `durationMonths` / `collectPaymentMethod` in every
+  patch — this is stricter than `docs/plans/platform-coupons.md`'s original "immutable after the
+  first redemption," corrected once the code shipped this way. A pre-redemption typo is fixed by
+  deactivating the row and creating a new code.
+* **`collect_payment_method: false` becomes `payment_method_collection: 'if_required'`**, and only
+  changes anything at `percent_off = 100` — a partial discount still owes something today and Stripe
+  collects a card regardless. `requiresPaymentMethod()` (`billing/platform-coupons.ts`) is the one
+  place that answers "will Checkout ask for a card", and `/pricing` calls it too so a `/join` link's
+  promise and the price quoted before signup never disagree.
+* **The redemption ledger has three states — `attributed` → `redeemed`, or → `released`** — owned
+  entirely by `billing/coupon-claims.ts`. `redeemed` is terminal: `releaseClaim()` refuses to release
+  a redeemed claim, because that would misrepresent money that already moved as a reservation that
+  quietly expired. The daily sweep (`GET /api/cron/coupon-sweep`, `vercel.json`) only ever releases
+  claims still `attributed` past `PLATFORM_CLAIM_RESERVATION_DAYS`.
+* **Two clocks, two constants, never one.** `PLATFORM_CLAIM_RESERVATION_DAYS` (from `attributed_at`)
+  decides when an unconverted reservation frees its seat; `PLATFORM_DISCOUNT_WARNING_DAYS` /
+  `PLATFORM_DISCOUNT_GRACE_DAYS` (from `discount_ends_at`) decide when and how long `/admin`'s alert
+  ladder speaks up. All three live in `billing/coupon-windows.ts`, which imports nothing, precisely so
+  a client component can read them without pulling `pg` in through `coupon-claims.ts`.
+* **`checkout.session.completed` closes the redemption, not `customer.subscription.created`.**
+  Stripe fires both for a new subscription; the close-out rides the handler that already retrieves
+  the subscription with `expand: ['discounts']` and already resolves `owner_id` from session
+  metadata, so it costs no extra Stripe call and cannot disagree with the subscription mirror about
+  whose subscription this is. `customer.subscription.updated` is never wired to it — `markRedeemed`
+  is a no-op on an already-`redeemed` claim, so there is nothing to gain by calling it again on every
+  renewal.
+* **Grace is messaging, never enforcement.** `resolveDiscountNotice()` never returns a grace state
+  with a card on file (Stripe's own dunning already is the grace, and `isEntitled()` already counts
+  `past_due` as entitled). Nothing in this codebase disables a storefront for non-payment — coupon or
+  otherwise — so a no-card coupon's expiry banner is advisory, not a lock.
 
 ## Connect and fees
 
@@ -217,6 +295,8 @@ A non-zero total below Stripe's $0.50 minimum is a different case and still retu
 | `orders` / `order_items` | B | Written by `createPaidOrder`, one transaction with the inventory movement. |
 | `webhook_events` | both | Idempotency ledger. `event_id` unique; duplicate delivery is a no-op. |
 | `coupons` | B | Storefront discount codes, converted to one-time Stripe Coupons at checkout. |
+| `platform_coupons` | A | The operator's signup offers, migration `042_platform_coupons.sql`. `stripe_coupon_id` is the only Stripe fact on the row, filled in lazily. Not a Stripe mirror otherwise — this table is the truth for eligibility and counting, Stripe is the truth for money. |
+| `platform_coupon_redemptions` | A | The claim ledger: `attributed` / `redeemed` / `released`, one live claim per user, `ON DELETE RESTRICT` on the coupon. `discount_ends_at` here (not on `subscriptions`) is what `discount-notice.ts` and `/api/billing/coupon/notice` read. |
 
 ## Environment
 
@@ -237,7 +317,16 @@ A non-zero total below Stripe's $0.50 minimum is a different case and still retu
 - `src/lib/stripe/__tests__/connect.test.ts` — `business_profile.url` omitted for non-resolvable
   origins, `deriveOnboardingStatus` lifecycle ordering, and the `next=` return-path allowlist. All
   three cover bugs that reached production and were only found by running a real onboarding.
-- `src/lib/billing/__tests__/` — `cart`, `cart-pricing`, `coupons`, `intro-offer`, `webhook-events`.
+- `src/lib/billing/__tests__/` — `cart`, `cart-pricing`, `coupons`, `intro-offer`, `webhook-events`,
+  `subscriptions` (the `readIntroDiscount` fix), and the platform-coupon model: `platform-coupons`,
+  `coupon-codes`, `coupon-claims`, `discount-notice`.
+- `src/lib/stripe/__tests__/platform-coupons.test.ts` — `ensureStripeCouponFor` resolve-or-create,
+  the economics-disagreement throw, `deriveSubscriptionParams`'s `if_required` branch.
+- `src/app/api/billing/coupon/preview/__tests__/decide.test.ts`, `src/app/api/webhooks/stripe/__tests__/route.test.ts`
+  (redemption close-out, including duplicate delivery as a no-op), `src/app/api/cron/coupon-sweep/__tests__/`
+  and `src/app/api/cron/_lib/__tests__/coupon-sweep-job.test.ts`.
+- `src/components/admin/__tests__/DiscountNoticeAlert.test.tsx`,
+  `CouponReservationBanner.test.tsx` — the two clocks rendered, not just computed.
 - Local end-to-end with the Stripe CLI: `docs/payments.md` §6 has the full script, including the
   idempotency proof (resend one event id twice; expect `{"received":true,"duplicate":true}` and
   exactly one order).
@@ -245,7 +334,7 @@ A non-zero total below Stripe's $0.50 minimum is a different case and still retu
 
 ## Known gaps
 
-Re-verified against the code, and kept in step with `docs/payments.md` §8. Struck-through entries
+Re-verified against the code, and kept in step with `docs/payments.md` §9. Struck-through entries
 have since been fixed and are kept so the list reads as history.
 
 - **Tax is always zero.** `computeTaxCents()` returns `0`. Nothing computes, collects or remits tax.
@@ -267,6 +356,13 @@ have since been fixed and are kept so the list reads as history.
   last unit; the loser's payment succeeds, the order write fails loudly, the event lands `failed`
   in `webhook_events` for an operator. There is no automatic refund.
 - **Single subscription per owner; no proration or plan changes.** One plan, one store per merchant.
+- **A platform coupon cannot be applied to an already-active subscription.** It attaches at
+  subscribe time only; discounting someone already paying would need `subscriptions.update` with a
+  discount and a proration decision.
+- **A no-card coupon's only route to a payment method is the `/admin` banner, and there is no email
+  behind it.** A merchant who never signs in during the last 30 days of a no-card coupon's window is
+  never told, and the subscription lapses into unpayable dunning silently. See "Platform signup
+  coupons" above and `docs/plans/platform-coupons.md` §13.
 - ~~Free orders are rejected~~ — **fixed.** See [Free ($0) orders](#free-0-orders).
 - ~~The storefront coupon validate route joins a dropped `discounts` table~~ — **fixed.**
   `POST /api/store/[storeId]/coupons/validate` no longer references it.

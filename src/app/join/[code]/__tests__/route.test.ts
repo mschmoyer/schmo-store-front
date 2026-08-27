@@ -31,6 +31,8 @@ jest.mock('../../../../lib/database/connection', () => ({
 }));
 
 import { NextRequest } from 'next/server';
+import { db } from '@/lib/database/connection';
+import { resetRateLimits } from '@/lib/ai/rate-limit';
 import {
   GET,
   PLATFORM_COUPON_COOKIE,
@@ -61,6 +63,13 @@ function lookupReturning(result: PlatformCoupon | null): PlatformCouponLookup {
 }
 
 const NOW = new Date('2026-08-27T00:00:00Z');
+
+// The rate limiter (`src/lib/ai/rate-limit.ts`) keeps its counts in a module-level `Map` that
+// outlives any one `it()`. Resetting before every test keeps this file's tests independent of each
+// other and of run order, rather than relying on distinct IPs alone.
+beforeEach(() => {
+  resetRateLimits();
+});
 
 describe('decideJoin: the decision table', () => {
   it('valid: sets the cookie and redirects with the confirmation query param', async () => {
@@ -176,5 +185,85 @@ describe('GET /join/[code]: wiring the decision into a response', () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('http://localhost:3000/create-store?coupon_error=unknown');
+  });
+});
+
+describe('GET /join/[code]: rate limiting by IP (staff review finding 4)', () => {
+  const VALID_ROW = {
+    id: 'coupon-1',
+    code: 'VALIDCODE',
+    code_normalized: 'VALIDCODE',
+    name: 'Launch friends, 1 year',
+    notes: null,
+    percent_off: 100,
+    duration_months: 12,
+    collect_payment_method: false,
+    max_redemptions: null,
+    redeemed_count: 0,
+    redeem_by: null,
+    is_active: true,
+    stripe_coupon_id: null,
+    created_by: null,
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-01T00:00:00Z'),
+  };
+
+  /** A request carrying an `x-forwarded-for` header, the way Vercel and most proxies set it. */
+  function requestFrom(ip: string, url: string): NextRequest {
+    return new NextRequest(url, { headers: { 'x-forwarded-for': ip } });
+  }
+
+  beforeEach(() => {
+    // A database that would say "yes, valid" every time — so the only thing that can turn a
+    // request into the failure redirect is the rate limiter itself, never the (stubbed) database
+    // disagreeing.
+    (db.query as unknown as ReturnType<typeof jest.fn>).mockResolvedValue({ rows: [VALID_ROW] });
+  });
+
+  it('lets an under-limit caller through to the real decision', async () => {
+    const response = await GET(requestFrom('203.0.113.5', 'http://localhost:3000/join/VALIDCODE'), {
+      params: Promise.resolve({ code: 'VALIDCODE' }),
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/create-store?coupon=VALIDCODE');
+    expect(response.cookies.get(PLATFORM_COUPON_COOKIE)?.value).toBe('VALIDCODE');
+  });
+
+  it('degrades to the ordinary failure redirect once one IP trips the limit — never a distinct response, and never reaching the database that would have said "valid"', async () => {
+    const ip = '203.0.113.9';
+    const url = 'http://localhost:3000/join/VALIDCODE';
+    const params = { params: Promise.resolve({ code: 'VALIDCODE' }) };
+
+    let last: Awaited<ReturnType<typeof GET>> | undefined;
+    // One more than the limit — the first 20 from this IP still see the real (valid) decision.
+    for (let i = 0; i < 21; i += 1) {
+      last = await GET(requestFrom(ip, url), params);
+    }
+
+    // Same shape as any other failed code: a 302 to the ordinary `coupon_error=unknown` redirect,
+    // with no cookie — a distinguishable "you've been rate limited" response would itself tell an
+    // attacker their guessing was noticed, which is exactly what plan §9's rate-limiting requirement
+    // is trying to avoid leaking.
+    expect(last?.status).toBe(302);
+    expect(last?.headers.get('location')).toBe('http://localhost:3000/create-store?coupon_error=unknown');
+    expect(last?.cookies.get(PLATFORM_COUPON_COOKIE)).toBeUndefined();
+  });
+
+  it('scopes the limit per IP: a fresh address is unaffected by another IP being exhausted', async () => {
+    const exhaustedIp = '203.0.113.10';
+    const freshIp = '203.0.113.11';
+    const url = 'http://localhost:3000/join/VALIDCODE';
+    const params = { params: Promise.resolve({ code: 'VALIDCODE' }) };
+
+    for (let i = 0; i < 25; i += 1) {
+      await GET(requestFrom(exhaustedIp, url), params);
+    }
+
+    const response = await GET(requestFrom(freshIp, url), params);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/create-store?coupon=VALIDCODE');
+    expect(response.cookies.get(PLATFORM_COUPON_COOKIE)?.value).toBe('VALIDCODE');
   });
 });

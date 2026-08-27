@@ -6,17 +6,20 @@
  *
  * `../../database/connection` is stubbed below purely to dodge an import-time crash: the real
  * module drags in `pg`, which touches `TextEncoder` and throws under the jsdom test environment.
- * Nothing here calls the stub — every function under test gets the fake `Queryable` below instead
- * of its `db` default.
+ * Most functions under test get the fake `Queryable` below instead of the stub's `db` default —
+ * `listRedemptions` is the exception, because it calls `platform/customers.ts`'s `describeScope`,
+ * which reads the real (here, stubbed) `db` directly rather than through an injected executor.
  */
 jest.mock('../../database/connection', () => ({
   db: { query: jest.fn(), transaction: jest.fn(), initialize: jest.fn() },
 }));
 
+import { db } from '../../database/connection';
 import {
   createPlatformCoupon,
   derivePlatformCouponStatus,
   listPlatformCoupons,
+  listRedemptions,
   type PlatformCouponRecord,
   type Queryable,
   updatePlatformCoupon,
@@ -211,5 +214,93 @@ describe('updatePlatformCoupon: economics are refused, never silently dropped', 
     const result = await updatePlatformCoupon('missing', { name: 'X' }, executor);
 
     expect(result).toEqual({ reason: 'not_found' });
+  });
+});
+
+describe('listRedemptions: the subscription-status join (staff review finding 13)', () => {
+  it('surfaces subscriptions.status from a LEFT JOIN, never dropping it', async () => {
+    const { executor, query } = fakeExecutor();
+    // listRedemptions' own two queries: the total count, then the page of rows.
+    query
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'redemption-1',
+            status: 'redeemed',
+            source: 'link',
+            attributed_at: new Date('2026-08-01T00:00:00Z'),
+            redeemed_at: new Date('2026-08-02T00:00:00Z'),
+            released_at: null,
+            release_reason: null,
+            stripe_subscription_id: 'sub_123',
+            stripe_coupon_id: 'coupon_stripe_1',
+            discount_ends_at: new Date('2027-08-02T00:00:00Z'),
+            coupon_id: 'coupon-1',
+            coupon_code: 'FRIENDS12',
+            coupon_name: 'Launch friends, 1 year',
+            user_id: 'user-1',
+            user_email: 'friend@example.com',
+            user_first_name: 'Friend',
+            user_last_name: 'Person',
+            store_id: 'store-1',
+            store_name: "Friend's Shop",
+            store_is_demo: false,
+            subscription_status: 'active',
+          },
+        ],
+      });
+    // `describeScope` reads the real `db` (not the injected executor) for its demo-store count —
+    // see the module note on why this module duplicates `Queryable` rather than sharing it.
+    (db.query as ReturnType<typeof jest.fn>).mockResolvedValueOnce({ rows: [{ demo_stores: '0' }] });
+
+    const result = await listRedemptions({}, executor);
+
+    expect(result.redemptions).toHaveLength(1);
+    expect(result.redemptions[0].subscriptionStatus).toBe('active');
+
+    // The row query must actually ask for it via a LEFT (never INNER) join, or an attributed claim
+    // with no subscription yet would silently vanish from the page.
+    const rowsQuerySql = query.mock.calls[1][0] as string;
+    expect(rowsQuerySql).toMatch(/LEFT JOIN subscriptions sub ON sub\.stripe_subscription_id/);
+    expect(rowsQuerySql).toMatch(/sub\.status AS subscription_status/);
+  });
+
+  it('is null when the claim has no subscription (attributed, or not yet synced)', async () => {
+    const { executor, query } = fakeExecutor();
+    query
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'redemption-2',
+            status: 'attributed',
+            source: 'link',
+            attributed_at: new Date('2026-08-01T00:00:00Z'),
+            redeemed_at: null,
+            released_at: null,
+            release_reason: null,
+            stripe_subscription_id: null,
+            stripe_coupon_id: null,
+            discount_ends_at: null,
+            coupon_id: 'coupon-1',
+            coupon_code: 'FRIENDS12',
+            coupon_name: 'Launch friends, 1 year',
+            user_id: 'user-2',
+            user_email: 'other@example.com',
+            user_first_name: null,
+            user_last_name: null,
+            store_id: null,
+            store_name: null,
+            store_is_demo: null,
+            subscription_status: null,
+          },
+        ],
+      });
+    (db.query as ReturnType<typeof jest.fn>).mockResolvedValueOnce({ rows: [{ demo_stores: '0' }] });
+
+    const result = await listRedemptions({}, executor);
+
+    expect(result.redemptions[0].subscriptionStatus).toBeNull();
   });
 });

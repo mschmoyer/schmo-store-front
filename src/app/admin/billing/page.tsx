@@ -399,6 +399,11 @@ function BillingContent(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | 'checkout' | 'portal' | 'connect'>(null);
   const [error, setError] = useState<string | null>(null);
+  // Distinct from `loading` (which only covers the very first fetch, for the full-page skeleton):
+  // this tracks a manual retry from the "Your plan" panel's error state (finding 5) so that button
+  // can show its own busy state without resurrecting the skeleton over content that may still be
+  // valid (e.g. the "Getting paid" panel, which loads independently).
+  const [retryingBilling, setRetryingBilling] = useState(false);
 
   // The "Have a coupon code?" box (plan §4B). Collapsed by default; `couponPreview` is only ever
   // set by a successful, explicit `POST /api/billing/coupon/preview` call — never inferred — so
@@ -439,6 +444,16 @@ function BillingContent(): React.ReactElement {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  /** Retries the failed initial load from the "Your plan" panel's own error state (finding 5). */
+  const retryBilling = useCallback(async () => {
+    setRetryingBilling(true);
+    try {
+      await load();
+    } finally {
+      setRetryingBilling(false);
+    }
   }, [load]);
 
   const post = useCallback(
@@ -599,12 +614,30 @@ function BillingContent(): React.ReactElement {
       <Panel
         title="Your plan"
         description={
-          subscription
-            ? undefined
-            : (pendingOffer?.description ?? 'RebelShops Storefront')
+          !billing
+            ? 'We could not load your plan.'
+            : subscription
+              ? undefined
+              : (pendingOffer?.description ?? 'RebelShops Storefront')
         }
       >
-        {subscription ? (
+        {/* Finding 5 of the staff review: when `GET /api/billing/status` fails, `billing` stays
+            `null` and — before this — the error banner above rendered *and* this panel fell through
+            to the not-yet-subscribed branch with every field on a `??` fallback, including a
+            "Subscribe for $1.00" button on a checkout that would have charged whatever the real,
+            unknown price is. Nobody should ever see a specific price this page has no evidence for,
+            coupon merchant or not, so a failed load gets a retry here instead of a guess. */}
+        {!billing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+            <p style={{ color: TOKENS.ink700, fontSize: '0.9375rem', margin: 0 }}>
+              Something went wrong loading your billing status. Your plan and price are not shown
+              until this succeeds — nothing below was charged or changed.
+            </p>
+            <SecondaryButton onClick={() => void retryBilling()} disabled={retryingBilling}>
+              {retryingBilling ? 'Retrying…' : 'Retry'}
+            </SecondaryButton>
+          </div>
+        ) : subscription ? (
           <>
             <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <StatusPill
@@ -725,8 +758,28 @@ function BillingContent(): React.ReactElement {
                     background: TOKENS.sunken,
                   }}
                 >
+                  {/* Visually hidden, not absent: the placeholder alone left this input with no
+                      accessible name once a screen reader hides placeholder text on focus, or a
+                      browser that never announces it in the first place (finding 10). */}
+                  <label
+                    htmlFor="billing-coupon-code"
+                    style={{
+                      position: 'absolute',
+                      width: 1,
+                      height: 1,
+                      padding: 0,
+                      margin: -1,
+                      overflow: 'hidden',
+                      clip: 'rect(0, 0, 0, 0)',
+                      whiteSpace: 'nowrap',
+                      border: 0,
+                    }}
+                  >
+                    Coupon code
+                  </label>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <input
+                      id="billing-coupon-code"
                       type="text"
                       value={couponInput}
                       onChange={(event) => {
@@ -753,14 +806,23 @@ function BillingContent(): React.ReactElement {
                       {couponBusy ? 'Checking…' : 'Apply'}
                     </SecondaryButton>
                   </div>
+                  {/* Announced, not just visible: this text is the whole reason the box exists —
+                      "did that code work" — so a screen-reader user gets the same answer a sighted
+                      one sees appear, without polling (finding 10). */}
                   {couponPreview ? (
-                    <p style={{ color: TOKENS.mint500, fontSize: '0.875rem', margin: '10px 0 0' }}>
+                    <p
+                      role="status"
+                      style={{ color: TOKENS.mint500, fontSize: '0.875rem', margin: '10px 0 0' }}
+                    >
                       {couponPreview.name}: {couponPreview.offer}
                       {couponPreview.requiresPaymentMethod ? '' : ' — no card required'}.
                     </p>
                   ) : null}
                   {couponError ? (
-                    <p style={{ color: TOKENS.rose500, fontSize: '0.875rem', margin: '10px 0 0' }}>
+                    <p
+                      role="alert"
+                      style={{ color: TOKENS.rose500, fontSize: '0.875rem', margin: '10px 0 0' }}
+                    >
                       {couponError}
                     </p>
                   ) : null}
@@ -778,13 +840,17 @@ function BillingContent(): React.ReactElement {
               }
               disabled={busy !== null || !billing?.configured}
             >
-              {busy === 'checkout'
-                ? 'Starting…'
-                : `Subscribe for ${
-                    couponPreview?.amountDueTodayFormatted ??
-                    pendingOffer?.amountDueTodayFormatted ??
-                    '$1.00'
-                  }`}
+              {(() => {
+                if (busy === 'checkout') return 'Starting…';
+                // No hardcoded price (finding 5: the old `?? '$1.00'` fallback was the exact
+                // "Subscribe for $1.00" on a $0.00 checkout the plan's §5.3 was written to close,
+                // and it is wrong for every non-default offer, not just a coupon). Reaching this
+                // branch at all means `billing` loaded successfully, so `pendingOffer` should be
+                // present — but if it somehow is not, the honest label is one with no invented
+                // number on it, never a guessed price.
+                const amount = couponPreview?.amountDueTodayFormatted ?? pendingOffer?.amountDueTodayFormatted;
+                return amount ? `Subscribe for ${amount}` : 'Subscribe';
+              })()}
             </PrimaryButton>
           </>
         )}

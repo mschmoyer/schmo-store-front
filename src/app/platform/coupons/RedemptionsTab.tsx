@@ -12,14 +12,23 @@
  * infer it from a suspiciously round total.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { IconUsers } from '@tabler/icons-react';
 import { TableSkeleton } from '@/components/admin/AdminSkeletons';
-import { EmptyState, Switch } from '@/components/ui';
+import { Button, EmptyState, Switch } from '@/components/ui';
 import { PaginationBar, PlatformErrorState, usePlatformFetch } from '@/components/platform/customers';
 import { REDEMPTION_STATUS_FILTERS } from './useCouponsParams';
-import type { PlatformCouponClaimStatus, PlatformRedemptionsPayload } from './types';
+import type {
+  PlatformCouponClaimStatus,
+  PlatformRedemptionApiItem,
+  PlatformRedemptionsPayload,
+} from './types';
 import styles from './coupons.module.css';
+
+/** Session-carried admin bearer token, matching `CouponsTab`'s own read of it. */
+function adminToken(): string | null {
+  return typeof window === 'undefined' ? null : window.localStorage.getItem('admin_token');
+}
 
 const STATUS_LABEL: Record<PlatformCouponClaimStatus, string> = {
   attributed: 'Attributed',
@@ -48,6 +57,128 @@ export interface RedemptionsTabProps {
   onPageChange: (page: number) => void;
   includeDemo: boolean;
   onIncludeDemoChange: (value: boolean) => void;
+}
+
+/**
+ * One redemption row, with the release action for an `attributed` claim (staff review finding 2:
+ * `releaseClaim` existed and was tested but reachable from no route and no UI, so a coupon leaked
+ * publicly left an operator with no way to stop pending claims).
+ *
+ * @param props.redemption - The row.
+ * @param props.onReleased - Called after a successful release, so the caller can reload the list.
+ * @returns The row.
+ */
+function RedemptionRow({
+  redemption,
+  onReleased,
+}: {
+  redemption: PlatformRedemptionApiItem;
+  onReleased: () => void;
+}): React.ReactElement {
+  const [releasing, setReleasing] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
+
+  const handleRelease = useCallback(async () => {
+    if (
+      !window.confirm(
+        `Release ${redemption.user.email}'s claim on ${redemption.coupon.code}? This frees the seat; it does not notify them.`
+      )
+    ) {
+      return;
+    }
+
+    setReleasing(true);
+    setRowError(null);
+    try {
+      const token = adminToken();
+      const response = await fetch(`/api/platform/coupons/redemptions/${redemption.id}/release`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { success?: boolean; error?: string }
+        | null;
+
+      if (!response.ok || payload?.success !== true) {
+        setRowError(payload?.error || 'Could not release this claim.');
+        return;
+      }
+      onReleased();
+    } catch {
+      setRowError('Could not reach the server.');
+    } finally {
+      setReleasing(false);
+    }
+  }, [onReleased, redemption.coupon.code, redemption.id, redemption.user.email]);
+
+  return (
+    <tr className={styles.row}>
+      <td>
+        <div className={styles.nameCell}>
+          <span>{redemption.user.name}</span>
+          <span className={styles.notes}>{redemption.user.email}</span>
+        </div>
+      </td>
+      <td>
+        {redemption.store ? (
+          <span>
+            {redemption.store.name}
+            {redemption.store.isDemo ? <span className={styles.demoTag}> (demo)</span> : null}
+          </span>
+        ) : (
+          <span className={styles.notes}>Not created yet</span>
+        )}
+      </td>
+      <td>
+        <span className={styles.code}>{redemption.coupon.code}</span>
+      </td>
+      <td>
+        <span className={styles.statusTag} data-status={redemption.status}>
+          {STATUS_LABEL[redemption.status]}
+        </span>
+        {redemption.status === 'released' && redemption.releaseReason ? (
+          <span className={styles.notes}> ({redemption.releaseReason.replace(/_/g, ' ')})</span>
+        ) : null}
+      </td>
+      <td>{formatDate(redemption.attributedAt)}</td>
+      <td>{formatDate(redemption.redeemedAt)}</td>
+      {/* Only a `redeemed` claim's window has a real "Forever"; `discount_ends_at` is NULL for
+          every `attributed` and `released` row for the unrelated reason that it hasn't been set
+          yet, not because the offer runs forever (staff review finding 6). */}
+      <td>
+        {redemption.status === 'redeemed'
+          ? redemption.discountEndsAt
+            ? formatDate(redemption.discountEndsAt)
+            : 'Forever'
+          : '—'}
+      </td>
+      {/* Phase 6 promised this and it never landed: without it an operator cannot tell a running
+          free year from one that lapsed and was cancelled (staff review finding 13). Only a
+          `redeemed` claim ever has a Stripe subscription to report on. */}
+      <td>
+        {redemption.subscriptionStatus ? (
+          <span className={styles.statusTag}>{redemption.subscriptionStatus.replace(/_/g, ' ')}</span>
+        ) : (
+          <span className={styles.notes}>—</span>
+        )}
+      </td>
+      <td>
+        {redemption.status === 'attributed' ? (
+          <Button variant="ghost" size="sm" onClick={handleRelease} loading={releasing}>
+            Release
+          </Button>
+        ) : (
+          <span className={styles.notes}>—</span>
+        )}
+        {rowError ? (
+          <p className={styles.rowError} role="alert">
+            {rowError}
+          </p>
+        ) : null}
+      </td>
+    </tr>
+  );
 }
 
 /**
@@ -83,13 +214,16 @@ export function RedemptionsTab({
   return (
     <div className={styles.tab}>
       <div className={styles.toolbar}>
-        <div className={styles.filterTabs} role="tablist" aria-label="Filter redemptions by status">
+        {/* A filter group, not a tab set — it narrows one table's rows rather than switching
+            between separate panels, so it wears `aria-pressed` toggle-button semantics rather than
+            `role="tab"`, which would obligate `aria-controls`, a `tabpanel` and roving-tabindex
+            arrow-key handling this control has no use for (staff review finding 10). */}
+        <div className={styles.filterTabs} role="group" aria-label="Filter redemptions by status">
           {REDEMPTION_STATUS_FILTERS.map((option) => (
             <button
               key={option.value}
               type="button"
-              role="tab"
-              aria-selected={status === option.value}
+              aria-pressed={status === option.value}
               className={styles.filterTab}
               data-active={status === option.value || undefined}
               onClick={() => onStatusChange(option.value)}
@@ -122,7 +256,7 @@ export function RedemptionsTab({
       ) : null}
 
       {loading || !data ? (
-        <TableSkeleton rows={6} columns={6} label="Loading redemptions" />
+        <TableSkeleton rows={6} columns={9} label="Loading redemptions" />
       ) : data.redemptions.length === 0 ? (
         <EmptyState
           illustration={<IconUsers size={34} aria-hidden="true" />}
@@ -149,44 +283,13 @@ export function RedemptionsTab({
                   <th scope="col">Attributed</th>
                   <th scope="col">Redeemed</th>
                   <th scope="col">Discount ends</th>
+                  <th scope="col">Subscription</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.redemptions.map((redemption) => (
-                  <tr key={redemption.id} className={styles.row}>
-                    <td>
-                      <div className={styles.nameCell}>
-                        <span>{redemption.user.name}</span>
-                        <span className={styles.notes}>{redemption.user.email}</span>
-                      </div>
-                    </td>
-                    <td>
-                      {redemption.store ? (
-                        <span>
-                          {redemption.store.name}
-                          {redemption.store.isDemo ? (
-                            <span className={styles.demoTag}> (demo)</span>
-                          ) : null}
-                        </span>
-                      ) : (
-                        <span className={styles.notes}>Not created yet</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={styles.code}>{redemption.coupon.code}</span>
-                    </td>
-                    <td>
-                      <span className={styles.statusTag} data-status={redemption.status}>
-                        {STATUS_LABEL[redemption.status]}
-                      </span>
-                      {redemption.status === 'released' && redemption.releaseReason ? (
-                        <span className={styles.notes}> ({redemption.releaseReason.replace(/_/g, ' ')})</span>
-                      ) : null}
-                    </td>
-                    <td>{formatDate(redemption.attributedAt)}</td>
-                    <td>{formatDate(redemption.redeemedAt)}</td>
-                    <td>{redemption.discountEndsAt ? formatDate(redemption.discountEndsAt) : 'Forever'}</td>
-                  </tr>
+                  <RedemptionRow key={redemption.id} redemption={redemption} onReleased={reload} />
                 ))}
               </tbody>
             </table>

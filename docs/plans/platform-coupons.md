@@ -1,9 +1,9 @@
 # Plan: platform signup coupons
 
-**Status:** in build. **Phases 1-7 landed 2026-08-27.** The schema, the Stripe resolution, the
-operator console, the `/join` link, the billing attach, the redemption close-out and the merchant's
-alert ladder are all in and green: 1370 unit tests, 21 schema invariants, a keyless production
-build. Phase 8 (docs and `/pricing`) is outstanding, as is the staff review.
+**Status:** built. **Phases 1-8 landed 2026-08-27.** The schema, the Stripe resolution, the
+operator console, the `/join` link, the billing attach, the redemption close-out, the merchant's
+alert ladder, the docs and `/pricing` are all in and green: 1377 unit tests, 21 schema invariants, a
+keyless production build. The staff review is outstanding.
 **Goal:** hand a friend a link, they sign up, they get a year free, and the operator console can
 show who used what. Friends skip the card entirely; publicly-issued codes still take one.
 
@@ -548,14 +548,14 @@ Each phase leaves the tree green and shippable.
 
 | # | Phase | Contains |
 |---|---|---|
-| 1 | **Schema and model** | Migration 042, triggers, `db:verify` invariants, `billing/platform-coupons.ts`, `coupon-codes.ts` + unit tests. No UI, no Stripe. |
-| 2 | **Stripe resolution** | `stripe/platform-coupons.ts`, resolve-or-create, degrades cleanly with no `STRIPE_SECRET_KEY`. |
-| 3 | **Operator console** | `/platform/coupons`, both tabs, create + deactivate + copy-link. Coupons exist and are visible before anything can redeem one. |
-| 4 | **The link** | `/join/[code]`, the cookie, wizard banner (success *and* the honest failure), attribution at account creation, `store_id` backfill. |
-| 5 | **Billing attach** | Preview endpoint, the code box on `/admin/billing`, `couponCode` on checkout, precedence, `collect_payment_method` → `payment_method_collection`, `billing/status` vocabulary, **the `readIntroDiscount` fix**. |
-| 6 | **Redemption close-out** | Webhook `attributed` → `redeemed`, `discount_ends_at`, reservation sweep on cron, redemption tab shows live subscription status. |
-| 7 | **The merchant's experience** | §5 — the alert ladder on `/admin` and `/admin/billing`, `PLATFORM_DISCOUNT_GRACE_DAYS`, the named-offer row, and the vocabulary fix in §5.3. Messaging only; no entitlement enforcement. |
-| 8 | **Docs and polish** | Every doc in §8, `/pricing` quoting the link's offer. |
+| 1 ✅ | **Schema and model** | Migration 042, triggers, `db:verify` invariants, `billing/platform-coupons.ts`, `coupon-codes.ts` + unit tests. No UI, no Stripe. |
+| 2 ✅ | **Stripe resolution** | `stripe/platform-coupons.ts`, resolve-or-create, degrades cleanly with no `STRIPE_SECRET_KEY`. |
+| 3 ✅ | **Operator console** | `/platform/coupons`, both tabs, create + deactivate + copy-link. Coupons exist and are visible before anything can redeem one. |
+| 4 ✅ | **The link** | `/join/[code]`, the cookie, wizard banner (success *and* the honest failure), attribution at account creation, `store_id` backfill. |
+| 5 ✅ | **Billing attach** | Preview endpoint, the code box on `/admin/billing`, `couponCode` on checkout, precedence, `collect_payment_method` → `payment_method_collection`, `billing/status` vocabulary, **the `readIntroDiscount` fix**. |
+| 6 ✅ | **Redemption close-out** | Webhook `attributed` → `redeemed`, `discount_ends_at`, reservation sweep on cron, redemption tab shows live subscription status. |
+| 7 ✅ | **The merchant's experience** | §5 — the alert ladder on `/admin` and `/admin/billing`, `PLATFORM_DISCOUNT_GRACE_DAYS`, the named-offer row, and the vocabulary fix in §5.3. Messaging only; no entitlement enforcement. |
+| 8 ✅ | **Docs and polish** | `docs/payments.md` (new §8), `src/lib/stripe/CLAUDE.md` (module map, outbound/inbound tables, data model, event matrix, a new "Platform signup coupons" section), `docs/platform-admin.md` ("The gate" corrected for the console's first write surface), `README.md`, this plan (§10/§14), `docs/decision-log.md`. `/pricing` reads the `/join` cookie server-side, re-validates it, and quotes the coupon's real offer and card requirement — `src/app/pricing/page.tsx`, `CouponPricingPage.tsx`, `CouponPlanCard.tsx`. No new environment variable — checked, none was added. |
 
 Phases 1–3 are shippable on their own and let coupons be issued and tracked by hand before any
 customer-facing path exists.
@@ -698,7 +698,16 @@ ever ask that merchant for a card.
 the released row stays in the ledger so "clicked 40 times, redeemed twice" is still answerable.
 
 **4. `/pricing` honours the link.** It reads the same cookie and quotes the discounted offer, so the
-first page a friend lands on does not contradict the link that sent them.
+first page a friend lands on does not contradict the link that sent them. **Built in phase 8**:
+`src/app/pricing/page.tsx` reads the httpOnly cookie server-side via `next/headers`' `cookies()`
+(there is nothing to `fetch` — the cookie cannot be read client-side by design), re-validates the
+code against the database with `isRedeemable` rather than trusting `/join`'s earlier verdict, and
+renders `CouponPricingPage`/`CouponPlanCard` instead of the standard page when it is still
+redeemable. An invalid, expired, exhausted or deactivated code — or any read/lookup failure —
+degrades silently to the standard page, exactly as this decision specifies: `/join` and the
+onboarding wizard are where the failure gets said out loud, not here. It also states whether a card
+will be required (`requiresPaymentMethod()`), matching the wizard's own `CouponBanner` wording, so
+the promise made at the link and the promise made at signup cannot disagree.
 
 ### Still open
 

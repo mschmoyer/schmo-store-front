@@ -14,7 +14,7 @@
  * away and back.
  */
 
-import React, { Suspense } from 'react';
+import React, { Suspense, useCallback, useRef } from 'react';
 import { IconTicket } from '@tabler/icons-react';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
@@ -38,14 +38,58 @@ const TABS: ReadonlyArray<{ value: CouponsTabName; label: string }> = [
   { value: 'redemptions', label: 'Redemptions' },
 ];
 
+/** The DOM id of a tab button, for `aria-controls`/`aria-labelledby` to point at. */
+function tabId(value: CouponsTabName): string {
+  return `coupons-tab-${value}`;
+}
+
+/** The DOM id of the panel a tab controls. */
+function panelId(value: CouponsTabName): string {
+  return `coupons-panel-${value}`;
+}
+
 /**
  * The coupons screen, with its tab and filter state read from the URL.
+ *
+ * This is the one real tab switch on the page — **Coupons** and **Redemptions** are genuinely
+ * separate panels, unlike the status filter buttons inside each tab (those are filter groups, not
+ * tabs — see `RedemptionsTab.tsx`). So this is where the full WAI-ARIA tabs pattern belongs:
+ * `aria-controls` pointing at a real `role="tabpanel"`, roving `tabIndex` (only the active tab is
+ * in the page's Tab order), and Left/Right/Home/End moving both selection and focus together
+ * (staff review finding 10 — this pattern was new to `/platform` and shipped with none of it).
  *
  * @returns The screen.
  */
 function CouponsView(): React.ReactElement {
   const { params, setTab, setCouponFilter, setRedemptionStatus, setRedemptionPage, setIncludeDemo } =
     useCouponsParams();
+
+  const tabRefs = useRef<Partial<Record<CouponsTabName, HTMLButtonElement | null>>>({});
+
+  const activateTab = useCallback(
+    (value: CouponsTabName) => {
+      setTab(value);
+      tabRefs.current[value]?.focus();
+    },
+    [setTab]
+  );
+
+  const handleTabKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      const currentIndex = TABS.findIndex((tab) => tab.value === params.tab);
+      let nextIndex: number | null = null;
+
+      if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % TABS.length;
+      else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = TABS.length - 1;
+
+      if (nextIndex === null) return;
+      event.preventDefault();
+      activateTab(TABS[nextIndex].value);
+    },
+    [activateTab, params.tab]
+  );
 
   return (
     <div className={styles.page}>
@@ -58,12 +102,19 @@ function CouponsView(): React.ReactElement {
         {TABS.map((tab) => (
           <button
             key={tab.value}
+            ref={(element) => {
+              tabRefs.current[tab.value] = element;
+            }}
+            id={tabId(tab.value)}
             type="button"
             role="tab"
             aria-selected={params.tab === tab.value}
+            aria-controls={panelId(tab.value)}
+            tabIndex={params.tab === tab.value ? 0 : -1}
             className={styles.tabButton}
             data-active={params.tab === tab.value || undefined}
-            onClick={() => setTab(tab.value)}
+            onClick={() => activateTab(tab.value)}
+            onKeyDown={handleTabKeyDown}
           >
             <IconTicket size={15} aria-hidden="true" />
             {tab.label}
@@ -71,18 +122,25 @@ function CouponsView(): React.ReactElement {
         ))}
       </div>
 
-      {params.tab === 'coupons' ? (
-        <CouponsTab filter={params.couponFilter} onFilterChange={setCouponFilter} />
-      ) : (
-        <RedemptionsTab
-          status={params.redemptionStatus}
-          onStatusChange={setRedemptionStatus}
-          page={params.redemptionPage}
-          onPageChange={setRedemptionPage}
-          includeDemo={params.includeDemo}
-          onIncludeDemoChange={setIncludeDemo}
-        />
-      )}
+      <div
+        role="tabpanel"
+        id={panelId(params.tab)}
+        aria-labelledby={tabId(params.tab)}
+        tabIndex={0}
+      >
+        {params.tab === 'coupons' ? (
+          <CouponsTab filter={params.couponFilter} onFilterChange={setCouponFilter} />
+        ) : (
+          <RedemptionsTab
+            status={params.redemptionStatus}
+            onStatusChange={setRedemptionStatus}
+            page={params.redemptionPage}
+            onPageChange={setRedemptionPage}
+            includeDemo={params.includeDemo}
+            onIncludeDemoChange={setIncludeDemo}
+          />
+        )}
+      </div>
     </div>
   );
 }

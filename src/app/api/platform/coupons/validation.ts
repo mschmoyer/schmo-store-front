@@ -21,6 +21,28 @@ import { PLATFORM_COUPON_STATUSES } from '@/lib/platform/coupons';
 
 /** Longest `code` this route accepts, matching `platform_coupons.code VARCHAR(48)`. */
 export const MAX_COUPON_CODE_LENGTH = 48;
+
+/**
+ * Shortest `code` an operator may type in by hand.
+ *
+ * Generated codes (`coupon-codes.ts`) carry ~49.5 bits of entropy and are safe against
+ * `/join/[code]`'s rate limit however short they read; a human-chosen code like `FRIENDS12` is not
+ * — before this floor, this validator accepted anything from 1 to 48 characters, and a short,
+ * guessable operator code plus an unauthenticated, previously-unrated `/join` (staff review
+ * finding 4) made a year-long discount reachable by brute force at bandwidth speed. Six characters
+ * over `COUPON_CODE_PATTERN`'s alphabet is `36^6` ≈ 2.2 billion combinations — not generated-code
+ * entropy, but enough that guessing it through a rate-limited endpoint is not the easy path, and
+ * short enough not to reject the kind of code an operator actually wants to type.
+ */
+export const MIN_COUPON_CODE_LENGTH = 6;
+
+/**
+ * Characters an operator-supplied `code` may contain: letters, digits, hyphens and underscores.
+ * Excludes whitespace and other punctuation, which would either need URL-encoding in `/join/<code>`
+ * or invite a code that looks different than it is (leading/trailing space, a stray control
+ * character) on the one surface that logs it only by shape, never in full (invariant 12).
+ */
+const COUPON_CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
 /** Longest `name` this route accepts, matching `platform_coupons.name VARCHAR(120)`. */
 export const MAX_COUPON_NAME_LENGTH = 120;
 
@@ -172,6 +194,18 @@ export function validateCreateCouponBody(body: unknown): CreateCouponValidationR
       return {
         ok: false,
         error: { field: 'code', message: `Code must be ${MAX_COUPON_CODE_LENGTH} characters or fewer.` },
+      };
+    }
+    if (trimmed.length > 0 && trimmed.length < MIN_COUPON_CODE_LENGTH) {
+      return {
+        ok: false,
+        error: { field: 'code', message: `Code must be at least ${MIN_COUPON_CODE_LENGTH} characters.` },
+      };
+    }
+    if (trimmed.length > 0 && !COUPON_CODE_PATTERN.test(trimmed)) {
+      return {
+        ok: false,
+        error: { field: 'code', message: 'Code may only contain letters, numbers, hyphens and underscores.' },
       };
     }
     code = trimmed.length > 0 ? trimmed : null;

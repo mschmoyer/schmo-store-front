@@ -187,13 +187,46 @@ export function CreateCouponModal({ opened, onClose, onCreated }: CreateCouponMo
   const [submitting, setSubmitting] = useState(false);
 
   const offer = useMemo(() => previewOffer(form), [form]);
-  // §3: the flag only does anything at 100% off. Disabling the switch below that keeps the form
-  // from ever holding the combination the schema forbids, rather than catching it after the fact.
+  // §3: the flag only does anything at 100% off. What actually keeps the form from holding the
+  // combination the schema forbids is `handlePercentOffChange` forcing `collectPaymentMethod` back
+  // to `true` the moment the percentage leaves 100 — the disabled state below only prevents
+  // *turning the switch off* while it is out of reach; it must never be the thing standing between
+  // an operator and a state that has already gone stale (staff review finding 7: the previous
+  // `disabled={!canSkipCard && !form.collectPaymentMethod}` disabled the switch exactly when it was
+  // already `false` and could no longer legally become `true` again through the UI, freezing the
+  // form on an unsubmittable combination with only Cancel — which wipes everything — as the way out).
   const canSkipCard = Number.parseInt(form.percentOff, 10) === 100;
 
   const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setFieldErrors((prev) => (prev[key as string] ? { ...prev, [key as string]: undefined } : prev));
+  }, []);
+
+  /**
+   * Percent-off has its own handler rather than going through {@link set} because it is the one
+   * field whose change can invalidate another: the moment the value stops being exactly `100`,
+   * `collectPaymentMethod` is no longer a legal `false` (§3 / the schema's
+   * `platform_coupons_no_card_needs_full_discount` CHECK), so it is forced back to `true` here,
+   * in the same update, rather than left for {@link canSkipCard}'s `disabled` prop to merely freeze
+   * in place (finding 7).
+   *
+   * @param value - The raw input value.
+   */
+  const handlePercentOffChange = useCallback((value: string) => {
+    setForm((prev) => {
+      const parsed = Number.parseInt(value, 10);
+      const stillSkippable = Number.isInteger(parsed) && parsed === 100;
+      return {
+        ...prev,
+        percentOff: value,
+        collectPaymentMethod: stillSkippable ? prev.collectPaymentMethod : true,
+      };
+    });
+    setFieldErrors((prev) =>
+      prev.percentOff || prev.collectPaymentMethod
+        ? { ...prev, percentOff: undefined, collectPaymentMethod: undefined }
+        : prev
+    );
   }, []);
 
   const handleClose = useCallback(() => {
@@ -291,7 +324,7 @@ export function CreateCouponModal({ opened, onClose, onCreated }: CreateCouponMo
             min={1}
             max={100}
             value={form.percentOff}
-            onChange={(event) => set('percentOff', event.target.value)}
+            onChange={(event) => handlePercentOffChange(event.target.value)}
             error={fieldErrors.percentOff}
             rightSection="%"
             required
@@ -352,7 +385,7 @@ export function CreateCouponModal({ opened, onClose, onCreated }: CreateCouponMo
           }
           checked={form.collectPaymentMethod}
           onChange={(event) => set('collectPaymentMethod', event.target.checked)}
-          disabled={!canSkipCard && !form.collectPaymentMethod}
+          disabled={!canSkipCard}
         />
         {fieldErrors.collectPaymentMethod ? (
           <p className={styles.formFieldError} role="alert">

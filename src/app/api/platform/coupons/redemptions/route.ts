@@ -1,7 +1,7 @@
 /**
  * `GET /api/platform/coupons/redemptions` — the operator console's redemptions tab (plan §4C,
  * §9). Every redemption across every coupon, newest-attributed first: who, which store, which
- * coupon, attributed vs redeemed, and when the discount ends.
+ * coupon, attributed vs redeemed, when the discount ends, and its live subscription status.
  *
  * A read, so — unlike the two mutating routes beside this one — `recordAdminAction` here is the
  * ordinary best-effort call, exactly like `GET /api/platform/customers`.
@@ -100,6 +100,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         releasedAt: redemption.releasedAt ? redemption.releasedAt.toISOString() : null,
         releaseReason: redemption.releaseReason,
         discountEndsAt: redemption.discountEndsAt ? redemption.discountEndsAt.toISOString() : null,
+        subscriptionStatus: redemption.subscriptionStatus,
         coupon: redemption.coupon,
         user: redemption.user,
         store: redemption.store,

@@ -578,6 +578,12 @@ export interface PlatformRedemptionListItem {
   user: { id: string; email: string; name: string };
   /** `null` before onboarding creates a store — see `coupon-claims.ts`'s `backfillStoreId`. */
   store: { id: string; name: string; isDemo: boolean } | null;
+  /**
+   * The live `subscriptions.status` for this claim's Stripe subscription, or `null` when there
+   * isn't one — never set for `attributed`/`released` claims, and possibly still `null` for a
+   * `redeemed` one whose subscription row hasn't synced yet. See {@link listRedemptions}'s join.
+   */
+  subscriptionStatus: string | null;
 }
 
 /** What {@link listRedemptions} returns. */
@@ -610,6 +616,7 @@ interface RedemptionRow extends Record<string, unknown> {
   store_id: string | null;
   store_name: string | null;
   store_is_demo: boolean | null;
+  subscription_status: string | null;
 }
 
 /**
@@ -636,6 +643,7 @@ function toRedemptionListItem(row: RedemptionRow): PlatformRedemptionListItem {
     store: row.store_id
       ? { id: row.store_id, name: row.store_name ?? '', isDemo: row.store_is_demo === true }
       : null,
+    subscriptionStatus: row.subscription_status,
   };
 }
 
@@ -648,6 +656,13 @@ function toRedemptionListItem(row: RedemptionRow): PlatformRedemptionListItem {
  * (`docs/platform-admin.md`); a `LEFT JOIN`-missing store passes that predicate on its own (`NULL
  * IS DISTINCT FROM TRUE` is `TRUE`), so a redemption with no store yet is correctly never treated as
  * a demo row.
+ *
+ * Also `LEFT JOIN`s `subscriptions` on `stripe_subscription_id` for {@link
+ * PlatformRedemptionListItem.subscriptionStatus} — phase 6 promised the redemptions tab would show
+ * live subscription status and it never landed (staff review finding 13), leaving an operator
+ * unable to tell a running free year from one that lapsed and was cancelled. Left, not inner: an
+ * `attributed` or `released` claim has no subscription at all, and even a `redeemed` one can
+ * momentarily have none if the row hasn't synced.
  *
  * @param filter - Narrowing and paging options. See {@link ListRedemptionsFilter}.
  * @param executor - The query surface to run against. Defaults to the real database.
@@ -675,11 +690,16 @@ export async function listRedemptions(
   }
 
   const whereSql = `WHERE ${conditions.join(' AND ')}`;
+  // `LEFT JOIN subscriptions` on the Stripe subscription id the webhook wrote at redemption time
+  // (plan phase 6) — an `attributed` or `released` claim has none yet, and even a `redeemed` one
+  // can momentarily have none if its subscription row hasn't synced, so this must never become an
+  // inner join (see `toRedemptionListItem`'s `subscriptionStatus: null` fallback).
   const fromSql = `
     FROM platform_coupon_redemptions pcr
     JOIN platform_coupons pc ON pc.id = pcr.coupon_id
     JOIN users u ON u.id = pcr.user_id
     LEFT JOIN stores s ON s.id = pcr.store_id
+    LEFT JOIN subscriptions sub ON sub.stripe_subscription_id = pcr.stripe_subscription_id
     ${whereSql}
   `;
 
@@ -697,7 +717,8 @@ export async function listRedemptions(
             pc.id AS coupon_id, pc.code AS coupon_code, pc.name AS coupon_name,
             u.id AS user_id, u.email AS user_email,
             u.first_name AS user_first_name, u.last_name AS user_last_name,
-            s.id AS store_id, s.store_name AS store_name, s.is_demo AS store_is_demo
+            s.id AS store_id, s.store_name AS store_name, s.is_demo AS store_is_demo,
+            sub.status AS subscription_status
        ${fromSql}
       ORDER BY pcr.attributed_at DESC
       LIMIT ${pageSize} OFFSET ${offset}`,

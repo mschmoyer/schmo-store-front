@@ -384,6 +384,16 @@ export interface MarkRedeemedInput {
   stripeCouponId: string;
   /** When the free window closes. `null` for a `duration_months IS NULL` (forever) coupon. */
   discountEndsAt: Date | null;
+  /**
+   * The `platform_coupon_id` the caller read off Stripe metadata, when it has one — checkout writes
+   * this into both the Checkout Session and the subscription's own metadata specifically so this
+   * function can confirm it, per staff-review finding 14. When supplied, it must match the live
+   * claim's own `coupon_id` or the transition is refused as {@link MarkRedeemedResult}'s
+   * `'coupon_mismatch'` rather than silently redeeming whatever live claim this user happens to
+   * hold. Omit only when the caller genuinely has no coupon id to check (there is currently no such
+   * call site — every redemption reaches here from a subscription that already resolved one).
+   */
+  expectedCouponId?: string | null;
 }
 
 /**
@@ -391,11 +401,14 @@ export interface MarkRedeemedInput {
  *
  * `'already_redeemed'` is success, not failure — the field name is `reason`, not `ok`, precisely so
  * a caller cannot collapse "already redeemed" and "nothing to redeem" into the same falsy check.
+ * `'coupon_mismatch'` is a refusal: the live claim exists, but for a different coupon than the one
+ * Stripe attached (finding 14) — the transition is never applied.
  */
 export type MarkRedeemedResult =
   | { reason: 'ok'; claim: PlatformCouponClaimRecord }
   | { reason: 'already_redeemed'; claim: PlatformCouponClaimRecord }
-  | { reason: 'no_active_claim' };
+  | { reason: 'no_active_claim' }
+  | { reason: 'coupon_mismatch'; claim: PlatformCouponClaimRecord };
 
 /**
  * Confirm a reservation: the `attributed → redeemed` transition in §6.
@@ -405,6 +418,12 @@ export type MarkRedeemedResult =
  * already-redeemed row rather than raise or write a duplicate. A claim already in `redeemed` is
  * therefore left untouched and reported back as `'already_redeemed'` — the illegal direction,
  * `redeemed → attributed`, is not an operation this function (or any other) performs.
+ *
+ * Staff-review finding 14: this used to match a live claim on `user_id` alone. Since the schema
+ * allows at most one live claim per user, that was correct in practice, but fragile in intent — it
+ * trusted "whichever live claim this user holds" rather than confirming it is the one Stripe
+ * actually attached. When `input.expectedCouponId` is supplied, the live claim's own `coupon_id`
+ * must match it, or the transition is refused (`'coupon_mismatch'`) rather than applied.
  *
  * @param input - The user and the Stripe facts the webhook just learned.
  * @param executor - The query surface to run against. Defaults to the real database.
@@ -425,6 +444,10 @@ export async function markRedeemed(
   const row = existing.rows[0];
   if (!row) {
     return { reason: 'no_active_claim' };
+  }
+
+  if (input.expectedCouponId && row.coupon_id !== input.expectedCouponId) {
+    return { reason: 'coupon_mismatch', claim: toRecord(row) };
   }
 
   if (row.status === CLAIM_STATUS_REDEEMED) {

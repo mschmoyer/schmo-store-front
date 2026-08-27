@@ -11,15 +11,21 @@
  * (`idx_pcr_one_live_per_user`) and a claim is either `attributed` or `redeemed`, never both at
  * once.
  *
- * Failure here is silent by design: this is a supplementary notice on a dashboard whose main
- * content (`fetchDashboardData` in `src/app/admin/page.tsx`) already owns loading and error states
- * and its own redirect-to-login on a missing token. A coupon-notice fetch failing does not stop the
- * merchant from seeing their revenue and stock numbers, so this component degrades to rendering
- * nothing rather than adding a second error banner to a page that already has one.
+ * A fetch failure is **not** silent (staff review finding 11 — it used to be, and invariant 14 is
+ * exactly why that was wrong): "a redemption with a `discount_ends_at` and no stored card must
+ * always render the banner" — for a no-card coupon this banner is the merchant's *only* route to a
+ * payment method, and a `500` making it vanish with no trace defeats that invariant as completely as
+ * never building the banner at all. So a failed fetch renders a small, dismissal-free inline notice
+ * with a retry, rather than returning `null` and leaving the merchant with no sign anything was
+ * supposed to be here. This is still deliberately quiet next to the dashboard's own error banner
+ * (`fetchDashboardData` in `src/app/admin/page.tsx` owns that one) — no full-width alert, no page
+ * disruption — but "quiet" and "invisible" are not the same thing.
  */
 
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Button, Group, Text } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { CouponReservationBanner } from './CouponReservationBanner';
 import { DiscountNoticeAlert } from './DiscountNoticeAlert';
 import type { RedemptionStatus } from '@/lib/billing/discount-notice';
@@ -52,33 +58,55 @@ function readToken(): string | null {
  */
 export function CouponNotices(): React.ReactElement | null {
   const [notice, setNotice] = useState<CouponNotice | null>(null);
+  const [fetchFailed, setFetchFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [addingPaymentMethod, setAddingPaymentMethod] = useState(false);
 
-  useEffect(() => {
-    // An inline async IIFE, not a `useCallback`-memoized function called from the effect body —
-    // matches `StripeConnectCard.tsx`'s fetch-on-mount effect, which this mirrors.
-    void (async () => {
-      const token = readToken();
-      if (!token) {
+  /**
+   * Load the notice. Extracted from the mount effect so the error state's Retry button can call
+   * the exact same logic rather than re-mounting the component.
+   *
+   * @returns Nothing; the outcome is written to `notice` / `fetchFailed`.
+   */
+  const loadNotice = useCallback(async (): Promise<void> => {
+    const token = readToken();
+    if (!token) {
+      // No session yet — not a fetch failure to report. `/admin`'s own auth flow owns this case.
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/billing/coupon/notice', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        setFetchFailed(true);
         return;
       }
-
-      try {
-        const response = await fetch('/api/billing/coupon/notice', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!response.ok) {
-          return;
-        }
-        const json = await response.json();
-        if (json.success) {
-          setNotice(json.data as CouponNotice);
-        }
-      } catch {
-        // Supplementary notice — see the file header. Leave it unrendered.
+      const json = await response.json();
+      if (json.success) {
+        setNotice(json.data as CouponNotice);
+        setFetchFailed(false);
+      } else {
+        setFetchFailed(true);
       }
-    })();
+    } catch {
+      setFetchFailed(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadNotice();
+  }, [loadNotice]);
+
+  const handleRetry = useCallback(async (): Promise<void> => {
+    setRetrying(true);
+    try {
+      await loadNotice();
+    } finally {
+      setRetrying(false);
+    }
+  }, [loadNotice]);
 
   const openBillingPortal = async (): Promise<void> => {
     const token = readToken();
@@ -100,6 +128,27 @@ export function CouponNotices(): React.ReactElement | null {
       setAddingPaymentMethod(false);
     }
   };
+
+  // Checked before the "nothing to show" case: a merchant who might be sitting on a no-card
+  // redemption with a closing discount window must see *something* here, never a silent gap —
+  // that gap is exactly what finding 11 flagged.
+  if (fetchFailed && !notice) {
+    return (
+      <Alert
+        icon={<IconAlertTriangle size={16} />}
+        color="gray"
+        variant="light"
+        role="alert"
+      >
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <Text size="sm">Couldn&apos;t check your offer status.</Text>
+          <Button size="xs" variant="subtle" onClick={() => void handleRetry()} loading={retrying}>
+            Retry
+          </Button>
+        </Group>
+      </Alert>
+    );
+  }
 
   if (!notice || notice.kind === 'none') {
     return null;

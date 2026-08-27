@@ -39,38 +39,15 @@ import {
   formatCents,
   resolveIntroCouponId,
 } from '@/lib/billing/intro-offer';
-import {
-  computeDiscountedPriceCents,
-  describePlatformCoupon,
-  requiresPaymentMethod,
-} from '@/lib/billing/platform-coupons';
+import { describePlatformCoupon } from '@/lib/billing/platform-coupons';
 import { getPlatformCouponById } from '@/lib/platform/coupons';
 import { isStripeConfigured, tryGetStripe } from '@/lib/stripe/client';
+import { nextChargeCents, describePendingOffer } from './decide';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Decide what the merchant is charged on their next renewal.
- *
- * @param subscription - The local subscription mirror.
- * @returns The next charge amount in cents.
- */
-function nextChargeCents(subscription: SubscriptionRecord): number {
-  const list = subscription.unitAmountCents ?? PLATFORM_LIST_AMOUNT_CENTS;
-  const intro = subscription.introAmountCents;
-
-  if (intro === null || subscription.introEndsAt === null) {
-    return list;
-  }
-
-  const nextChargeDate = subscription.currentPeriodEnd;
-  if (!nextChargeDate) {
-    return intro;
-  }
-
-  return nextChargeDate.getTime() < subscription.introEndsAt.getTime() ? intro : list;
-}
+export type { PendingOfferSummary } from './decide';
 
 /**
  * What discount is currently on a subscription, named honestly — plan §5.3: no screen may describe
@@ -145,72 +122,6 @@ async function describeActiveDiscount(
 }
 
 /**
- * What a merchant who has **not yet subscribed** will actually be charged if they click Subscribe
- * right now — plan §5.3: the button "must name the price that will actually be charged", which for
- * a merchant sitting on a signup coupon claim is not the standard intro price. Mirrors the
- * precedence `POST /api/billing/checkout` applies when no code is typed in that request: a coupon
- * already attributed to this user, else the standard intro offer (a code typed into the billing
- * page's own box is evaluated client-side by `POST /api/billing/coupon/preview`, not here).
- */
-export interface PendingOfferSummary {
-  readonly kind: 'intro' | 'platform_coupon';
-  /** `"Intro pricing"`, or the coupon's own name. */
-  readonly label: string;
-  /** The offer sentence the CTA's supporting copy renders. */
-  readonly description: string;
-  /** What Checkout will actually charge today if the merchant subscribes right now. */
-  readonly amountDueTodayCents: number;
-  readonly amountDueTodayFormatted: string;
-  /** The eventual list price, once any discount window closes. */
-  readonly listAmountFormatted: string;
-  /** Whether Checkout will still ask for a card. */
-  readonly requiresPaymentMethod: boolean;
-  /** The coupon's code, when `kind === 'platform_coupon'`. */
-  readonly code: string | null;
-}
-
-/**
- * Describe what a not-yet-subscribed merchant will actually pay today.
- *
- * @param userId - The merchant's user id.
- * @returns The offer that is actually pending for this merchant — a claimed platform coupon when
- *   one exists, otherwise the standard intro offer.
- */
-async function describePendingOffer(userId: string): Promise<PendingOfferSummary> {
-  const claim = await resolveActiveClaim(userId);
-  const coupon = claim ? await getPlatformCouponById(claim.couponId) : null;
-
-  if (coupon) {
-    const amountDueTodayCents = computeDiscountedPriceCents(PLATFORM_LIST_AMOUNT_CENTS, coupon.percentOff);
-    return {
-      kind: 'platform_coupon',
-      label: coupon.name,
-      description: describePlatformCoupon(coupon),
-      amountDueTodayCents,
-      amountDueTodayFormatted: formatCents(amountDueTodayCents),
-      listAmountFormatted: formatCents(PLATFORM_LIST_AMOUNT_CENTS),
-      requiresPaymentMethod: requiresPaymentMethod(coupon),
-      code: coupon.code,
-    };
-  }
-
-  return {
-    kind: 'intro',
-    label: 'Intro pricing',
-    description: describeIntroOffer({
-      listAmountCents: PLATFORM_LIST_AMOUNT_CENTS,
-      introAmountCents: PLATFORM_INTRO_AMOUNT_CENTS,
-      introMonths: PLATFORM_INTRO_MONTHS,
-    }).headline,
-    amountDueTodayCents: PLATFORM_INTRO_AMOUNT_CENTS,
-    amountDueTodayFormatted: formatCents(PLATFORM_INTRO_AMOUNT_CENTS),
-    listAmountFormatted: formatCents(PLATFORM_LIST_AMOUNT_CENTS),
-    requiresPaymentMethod: true,
-    code: null,
-  };
-}
-
-/**
  * Report subscription status for the authenticated merchant.
  *
  * @param request - The inbound request.
@@ -255,7 +166,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     if (!subscription) {
-      const pendingOffer = await describePendingOffer(merchant.userId);
+      const pendingOffer = await describePendingOffer(merchant.userId, {
+        resolveActiveClaim,
+        getPlatformCouponById,
+      });
       return NextResponse.json({
         success: true,
         data: {

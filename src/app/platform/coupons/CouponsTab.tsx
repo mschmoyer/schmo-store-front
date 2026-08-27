@@ -27,12 +27,19 @@ function adminToken(): string | null {
 }
 
 /**
- * Format a coupon's redemption count against its cap.
+ * Format a coupon's live-claim count against its cap.
+ *
+ * Named "Claimed", not "Redeemed" (staff review finding 12): `redeemedCount` is a rollup of
+ * `attributed` + `redeemed` claims by design (it is what the capacity check enforces), so a coupon
+ * one person clicked and never converted reads `1 / 1` — capacity-true, but "Redeemed / limit" told
+ * an operator something that never happened. "Claimed" is accurate for both a reservation and a
+ * completed signup, on the tab whose whole purpose is knowing which one actually occurred; that
+ * finer distinction lives one tab over, in Redemptions.
  *
  * @param coupon - The coupon.
  * @returns e.g. `"3 / 10"`, or `"3 / unlimited"` when `maxRedemptions` is `null`.
  */
-function redemptionSummary(coupon: PlatformCouponApiItem): string {
+function claimedSummary(coupon: PlatformCouponApiItem): string {
   return `${coupon.redeemedCount.toLocaleString('en-US')} / ${
     coupon.maxRedemptions === null ? 'unlimited' : coupon.maxRedemptions.toLocaleString('en-US')
   }`;
@@ -120,7 +127,7 @@ function CouponRow({
         </div>
       </td>
       <td>{coupon.offer}</td>
-      <td className={styles.numeric}>{redemptionSummary(coupon)}</td>
+      <td className={styles.numeric}>{claimedSummary(coupon)}</td>
       <td>{formatExpiry(coupon.redeemBy)}</td>
       <td>{coupon.createdByName ?? 'Unknown'}</td>
       <td>
@@ -190,13 +197,17 @@ export function CouponsTab({ filter, onFilterChange }: CouponsTabProps): React.R
   return (
     <div className={styles.tab}>
       <div className={styles.toolbar}>
-        <div className={styles.filterTabs} role="tablist" aria-label="Filter coupons by status">
+        {/* A filter group, not tabs — it narrows this one table, it does not switch between
+            separate panels. `role="tab"` would obligate `aria-controls`, a `tabpanel` and
+            roving-tabindex arrow-key handling this control has no use for, so it wears
+            `aria-pressed` toggle-button semantics instead (staff review finding 10; matches the
+            same fix in `RedemptionsTab.tsx`). */}
+        <div className={styles.filterTabs} role="group" aria-label="Filter coupons by status">
           {filterTabs.map((option) => (
             <button
               key={option.value}
               type="button"
-              role="tab"
-              aria-selected={filter === option.value}
+              aria-pressed={filter === option.value}
               className={styles.filterTab}
               data-active={filter === option.value || undefined}
               onClick={() => onFilterChange(option.value)}
@@ -265,7 +276,7 @@ export function CouponsTab({ filter, onFilterChange }: CouponsTabProps): React.R
                 <th scope="col">Code</th>
                 <th scope="col">Name</th>
                 <th scope="col">Offer</th>
-                <th scope="col">Redeemed / limit</th>
+                <th scope="col">Claimed / limit</th>
                 <th scope="col">Expiry</th>
                 <th scope="col">Created by</th>
                 <th scope="col">Actions</th>
