@@ -5,7 +5,8 @@
 ### Plan: platform signup coupons
 
 - [x] Write `docs/plans/platform-coupons.md` - 2026-08-27
-- [ ] Phase 1 — migration 042, redemption ledger, trigger-enforced limits, `db:verify` invariants
+- [x] Phase 1 — migration 042, redemption ledger, trigger-enforced limits, `db:verify` invariants
+      - 2026-08-27
 - [ ] Phase 2 — resolve-or-create the Stripe coupon behind each code
 - [ ] Phase 3 — `/platform/coupons`, coupons and redemptions tabs
 - [ ] Phase 4 — `/join/<code>`, the cookie, attribution at account creation

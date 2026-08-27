@@ -1,6 +1,8 @@
 # Plan: platform signup coupons
 
-**Status:** proposed, not built. Nothing in this document exists in the codebase yet.
+**Status:** in build. **Phase 1 landed 2026-08-27** — migration 042, the redemption ledger, the
+trigger-enforced limit and nine new `db:verify` invariants, plus the pure model modules. Phases 2-8
+outstanding; the phase table in §10 is the running checklist.
 **Goal:** hand a friend a link, they sign up, they get a year free, and the operator console can
 show who used what. Friends skip the card entirely; publicly-issued codes still take one.
 
@@ -281,6 +283,12 @@ window is comfortably open, and earns the merchant's attention only when there i
 | Window closed, in grace, no card | Escalated alert naming the grace date | Same |
 | Window closed, card on file | Nothing — it simply charged | Ordinary subscription row |
 | Grace exhausted | Honest state, still not a locked door | Same |
+
+**Two clocks, not one.** The first row of that table runs on the *reservation* clock (§6, 30 days
+from attribution) and every other row runs on the *discount window* clock (`discount_ends_at`, which
+does not exist until the redemption closes). `discount-notice.ts` owns the second only and returns
+"nothing to say" for an unredeemed claim. The reservation banner is a separate, simpler component
+reading `attributed_at` — build it in phase 7 beside the ladder, not inside it.
 
 **The card is what sets the weight.** With a card on file, the end of the free window is
 *information* — Stripe charges and the merchant does nothing. With no card it is a *task*, and the

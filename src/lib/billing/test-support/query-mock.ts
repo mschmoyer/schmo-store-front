@@ -10,6 +10,7 @@ export interface QueryMock {
   mockReset(): void;
   mockResolvedValue(value: unknown): QueryMock;
   mockResolvedValueOnce(value: unknown): QueryMock;
+  mockRejectedValueOnce(reason: unknown): QueryMock;
   mock: { calls: Array<[string, unknown[]]> };
 }
 

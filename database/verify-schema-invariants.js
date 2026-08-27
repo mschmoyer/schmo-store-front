@@ -22,7 +22,7 @@
  * Exit code is 0 when every case passes, 1 otherwise.
  */
 
-const { Pool } = require('pg');
+const { Pool, Client } = require('pg');
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
@@ -53,6 +53,25 @@ const pool = new Pool({
   max: 1,
   connectionTimeoutMillis: 15000,
 });
+
+/**
+ * Open a standalone connection outside the shared pool.
+ *
+ * The pool is capped at one connection deliberately — every other case here runs against a lone
+ * transaction that is always rolled back. Proving a row-lock trigger under genuine concurrency
+ * needs two backends truly open at the same time, which a pool of one cannot provide, so this
+ * hands back an independent `pg.Client`. The caller owns it and must `.end()` it.
+ *
+ * @returns {Promise<import('pg').Client>} A connected, unpooled client.
+ */
+async function rawConnection() {
+  const client = new Client({
+    connectionString: url,
+    ssl: LOCAL_HOSTS.has(host) ? false : { rejectUnauthorized: true },
+  });
+  await client.connect();
+  return client;
+}
 
 /**
  * A fixture store, created and rolled back inside each case.
@@ -96,6 +115,116 @@ const FIXTURE = {
        VALUES ($1, $2, 'Invariant Fixture', 'invariant-' || gen_random_uuid(), 10.00)
        RETURNING id`,
       [storeId, sku],
+    );
+    return result.rows[0].id;
+  },
+
+  /**
+   * Create a throwaway user with no store, for redemption-side fixtures.
+   *
+   * @param {import('pg').PoolClient | import('pg').Client} client - A client inside an open
+   *   transaction (or, for the concurrency case, a standalone connection with its own).
+   * @returns {Promise<string>} The new user's uuid.
+   */
+  async user(client) {
+    const result = await client.query(
+      `INSERT INTO users (email, password_hash, first_name, last_name)
+       VALUES ('invariant-' || gen_random_uuid() || '@example.test', 'x', 'In', 'Variant')
+       RETURNING id`,
+    );
+    return result.rows[0].id;
+  },
+
+  /**
+   * Create a throwaway platform coupon and return its id.
+   *
+   * Defaults describe a harmless, always-legal coupon (100% off forever, no card required, no
+   * cap) so a case only has to name the field it actually wants to vary.
+   *
+   * @param {import('pg').PoolClient | import('pg').Client} client - A client inside an open
+   *   transaction (or a standalone connection).
+   * @param {object} [overrides] - Fields to override.
+   * @param {string} [overrides.name] - Display name.
+   * @param {number} [overrides.percentOff] - 1-100.
+   * @param {number|null} [overrides.durationMonths] - Months the discount runs; null = forever.
+   * @param {boolean} [overrides.collectPaymentMethod] - Whether Checkout takes a card.
+   * @param {number|null} [overrides.maxRedemptions] - Cap on live claims; null = uncapped.
+   * @param {Date|null} [overrides.redeemBy] - When the code itself stops working.
+   * @param {boolean} [overrides.isActive] - Whether the coupon accepts new redemptions.
+   * @returns {Promise<string>} The new coupon's uuid.
+   */
+  async coupon(client, overrides = {}) {
+    const opts = {
+      name: 'Invariant Fixture',
+      percentOff: 100,
+      durationMonths: 12,
+      collectPaymentMethod: true,
+      maxRedemptions: null,
+      redeemBy: null,
+      isActive: true,
+      ...overrides,
+    };
+    const result = await client.query(
+      `INSERT INTO platform_coupons
+         (code, code_normalized, name, percent_off, duration_months, collect_payment_method,
+          max_redemptions, redeem_by, is_active)
+       VALUES (
+         'INV-' || replace(gen_random_uuid()::text, '-', ''),
+         'INV-' || replace(gen_random_uuid()::text, '-', ''),
+         $1, $2, $3, $4, $5, $6, $7
+       )
+       RETURNING id`,
+      [
+        opts.name,
+        opts.percentOff,
+        opts.durationMonths,
+        opts.collectPaymentMethod,
+        opts.maxRedemptions,
+        opts.redeemBy,
+        opts.isActive,
+      ],
+    );
+    return result.rows[0].id;
+  },
+
+  /**
+   * Insert a redemption row directly (bypassing the API layer this migration has no code for
+   * yet), exercising the same trigger every real attribution will go through.
+   *
+   * @param {import('pg').PoolClient | import('pg').Client} client - A client inside an open
+   *   transaction (or a standalone connection).
+   * @param {string} couponId - The coupon being claimed.
+   * @param {string} userId - The user claiming it.
+   * @param {object} [overrides] - Fields to override.
+   * @param {'attributed'|'redeemed'|'released'} [overrides.status] - Claim state.
+   * @param {'link'|'billing_form'|'operator'} [overrides.source] - How the claim arrived.
+   * @returns {Promise<string>} The new redemption row's uuid.
+   */
+  async claim(client, couponId, userId, overrides = {}) {
+    const opts = {
+      status: 'attributed',
+      source: 'link',
+      storeId: null,
+      redeemedAt: null,
+      releasedAt: null,
+      releaseReason: null,
+      ...overrides,
+    };
+    const result = await client.query(
+      `INSERT INTO platform_coupon_redemptions
+         (coupon_id, user_id, store_id, status, source, redeemed_at, released_at, release_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        couponId,
+        userId,
+        opts.storeId,
+        opts.status,
+        opts.source,
+        opts.redeemedAt,
+        opts.releasedAt,
+        opts.releaseReason,
+      ],
     );
     return result.rows[0].id;
   },
@@ -401,6 +530,233 @@ const CASES = [
           [media.rows[0].id, productId, storeA],
         );
       });
+    },
+  },
+
+  // ---------------------------------------------------------------------------------------------
+  // Platform coupons (migration 042) — docs/plans/platform-coupons.md §11.
+  // ---------------------------------------------------------------------------------------------
+
+  {
+    name: 'concurrent attribution against a max_redemptions = 1 coupon: exactly one succeeds',
+    // No `client` parameter: this case needs two genuinely independent connections of its own
+    // (see below) rather than the single pooled one every other case runs against.
+    async run() {
+      /*
+       * The pooled `client` passed in is one connection inside one transaction — it cannot hold
+       * two overlapping transactions, which is what proving a row lock requires. This case opens
+       * two independent connections, commits its own fixture data on one of them (so both
+       * backends can see it), fires both inserts before awaiting either, and lets the second
+       * proceed only once the first has committed. That is what actually exercises `SELECT ...
+       * FOR UPDATE` rather than an accident of `await` ordering — if the trigger's lock were a
+       * no-op, both inserts would succeed here. Not run inside the harness's rollback wrapper, so
+       * it commits real rows and is responsible for deleting them itself.
+       */
+      const a = await rawConnection();
+      const b = await rawConnection();
+      let couponId;
+      let userA;
+      let userB;
+
+      try {
+        await a.query('BEGIN');
+        couponId = await FIXTURE.coupon(a, { maxRedemptions: 1 });
+        userA = await FIXTURE.user(a);
+        userB = await FIXTURE.user(a);
+        await a.query('COMMIT');
+
+        await a.query('BEGIN');
+        await b.query('BEGIN');
+
+        const insertSql = `INSERT INTO platform_coupon_redemptions (coupon_id, user_id, status, source)
+                            VALUES ($1, $2, 'attributed', 'link')`;
+
+        // Fire both before awaiting either — genuinely concurrent, not sequential.
+        const claimA = a.query(insertSql, [couponId, userA]);
+        const claimB = b.query(insertSql, [couponId, userB]);
+
+        // A should win the row lock on the coupon and its insert should complete.
+        await claimA;
+        await a.query('COMMIT');
+
+        // B was blocked on that same row lock the whole time it was "in flight" above. Only now,
+        // after A's commit released the lock, does B's trigger re-count and see the seat is gone.
+        let bError = null;
+        try {
+          await claimB;
+        } catch (caught) {
+          bError = caught;
+        } finally {
+          await b.query('ROLLBACK').catch(() => undefined);
+        }
+
+        if (!bError) {
+          throw new Error('both concurrent attributions against a max_redemptions=1 coupon succeeded');
+        }
+        if (!String(bError.message).includes('platform_coupon_exhausted')) {
+          throw new Error(`the second attribution failed for the wrong reason: ${bError.message}`);
+        }
+
+        const { rows } = await a.query(
+          'SELECT count(*)::int AS n FROM platform_coupon_redemptions WHERE coupon_id = $1',
+          [couponId],
+        );
+        if (rows[0].n !== 1) {
+          throw new Error(`expected exactly one surviving redemption row, found ${rows[0].n}`);
+        }
+      } finally {
+        await a.query('ROLLBACK').catch(() => undefined);
+        await b.query('ROLLBACK').catch(() => undefined);
+        if (couponId) {
+          await a
+            .query('DELETE FROM platform_coupon_redemptions WHERE coupon_id = $1', [couponId])
+            .catch(() => undefined);
+          await a.query('DELETE FROM platform_coupons WHERE id = $1', [couponId]).catch(() => undefined);
+        }
+        const userIds = [userA, userB].filter(Boolean);
+        if (userIds.length > 0) {
+          await a.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [userIds]).catch(() => undefined);
+        }
+        await a.end().catch(() => undefined);
+        await b.end().catch(() => undefined);
+      }
+    },
+  },
+  {
+    name: 'a second live claim for the same user on a different coupon is rejected (idx_pcr_one_live_per_user)',
+    async run(client) {
+      const couponA = await FIXTURE.coupon(client);
+      const couponB = await FIXTURE.coupon(client);
+      const userId = await FIXTURE.user(client);
+
+      await FIXTURE.claim(client, couponA, userId);
+
+      await mustRefuse(client, 'a second live claim for one user on a different coupon', ['23505'], async () => {
+        await FIXTURE.claim(client, couponB, userId);
+      });
+    },
+  },
+  {
+    name: 'a second live claim for the same user on the same coupon is rejected',
+    async run(client) {
+      const couponId = await FIXTURE.coupon(client);
+      const userId = await FIXTURE.user(client);
+
+      await FIXTURE.claim(client, couponId, userId);
+
+      await mustRefuse(client, 'a second live claim for one user on the same coupon', ['23505'], async () => {
+        await FIXTURE.claim(client, couponId, userId);
+      });
+    },
+  },
+  {
+    name: 'releasing a claim frees capacity: a new claim then succeeds',
+    async run(client) {
+      const couponId = await FIXTURE.coupon(client, { maxRedemptions: 1 });
+      const userA = await FIXTURE.user(client);
+      const userB = await FIXTURE.user(client);
+
+      const claimA = await FIXTURE.claim(client, couponId, userA);
+
+      await mustRefuse(client, 'a claim against an already-exhausted max_redemptions=1 coupon', ['P0001'], async () => {
+        await FIXTURE.claim(client, couponId, userB);
+      });
+
+      await client.query(
+        `UPDATE platform_coupon_redemptions
+            SET status = 'released', released_at = NOW(), release_reason = 'invariant test'
+          WHERE id = $1`,
+        [claimA],
+      );
+
+      // Capacity was freed by the release above; this must not throw.
+      await FIXTURE.claim(client, couponId, userB);
+
+      const { rows } = await client.query('SELECT redeemed_count FROM platform_coupons WHERE id = $1', [couponId]);
+      if (Number(rows[0].redeemed_count) !== 1) {
+        throw new Error(`expected redeemed_count 1 after release-then-reclaim, got ${rows[0].redeemed_count}`);
+      }
+    },
+  },
+  {
+    name: 'deleting a platform coupon with redemption history is rejected (ON DELETE RESTRICT)',
+    async run(client) {
+      const couponId = await FIXTURE.coupon(client);
+      const userId = await FIXTURE.user(client);
+      await FIXTURE.claim(client, couponId, userId);
+
+      await mustRefuse(client, 'deleting a coupon that has redemption history', ['23503'], async () => {
+        await client.query('DELETE FROM platform_coupons WHERE id = $1', [couponId]);
+      });
+    },
+  },
+  {
+    name: 'collect_payment_method = FALSE with percent_off < 100 is rejected by the CHECK constraint',
+    async run(client) {
+      await mustRefuse(client, 'a no-card coupon offering less than 100% off', ['23514'], async () => {
+        await FIXTURE.coupon(client, { collectPaymentMethod: false, percentOff: 50 });
+      });
+    },
+  },
+  {
+    name: 'an inactive coupon rejects attribution',
+    async run(client) {
+      const couponId = await FIXTURE.coupon(client, { isActive: false });
+      const userId = await FIXTURE.user(client);
+
+      await mustRefuse(client, 'attributing an inactive coupon', ['P0001'], async () => {
+        await FIXTURE.claim(client, couponId, userId);
+      });
+    },
+  },
+  {
+    name: 'an expired coupon (redeem_by in the past) rejects attribution',
+    async run(client) {
+      const couponId = await FIXTURE.coupon(client, { redeemBy: new Date(Date.now() - 24 * 60 * 60 * 1000) });
+      const userId = await FIXTURE.user(client);
+
+      await mustRefuse(client, 'attributing an expired coupon', ['P0001'], async () => {
+        await FIXTURE.claim(client, couponId, userId);
+      });
+    },
+  },
+  {
+    name: 'redeemed_count matches rebuild_platform_coupon_counts() after a mix of inserts/updates/releases',
+    async run(client) {
+      const couponId = await FIXTURE.coupon(client);
+      const userA = await FIXTURE.user(client);
+      const userB = await FIXTURE.user(client);
+      const userC = await FIXTURE.user(client);
+
+      await FIXTURE.claim(client, couponId, userA, { status: 'attributed' });
+      const claimB = await FIXTURE.claim(client, couponId, userB, { status: 'redeemed' });
+      await FIXTURE.claim(client, couponId, userC, { status: 'attributed' });
+
+      // Released after the fact — should drop out of the live count kept by the trigger.
+      await client.query(
+        `UPDATE platform_coupon_redemptions SET status = 'released', released_at = NOW() WHERE id = $1`,
+        [claimB],
+      );
+
+      const { rows: byTrigger } = await client.query(
+        'SELECT redeemed_count FROM platform_coupons WHERE id = $1',
+        [couponId],
+      );
+      if (Number(byTrigger[0].redeemed_count) !== 2) {
+        throw new Error(`trigger-maintained redeemed_count: expected 2, got ${byTrigger[0].redeemed_count}`);
+      }
+
+      await client.query('SELECT rebuild_platform_coupon_counts()');
+
+      const { rows: afterRebuild } = await client.query(
+        'SELECT redeemed_count FROM platform_coupons WHERE id = $1',
+        [couponId],
+      );
+      if (Number(afterRebuild[0].redeemed_count) !== 2) {
+        throw new Error(
+          `rebuild_platform_coupon_counts() disagreed with the trigger: expected 2, got ${afterRebuild[0].redeemed_count}`,
+        );
+      }
     },
   },
 ];
