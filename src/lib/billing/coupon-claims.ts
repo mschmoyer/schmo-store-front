@@ -42,6 +42,7 @@
  */
 
 import { db } from '@/lib/database/connection';
+import { PLATFORM_CLAIM_RESERVATION_DAYS } from './coupon-windows';
 
 /**
  * The minimal query surface every function here needs. `db` (the real connection manager) and a
@@ -92,7 +93,7 @@ function liveClaimSql(): string {
 }
 
 /** Default reservation window: how long an `attributed` claim holds its seat with nobody subscribing. */
-export const PLATFORM_CLAIM_RESERVATION_DAYS = 30;
+export { PLATFORM_CLAIM_RESERVATION_DAYS } from './coupon-windows';
 
 /** `release_reason` written by the reservation sweep. */
 export const RELEASE_REASON_RESERVATION_EXPIRED = 'reservation_expired';

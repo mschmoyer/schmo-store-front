@@ -1,3 +1,8 @@
+import {
+  PLATFORM_DISCOUNT_GRACE_DAYS,
+  PLATFORM_DISCOUNT_WARNING_DAYS,
+} from './coupon-windows';
+
 /**
  * The `/admin` and `/admin/billing` alert ladder for a platform coupon's free window, as one pure
  * function of `(discountEndsAt, hasPaymentMethod, now, status)`.
@@ -34,13 +39,13 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * than "grace exhausted". Applies only when no payment method is on file — see the file header.
  * Proposed value from §5.2.
  */
-export const PLATFORM_DISCOUNT_GRACE_DAYS = 14;
+export { PLATFORM_DISCOUNT_GRACE_DAYS } from './coupon-windows';
 
 /**
  * How many days before `discount_ends_at` the dashboard starts saying anything at all. Outside this
  * window the ladder is silent on purpose (§5.1: "quiet for eleven months, clear for the last one").
  */
-export const PLATFORM_DISCOUNT_WARNING_DAYS = 30;
+export { PLATFORM_DISCOUNT_WARNING_DAYS } from './coupon-windows';
 
 /**
  * The lifecycle state of a coupon redemption, mirroring the `status` column of

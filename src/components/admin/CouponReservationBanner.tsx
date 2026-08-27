@@ -37,12 +37,8 @@
 import type React from 'react';
 import { Alert, Text } from '@mantine/core';
 import { IconGift } from '@tabler/icons-react';
+import { PLATFORM_CLAIM_RESERVATION_DAYS } from '@/lib/billing/coupon-windows';
 
-/**
- * Mirrors `PLATFORM_CLAIM_RESERVATION_DAYS` in `src/lib/billing/coupon-claims.ts` — see the file
- * header for why it is duplicated here rather than imported.
- */
-const RESERVATION_WINDOW_DAYS = 30;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -69,10 +65,10 @@ function formatDate(date: Date): string {
  * The date an `attributed` claim's reservation lapses, per §6.
  *
  * @param attributedAt - When the claim was attributed.
- * @returns `attributedAt` plus {@link RESERVATION_WINDOW_DAYS} days.
+ * @returns `attributedAt` plus {@link PLATFORM_CLAIM_RESERVATION_DAYS} days.
  */
 export function reservationEndsAt(attributedAt: Date): Date {
-  return new Date(attributedAt.getTime() + RESERVATION_WINDOW_DAYS * MS_PER_DAY);
+  return new Date(attributedAt.getTime() + PLATFORM_CLAIM_RESERVATION_DAYS * MS_PER_DAY);
 }
 
 /**
