@@ -644,6 +644,18 @@ unit tests and is blank in a browser.
 
 ## 13. Known limits of this design
 
+- **`subscriptions.intro_months` still overloads `0`.** It means both "no discount" and "a discount
+  that never ends", and the staff review found a comp account quoting `$19.99` because of it. The
+  fix that shipped is the narrow one: `intro_amount IS NOT NULL` plus `intro_ends_at IS NULL` is
+  read as "forever" wherever the next charge is computed. That is unambiguous today, because
+  `intro_amount` is only ever set alongside a real resolved discount — but it is a rule a reader has
+  to know rather than a shape the data enforces. The structural fix is an `ALTER TABLE` making
+  `intro_months` nullable so `NULL` can mean forever, and it was deliberately left out of the
+  review-fix pass rather than smuggled in beside a money bug. The column names are wrong too now
+  (`intro_*` describes whatever discount is live, coupon or intro); rename them in the same
+  migration when someone does it.
+
+
 Written down rather than discovered later.
 
 - **A coupon cannot be applied to an already-active subscription.** It attaches at subscribe time.
