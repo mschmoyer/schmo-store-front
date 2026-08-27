@@ -19,7 +19,13 @@ import {
   validateName,
   validatePassword,
 } from '@/components/onboarding/lib/password';
-import { buildState, loadOrCreateRow, originOf } from '../_lib/state';
+import {
+  PLATFORM_COUPON_COOKIE,
+  attributeCouponFromCookie,
+  buildState,
+  loadOrCreateRow,
+  originOf,
+} from '../_lib/state';
 
 interface AccountRequest {
   email?: string;
@@ -104,7 +110,11 @@ export async function POST(request: NextRequest) {
 
     const session = { userId, email, firstName, lastName };
     const token = await createSession(session);
-    const row = await loadOrCreateRow(session);
+    const initialRow = await loadOrCreateRow(session);
+    // A coupon failure here must never fail account creation — see the function's own doc. The
+    // merchant has an account either way; only the discount outcome is at stake, and it is folded
+    // into `state.coupon` below rather than into this response's success/failure at all.
+    const row = await attributeCouponFromCookie(request, session, initialRow);
     const state = await buildState({ session, row }, originOf(request));
 
     const response = NextResponse.json(
@@ -118,6 +128,9 @@ export async function POST(request: NextRequest) {
       path: '/',
       maxAge: 60 * 60 * 24 * 7,
     });
+    // The cookie's one job — carrying the code into this request — is done, whatever the outcome.
+    // The wizard renders the offer (or the honest failure) from `state.coupon` from here on.
+    response.cookies.delete(PLATFORM_COUPON_COOKIE);
     return response;
   } catch (error) {
     console.error('[onboarding/account] failed:', error);

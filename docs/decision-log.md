@@ -7,9 +7,9 @@
 - [x] Write `docs/plans/platform-coupons.md` - 2026-08-27
 - [x] Phase 1 — migration 042, redemption ledger, trigger-enforced limits, `db:verify` invariants
       - 2026-08-27
-- [ ] Phase 2 — resolve-or-create the Stripe coupon behind each code
-- [ ] Phase 3 — `/platform/coupons`, coupons and redemptions tabs
-- [ ] Phase 4 — `/join/<code>`, the cookie, attribution at account creation
+- [x] Phase 2 — resolve-or-create the Stripe coupon behind each code - 2026-08-27
+- [x] Phase 3 — `/platform/coupons`, coupons and redemptions tabs - 2026-08-27
+- [x] Phase 4 — `/join/<code>`, the cookie, attribution at account creation - 2026-08-27
 - [ ] Phase 5 — coupon code at billing, discount precedence, card flag, fix `readIntroDiscount`
 - [ ] Phase 6 — webhook closes the redemption, cron releases stale reservations
 - [ ] Phase 7 — the merchant's experience: alert ladder, grace window, offer row, billing-copy fix
@@ -49,6 +49,15 @@ whether the campaign worked.
 
 **The limit is enforced by trigger under a row lock,** the way migrations 029 and 030 enforce stock.
 Two friends clicking the same one-time link in the same second is a race a read-then-write loses.
+
+**A cookie name should not import the JWT stack.** `PLATFORM_COUPON_COOKIE` first landed in
+`onboarding/_lib/state.ts`, which imports `session.ts`, which imports `jose`. That gave
+`/join/[code]` — a route whose only interest in the constant is what to call a cookie — a
+transitive dependency on the whole JWT stack, and left its tests unable to run in either
+environment: jsdom has no `Request` global for a route handler, and Node cannot parse `jose`'s ESM
+through this repo's `transformIgnorePatterns`. It now lives in a dependency-free
+`_lib/coupon-cookie.ts`, re-exported from `state.ts` so existing importers are unaffected. Same
+shape as the `JWT_SECRET` module-scope bug that took the customizer's preview pane down.
 
 **Card collection is a per-coupon flag, not a global policy** (added 2026-08-27 after review).
 `collect_payment_method` defaults to `TRUE`; a coupon meant for friends sets it `FALSE` and Stripe
