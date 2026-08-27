@@ -90,7 +90,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // The intro offer. amount_off = list - intro, repeating for `intro_months`.
       discounts: [{ coupon: plan.introCouponId }],
       client_reference_id: merchant.userId,
-      allow_promotion_codes: false,
+      // `allow_promotion_codes` is deliberately absent. Stripe rejects a session that carries it
+      // alongside `discounts` -- "You may only specify one of these parameters:
+      // allow_promotion_codes, discounts" -- and it rejects on the parameter being *present*, so
+      // passing `false` fails exactly like passing `true`. Since the intro coupon is always
+      // applied here, promotion codes are already impossible; the field bought us nothing and
+      // broke every subscription checkout. Do not reinstate it while `discounts` is set.
       billing_address_collection: 'auto',
       subscription_data: {
         metadata: {

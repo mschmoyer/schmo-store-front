@@ -107,6 +107,31 @@ export async function createConnectedAccount(
 }
 
 /**
+ * Admin paths a Connect onboarding flow is allowed to return to.
+ *
+ * The return destination round-trips through Stripe and arrives back as a query parameter, which
+ * makes it attacker-influenced input on a route that deliberately requires no session. So it is an
+ * exact-match allowlist, not a "does it look relative?" check - `//evil.com` looks relative enough
+ * to slip past most of those and is a fully-qualified URL to a browser.
+ */
+export const CONNECT_RETURN_PATHS = ['/admin/billing', '/admin/integrations'] as const;
+
+/** A path Connect onboarding may redirect back to. */
+export type ConnectReturnPath = (typeof CONNECT_RETURN_PATHS)[number];
+
+/**
+ * Resolve an untrusted return path against {@link CONNECT_RETURN_PATHS}.
+ *
+ * @param candidate - The value that came back from Stripe, or from a request body.
+ * @returns The matching allowed path, or the default when there is no exact match.
+ */
+export function resolveConnectReturnPath(
+  candidate: string | null | undefined
+): ConnectReturnPath {
+  return CONNECT_RETURN_PATHS.find((path) => path === candidate) ?? CONNECT_RETURN_PATHS[0];
+}
+
+/**
  * Generate a fresh Account Link for onboarding or for resuming an incomplete onboarding.
  *
  * Account Links are single-use and short-lived; always mint a new one rather than storing the URL.
@@ -119,7 +144,8 @@ export async function createConnectedAccount(
 export async function createOnboardingLink(
   stripeAccountId: string,
   type: 'account_onboarding' | 'account_update' = 'account_onboarding',
-  stripe: Stripe = getStripe('createOnboardingLink')
+  stripe: Stripe = getStripe('createOnboardingLink'),
+  returnPath: ConnectReturnPath = CONNECT_RETURN_PATHS[0]
 ): Promise<Stripe.AccountLink> {
   const baseUrl = getAppBaseUrl();
 
@@ -127,11 +153,15 @@ export async function createOnboardingLink(
   // an identifier, not a credential, and both handlers verify it against `payment_accounts`.
   const account = encodeURIComponent(stripeAccountId);
 
+  // `next` carries the screen the merchant started from, so finishing onboarding returns them to
+  // where they were rather than always to billing. Re-validated on the way back, never trusted.
+  const next = encodeURIComponent(returnPath);
+
   return await stripe.accountLinks.create({
     account: stripeAccountId,
     type,
-    refresh_url: `${baseUrl}/api/connect/refresh?account=${account}`,
-    return_url: `${baseUrl}/api/connect/return?account=${account}`,
+    refresh_url: `${baseUrl}/api/connect/refresh?account=${account}&next=${next}`,
+    return_url: `${baseUrl}/api/connect/return?account=${account}&next=${next}`,
   });
 }
 
@@ -203,6 +233,15 @@ export function isLiveMode(): boolean {
 /**
  * Derive the coarse onboarding lifecycle state from a Stripe account.
  *
+ * Order matters here, and the obvious order is wrong. Stripe disables every account the instant it
+ * is created, with a `requirements.*` reason (`requirements.past_due` on a fresh Express account),
+ * so testing `disabled_reason` before `details_submitted` made `'not_started'` unreachable in
+ * practice: a merchant who had not yet clicked anything was told their account was *restricted*.
+ *
+ * `requirements.*` is the ordinary onboarding lifecycle, not a restriction. Only a reason outside
+ * that namespace - `rejected.fraud`, `platform_paused`, `under_review`, `listed` - means Stripe has
+ * actually acted against the account, and that outranks everything except being fully enabled.
+ *
  * @param account - The Stripe account.
  * @returns The {@link ConnectOnboardingStatus}.
  */
@@ -210,13 +249,21 @@ export function deriveOnboardingStatus(account: Stripe.Account): ConnectOnboardi
   if (account.charges_enabled && account.payouts_enabled && account.details_submitted) {
     return 'complete';
   }
-  if (account.requirements?.disabled_reason) {
+
+  const disabledReason = account.requirements?.disabled_reason ?? null;
+  const isGenuineRestriction =
+    typeof disabledReason === 'string' && !disabledReason.startsWith('requirements.');
+
+  if (isGenuineRestriction) {
     return 'restricted';
   }
-  if (account.details_submitted) {
-    return 'pending';
+  if (!account.details_submitted) {
+    return 'not_started';
   }
-  return 'not_started';
+
+  // Submitted, not yet enabled: either Stripe is verifying, or more is due. `requirementsCurrentlyDue`
+  // tells the merchant which, so the status itself does not need to.
+  return 'pending';
 }
 
 /**

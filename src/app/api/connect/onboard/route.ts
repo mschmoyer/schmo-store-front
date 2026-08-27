@@ -17,6 +17,7 @@ import {
   createConnectedAccount,
   createOnboardingLink,
   refreshAccountStatus,
+  resolveConnectReturnPath,
 } from '@/lib/stripe/connect';
 
 export const runtime = 'nodejs';
@@ -48,6 +49,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const { merchant } = auth;
 
+  // Where to send the merchant when they come back. Optional, allowlisted, and defaulted - the
+  // body may legitimately be absent, since most callers POST with no payload at all.
+  const body = (await request.json().catch(() => ({}))) as { returnTo?: unknown };
+  const returnTo = resolveConnectReturnPath(
+    typeof body.returnTo === 'string' ? body.returnTo : null
+  );
+
   try {
     const stripe = getStripe('connect onboard');
     let account = await getPaymentAccountForStore(merchant.storeId);
@@ -72,7 +80,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const link = await createOnboardingLink(
       account.stripeAccountId,
       status.onboardingStatus === 'complete' ? 'account_update' : 'account_onboarding',
-      stripe
+      stripe,
+      returnTo
     );
 
     return NextResponse.json({

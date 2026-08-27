@@ -278,7 +278,7 @@ behaviour with an empty environment.
 export STRIPE_SECRET_KEY=sk_test_...
 export NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# 2. Forward webhooks; this prints the signing secret to export
+# 2. Forward webhooks. Copy the secret THIS RUNNING PROCESS prints -- see the warning below.
 stripe listen --forward-to localhost:3000/api/webhooks/stripe
 export STRIPE_WEBHOOK_SECRET=whsec_...   # restart the dev server after setting this
 
@@ -306,6 +306,23 @@ Coupon if they do not already exist.
 
 Connect onboarding in test mode: click "Set up payouts with Stripe" on `/admin/billing` and use
 Stripe's test onboarding values (SSN `000-00-0000`, routing `110000000`, account `000123456789`).
+
+> **`stripe listen --print-secret` is not the secret you want.** It returns a different value from
+> the one a running `stripe listen` session mints. Configure the app with the `--print-secret`
+> output and every delivery fails signature verification: the CLI logs `[400]` for each event, the
+> payment still succeeds on Stripe, and **no `orders` row is ever written**. Nothing in the app
+> surfaces this - the shopper sees a successful payment and the merchant sees no order. Always copy
+> the `whsec_...` printed by the `stripe listen` process you are actually forwarding through, and
+> restart the dev server after changing it.
+>
+> A fast way to confirm the wiring without paying for anything:
+>
+> ```bash
+> stripe trigger payment_intent.succeeded   # unhandled -> 200 means the signature verified
+> ```
+>
+> `200` proves the secret is right (the event is ignored by `HANDLED_EVENT_TYPES`, which is fine).
+> `400` means it is wrong. Do not run a checkout test until you see `200`.
 
 ---
 

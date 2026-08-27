@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPaymentAccountByStripeId } from '@/lib/billing/payment-accounts';
 import { getAppBaseUrl, tryGetStripe } from '@/lib/stripe/client';
-import { createOnboardingLink } from '@/lib/stripe/connect';
+import { createOnboardingLink, resolveConnectReturnPath } from '@/lib/stripe/connect';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +25,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const accountId = request.nextUrl.searchParams.get('account')?.trim();
+  const destination = resolveConnectReturnPath(request.nextUrl.searchParams.get('next'));
   const baseUrl = getAppBaseUrl();
 
   if (accountId) {
@@ -33,7 +34,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       const stripe = known ? tryGetStripe('connect refresh') : null;
 
       if (known && stripe) {
-        const link = await createOnboardingLink(accountId, 'account_onboarding', stripe);
+        const link = await createOnboardingLink(
+          accountId,
+          'account_onboarding',
+          stripe,
+          destination
+        );
         return NextResponse.redirect(link.url);
       }
     } catch (error) {
@@ -41,5 +47,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.redirect(`${baseUrl}/admin/billing?connect=refresh_failed`);
+  return NextResponse.redirect(`${baseUrl}${destination}?connect=refresh_failed`);
 }

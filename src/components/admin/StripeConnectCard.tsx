@@ -96,11 +96,39 @@ export function StripeConnectCard() {
     })();
   }, [readStatus]);
 
+  /**
+   * Re-read status whenever the merchant comes back to this tab.
+   *
+   * Onboarding happens on Stripe's domain and returns to `/admin/billing`, so a tab left open on
+   * this page never re-mounted and kept rendering its pre-onboarding snapshot indefinitely - it
+   * told merchants their account was restricted minutes after Stripe had enabled it. The account
+   * is the source of truth and it changes while we are not looking, so look again on the way back.
+   */
+  useEffect(() => {
+    const refresh = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      void (async () => setStatus(await readStatus()))();
+    };
+
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [readStatus]);
+
   /** Start (or resume) Connect onboarding in this tab. */
   const connect = async () => {
     setBusy('connect');
     try {
-      const response = await fetch('/api/connect/onboard', { method: 'POST' });
+      const response = await fetch('/api/connect/onboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Come back to this page rather than to billing, which is where the flow used to dump
+        // every merchant regardless of where they clicked Connect.
+        body: JSON.stringify({ returnTo: '/admin/integrations' }),
+      });
       const payload = (await response.json().catch(() => ({}))) as {
         data?: { url?: string };
         error?: string;
@@ -165,7 +193,11 @@ export function StripeConnectCard() {
         ? 'Your account can accept charges and receive payouts.'
         : `Charges ${fresh.account.chargesEnabled ? 'enabled' : 'disabled'}, payouts ${
             fresh.account.payoutsEnabled ? 'enabled' : 'disabled'
-          }. Finish the outstanding requirements in Stripe.`,
+          }.${
+            (fresh.account.requirementsCurrentlyDue?.length ?? 0) === 0
+              ? ' Stripe is still verifying; nothing is needed from you.'
+              : ' Finish the outstanding requirements in Stripe.'
+          }`,
       color: ok ? 'green' : 'yellow',
       icon: ok ? <IconCheck size="1.1rem" /> : undefined,
     });
@@ -214,6 +246,14 @@ export function StripeConnectCard() {
   const account = status?.account ?? null;
   const ready = Boolean(account?.chargesEnabled && account?.payoutsEnabled);
   const linked = Boolean(status?.connected && account);
+
+  /**
+   * Stripe holds everything it asked for and is verifying: nothing is outstanding on the merchant's
+   * side, so the UI must not ask them to go and finish something.
+   */
+  const awaitingStripe = Boolean(
+    account?.detailsSubmitted && (account.requirementsCurrentlyDue?.length ?? 0) === 0
+  );
 
   return (
     <Card shadow="sm" padding="lg" withBorder>
@@ -264,9 +304,13 @@ export function StripeConnectCard() {
             : !account.chargesEnabled
               ? 'take charges'
               : 'send payouts'}{' '}
-          yet
-          {account.disabledReason ? ` (${account.disabledReason})` : ''}. Continue setup to finish
-          the outstanding requirements.
+          yet.{' '}
+          {/* Only ask for action when there is action to take. When Stripe is verifying, the
+              merchant has already done everything and telling them to "continue setup" sends them
+              back into a form with nothing left to fill in. */}
+          {awaitingStripe
+            ? 'Stripe is reviewing the details you submitted. Nothing is needed from you — this usually clears within a few minutes.'
+            : 'Continue setup to finish the outstanding requirements.'}
         </Alert>
       )}
 

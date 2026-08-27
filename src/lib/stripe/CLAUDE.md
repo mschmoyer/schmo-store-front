@@ -230,6 +230,9 @@ A non-zero total below Stripe's $0.50 minimum is a different case and still retu
 ## Testing
 
 - `src/lib/stripe/__tests__/webhooks.test.ts` — signature, dispatch, unknown-event handling.
+- `src/lib/stripe/__tests__/connect.test.ts` — `business_profile.url` omitted for non-resolvable
+  origins, `deriveOnboardingStatus` lifecycle ordering, and the `next=` return-path allowlist. All
+  three cover bugs that reached production and were only found by running a real onboarding.
 - `src/lib/billing/__tests__/` — `cart`, `cart-pricing`, `coupons`, `intro-offer`, `webhook-events`.
 - Local end-to-end with the Stripe CLI: `docs/payments.md` §6 has the full script, including the
   idempotency proof (resend one event id twice; expect `{"received":true,"duplicate":true}` and

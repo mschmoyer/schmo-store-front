@@ -17,7 +17,7 @@ import {
   savePaymentAccountStatus,
 } from '@/lib/billing/payment-accounts';
 import { getAppBaseUrl, tryGetStripe } from '@/lib/stripe/client';
-import { refreshAccountStatus } from '@/lib/stripe/connect';
+import { refreshAccountStatus, resolveConnectReturnPath } from '@/lib/stripe/connect';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,11 +26,12 @@ export const dynamic = 'force-dynamic';
  * Refresh the connected account and redirect back into the admin.
  *
  * @param request - The inbound request, carrying `?account=acct_...`.
- * @returns A redirect to `/admin/billing`.
+ * @returns A redirect to the allowed admin path named by `?next=`, defaulting to `/admin/billing`.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const accountId = request.nextUrl.searchParams.get('account')?.trim();
   const baseUrl = getAppBaseUrl();
+  const destination = resolveConnectReturnPath(request.nextUrl.searchParams.get('next'));
   let outcome = 'unknown';
 
   if (accountId) {
@@ -49,6 +50,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   return NextResponse.redirect(
-    `${baseUrl}/admin/billing?connect=return&status=${encodeURIComponent(outcome)}`
+    `${baseUrl}${destination}?connect=return&status=${encodeURIComponent(outcome)}`
   );
 }

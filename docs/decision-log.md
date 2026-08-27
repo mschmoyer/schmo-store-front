@@ -1,5 +1,59 @@
 # Decision Log
 
+## 2026-08-26
+
+### First live exercise of the Stripe integration, and the four bugs it found
+
+- [x] Fix `business_profile.url` rejecting local development - 2026-08-26
+- [x] Fix `allow_promotion_codes` + `discounts` breaking every subscription checkout - 2026-08-26
+- [x] Fix `deriveOnboardingStatus` making `'not_started'` unreachable - 2026-08-26
+- [x] Refresh the Connect card on tab focus, and stop asking for action when there is none - 2026-08-26
+- [x] Return merchants to the screen they started Connect from - 2026-08-26
+- [x] Cover all of the above in `src/lib/stripe/__tests__/connect.test.ts` - 2026-08-26
+- [x] Document the `stripe listen --print-secret` trap in `docs/payments.md` §6 - 2026-08-26
+- [ ] Decide `STRIPE_APPLICATION_FEE_BPS`; it is `0`, so the platform takes nothing
+- [ ] Add test Stripe keys to Vercel Preview/Development (Production-only today, so previews render "not configured")
+- [ ] Rename `metricDelta.ts` or `MetricDelta.tsx`; differing only in case makes `tsc` fail on macOS
+- [ ] Live-mode Connect signup and a live webhook endpoint, before Production keys go live
+
+**User Request**: "let's check out the stripe integration in here" -- which became configuring
+Stripe from scratch and running the first real payment this codebase has ever taken.
+
+**Decision**: Kept Connect on the **V1** Accounts API rather than migrating to V2 Core Accounts.
+The migration cost is at its minimum today (zero connected accounts), but the integration had
+never processed a payment, so rewriting the account layer first would have meant replacing code
+nobody had watched succeed. Revisit before onboarding the first real merchant; that, not a date,
+is when the window closes.
+
+**What the exercise proved**: server-side pricing held (charged the $199 sale price against a
+request carrying no price at all), Connect routing applied `on_behalf_of` and
+`transfer_data.destination`, and `createPaidOrder()` wrote the order, its items and the inventory
+movement in one transaction -- all three stamped to the same microsecond. Re-delivering the event
+returned 200 with `attempts` still 1 and produced no second order.
+
+**The bugs, and why none of them was reachable before**:
+
+1. `business_profile.url` was built from `getAppBaseUrl()`, so local development sent
+   `http://localhost:3000/store/<slug>`. Stripe rejects that with "Not a valid URL", which made
+   Connect onboarding impossible to exercise in the one environment where you most want to
+   exercise it. `publicStoreUrl()` now omits the field when the origin cannot resolve publicly;
+   Stripe collects the URL during onboarding instead.
+2. `POST /api/billing/checkout` passed `allow_promotion_codes: false` alongside `discounts`.
+   Stripe rejects on the parameter being *present*, so `false` failed exactly like `true` --
+   **the Subscribe button had never worked**. Removed.
+3. `deriveOnboardingStatus` tested `disabled_reason` before `details_submitted`. Every fresh
+   Express account carries `requirements.past_due`, so `'not_started'` was unreachable and a
+   merchant who had clicked nothing was told their account was restricted. Reordered, with
+   non-`requirements.*` reasons (`rejected.*`, `platform_paused`) still outranking everything.
+4. `StripeConnectCard` read status only on mount, and `/api/connect/return` always landed on
+   `/admin/billing`. A tab left open during onboarding kept rendering its pre-onboarding snapshot
+   indefinitely, telling merchants they were restricted minutes after Stripe enabled them. Added
+   focus/visibility refresh, and threaded an allowlisted return path through the account link.
+
+All four sat in code with 922 unit tests and a green build. None was reachable without real
+credentials and a real click.
+
+
 ## 2025-07-04
 
 ### Added Mantine UI Component Library
