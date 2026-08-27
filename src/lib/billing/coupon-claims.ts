@@ -233,13 +233,15 @@ interface CouponGateRow extends Record<string, unknown> {
 /**
  * Translate a failed insert into a typed reason.
  *
- * Reached only when the pre-checks in {@link attributeCoupon} already passed, so by elimination a
- * `RAISE` here almost always means a concurrent insert won the capacity race between the read and
- * this write. Message text is still sniffed for `expired`/`inactive` first, in case the trigger
- * re-validates all three conditions rather than only capacity — this function does not assume
- * which the other agent's migration actually raises for, and degrades to the safe answer
- * (`'exhausted'`, i.e. refuse the claim) when the text does not say more. The raw error is logged
- * server-side, never returned.
+ * Reached only when the pre-checks in {@link attributeCoupon} already passed, so a `RAISE` here
+ * almost always means a concurrent insert won the capacity race between the read and this write.
+ * Migration 042's `platform_coupon_redemptions_check_capacity()` trigger prefixes each of its four
+ * failures with a greppable tag — `platform_coupon_not_found`, `_inactive`, `_expired`,
+ * `_exhausted` — precisely so a caller does not have to guess at its prose; this matches those tags
+ * rather than sniffing free text, and only degrades to the conservative default (`'exhausted'`,
+ * i.e. refuse the claim) for a message that carries none of them, which should not happen against
+ * that trigger but is handled rather than assumed away. The raw error is logged server-side, never
+ * returned — a route renders only the typed reason.
  *
  * @param error - Whatever the insert threw.
  * @returns A failure {@link AttributeCouponResult}.
@@ -257,15 +259,21 @@ function mapAttributeInsertError(error: unknown): AttributeCouponResult {
   }
 
   if (code === PG_RAISED_EXCEPTION) {
-    const message = pgErrorMessage(error).toLowerCase();
-    if (message.includes('expire')) {
+    const message = pgErrorMessage(error);
+    if (message.includes('platform_coupon_expired')) {
       return { reason: 'expired' };
     }
-    if (message.includes('inactive') || message.includes('not active')) {
+    if (
+      message.includes('platform_coupon_inactive') ||
+      message.includes('platform_coupon_not_found')
+    ) {
       return { reason: 'inactive' };
     }
+    if (message.includes('platform_coupon_exhausted')) {
+      return { reason: 'exhausted' };
+    }
     console.error(
-      '[coupon-claims] attributeCoupon: trigger refused the insert; treating as exhausted:',
+      '[coupon-claims] attributeCoupon: unrecognised trigger refusal, treating as exhausted:',
       error
     );
     return { reason: 'exhausted' };

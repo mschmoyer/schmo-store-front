@@ -201,12 +201,14 @@ describe('attributeCoupon: the (none) -> attributed transition', () => {
     expect(result).toEqual({ reason: 'already_claimed' });
   });
 
-  it("maps a trigger RAISE mentioning 'expired' to the expired reason", async () => {
+  it('maps the trigger\'s platform_coupon_expired RAISE to the expired reason', async () => {
     const { executor, query } = fakeExecutor();
     query
       .mockResolvedValueOnce({ rows: [gateRow()] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockRejectedValueOnce(pgError('P0001', 'This coupon has expired'));
+      .mockRejectedValueOnce(
+        pgError('P0001', 'platform_coupon_expired: coupon "FRIENDS12" (coupon-1) expired at 2020-01-01')
+      );
 
     const result = await attributeCoupon(
       { couponId: 'coupon-1', userId: 'user-1', source: 'link' },
@@ -216,12 +218,14 @@ describe('attributeCoupon: the (none) -> attributed transition', () => {
     expect(result).toEqual({ reason: 'expired' });
   });
 
-  it("maps a trigger RAISE mentioning 'inactive' to the inactive reason", async () => {
+  it('maps the trigger\'s platform_coupon_inactive RAISE to the inactive reason', async () => {
     const { executor, query } = fakeExecutor();
     query
       .mockResolvedValueOnce({ rows: [gateRow()] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockRejectedValueOnce(pgError('P0001', 'This coupon is inactive'));
+      .mockRejectedValueOnce(
+        pgError('P0001', 'platform_coupon_inactive: coupon "FRIENDS12" (coupon-1) is not active')
+      );
 
     const result = await attributeCoupon(
       { couponId: 'coupon-1', userId: 'user-1', source: 'link' },
@@ -231,13 +235,32 @@ describe('attributeCoupon: the (none) -> attributed transition', () => {
     expect(result).toEqual({ reason: 'inactive' });
   });
 
-  it('degrades an unrecognised trigger RAISE to exhausted, and never leaks the raw message', async () => {
+  it("maps the trigger's platform_coupon_not_found RAISE to the inactive reason", async () => {
+    // Unreachable in practice, given the FK on coupon_id, but the trigger raises this tag
+    // defensively (migration 042's comment says so) and this function must still route it somewhere
+    // sane rather than falling through to the generic default.
     const { executor, query } = fakeExecutor();
-    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     query
       .mockResolvedValueOnce({ rows: [gateRow()] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockRejectedValueOnce(pgError('P0001', 'Only 1 redemption is allowed for this coupon'));
+      .mockRejectedValueOnce(pgError('P0001', 'platform_coupon_not_found: coupon coupon-1 does not exist'));
+
+    const result = await attributeCoupon(
+      { couponId: 'coupon-1', userId: 'user-1', source: 'link' },
+      executor
+    );
+
+    expect(result).toEqual({ reason: 'inactive' });
+  });
+
+  it("maps the trigger's platform_coupon_exhausted RAISE to the exhausted reason", async () => {
+    const { executor, query } = fakeExecutor();
+    query
+      .mockResolvedValueOnce({ rows: [gateRow()] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(
+        pgError('P0001', 'platform_coupon_exhausted: coupon "FRIENDS12" (coupon-1) has reached its limit of 1 redemption(s)')
+      );
 
     const result = await attributeCoupon(
       { couponId: 'coupon-1', userId: 'user-1', source: 'link' },
@@ -245,7 +268,23 @@ describe('attributeCoupon: the (none) -> attributed transition', () => {
     );
 
     expect(result).toEqual({ reason: 'exhausted' });
-    expect(JSON.stringify(result)).not.toContain('redemption is allowed');
+  });
+
+  it('degrades an unrecognised trigger RAISE to exhausted, and never leaks the raw message', async () => {
+    const { executor, query } = fakeExecutor();
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    query
+      .mockResolvedValueOnce({ rows: [gateRow()] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(pgError('P0001', 'Some future trigger message with no recognised tag'));
+
+    const result = await attributeCoupon(
+      { couponId: 'coupon-1', userId: 'user-1', source: 'link' },
+      executor
+    );
+
+    expect(result).toEqual({ reason: 'exhausted' });
+    expect(JSON.stringify(result)).not.toContain('recognised tag');
     spy.mockRestore();
   });
 
