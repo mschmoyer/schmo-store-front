@@ -97,6 +97,7 @@ Connect (payouts to merchants) ────────────────�
 | `stripe/products.ts` | `PLATFORM_PLAN` definition, `ensurePlatformProduct`. | Hardcode ids. |
 | `stripe/prices.ts` | Resolve-or-create for price and intro coupon; `ensurePlatformPlan`. | Assume the objects exist. |
 | `stripe/discounts.ts` | One-time `duration: 'once'`, `max_redemptions: 1` coupons for storefront discounts. | Reuse a coupon across sessions. |
+| `stripe/platform-coupons.ts` | Resolve-or-create for one platform signup coupon (flow A, `docs/plans/platform-coupons.md`): `ensureStripeCouponFor`, `describeStripeCouponFor`, `deriveSubscriptionParams`. | Set `max_redemptions` on the Stripe object — the redemption ledger enforces the cap. Reuse a coupon whose economics disagree with its row — throw instead. |
 | `stripe/connect.ts` | Express account create, account/dashboard links, capability summary. | Treat "returned from onboarding" as "onboarded" — read capabilities. |
 | `stripe/webhooks.ts` | Raw-body read, signature construction, handler dispatch, `HANDLED_EVENT_TYPES`. | Read the payload before the signature verifies. |
 | `billing/auth.ts` | `requireMerchant` — the session gate for every billing/connect **API** route. The two browser-redirect routes (`/api/connect/return`, `/api/connect/refresh`) cannot use it and deliberately trust nothing. | Skip it on an API route. Trust a redirect as proof of anything. |
@@ -121,6 +122,7 @@ Every call in the codebase, and where it lives:
 | `prices.list` / `prices.retrieve` / `prices.create` | `stripe/prices.ts` | A |
 | `coupons.retrieve` / `coupons.create` | `stripe/prices.ts` (intro, repeating) | A |
 | `coupons.create` | `stripe/discounts.ts` (one-time, storefront) | B |
+| `coupons.retrieve` / `coupons.create` | `stripe/platform-coupons.ts` (signup coupon, repeating/forever) | A |
 | `customers.create` | `api/billing/checkout/route.ts` | A |
 | `checkout.sessions.create` | `api/billing/checkout/route.ts` (mode `subscription`) | A |
 | `checkout.sessions.create` | `api/checkout/session/route.ts` (mode `payment`) | B |
