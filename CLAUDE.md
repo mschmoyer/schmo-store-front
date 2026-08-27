@@ -160,6 +160,13 @@ Two variables fail closed rather than degrading:
 - **Icons.** `@tabler/icons-react`. Use `IconBuildingStore`, not `IconStore`.
 - **Documentation.** JSDoc on every exported function and component, with `@param` and `@returns`.
   This codebase's file-header comments explain *why* a design is the way it is; match that.
+- **Comments earn their place.** A comment must add context the code cannot: why this way, what
+  breaks otherwise, which bug it prevents. Never restate what the line already says. Delete a
+  comment rather than update it to describe unchanged behaviour.
+- **Be concise.** Comments, file headers, docs, commit messages and PR bodies: shortest version
+  that still carries the reasoning. A rule stated once is stronger than the same rule stated three
+  ways, and a wall of prose above a function gets skipped by the reader who needed one line of it.
+  Length is a cost — spend it on the non-obvious.
 - **Accessibility.** Semantic HTML and ARIA labels.
 - **Mocks.** Avoid unless asked. Prefer real data. Where a network boundary is injectable
   (`fetchImpl`, `sleepImpl`, …), inject it and test the real logic rather than mocking the module.
