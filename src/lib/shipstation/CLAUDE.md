@@ -63,6 +63,12 @@ These are not style preferences. Each one closes a defect that reached productio
    per-record write. `/api/admin/sync/all` used to return `success: true` unconditionally.
 8. **Never claim a connection test passed without a live call.** The test is
    `GET /v2/warehouses` against the real key. Regex and length checks are not tests (P0-2).
+9. **Give a reused query parameter one explicit type.** A parameter bound both to a column and to a
+   bare literal gets its type deduced twice, and Postgres rejects the statement rather than picking:
+   `inconsistent types deduced for parameter $1 - DETAIL: text versus character varying`. This took
+   out `recordSyncStatus`, which is the first statement every manual and background sync runs, so
+   *every* sync failed before fetching a page. Cast it (`$1::text`) in **every** position, not just
+   the one that looks ambiguous.
 
 ## How the pieces fit
 

@@ -195,6 +195,33 @@ fallback.
 
 ## 2026-08-26
 
+### ShipStation "Sync data" failed on its first statement
+
+- [x] Fix `inconsistent types deduced for parameter $1` in `recordSyncStatus` - 2026-08-26
+- [x] Add rule 9 to `src/lib/shipstation/CLAUDE.md` - 2026-08-26
+- [x] Scan every query in `src/` for the same shape; no other instance - 2026-08-26
+- [ ] Make `recordSyncStatus` reachable in tests; `db.query` is not injectable here, so this
+      defect had no unit-test surface at all
+
+**User Request**: "When i try sync data in the shipstation integration I get: {"success":false,
+"error":"inconsistent types deduced for parameter $1"}"
+
+**Decision**: `recordSyncStatus` bound `$1` twice - once assigned to `sync_status`
+(`character varying`) and once compared against the untyped literal `'completed'`. Postgres deduces
+`varchar` from the first and `text` from the second and refuses the statement rather than coercing.
+Both positions are now `$1::text`.
+
+The severity came from position, not complexity: `manualSync.ts:211` calls
+`recordSyncStatus(storeId, 'running')` as its *first* action, and `syncOrchestrator.ts:229` does the
+same, so **every** sync - manual button, hourly cron, background run - died before fetching a single
+page. Reproduced through the Neon driver (broken query errors, `$1::text` returns `running`), then
+swept the whole of `src/` for any other query assigning a parameter to a column and comparing the
+same parameter to a literal. There are none.
+
+Worth noting the shape of the failure: it is invisible to typecheck, to lint, and to the unit suite,
+because the SQL is a string and `db.query` is not injectable in this module. It surfaces only when a
+real Postgres parses it.
+
 ### First live exercise of the Stripe integration, and the four bugs it found
 
 - [x] Fix `business_profile.url` rejecting local development - 2026-08-26
