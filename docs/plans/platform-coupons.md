@@ -576,9 +576,14 @@ Things that must hold, listed so a reviewer has something to check against.
 3. **A coupon replaces the intro offer, never stacks with it.** One discount reaches Stripe.
 4. **The cookie is a hint.** Every attach re-validates against the database. A forged cookie gets
    the standard price, not a free year.
-5. **Economics are immutable after first redemption.** `percent_off` and `duration_months` cannot be
-   edited once anyone has redeemed — the Stripe coupon behind them cannot be edited either, and a
-   row that disagrees with its Stripe object is a wrong price on a real invoice.
+5. **Economics are immutable, full stop.** `percent_off`, `duration_months` and
+   `collect_payment_method` are never editable — not merely "once someone has redeemed", which is
+   what this plan said before the code was written. The implementation went stricter deliberately:
+   the moment `stripe_coupon_id` is set the Stripe coupon exists and Stripe coupons cannot be
+   edited, so any window in which our row could drift from it is a window that ends in a wrong
+   price on a real invoice. A pre-redemption typo is fixed by deactivating and re-creating, which
+   costs one dead row and one new code. The patch type still *accepts* those fields so an attempt
+   can be refused by name (`economics_immutable`) rather than silently ignored.
 6. **Deactivation never claws back an active discount.** It stops new redemptions. The Stripe coupon
    is never deleted.
 7. **A failed coupon never becomes a silent full-price signup.** The wizard and the billing page say
