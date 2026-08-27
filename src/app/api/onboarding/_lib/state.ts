@@ -40,7 +40,6 @@ export { SESSION_COOKIE };
 // dependency-free module so `/join` need not import the JWT stack to name a cookie.
 export { PLATFORM_COUPON_COOKIE } from './coupon-cookie';
 
-
 /** Every {@link OnboardingCouponErrorReason} value, for validating an untrusted query string. */
 const COUPON_ERROR_REASONS: readonly OnboardingCouponErrorReason[] = [
   'unknown',

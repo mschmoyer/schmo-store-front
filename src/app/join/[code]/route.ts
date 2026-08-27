@@ -40,8 +40,6 @@ import {
 /** Re-exported so callers (and this route's own handler) need only one import for the cookie name. */
 export { PLATFORM_COUPON_COOKIE, PLATFORM_COUPON_COOKIE_MAX_AGE_SECONDS };
 
-/** How long the cookie lives: plan §4A's "30d". */
-
 /** The four reasons `/join` can redirect with — matches `CouponRedeemability['status']` plus `unknown`. */
 export type JoinFailureReason = 'unknown' | 'expired' | 'exhausted' | 'inactive';
 
