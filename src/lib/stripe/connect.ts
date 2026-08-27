@@ -37,6 +37,42 @@ export interface CreateConnectedAccountInput {
 }
 
 /**
+ * Public storefront URL for a store, or `undefined` when this deployment is not reachable from
+ * the internet.
+ *
+ * Stripe validates `business_profile.url` and rejects anything it cannot resolve. A local
+ * `http://localhost:3000` origin therefore failed `accounts.create` outright with "Not a valid
+ * URL", which made Connect onboarding impossible to exercise in development — the one environment
+ * where you most want to exercise it. Omitting the field is legal: Stripe collects the business
+ * URL during onboarding instead, so the merchant is asked rather than the call failing.
+ *
+ * @param storeSlug - The store's slug.
+ * @returns An absolute storefront URL, or `undefined` when the base URL is not publicly resolvable.
+ */
+function publicStoreUrl(storeSlug: string): string | undefined {
+  const baseUrl = getAppBaseUrl();
+
+  let hostname: string;
+  try {
+    hostname = new URL(baseUrl).hostname;
+  } catch {
+    return undefined;
+  }
+
+  // A hostname with no dot cannot resolve publicly, which covers `localhost` and container names.
+  const isLocal =
+    hostname === 'localhost' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname === '[::1]' ||
+    hostname.endsWith('.local') ||
+    /^127\./.test(hostname) ||
+    !hostname.includes('.');
+
+  return isLocal ? undefined : `${baseUrl}/store/${storeSlug}`;
+}
+
+/**
  * Create an Express connected account for a store.
  *
  * @param input - Store identity used for the account's metadata and business profile.
@@ -47,13 +83,16 @@ export async function createConnectedAccount(
   input: CreateConnectedAccountInput,
   stripe: Stripe = getStripe('createConnectedAccount')
 ): Promise<Stripe.Account> {
+  const storefrontUrl = publicStoreUrl(input.storeSlug);
+
   return await stripe.accounts.create({
     type: 'express',
     country: input.country ?? 'US',
     email: input.ownerEmail,
     business_profile: {
       name: input.storeName,
-      url: `${getAppBaseUrl()}/store/${input.storeSlug}`,
+      // Omitted rather than sent as localhost; see publicStoreUrl.
+      ...(storefrontUrl ? { url: storefrontUrl } : {}),
     },
     capabilities: {
       card_payments: { requested: true },

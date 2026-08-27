@@ -55,3 +55,6 @@ next-env.d.ts
 
 # Ad-hoc screenshot drivers used while building /platform. Scratch, never committed.
 .platform-shot*.cjs
+
+# Stripe CLI webhook listener output (docs/payments.md §6)
+stripe-listen.log
