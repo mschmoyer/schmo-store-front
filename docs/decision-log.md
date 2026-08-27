@@ -10,9 +10,9 @@
 - [x] Phase 2 — resolve-or-create the Stripe coupon behind each code - 2026-08-27
 - [x] Phase 3 — `/platform/coupons`, coupons and redemptions tabs - 2026-08-27
 - [x] Phase 4 — `/join/<code>`, the cookie, attribution at account creation - 2026-08-27
-- [ ] Phase 5 — coupon code at billing, discount precedence, card flag, fix `readIntroDiscount`
-- [ ] Phase 6 — webhook closes the redemption, cron releases stale reservations
-- [ ] Phase 7 — the merchant's experience: alert ladder, grace window, offer row, billing-copy fix
+- [x] Phase 5 — coupon code at billing, discount precedence, card flag, fix `readIntroDiscount` - 2026-08-27
+- [x] Phase 6 — webhook closes the redemption, cron releases stale reservations - 2026-08-27
+- [x] Phase 7 — the merchant's experience: alert ladder, grace window, offer row, billing-copy fix - 2026-08-27
 - [ ] Phase 8 — docs, `/pricing` quoting the link's offer
 
 **User request**: "a coupon code system in our admin portal that allows someone to sign up a new

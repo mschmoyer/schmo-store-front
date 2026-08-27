@@ -1,8 +1,9 @@
 # Plan: platform signup coupons
 
-**Status:** in build. **Phase 1 landed 2026-08-27** — migration 042, the redemption ledger, the
-trigger-enforced limit and nine new `db:verify` invariants, plus the pure model modules. Phases 2-8
-outstanding; the phase table in §10 is the running checklist.
+**Status:** in build. **Phases 1-7 landed 2026-08-27.** The schema, the Stripe resolution, the
+operator console, the `/join` link, the billing attach, the redemption close-out and the merchant's
+alert ladder are all in and green: 1370 unit tests, 21 schema invariants, a keyless production
+build. Phase 8 (docs and `/pricing`) is outstanding, as is the staff review.
 **Goal:** hand a friend a link, they sign up, they get a year free, and the operator console can
 show who used what. Friends skip the card entirely; publicly-issued codes still take one.
 

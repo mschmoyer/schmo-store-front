@@ -3,8 +3,21 @@
 /**
  * Merchant billing screen.
  *
- * Shows the current plan, what the merchant pays now versus after the intro window, the next charge
- * date, the Stripe Connect payout status, and the actions to subscribe, manage, or cancel.
+ * Shows the current plan, what the merchant pays now versus once any discount window closes, the
+ * next charge date, the Stripe Connect payout status, and the actions to subscribe, manage, or
+ * cancel.
+ *
+ * **Vocabulary (plan `docs/plans/platform-coupons.md` §5.3):** this page used to describe every
+ * discount as "the intro offer" — a `100`% off, 12-month platform coupon would have rendered
+ * "Intro pricing · 12 months" and a Subscribe button reading "Subscribe for $1.00" on a checkout
+ * that actually charges $0.00, which is the **Honest results** rule in the root `CLAUDE.md` broken
+ * in the UI. Every price and label below is read from `GET /api/billing/status`'s `pendingOffer` /
+ * `subscription.discount` — never from the `PLATFORM_INTRO_*` constants — so the copy always
+ * matches what Stripe will actually do. "Your offer" / "Offer ends" / "Then" are neutral on
+ * purpose: they render identically whether the live discount is the standard intro offer or a
+ * named platform coupon, because the plan asks that no screen describe a coupon in the intro
+ * offer's vocabulary specifically, and the simplest way to guarantee that is one vocabulary for
+ * both.
  *
  * Design note: colours come from the RebelShops tokens in `docs/design-system.md`, written as
  * `var(--token, #fallback)` so the page renders correctly whether or not the global token sheet has
@@ -15,15 +28,30 @@ import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 
-/** Copy describing the intro offer, computed server-side. */
-interface OfferSummary {
-  introPrice: string;
-  listPrice: string;
-  introMonths: number;
-  introWindowTotal: string;
-  firstCharge: string;
-  headline: string;
-  finePrint: string;
+/**
+ * What a not-yet-subscribed merchant will actually be charged today — `pendingOffer` from
+ * `GET /api/billing/status`. `kind` is `'platform_coupon'` when a coupon is already attributed to
+ * this merchant (a `/join` link at signup, or an applied code from the box below); otherwise the
+ * standard intro offer.
+ */
+interface PendingOffer {
+  kind: 'intro' | 'platform_coupon';
+  label: string;
+  description: string;
+  amountDueTodayCents: number;
+  amountDueTodayFormatted: string;
+  listAmountFormatted: string;
+  requiresPaymentMethod: boolean;
+  code: string | null;
+}
+
+/** Which discount is live on an existing subscription, and when it ends — never a bare boolean. */
+interface DiscountSummary {
+  kind: 'intro' | 'platform_coupon';
+  label: string;
+  description: string;
+  active: boolean;
+  endsAt: string | null;
 }
 
 /** Subscription state returned by `GET /api/billing/status`. */
@@ -33,9 +61,7 @@ interface SubscriptionState {
   currency: string;
   listAmountFormatted: string;
   currentAmountFormatted: string;
-  inIntroPeriod: boolean;
-  introMonths: number;
-  introEndsAt: string | null;
+  discount: DiscountSummary | null;
   currentPeriodEnd: string | null;
   nextChargeAt: string | null;
   cancelAtPeriodEnd: boolean;
@@ -48,9 +74,29 @@ interface BillingStatus {
   configured: boolean;
   subscribed: boolean;
   entitled: boolean;
-  plan: { key: string; offer: OfferSummary };
+  plan: { key: string };
+  pendingOffer: PendingOffer | null;
   subscription: SubscriptionState | null;
 }
+
+/** A validated coupon, as `POST /api/billing/coupon/preview` describes it. */
+interface CouponPreview {
+  redeemable: true;
+  code: string;
+  name: string;
+  offer: string;
+  requiresPaymentMethod: boolean;
+  amountDueTodayCents: number;
+  amountDueTodayFormatted: string;
+}
+
+/** Human copy for each reason `POST /api/billing/coupon/preview` can refuse a code. */
+const COUPON_REASON_COPY: Record<string, string> = {
+  unknown: 'That code was not found.',
+  expired: 'That code has expired.',
+  exhausted: 'That code has reached its redemption limit.',
+  inactive: 'That code is no longer active.',
+};
 
 /** Connect account state returned by `GET /api/connect/status`. */
 interface ConnectStatus {
@@ -354,6 +400,15 @@ function BillingContent(): React.ReactElement {
   const [busy, setBusy] = useState<null | 'checkout' | 'portal' | 'connect'>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The "Have a coupon code?" box (plan §4B). Collapsed by default; `couponPreview` is only ever
+  // set by a successful, explicit `POST /api/billing/coupon/preview` call — never inferred — so
+  // Subscribe only ever sends a `couponCode` the merchant has actually seen described.
+  const [couponBoxOpen, setCouponBoxOpen] = useState(false);
+  const [couponInput, setCouponInput] = useState('');
+  const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponBusy, setCouponBusy] = useState(false);
+
   const load = useCallback(async () => {
     const token = readToken();
     const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
@@ -387,15 +442,20 @@ function BillingContent(): React.ReactElement {
   }, [load]);
 
   const post = useCallback(
-    async (url: string, kind: 'checkout' | 'portal' | 'connect') => {
+    async (url: string, kind: 'checkout' | 'portal' | 'connect', body?: Record<string, unknown>) => {
       setBusy(kind);
       setError(null);
 
       try {
         const token = readToken();
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+        if (body) {
+          headers['Content-Type'] = 'application/json';
+        }
         const response = await fetch(url, {
           method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
         });
         const json = await response.json();
 
@@ -414,14 +474,57 @@ function BillingContent(): React.ReactElement {
     []
   );
 
+  /**
+   * Validate the typed coupon code — writes nothing (plan §4B). On success, `couponPreview` holds
+   * the offer Subscribe will apply; the merchant sees it before committing to anything.
+   */
+  const checkCoupon = useCallback(async () => {
+    const code = couponInput.trim();
+    if (!code) return;
+
+    setCouponBusy(true);
+    setCouponError(null);
+    setCouponPreview(null);
+
+    try {
+      const token = readToken();
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch('/api/billing/coupon/preview', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ code }),
+      });
+      const json = await response.json();
+
+      if (!json.success) {
+        setCouponError(json.error ?? 'Could not check that code right now.');
+        return;
+      }
+
+      const data = json.data as CouponPreview | { redeemable: false; reason: string };
+      if (data.redeemable) {
+        setCouponPreview(data);
+      } else {
+        setCouponError(COUPON_REASON_COPY[data.reason] ?? 'That code could not be applied.');
+      }
+    } catch {
+      setCouponError('Could not reach the billing service. Try again in a moment.');
+    } finally {
+      setCouponBusy(false);
+    }
+  }, [couponInput]);
+
   const checkoutFlag = searchParams.get('checkout');
 
   if (loading) {
     return <BillingSkeleton />;
   }
 
-  const offer = billing?.plan.offer;
+  const pendingOffer = billing?.pendingOffer ?? null;
   const subscription = billing?.subscription ?? null;
+  const discount = subscription?.discount ?? null;
 
   return (
     /* `padding: 0` — the admin shell already pads to 24px (§4). This page used
@@ -495,7 +598,11 @@ function BillingContent(): React.ReactElement {
 
       <Panel
         title="Your plan"
-        description={offer?.headline ?? 'RebelShops Storefront'}
+        description={
+          subscription
+            ? undefined
+            : (pendingOffer?.description ?? 'RebelShops Storefront')
+        }
       >
         {subscription ? (
           <>
@@ -511,11 +618,7 @@ function BillingContent(): React.ReactElement {
               >
                 {subscription.status.replace(/_/g, ' ')}
               </StatusPill>
-              {subscription.inIntroPeriod ? (
-                <StatusPill tone="neutral">
-                  Intro pricing · {subscription.introMonths} months
-                </StatusPill>
-              ) : null}
+              {discount?.active ? <StatusPill tone="neutral">{discount.label}</StatusPill> : null}
               {subscription.cancelAtPeriodEnd ? (
                 <StatusPill tone="warn">Cancels at period end</StatusPill>
               ) : null}
@@ -524,12 +627,19 @@ function BillingContent(): React.ReactElement {
             <DetailRow label="Paying now">
               {subscription.currentAmountFormatted} / month
             </DetailRow>
-            <DetailRow label={`After the intro period`}>
-              {subscription.listAmountFormatted} / month
-            </DetailRow>
-            <DetailRow label="Intro pricing ends">
-              {formatDate(subscription.introEndsAt)}
-            </DetailRow>
+            {/* Neutral vocabulary driven by the discount actually on the subscription (plan §5.3) —
+                "Your offer" / "Then" / "Offer ends" render the same whether the live discount is the
+                standard intro offer or a named platform coupon. Nothing at all is shown once the
+                discount has closed: §5.1's "it simply charged; ordinary subscription row". */}
+            {discount?.active ? (
+              <>
+                <DetailRow label="Your offer">{discount.label}</DetailRow>
+                <DetailRow label="Then">{subscription.listAmountFormatted} / month</DetailRow>
+                <DetailRow label="Offer ends">
+                  {discount.endsAt ? formatDate(discount.endsAt) : 'Never'}
+                </DetailRow>
+              </>
+            ) : null}
             <DetailRow label={subscription.cancelAtPeriodEnd ? 'Access ends' : 'Next charge'}>
               {formatDate(
                 subscription.cancelAtPeriodEnd
@@ -555,16 +665,12 @@ function BillingContent(): React.ReactElement {
           </>
         ) : (
           <>
-            <p style={{ color: TOKENS.ink700, fontSize: '1.125rem', lineHeight: 1.6, margin: 0 }}>
-              {offer?.finePrint ??
-                'Start your storefront for $1 a month for the first three months.'}
-            </p>
             <div
               style={{
                 display: 'flex',
                 alignItems: 'baseline',
                 gap: 12,
-                margin: '20px 0',
+                margin: '4px 0 20px',
               }}
             >
               <span
@@ -576,18 +682,109 @@ function BillingContent(): React.ReactElement {
                   color: TOKENS.ink900,
                 }}
               >
-                {offer?.introPrice ?? '$1.00'}
+                {pendingOffer?.amountDueTodayFormatted ?? '—'}
               </span>
               <span style={{ color: TOKENS.ink500 }}>
-                / month for {offer?.introMonths ?? 3} months, then{' '}
-                {offer?.listPrice ?? '$19.99'} / month
+                today, then {pendingOffer?.listAmountFormatted ?? '—'} / month once your offer ends
               </span>
             </div>
+
+            {pendingOffer?.kind === 'platform_coupon' ? (
+              <p style={{ color: TOKENS.ink700, fontSize: '0.875rem', margin: '0 0 20px' }}>
+                Applying <strong>{pendingOffer.label}</strong>
+                {pendingOffer.requiresPaymentMethod ? '' : ' — no card required'}.
+              </p>
+            ) : null}
+
+            {/* The "Have a coupon code?" box (plan §4B). Two endpoints on purpose: preview never
+                writes, so a typo-and-retry never burns a single-use code (§4B). Subscribe only ever
+                sends a code the merchant has seen described by a successful preview. */}
+            <div style={{ marginBottom: 20 }}>
+              {!couponBoxOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setCouponBoxOpen(true)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    color: TOKENS.accent,
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Have a coupon code?
+                </button>
+              ) : (
+                <div
+                  style={{
+                    border: `1px solid ${TOKENS.ink200}`,
+                    borderRadius: TOKENS.radiusSm,
+                    padding: 16,
+                    background: TOKENS.sunken,
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(event) => {
+                        setCouponInput(event.target.value);
+                        setCouponPreview(null);
+                        setCouponError(null);
+                      }}
+                      placeholder="Coupon code"
+                      style={{
+                        flex: '1 1 180px',
+                        height: 40,
+                        padding: '0 12px',
+                        borderRadius: TOKENS.radiusSm,
+                        border: `1px solid ${TOKENS.ink200}`,
+                        background: TOKENS.raised,
+                        color: TOKENS.ink900,
+                        fontSize: '0.9375rem',
+                      }}
+                    />
+                    <SecondaryButton
+                      onClick={() => void checkCoupon()}
+                      disabled={couponBusy || !couponInput.trim()}
+                    >
+                      {couponBusy ? 'Checking…' : 'Apply'}
+                    </SecondaryButton>
+                  </div>
+                  {couponPreview ? (
+                    <p style={{ color: TOKENS.mint500, fontSize: '0.875rem', margin: '10px 0 0' }}>
+                      {couponPreview.name}: {couponPreview.offer}
+                      {couponPreview.requiresPaymentMethod ? '' : ' — no card required'}.
+                    </p>
+                  ) : null}
+                  {couponError ? (
+                    <p style={{ color: TOKENS.rose500, fontSize: '0.875rem', margin: '10px 0 0' }}>
+                      {couponError}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
             <PrimaryButton
-              onClick={() => void post('/api/billing/checkout', 'checkout')}
+              onClick={() =>
+                void post(
+                  '/api/billing/checkout',
+                  'checkout',
+                  couponPreview ? { couponCode: couponPreview.code } : undefined
+                )
+              }
               disabled={busy !== null || !billing?.configured}
             >
-              {busy === 'checkout' ? 'Starting…' : `Subscribe for ${offer?.introPrice ?? '$1.00'}`}
+              {busy === 'checkout'
+                ? 'Starting…'
+                : `Subscribe for ${
+                    couponPreview?.amountDueTodayFormatted ??
+                    pendingOffer?.amountDueTodayFormatted ??
+                    '$1.00'
+                  }`}
             </PrimaryButton>
           </>
         )}

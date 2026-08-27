@@ -111,6 +111,8 @@ Connect (payouts to merchants) ────────────────�
 | `billing/payment-accounts.ts` | Connect mirror, `computeApplicationFeeCents`. | |
 | `billing/subscriptions.ts` | Subscription mirror, `isEntitled`, invoice outcomes. | |
 | `billing/webhook-events.ts` | The idempotency ledger: claim / handled / failed. | Act before claiming. |
+| `billing/coupon-claims.ts` | The platform-coupon claim lifecycle (flow A, `docs/plans/platform-coupons.md` §6): `attributeCoupon`, `markRedeemed`, `releaseExpiredClaims`, `resolveActiveClaim`, `backfillStoreId`. | Write `platform_coupon_redemptions.status` anywhere else. |
+| `webhooks/stripe/_lib/platform-coupon-redemption.ts` | Redemption close-out: reads a platform coupon off a subscription's discount and calls `coupon-claims.ts`'s `markRedeemed`. Called from `checkout.session.completed`'s platform-billing branch only. | Throw. Every failure is caught and reported as a typed outcome — a coupon problem must never fail the webhook. |
 
 ## Outbound API surface (Stripe SDK)
 
@@ -164,7 +166,7 @@ Handled (`HANDLED_EVENT_TYPES` in `stripe/webhooks.ts`). Everything else → 200
 
 | Event | Flow | Effect |
 |---|---|---|
-| `checkout.session.completed` | both | Branches first: `metadata.flow === 'platform_billing'` or `mode === 'subscription'` → sync the subscription and return. Otherwise flow B — requires `payment_status === 'paid'`, then `createPaidOrder` writes order, items and the inventory movement in one transaction. |
+| `checkout.session.completed` | both | Branches first: `metadata.flow === 'platform_billing'` or `mode === 'subscription'` → sync the subscription, then — via `webhooks/stripe/_lib/platform-coupon-redemption.ts` — close out a platform signup coupon's redemption (`attributed → redeemed`, `docs/plans/platform-coupons.md` §6) when the subscription carries one, and return. Otherwise flow B — requires `payment_status === 'paid'`, then `createPaidOrder` writes order, items and the inventory movement in one transaction. |
 | `checkout.session.expired` | B | Marks the `checkout_sessions` row expired. |
 | `customer.subscription.created` / `.updated` | A | `upsertSubscriptionFromStripe`. |
 | `customer.subscription.deleted` | A | `markSubscriptionCanceled`. |
