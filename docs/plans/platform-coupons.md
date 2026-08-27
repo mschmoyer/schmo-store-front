@@ -644,6 +644,16 @@ unit tests and is blank in a browser.
 
 ## 13. Known limits of this design
 
+- **`/pricing` is no longer statically rendered.** Quoting the link's offer means reading the
+  `rs_platform_coupon` cookie, the cookie is `httpOnly` so it can only be read server-side, and a
+  page that reads a per-request cookie cannot be static. The build output moved it from `○` to `ƒ`.
+  That is the correct trade — a marketing page contradicting the link that sent someone to it is
+  worse than a rendered-per-request marketing page — but it is a real cost on the highest-traffic
+  page in the app, and it is the kind of thing that gets discovered as a latency regression rather
+  than remembered as a decision. If it ever matters, the escape is a static shell with the coupon
+  quote in a dynamically-rendered slot, not a client fetch: the cookie is deliberately unreadable
+  from script.
+
 - **`subscriptions.intro_months` still overloads `0`.** It means both "no discount" and "a discount
   that never ends", and the staff review found a comp account quoting `$19.99` because of it. The
   fix that shipped is the narrow one: `intro_amount IS NOT NULL` plus `intro_ends_at IS NULL` is
