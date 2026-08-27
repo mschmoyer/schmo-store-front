@@ -142,7 +142,10 @@ function CouponBanner({ coupon }: { coupon: OnboardingCoupon }): React.ReactElem
         tone="success"
         title={coupon.attributed ? 'Your invite is reserved' : 'You have an invite offer'}
       >
-        {coupon.offer} {cardNote}
+        {/* `describePlatformCoupon` returns a phrase, not a sentence — it has no closing full
+            stop, so running the card note straight onto it reads as one run-on line:
+            "…then $19.99/month No card needed today." */}
+        {coupon.offer}. {cardNote}
       </Banner>
     );
   }
