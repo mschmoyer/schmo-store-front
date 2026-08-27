@@ -2,7 +2,7 @@
 
 **Status:** proposed, not built. Nothing in this document exists in the codebase yet.
 **Goal:** hand a friend a link, they sign up, they get a year free, and the operator console can
-show who used what.
+show who used what. Friends skip the card entirely; publicly-issued codes still take one.
 
 ---
 
@@ -52,11 +52,22 @@ The benefit is two fields, and they compose into everything asked for:
 - **"Half price for six months"** → `percent_off = 50`, `duration_months = 6`.
 - **"Free forever" (comp account)** → `percent_off = 100`, `duration_months = NULL`.
 
+A third field decides whether signing up costs the merchant a card:
+
+| Field | Meaning |
+|---|---|
+| `collect_payment_method` | `TRUE` (default) — Stripe takes a card at signup and charges automatically when the window closes. `FALSE` — no card, no friction, and nothing to charge later. |
+
+This is per coupon, not global: a code handed to a friend can skip the card while a code posted
+publicly still takes one. §3 covers what it does to the Checkout Session, and §12 covers what it
+costs — a `FALSE` coupon **cannot** convert on its own, which is what makes the expiry warning in
+§4D part of the feature rather than a nicety.
+
 This is deliberately *not* two independent knobs ("months free" **and** "percent off"). A coupon
 that is free for 3 months and then 50% off for another 6 is two discounts on one subscription, which
 Stripe does not model as a coupon and which the `subscriptions` mirror has no columns for. If that
-offer is actually wanted, it is a follow-up that introduces Stripe subscription schedules — see
-§13, question 2.
+offer is actually wanted, it is a follow-up that introduces Stripe subscription schedules. Confirmed
+as out of scope — §13.
 
 Percentage rather than amount-off, on purpose. The list price is a single `$19.99` constant
 (`PLATFORM_LIST_AMOUNT_CENTS`); a percentage survives a price change, a fixed `amount_off` silently
@@ -95,6 +106,31 @@ Three rules, each of which prevents a specific way this goes wrong:
    single platform plan there can be hundreds of these. Store `stripe_coupon_id` on the row once
    created, and make `percent_off` / `duration_months` immutable after the first redemption
    (§10, invariant 5).
+
+### Collecting a card, or not
+
+`collect_payment_method` maps onto one Checkout Session parameter, not onto a different billing
+model:
+
+| Flag | Session | At the end of the window |
+|---|---|---|
+| `TRUE` | default collection | Stripe charges the stored card. The merchant does nothing. |
+| `FALSE` | `payment_method_collection: 'if_required'` | Stripe has nothing to charge. The invoice goes unpaid, the subscription enters dunning, and the merchant must add a card. |
+
+**`FALSE` only does anything at `percent_off = 100`.** `if_required` skips collection when the
+amount due *today* is zero, so a 50%-off coupon still charges $9.99 at signup and Stripe takes a
+card regardless of the flag. A coupon that promised no card and then asked for one would be a lie
+told by a checkbox, so the schema forbids the combination outright
+(`CHECK (collect_payment_method OR percent_off = 100)`).
+
+This is deliberately **not** `trial_period_days: 365`. A trial and a 100%-off coupon reach the
+merchant identically — free until a date, then billed — but a trial is a second discount mechanism
+with its own fields, its own webhook semantics and its own row in the `subscriptions` mirror, for
+no gain. One coupon shape, one flag.
+
+`isEntitled()` already counts `past_due` as entitled, so a merchant whose free year lapses keeps
+their storefront through Stripe's dunning window rather than being locked out the morning the
+coupon ends. That is the right behaviour and it is already built.
 
 ### The one hard constraint, already discovered the hard way
 
@@ -147,7 +183,7 @@ feature looking like it works.
 
 ---
 
-## 4. The three surfaces
+## 4. The four surfaces
 
 ### A. The link — `/join/<CODE>`
 
@@ -208,6 +244,26 @@ a change". That reasoning stops holding the moment an operator can issue a coupo
 routes the audit write goes **inside the same transaction** as the change, and a failed audit write
 fails the request.
 
+### D. The expiry warning — `/admin`
+
+A merchant on a free year must be told it is ending, on the dashboard they already look at.
+
+- **From 30 days out**, a banner on `/admin` and `/admin/billing`: *"Your free year ends on
+  27 August 2027."*
+- **When `collect_payment_method` was `FALSE`**, the banner is not informational — it is the only
+  thing standing between the merchant and a failed charge. It says so, and its action is **Add a
+  payment method**, which opens the existing Stripe Billing Portal (`POST /api/billing/portal`). No
+  new machinery.
+- **After the window closes** with no card, the banner becomes the dunning state: what failed, and
+  the same button.
+
+The end date comes from `platform_coupon_redemptions.discount_ends_at`, written when the webhook
+closes the redemption. The thresholds are constants, not literals scattered through JSX.
+
+There is no transactional email in this repo, so this banner is the entire notification system. That
+is a thin single point of failure for a no-card coupon and it is called out in §12 rather than
+discovered at month twelve.
+
 ---
 
 ## 5. Attributed, then redeemed
@@ -257,6 +313,11 @@ CREATE TABLE platform_coupons (
   notes              TEXT,                           -- "given to Dave at the meetup"
   percent_off        SMALLINT     NOT NULL CHECK (percent_off BETWEEN 1 AND 100),
   duration_months    SMALLINT     CHECK (duration_months IS NULL OR duration_months > 0),
+  -- FALSE skips card collection at signup. Only meaningful at 100% off: a partial discount still
+  -- charges something today, so Stripe takes a card whatever this says. See section 3.
+  collect_payment_method BOOLEAN  NOT NULL DEFAULT TRUE,
+  CONSTRAINT platform_coupons_no_card_needs_full_discount
+    CHECK (collect_payment_method OR percent_off = 100),
   max_redemptions    INTEGER      CHECK (max_redemptions IS NULL OR max_redemptions > 0),
   redeemed_count     INTEGER      NOT NULL DEFAULT 0,   -- rollup, trigger-maintained
   redeem_by          TIMESTAMPTZ,                       -- link stops working
@@ -369,12 +430,18 @@ Each phase leaves the tree green and shippable.
 | 2 | **Stripe resolution** | `stripe/platform-coupons.ts`, resolve-or-create, degrades cleanly with no `STRIPE_SECRET_KEY`. |
 | 3 | **Operator console** | `/platform/coupons`, both tabs, create + deactivate + copy-link. Coupons exist and are visible before anything can redeem one. |
 | 4 | **The link** | `/join/[code]`, the cookie, wizard banner (success *and* the honest failure), attribution at account creation, `store_id` backfill. |
-| 5 | **Billing attach** | Preview endpoint, the code box on `/admin/billing`, `couponCode` on checkout, precedence, `billing/status` vocabulary, **the `readIntroDiscount` fix**. |
+| 5 | **Billing attach** | Preview endpoint, the code box on `/admin/billing`, `couponCode` on checkout, precedence, `collect_payment_method` → `payment_method_collection`, `billing/status` vocabulary, **the `readIntroDiscount` fix**. |
 | 6 | **Redemption close-out** | Webhook `attributed` → `redeemed`, `discount_ends_at`, reservation sweep on cron, redemption tab shows live subscription status. |
-| 7 | **Docs and polish** | Every doc in §7, pricing-page quoting, `/admin/billing` showing when the free window ends. |
+| 7 | **The expiry warning** | §4D — the 30-day banner on `/admin` and `/admin/billing`, the no-card variant, the dunning variant, portal CTA. |
+| 8 | **Docs and polish** | Every doc in §7, `/pricing` quoting the link's offer. |
 
 Phases 1–3 are shippable on their own and let coupons be issued and tracked by hand before any
 customer-facing path exists.
+
+**Phase 7 is not optional for no-card coupons.** A `collect_payment_method = FALSE` coupon has no
+way to convert without it, so shipping phase 5 without phase 7 means issuing coupons that are
+guaranteed to lapse silently. If the two cannot ship together, default every coupon to `TRUE` until
+the banner exists.
 
 ---
 
@@ -402,6 +469,11 @@ Things that must hold, listed so a reviewer has something to check against.
 10. **The operator console excludes demo stores** unless `?includeDemo=1`.
 11. **Mutating platform routes audit inside the transaction.**
 12. **A code is never logged in full** on a public-facing error path.
+13. **No-card coupons are 100%-off only.** Enforced by CHECK constraint, not by a form validator.
+    A coupon cannot promise no card and then ask for one.
+14. **A merchant whose free window is closing is told, on `/admin`, before it closes.** For a
+    no-card coupon this is the only path to a payment method, so a redemption with a
+    `discount_ends_at` and no stored card must always render the banner.
 
 ---
 
@@ -414,12 +486,15 @@ Unit (`__tests__/` beside the source):
 - `coupon-codes.test.ts` — alphabet excludes ambiguous characters, entropy, no collisions over a
   large sample.
 - `coupon-claims.test.ts` — the state machine, including illegal transitions.
+- The expiry-banner thresholds: 31 days out is silent, 30 is a warning, past the end with no card is
+  the dunning variant. Pure date arithmetic, no component needed.
 
 Database behaviour (`npm run db:verify`):
 
 - Concurrent attributions against a `max_redemptions = 1` coupon: exactly one succeeds.
 - Second live claim for one user: rejected.
 - Deleting a coupon with history: rejected.
+- `collect_payment_method = FALSE` with `percent_off < 100`: rejected by the CHECK constraint.
 - `rebuild_platform_coupon_counts()` reproduces the trigger's numbers.
 
 E2E (`tests/e2e/`, Chromium only in a session container):
@@ -444,52 +519,57 @@ Written down rather than discovered later.
 - **`duration_in_months` may have an upper bound in the Stripe API.** Verify 12 works against a real
   test account in phase 2 before building the console around it. If it is capped below 12, the
   fallback is `duration: 'forever'` plus a scheduled removal, which is materially more machinery.
+- **A no-card coupon cannot convert by itself.** With `collect_payment_method = FALSE` Stripe has
+  nothing to charge when the window closes: the invoice goes unpaid and the subscription enters
+  dunning. The merchant must add a card, and the §4D banner is the only thing that asks them to.
+  This is an accepted cost of frictionless signup for friends, not an oversight — but it means the
+  banner ships with the feature, and it means these coupons should be issued deliberately rather
+  than posted publicly.
 - **A free year does not currently gate anything.** `stripe/CLAUDE.md` lists "No entitlement
   enforcement" as a known gap: nothing disables a storefront whose merchant stopped paying. So the
   coupon's real effect today is on the invoice and on the merchant's perception, not on access.
-- **No email tells anyone the free year is ending.** There is no transactional email system in this
-  repo. Phase 7 surfaces the end date on `/admin/billing`, which is the most that can be done
-  without one.
+- **The banner is the entire notification system.** There is no transactional email in this repo, so
+  a merchant who never signs in during the last 30 days is never told. A no-card coupon plus an
+  absent merchant lapses silently. Email is the obvious follow-up and is out of scope here.
 - **One subscription per owner, one store per merchant** — the existing constraint. A coupon does
   not change it.
 
 ---
 
-## 13. Questions before building
+## 13. Decisions taken
 
-**1. Is a card required at signup for a free year?**
-This is the most consequential question in the document, and it decides the shape of phase 5.
+Answered 2026-08-27. Recorded here so the reasoning survives the conversation.
 
-- *Card collected up front* (recommended): Stripe Checkout in `subscription` mode with a 100%-off
-  coupon still collects a payment method. Twelve $0 invoices, then it charges automatically. The
-  risk is that a card stored today is often expired in twelve months — Stripe's card updater
-  handles a re-issued card but not a closed account.
-- *No card* (`trial_period_days: 365`, `payment_method_collection: 'if_required'`): a genuinely
-  frictionless signup, and near-total churn at month twelve because there is nothing to charge and
-  no email system to warn anyone.
+**1. Card at signup is a per-coupon flag, not a global policy.**
+> *"Make this an option on the coupon. For friends I don't want to ask for a card. For everyone else
+> you're right, need to take the card. We should also add UI to the customers dashboard letting them
+> know the coupon is about to expire."*
 
-My recommendation is to collect the card, and to make the offer sentence unambiguous about it:
-*"Free for 12 months. We take your card now and charge nothing until <date>."*
+`collect_payment_method` (§2, §3), defaulting to `TRUE`. Friends get a link that asks for nothing;
+a code posted anywhere public still takes a card and converts on its own. The mechanic is one
+Checkout Session parameter, so both live on the same coupon shape — and because it only works at
+100% off, the schema refuses the dishonest combination.
 
-**2. Do you want offers that change over time** — three months free, *then* 50% off for six? That
-is the reading of "months free **and** percentage" that this plan does not support. It needs Stripe
-subscription schedules, and it roughly doubles phase 2 and 5. My guess is you meant one discount
-configured two ways, which is what §2 builds. Confirm.
+The expiry warning became §4D and phase 7. It is worth being blunt about why: for a no-card coupon
+that banner is not a courtesy, it is the entire conversion path. Nothing else in the product will
+ever ask that merchant for a card.
 
-**3. What stops one friend claiming a multi-use code five times?** The plan enforces one live claim
-per **user**, but signing up again with a different email is trivial. Options: leave it (these go to
-people you know); cap per email domain; require the operator to mark a redemption as valid before
-the discount attaches. I would leave it and watch the redemptions tab — that tab is the control.
+**2. One discount, two knobs.** `percent_off` + `duration_months`. Offers that change over time
+(free, *then* half price) would need Stripe subscription schedules and are out of scope.
 
-**4. Should the reservation expire, and after how long?** The plan says 30 days. If you would rather
-a single-use link stay claimed forever once clicked, that is a one-constant change, but it means a
-friend who abandons signup silently burns their code.
+**3. Reservations release after 30 days.** A clicked-but-abandoned single-use link frees itself, and
+the released row stays in the ledger so "clicked 40 times, redeemed twice" is still answerable.
 
-**5. Should `/pricing` and the marketing site honour the cookie?** I think yes, and it is cheap once
-the cookie exists — otherwise the link promises a free year and the first page they land on quotes
-`$1 for 3 months, then $19.99`.
+**4. `/pricing` honours the link.** It reads the same cookie and quotes the discounted offer, so the
+first page a friend lands on does not contradict the link that sent them.
 
----
+### Still open
+
+**What stops one friend claiming a multi-use code five times under different emails?** The plan
+enforces one live claim per *user*, which a new email address defeats in seconds. Options: leave it
+and watch the redemptions tab; cap by email domain; require an operator to approve a redemption
+before the discount attaches. My recommendation is to leave it — these are going to people you know,
+and the redemptions tab is the control. Worth revisiting only if a code leaks somewhere public.
 
 ## 14. Things worth adding that were not asked for
 
@@ -503,9 +583,8 @@ Ordered by what I think the value is per hour of work.
    thing that gets the whole feature used less.
 3. **A "campaign" or `source` label.** Even one free-text field turns the redemptions tab from a log
    into an answer to "which of the three places I posted this actually worked".
-4. **Show the end date on `/admin/billing`.** A merchant on a free year should see *"Free until
-   27 August 2027, then $19.99/month"* on their own billing page. It is the honest version of the
-   offer and it is the only churn mitigation available without email.
+4. ~~**Show the end date on `/admin/billing`.**~~ — **adopted.** Now §4D and phase 7, and load-bearing
+   rather than nice-to-have: a no-card coupon has no other route to a payment method.
 5. **A revenue-at-risk figure in the console.** Sum of what the live coupons are discounting per
    month, and when each ends. Cheap to compute from data already in the ledger, and it is the number
    that tells you when generosity stopped being an experiment.
@@ -527,11 +606,16 @@ Rough, assuming the phases above and no scope added.
 | 2 Stripe resolution | Small |
 | 3 Operator console | Medium — two tabs, a create form, first write surface in `/platform` |
 | 4 The link | Small |
-| 5 Billing attach | Medium — precedence, the status vocabulary, the `readIntroDiscount` fix |
+| 5 Billing attach | Medium — precedence, the card flag, the status vocabulary, the `readIntroDiscount` fix |
 | 6 Redemption close-out | Small |
-| 7 Docs and polish | Small |
+| 7 The expiry warning | Small — one banner, three states, an existing portal route behind it |
+| 8 Docs and polish | Small |
 
 Phases 1–4 are the minimum that achieves the stated goal — *hand a friend a link, they sign up with
 a year free, and you can see that they did*. Phase 5 is what makes a code work for someone who is
 already halfway through signing up, and phase 6 is what makes the redemptions tab tell the truth
 rather than showing everyone stuck at `attributed`.
+
+Phase 7 is small but it is the one phase that cannot be deferred if no-card coupons ship, because
+those coupons have no other route to a payment method. Everything before it can go out
+incrementally.
