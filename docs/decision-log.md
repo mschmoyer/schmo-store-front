@@ -11,7 +11,7 @@
 - [ ] Phase 4 — `/join/<code>`, the cookie, attribution at account creation
 - [ ] Phase 5 — coupon code at billing, discount precedence, card flag, fix `readIntroDiscount`
 - [ ] Phase 6 — webhook closes the redemption, cron releases stale reservations
-- [ ] Phase 7 — the expiry banner on `/admin`, with the add-a-card path for no-card coupons
+- [ ] Phase 7 — the merchant's experience: alert ladder, grace window, offer row, billing-copy fix
 - [ ] Phase 8 — docs, `/pricing` quoting the link's offer
 
 **User request**: "a coupon code system in our admin portal that allows someone to sign up a new
@@ -56,6 +56,31 @@ collects nothing at signup. It maps to one Checkout Session parameter,
 introducing `trial_period_days` as a second discount mechanism. It only has an effect at
 `percent_off = 100` — a partial discount charges something today and Stripe takes a card regardless
 — so a CHECK constraint refuses the combination rather than letting a checkbox tell a lie.
+
+**Quiet for eleven months, clear for the last one.** A countdown that runs for a year is furniture.
+The dashboard shows nothing while the free window is comfortably open and escalates only in the last
+30 days — and the weight of that escalation depends on whether a card is on file. With one, the end
+of the window is information; without one it is a task, and the banner is the only place in the
+product that will ever ask for a card. Same calendar event, two UIs.
+
+**"Does it expire?" is three questions.** The code (`redeem_by`) gets no grace — a hidden fudge
+factor makes the printed date a lie — but it fails honestly and still offers signup at standard
+pricing. The reservation already forgives, because releasing a seat does not blacklist anyone: a
+friend who returns on day 45 re-clicks the link and is re-attributed. Only the free window closing
+needs a real policy.
+
+**Grace is messaging, not enforcement.** Today grace is unlimited by accident — `stripe/CLAUDE.md`
+lists "No entitlement enforcement" as a known gap, so nothing disables a storefront whose merchant
+stopped paying. `PLATFORM_DISCOUNT_GRACE_DAYS` (proposed: 14) therefore drives what the dashboard
+says and nothing else. Enforcement is a platform-wide decision about every unpaid merchant, and
+making the coupon path the first thing that can switch a storefront off would be a strange place to
+introduce it. When it lands, the dates merchants have been reading are already correct.
+
+**The billing page currently uses the wrong words, and one of them is a wrong price.**
+`/admin/billing` hardcodes the intro offer's vocabulary: a free-year merchant would read "Intro
+pricing · 12 months", and the subscribe button falls back to `Subscribe for $1.00` on a checkout
+that charges $0.00. That is the Honest results rule broken in the UI layer, and it ships the moment
+a 100%-off coupon reaches the page. Neutral vocabulary driven by the actual discount, in phase 5.
 
 **The free-window expiry banner is load-bearing, not a courtesy.** A no-card coupon has no way to
 convert on its own: Stripe has nothing to charge when the window closes. The banner on `/admin` is
