@@ -1,12 +1,18 @@
 /**
  * POST /api/billing/checkout
  *
- * Starts platform billing (flow A) for the signed-in merchant: a Stripe Checkout Session in
- * `subscription` mode for the $19.99/month price with the repeating intro coupon attached, so the
- * merchant is charged $1.00 today and $1.00 on each of the next two renewals.
+ * Starts platform billing for the signed-in merchant: a Stripe Checkout Session in `subscription`
+ * mode for the $19.99/month price with exactly one discount attached — see `./decide.ts` for the
+ * coupon/claim/intro-offer precedence and why that decision lives in its own module.
+ *
+ * A code supplied in this request is reserved via `attributeCoupon` before the Checkout Session is
+ * created, under the same `platform_coupon_redemptions` trigger that guards a code clicked from
+ * `/join` — this is what makes `max_redemptions` hold for a typed code too, enforced in the
+ * database rather than by a read-then-write here.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import type Stripe from 'stripe';
 import { requireMerchant } from '@/lib/billing/auth';
 import {
   getBillingCustomerId,
@@ -15,12 +21,42 @@ import {
   saveBillingCustomerId,
 } from '@/lib/billing/subscriptions';
 import { describeIntroOffer } from '@/lib/billing/intro-offer';
+import { attributeCoupon, resolveActiveClaim } from '@/lib/billing/coupon-claims';
+import { computeDiscountedPriceCents, describePlatformCoupon } from '@/lib/billing/platform-coupons';
+import { getPlatformCouponByCode, getPlatformCouponById, type PlatformCouponRecord } from '@/lib/platform/coupons';
+import { ensureStripeCouponFor, deriveSubscriptionParams } from '@/lib/stripe/platform-coupons';
 import { StripeNotConfiguredError, getAppBaseUrl, getStripe, isStripeConfigured } from '@/lib/stripe/client';
 import { ensurePlatformPlan } from '@/lib/stripe/prices';
 import { PLATFORM_PLAN } from '@/lib/stripe/products';
+import { resolvePlatformCouponDiscount, type CheckoutCouponFailureReason } from './decide';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+export type { CheckoutCouponFailureReason } from './decide';
+
+/** Human copy for each {@link CheckoutCouponFailureReason}, for the JSON error response. */
+const COUPON_FAILURE_MESSAGES: Record<CheckoutCouponFailureReason, string> = {
+  unknown: 'That coupon code was not found.',
+  expired: 'That coupon code has expired.',
+  exhausted: 'That coupon code has reached its redemption limit.',
+  inactive: 'That coupon code is no longer active.',
+  already_claimed:
+    'This account already has a different active coupon. Only one can apply per account.',
+};
+
+/**
+ * Build the 400 response for a coupon that could not be applied.
+ *
+ * @param reason - Why it failed.
+ * @returns The JSON error response.
+ */
+function couponFailureResponse(reason: CheckoutCouponFailureReason): NextResponse {
+  return NextResponse.json(
+    { success: false, error: COUPON_FAILURE_MESSAGES[reason], code: `COUPON_${reason.toUpperCase()}` },
+    { status: 400 }
+  );
+}
 
 /**
  * Create a subscription Checkout Session for the authenticated merchant.
@@ -32,6 +68,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const auth = await requireMerchant(request);
   if (!auth.ok) {
     return auth.response;
+  }
+
+  // Must keep working for a bare `POST` with no body — the plain intro-offer path sends none.
+  let couponCode: string | undefined;
+  try {
+    const raw = await request.text();
+    if (raw) {
+      const parsed = JSON.parse(raw) as { couponCode?: unknown };
+      if (typeof parsed.couponCode === 'string' && parsed.couponCode.trim()) {
+        couponCode = parsed.couponCode.trim();
+      }
+    }
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Invalid request body', code: 'INVALID_BODY' },
+      { status: 400 }
+    );
   }
 
   if (!isStripeConfigured()) {
@@ -61,6 +114,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    const discountResolution = await resolvePlatformCouponDiscount(
+      couponCode,
+      merchant.userId,
+      merchant.storeId,
+      { resolveActiveClaim, getPlatformCouponByCode, getPlatformCouponById, attributeCoupon }
+    );
+    if (!discountResolution.ok) {
+      return couponFailureResponse(discountResolution.reason);
+    }
+    const chosen = discountResolution.discount;
+
     const stripe = getStripe('billing checkout');
     const plan = await ensurePlatformPlan(stripe);
 
@@ -83,19 +147,59 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const baseUrl = getAppBaseUrl();
 
-    const session = await stripe.checkout.sessions.create({
+    // Exactly one discount reaches Stripe — a platform coupon replaces the intro offer, never
+    // stacks with it. `amountDueTodayCents` / `offer` below are derived from whichever branch ran.
+    let discounts: Stripe.Checkout.SessionCreateParams.Discount[];
+    let paymentMethodCollection: Stripe.Checkout.SessionCreateParams.PaymentMethodCollection | undefined;
+    let amountDueTodayCents: number;
+    let offer: unknown;
+    let discountMetadata: Record<string, string>;
+
+    if (chosen.kind === 'platform_coupon') {
+      const stripeCoupon = await ensureStripeCouponFor(chosen.coupon, stripe);
+      // Returns only the Stripe object; build the updated record in memory instead of re-reading it.
+      const resolvedRecord: PlatformCouponRecord = {
+        ...chosen.coupon,
+        stripeCouponId: stripeCoupon.id,
+      };
+      const subscriptionParams = deriveSubscriptionParams(resolvedRecord);
+
+      discounts = [...subscriptionParams.discounts];
+      paymentMethodCollection = subscriptionParams.paymentMethodCollection;
+      amountDueTodayCents = computeDiscountedPriceCents(plan.listAmountCents, chosen.coupon.percentOff);
+      offer = {
+        kind: 'platform_coupon' as const,
+        code: chosen.coupon.code,
+        name: chosen.coupon.name,
+        description: describePlatformCoupon(chosen.coupon),
+      };
+      // Recorded so the webhook can identify which redemption this subscription closes.
+      discountMetadata = {
+        discount_source: chosen.source,
+        platform_coupon_id: chosen.coupon.id,
+        platform_coupon_code: chosen.coupon.code,
+      };
+    } else {
+      discounts = [{ coupon: plan.introCouponId }];
+      paymentMethodCollection = undefined;
+      amountDueTodayCents = plan.introAmountCents;
+      offer = describeIntroOffer({
+        listAmountCents: plan.listAmountCents,
+        introAmountCents: plan.introAmountCents,
+        introMonths: plan.introMonths,
+      });
+      discountMetadata = { discount_source: 'intro_offer' };
+    }
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: plan.priceId, quantity: 1 }],
-      // The intro offer. amount_off = list - intro, repeating for `intro_months`.
-      discounts: [{ coupon: plan.introCouponId }],
+      discounts,
       client_reference_id: merchant.userId,
-      // `allow_promotion_codes` is deliberately absent. Stripe rejects a session that carries it
-      // alongside `discounts` -- "You may only specify one of these parameters:
-      // allow_promotion_codes, discounts" -- and it rejects on the parameter being *present*, so
-      // passing `false` fails exactly like passing `true`. Since the intro coupon is always
-      // applied here, promotion codes are already impossible; the field bought us nothing and
-      // broke every subscription checkout. Do not reinstate it while `discounts` is set.
+      // `allow_promotion_codes` is deliberately absent: Stripe rejects a session carrying it
+      // alongside `discounts` even as `false` ("only specify one of ... discounts"), and broke
+      // every subscription checkout when both were set. Do not reinstate it while `discounts` is set.
       billing_address_collection: 'auto',
       subscription_data: {
         metadata: {
@@ -103,6 +207,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           store_id: merchant.storeId,
           store_slug: merchant.storeSlug,
           plan_key: PLATFORM_PLAN.key,
+          ...discountMetadata,
         },
       },
       metadata: {
@@ -110,10 +215,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         owner_id: merchant.userId,
         store_id: merchant.storeId,
         plan_key: PLATFORM_PLAN.key,
+        ...discountMetadata,
       },
       success_url: `${baseUrl}/admin/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/admin/billing?checkout=cancelled`,
-    });
+    };
+
+    // Set only for a no-card coupon; omitted otherwise so Stripe's default collection is unchanged.
+    if (paymentMethodCollection) {
+      sessionParams.payment_method_collection = paymentMethodCollection;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     if (!session.url) {
       throw new Error('Stripe returned a Checkout Session without a redirect URL');
@@ -124,12 +237,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       data: {
         sessionId: session.id,
         url: session.url,
-        amountDueTodayCents: plan.introAmountCents,
-        offer: describeIntroOffer({
-          listAmountCents: plan.listAmountCents,
-          introAmountCents: plan.introAmountCents,
-          introMonths: plan.introMonths,
-        }),
+        amountDueTodayCents,
+        offer,
       },
     });
   } catch (error) {

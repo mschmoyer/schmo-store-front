@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { slugify, validateSlug } from '@/components/onboarding/lib/slug';
+import { backfillStoreId } from '@/lib/billing/coupon-claims';
 import { buildState, originOf, persist, requireOnboarding } from '../_lib/state';
 
 const UNIQUE_VIOLATION = '23505';
@@ -90,6 +91,16 @@ export async function POST(request: NextRequest) {
         );
       }
       throw error;
+    }
+
+    // Coupon attribution happens at account creation, before any store exists; backfill it now.
+    // Best-effort — must never fail store creation. A merchant with no live claim is a no-op.
+    if (storeId) {
+      try {
+        await backfillStoreId(context.session.userId, storeId);
+      } catch (error) {
+        console.error('[onboarding/store] coupon store backfill failed:', error);
+      }
     }
 
     const row = await persist(context.row, {

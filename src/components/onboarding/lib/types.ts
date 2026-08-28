@@ -78,6 +78,47 @@ export interface OnboardingTheme {
   persistedTo: 'storefront_themes' | 'legacy_theme_name' | null;
 }
 
+/**
+ * Why a platform signup coupon (docs/plans/platform-coupons.md §4A) could not be honoured.
+ * `'already_claimed'` is account-creation only (a new user already holding a live claim); the
+ * rest mirror `CouponRedeemability['status']` in `src/lib/billing/platform-coupons.ts`. Signup
+ * itself always succeeds regardless — this only ever describes the discount.
+ */
+export type OnboardingCouponErrorReason =
+  | 'unknown'
+  | 'expired'
+  | 'exhausted'
+  | 'inactive'
+  | 'already_claimed';
+
+/**
+ * What the wizard shows about a `/join/<code>` link, at every step of the run — see
+ * `docs/plans/platform-coupons.md` §4A/§6. Populated two ways: before an account exists, a preview
+ * of the cookie `/join` set (or the failure reason `/join` put on the query string); after account
+ * creation, the real outcome of `attributeCoupon`, persisted so it survives every later step.
+ */
+export interface OnboardingCoupon {
+  /** The code as issued, for display. `null` when there is nothing to show. */
+  code: string | null;
+  /** The offer sentence from `describePlatformCoupon`. `null` until a valid coupon is known. */
+  offer: string | null;
+  /** Whether Checkout will still require a card. `null` until a valid coupon is known. */
+  requiresPaymentMethod: boolean | null;
+  /** Set only when a code could not be honoured. Signup still works at standard pricing. */
+  errorReason: OnboardingCouponErrorReason | null;
+  /** Whether the coupon has actually been reserved against this account, not merely previewed. */
+  attributed: boolean;
+}
+
+/** The "nothing to show" default — no link was ever involved. */
+export const NO_ONBOARDING_COUPON: OnboardingCoupon = {
+  code: null,
+  offer: null,
+  requiresPaymentMethod: null,
+  errorReason: null,
+  attributed: false,
+};
+
 export interface OnboardingState {
   authenticated: boolean;
   currentStep: StepId;
@@ -90,6 +131,8 @@ export interface OnboardingState {
   theme: OnboardingTheme;
   /** Absolute, working URL of the merchant's storefront. */
   storeUrl: string | null;
+  /** The `/join` link's offer, if one is in play — see {@link OnboardingCoupon}. */
+  coupon: OnboardingCoupon;
 }
 
 /** The state a signed-out visitor sees: step 1, nothing else. */
@@ -121,6 +164,7 @@ export const ANONYMOUS_STATE: OnboardingState = {
   },
   theme: { presetId: null, persistedTo: null },
   storeUrl: null,
+  coupon: NO_ONBOARDING_COUPON,
 };
 
 export type { StepId };

@@ -40,6 +40,7 @@ import {
   readRawBody,
   type StripeEventHandlerMap,
 } from '@/lib/stripe/webhooks';
+import { closeOutPlatformCouponRedemption } from './_lib/platform-coupon-redemption';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,12 +110,13 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<void> {
 }
 
 /**
- * Sync the subscription created by a platform-billing Checkout Session.
+ * Sync the subscription created by a platform-billing Checkout Session, and — when it carries a
+ * platform signup coupon — close out that coupon's redemption.
  *
  * @param session - The completed Checkout Session.
  * @returns Nothing.
  */
-async function syncSubscriptionFromCheckout(session: Stripe.Checkout.Session): Promise<void> {
+export async function syncSubscriptionFromCheckout(session: Stripe.Checkout.Session): Promise<void> {
   const subscriptionId =
     typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
 
@@ -127,10 +129,29 @@ async function syncSubscriptionFromCheckout(session: Stripe.Checkout.Session): P
     expand: ['discounts'],
   });
 
+  const ownerId = session.metadata?.owner_id ?? session.client_reference_id ?? null;
+
   await upsertSubscriptionFromStripe(subscription, {
-    ownerId: session.metadata?.owner_id ?? session.client_reference_id ?? null,
+    ownerId,
     storeId: session.metadata?.store_id ?? null,
   });
+
+  // The subscription mirror write above must stand regardless of what happens next. closeOut...
+  // itself never throws; this try/catch is defense in depth against a future regression.
+  try {
+    const outcome = await closeOutPlatformCouponRedemption({ ownerId, subscription });
+    if (outcome.outcome === 'error') {
+      console.error(
+        `[stripe webhook] platform coupon close-out reported an error for session ${session.id}: ` +
+          outcome.errorMessage
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[stripe webhook] unexpected error closing out platform coupon redemption for session ${session.id}:`,
+      error
+    );
+  }
 }
 
 /**

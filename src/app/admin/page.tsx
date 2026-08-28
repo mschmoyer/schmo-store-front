@@ -39,6 +39,7 @@ import { EmptyState, Price, ProductImage } from '@/components/ui';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
 import { PanelSkeleton, StatGridSkeleton } from '@/components/admin/AdminSkeletons';
+import { CouponNotices } from '@/components/admin/CouponNotices';
 import styles from './dashboard.module.css';
 
 interface Product {
@@ -306,6 +307,18 @@ export default function AdminDashboard() {
           </div>
         }
       />
+
+      {/*
+       * PHASE 7: THE COUPON ALERT LADDER (`docs/plans/platform-coupons.md` §5, §4D).
+       *
+       * Self-fetching and self-deciding: `CouponNotices` reads `GET /api/billing/coupon/notice`
+       * and renders whichever of the two clocks applies (§5.1's "Two clocks, not one") — a
+       * reservation banner, a free-window alert, or nothing when there is no live claim. Placed
+       * above the ageing-orders alert because a lapsing no-card offer is the one thing on this
+       * page that can silently cost the merchant their whole storefront's billing, not just a
+       * shipment.
+       */}
+      <CouponNotices />
 
       <Modal
         opened={visibilityModalOpen}

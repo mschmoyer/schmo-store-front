@@ -56,6 +56,10 @@
     {
       "path": "/api/cron/inventory-snapshot",
       "schedule": "10 7 * * *"
+    },
+    {
+      "path": "/api/cron/coupon-sweep",
+      "schedule": "30 8 * * *"
     }
   ],
   "headers": [

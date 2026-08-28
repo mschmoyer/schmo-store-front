@@ -144,7 +144,8 @@ docker inspect <name> --format '{{range .Config.Env}}{{println .}}{{end}}' | gre
 | URL | What it is |
 |---|---|
 | `/` | Marketing site |
-| `/pricing` | Plan, comparison, FAQ |
+| `/pricing` | Plan, comparison, FAQ. Quotes a `/join/<code>` signup coupon's real offer instead of the standard price when that link's cookie is present. |
+| `/join/<code>` | Redeems a platform signup coupon link, then redirects into `/create-store` |
 | `/store/demo-electronics` | **Basecamp Audio** — dark, high-contrast preset |
 | `/store/artisan-craft` | **Fernwood Goods** — warm editorial preset |
 | `/store/fitness-pro` | **Ironline Fitness** — bright, roomy preset |
@@ -152,6 +153,7 @@ docker inspect <name> --format '{{range .Config.Env}}{{println .}}{{end}}' | gre
 | `/admin/design` | Storefront theme customizer with live preview |
 | `/platform` | **Platform operator console** — every tenant in one screen (needs `is_admin`) |
 | `/platform/customers` | Every merchant, paginated, with drill-through to one store |
+| `/platform/coupons` | Issue and track platform signup coupons — the console's first write surface (needs `is_admin`) |
 | `/create-store` | Merchant onboarding |
 | `/dev/design-system` | Every UI primitive in every state |
 
@@ -264,6 +266,13 @@ user carrying `users.is_admin`.
 - **Honest by construction**: GMV is settled money with unsettled and cancelled reported beside it,
   rates return "—" rather than a percentage below a sample floor, and a failed fetch renders an
   error with a retry — never a zero
+- **Coupons** (`/platform/coupons`): the console's first *write* surface. Issue a signup coupon
+  (a free year, half off for six months, a comp account), copy its `/join/<code>` link, deactivate
+  it later — and see every redemption, across every merchant, with who claimed it and when their
+  free window ends. A mutation here audits inside the same database transaction as the change; a
+  failed audit write fails the whole request rather than leaving an unaccountable change (see
+  `docs/platform-admin.md`). This is a different `coupons` from the merchant's own `/admin/coupons`
+  storefront discount codes — see `docs/plans/platform-coupons.md` §1 for why the two are kept apart.
 
 Access is granted deliberately, never by the product:
 
@@ -360,6 +369,11 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 - `/api/platform/health` - Sync state per store, job queue depth, and the stuck-order backlog
 - `/api/platform/customers` - Paginated merchant list; sort, filter and search
 - `/api/platform/customers/[storeId]` - One merchant in full; `/orders` for their paged orders
+- `/api/platform/coupons` - List (`GET`) and issue (`POST`) platform signup coupons — the console's
+  first write surface; mutations audit inside the same transaction as the change
+- `/api/platform/coupons/[id]` - Deactivate, rename or edit notes (`PATCH`); economics are refused,
+  never silently ignored
+- `/api/platform/coupons/redemptions` - Every redemption across every coupon, newest first
 - `/api/storefront/click` - Public buyer-click beacon; rate limited, bot filtered, IP hashed
 
 ### Admin APIs
@@ -397,14 +411,20 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 - `/api/checkout/quote` - Server-authoritative pricing preview; creates nothing
 - `/api/checkout/session` - Storefront Stripe Checkout Session ($0 carts complete without Stripe)
 - `/api/checkout/confirm` - Order confirmation resolved against our tables, not the query string
-- `/api/billing/{checkout,portal,status}` - Merchant subscription to the platform
+- `/api/billing/{checkout,portal,status}` - Merchant subscription to the platform; `checkout` takes
+  an optional signup-coupon code, `status` reports which discount (coupon or intro offer) is live
+- `/api/billing/coupon/preview` - Validate and describe a signup coupon code; writes nothing
+- `/api/billing/coupon/notice` - Which coupon clock (reservation or discount) the merchant's live
+  claim is on, for the `/admin` alert ladder
 - `/api/connect/{onboard,status,return,refresh}` - Stripe Connect Express onboarding and payouts
-- `/api/webhooks/stripe` - The single Stripe webhook endpoint for both money flows
+- `/api/webhooks/stripe` - The single Stripe webhook endpoint for both money flows, plus platform
+  signup coupon redemption close-out
 
 ### Integration and scheduled
 - `/api/shipstation/webhook/[storeToken]` - Per-store ShipStation webhook receiver
 - `/api/cron/sync` - Vercel Cron: schedules a ShipStation sync per store
 - `/api/cron/inventory-snapshot` - Vercel Cron: daily inventory snapshot
+- `/api/cron/coupon-sweep` - Vercel Cron: releases signup-coupon reservations nobody converted
 - `/api/jobs/process` - Drains `job_queue` (sync pages, order pushes, notifications)
 - `/api/health` - Liveness
 
@@ -423,7 +443,10 @@ The application uses PostgreSQL with a comprehensive schema including:
 - **Stores**: Multi-tenant store configuration
 - **Users**: Authentication and authorization
 - **Blog**: Content management system
-- **Coupons**: Discount and promotion system
+- **Coupons**: Discount and promotion system (`coupons`, a merchant's storefront codes) and
+  **platform signup coupons** (`platform_coupons` / `platform_coupon_redemptions`) — an operator's
+  discount on a merchant's own RebelShops subscription. Two unrelated tables; see
+  `docs/plans/platform-coupons.md` §1.
 - **Purchase Orders**: Inventory management
 - **Product Media**: Uploaded images, content-addressed by SHA-256 and scoped to one store
 - **Sync Logs**: Integration monitoring

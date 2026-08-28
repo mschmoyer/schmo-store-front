@@ -57,7 +57,23 @@ export function useOnboarding(): OnboardingApi {
 
   const refresh = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/onboarding/state', { cache: 'no-store' });
+      /*
+       * Forward `?coupon_error=` from the browser's URL to the state route.
+       *
+       * `/join/<code>` redirects a dead link to `?coupon_error=expired` (etc.) and sets no
+       * cookie — the state route reads the reason off `request.url`, but that's this fetch, not
+       * the page navigation, so without forwarding it the wizard renders no banner and a friend
+       * gets silently charged full price (docs/plans/platform-coupons.md §11 invariant 7).
+       */
+      const couponError =
+        typeof window === 'undefined'
+          ? null
+          : new URLSearchParams(window.location.search).get('coupon_error');
+      const url = couponError
+        ? `/api/onboarding/state?coupon_error=${encodeURIComponent(couponError)}`
+        : '/api/onboarding/state';
+
+      const response = await fetch(url, { cache: 'no-store' });
       if (!response.ok) {
         setState(ANONYMOUS_STATE);
         return;

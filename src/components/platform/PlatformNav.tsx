@@ -9,6 +9,7 @@ import {
   IconChartArrowsVertical,
   IconHeartRateMonitor,
   IconLayoutDashboard,
+  IconTicket,
   IconTruckDelivery,
 } from '@tabler/icons-react';
 import { usePathname } from 'next/navigation';
@@ -62,6 +63,16 @@ const NAV_GROUPS: PlatformNavGroup[] = [
         icon: IconBuildingStore,
         href: '/platform/customers',
         description: 'Merchants and their stores',
+      },
+      /* Phase 3 of docs/plans/platform-coupons.md: the screen this links to now exists — both
+         tabs, create, deactivate and copy-link — so this item is safe under the rule above. It
+         does not belong under "Overview sections": those are anchors into panels on the overview
+         that have no route of their own, and this is a routed screen with its own write surface. */
+      {
+        label: 'Coupons',
+        icon: IconTicket,
+        href: '/platform/coupons',
+        description: 'Signup offers and redemptions',
       },
     ],
   },

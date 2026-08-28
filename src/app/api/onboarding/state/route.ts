@@ -10,7 +10,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { canAccessStep, asStepId } from '@/components/onboarding/lib/steps';
 import { ANONYMOUS_STATE } from '@/components/onboarding/lib/types';
-import { buildState, originOf, persist, requireOnboarding, toProgress } from '../_lib/state';
+import {
+  buildState,
+  originOf,
+  persist,
+  previewCouponForVisitor,
+  requireOnboarding,
+  toProgress,
+} from '../_lib/state';
 
 /**
  * Return where this merchant got to.
@@ -25,7 +32,10 @@ export async function GET(request: NextRequest) {
   try {
     const context = await requireOnboarding(request);
     if (!context) {
-      return NextResponse.json({ state: ANONYMOUS_STATE });
+      // No account yet: preview the coupon (writes nothing) so the wizard shows the offer or the
+      // honest failure before there is anything to attribute it to.
+      const coupon = await previewCouponForVisitor(request);
+      return NextResponse.json({ state: { ...ANONYMOUS_STATE, coupon } });
     }
     return NextResponse.json({ state: await buildState(context, originOf(request)) });
   } catch (error) {

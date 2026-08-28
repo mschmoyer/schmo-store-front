@@ -14,6 +14,7 @@ import {
   computeIntroEndDate,
   resolveIntroCouponId,
 } from './intro-offer';
+import { computeDiscountedAmountCents, type PlatformCoupon } from './platform-coupons';
 
 /** A subscription row as the application consumes it. */
 export interface SubscriptionRecord {
@@ -30,6 +31,13 @@ export interface SubscriptionRecord {
   readonly introAmountCents: number | null;
   readonly introMonths: number;
   readonly introEndsAt: Date | null;
+  /**
+   * The Stripe Coupon id backing the discount above — the intro coupon or a platform signup coupon
+   * (plan §3: a subscription only ever carries one). `null` when never discounted. Despite the
+   * `intro_` column prefix — a naming debt the plan (§7) writes down rather than fixes mid-feature —
+   * this is "whichever discount is live"; `GET /api/billing/status` uses it to tell the two apart.
+   */
+  readonly introCouponId: string | null;
   readonly currentPeriodStart: Date | null;
   readonly currentPeriodEnd: Date | null;
   readonly cancelAtPeriodEnd: boolean;
@@ -69,6 +77,7 @@ interface SubscriptionRow extends Record<string, unknown> {
   intro_amount: number | null;
   intro_months: number | null;
   intro_ends_at: Date | null;
+  intro_coupon_id: string | null;
   current_period_start: Date | null;
   current_period_end: Date | null;
   cancel_at_period_end: boolean | null;
@@ -98,6 +107,7 @@ function toRecord(row: SubscriptionRow): SubscriptionRecord {
     introAmountCents: row.intro_amount,
     introMonths: row.intro_months ?? 0,
     introEndsAt: row.intro_ends_at,
+    introCouponId: row.intro_coupon_id,
     currentPeriodStart: row.current_period_start,
     currentPeriodEnd: row.current_period_end,
     cancelAtPeriodEnd: row.cancel_at_period_end === true,
@@ -110,7 +120,7 @@ function toRecord(row: SubscriptionRow): SubscriptionRecord {
 const SELECT_COLUMNS = `
   id, owner_id, store_id, stripe_customer_id, stripe_subscription_id, stripe_price_id,
   plan_key, status, currency, unit_amount, intro_amount, intro_months, intro_ends_at,
-  current_period_start, current_period_end, cancel_at_period_end, canceled_at,
+  intro_coupon_id, current_period_start, current_period_end, cancel_at_period_end, canceled_at,
   latest_invoice_id, last_payment_status
 `;
 
@@ -225,18 +235,121 @@ function readPeriod(subscription: Stripe.Subscription): {
   };
 }
 
+/** Raw columns read by {@link lookupPlatformCouponByStripeCouponId}. */
+interface PlatformCouponLookupRow extends Record<string, unknown> {
+  code: string;
+  name: string;
+  percent_off: number;
+  duration_months: number | null;
+  collect_payment_method: boolean;
+  max_redemptions: number | null;
+  redeemed_count: number;
+  redeem_by: Date | null;
+  is_active: boolean;
+}
+
 /**
- * Read the active intro discount, if any, from a Stripe subscription.
+ * Look up the `platform_coupons` row backing a Stripe coupon id, shaped exactly as
+ * `billing/platform-coupons.ts`'s pure model expects, so a caller can hand the result straight to
+ * `describePlatformCoupon` / `requiresPaymentMethod` without adapting field names.
+ *
+ * The fix for `docs/plans/platform-coupons.md` §3 ("A bug this feature walks into"):
+ * {@link readIntroDiscount}'s unexpanded-coupon-id branch used to treat *any* id other than the
+ * intro coupon as unknown, writing `months: 0` / `amountOff: null` — so a merchant on a real,
+ * fully-tracked platform coupon (a free year, say) got `intro_ends_at = NULL` and a wrong
+ * next-charge amount on `/admin/billing`. An unexpanded id is common whenever a caller doesn't pass
+ * `expand: ['discounts']` (before this phase, `GET /api/billing/status` didn't).
+ *
+ * Queried directly with a raw `db.query`, mirroring every other function in this file, rather than
+ * importing `platform/coupons.ts`'s record-returning helpers.
+ *
+ * @param stripeCouponId - The Stripe Coupon id from a subscription discount.
+ * @returns The coupon, or `null` when no platform coupon has this Stripe id (an intro coupon, or a
+ *   coupon from outside this feature entirely).
+ */
+export async function lookupPlatformCouponByStripeCouponId(
+  stripeCouponId: string
+): Promise<PlatformCoupon | null> {
+  const result = await db.query<PlatformCouponLookupRow>(
+    `SELECT code, name, percent_off, duration_months, collect_payment_method, max_redemptions,
+            redeemed_count, redeem_by, is_active
+       FROM platform_coupons
+      WHERE stripe_coupon_id = $1`,
+    [stripeCouponId]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    code: row.code,
+    name: row.name,
+    percentOff: row.percent_off,
+    durationMonths: row.duration_months,
+    collectPaymentMethod: row.collect_payment_method,
+    maxRedemptions: row.max_redemptions,
+    redeemedCount: row.redeemed_count,
+    redeemBy: row.redeem_by,
+    isActive: row.is_active,
+  };
+}
+
+/**
+ * The two fields {@link readIntroDiscount} actually needs, pulled from
+ * {@link lookupPlatformCouponByStripeCouponId} rather than a second query.
+ *
+ * @param stripeCouponId - The Stripe Coupon id from an unexpanded discount.
+ * @returns `percentOff` / `durationMonths`, or `null` when no platform coupon has this Stripe id.
+ */
+async function lookupPlatformCouponEconomicsByStripeId(
+  stripeCouponId: string
+): Promise<{ percentOff: number; durationMonths: number | null } | null> {
+  const coupon = await lookupPlatformCouponByStripeCouponId(stripeCouponId);
+  return coupon ? { percentOff: coupon.percentOff, durationMonths: coupon.durationMonths } : null;
+}
+
+/**
+ * Convert a percentage discount to cents against a given base amount, without throwing.
+ *
+ * `computeDiscountedAmountCents` is strict about its inputs, correct for code we fully control but
+ * too strict for a percentage read back off a live Stripe object: a coupon manufactured outside
+ * this feature must degrade to "amount unknown" here rather than take down a webhook.
+ *
+ * @param baseCents - The amount the percentage applies to, in integer cents.
+ * @param percentOff - The percentage, as Stripe reports it.
+ * @returns The discount in integer cents, or `null` when `percentOff` is not a usable value.
+ */
+function safePercentToAmountOffCents(baseCents: number, percentOff: number | null | undefined): number | null {
+  if (percentOff === null || percentOff === undefined) {
+    return null;
+  }
+  try {
+    return computeDiscountedAmountCents(baseCents, percentOff);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the active discount, if any, from a Stripe subscription — the intro offer, or a platform
+ * signup coupon (plan §3: "a platform coupon replaces the intro offer", so a subscription never
+ * carries both).
  *
  * @param subscription - The Stripe subscription.
- * @returns The coupon and discount ids plus the intro length.
+ * @param unitAmountCents - The subscription's undiscounted per-invoice amount, used to convert a
+ *   percentage-based platform coupon into cents. Passed in rather than re-derived so this function
+ *   and its caller agree on the same base amount.
+ * @returns The coupon and discount ids plus the discount length and amount, in integer cents.
  */
-function readIntroDiscount(subscription: Stripe.Subscription): {
+async function readIntroDiscount(
+  subscription: Stripe.Subscription,
+  unitAmountCents: number
+): Promise<{
   couponId: string | null;
   discountId: string | null;
   months: number;
   amountOff: number | null;
-} {
+}> {
   const discounts = (subscription.discounts ?? []) as Array<string | Stripe.Discount>;
   const discount = discounts.find(
     (entry): entry is Stripe.Discount => typeof entry !== 'string'
@@ -258,24 +371,43 @@ function readIntroDiscount(subscription: Stripe.Subscription): {
 
   if (typeof rawCoupon === 'string') {
     // Unexpanded. If it is our own intro coupon we already know its economics from the catalogue
-    // (`ensureIntroCoupon` refuses to run against a coupon that disagrees with it); otherwise the
-    // amounts stay unknown and the upsert preserves whatever is already stored.
-    const isKnownIntroCoupon = rawCoupon === resolveIntroCouponId();
-    return {
-      couponId: rawCoupon,
-      discountId: discount.id,
-      months: isKnownIntroCoupon ? PLATFORM_INTRO_MONTHS : 0,
-      amountOff: isKnownIntroCoupon
-        ? PLATFORM_LIST_AMOUNT_CENTS - PLATFORM_INTRO_AMOUNT_CENTS
-        : null,
-    };
+    // (`ensureIntroCoupon` refuses to run against a coupon that disagrees with it).
+    if (rawCoupon === resolveIntroCouponId()) {
+      return {
+        couponId: rawCoupon,
+        discountId: discount.id,
+        months: PLATFORM_INTRO_MONTHS,
+        amountOff: PLATFORM_LIST_AMOUNT_CENTS - PLATFORM_INTRO_AMOUNT_CENTS,
+      };
+    }
+
+    // Not the intro coupon — look it up against `platform_coupons.stripe_coupon_id` before falling
+    // through to "unknown" (the bug this function fixes).
+    const platformCoupon = await lookupPlatformCouponEconomicsByStripeId(rawCoupon);
+    if (platformCoupon) {
+      return {
+        couponId: rawCoupon,
+        discountId: discount.id,
+        // `durationMonths === null` means forever — no window to record, so `months` stays the
+        // "no fixed length" sentinel (`0`) while `amountOff` still gets the current price right.
+        months: platformCoupon.durationMonths ?? 0,
+        amountOff: safePercentToAmountOffCents(unitAmountCents, platformCoupon.percentOff),
+      };
+    }
+
+    // Unrecognized (some other Stripe coupon entirely): amounts stay unknown and the upsert
+    // preserves whatever is already stored — see the `COALESCE` clauses below.
+    return { couponId: rawCoupon, discountId: discount.id, months: 0, amountOff: null };
   }
 
+  // Expanded. Platform coupons are `percent_off` (plan §2, so the figure survives a list-price
+  // change) while the intro coupon is `amount_off` — both must be read here, or a percent-based
+  // coupon would land `amountOff: null` even when fully expanded.
   return {
     couponId: rawCoupon.id,
     discountId: discount.id,
     months: rawCoupon.duration_in_months ?? 0,
-    amountOff: rawCoupon.amount_off ?? null,
+    amountOff: rawCoupon.amount_off ?? safePercentToAmountOffCents(unitAmountCents, rawCoupon.percent_off),
   };
 }
 
@@ -304,10 +436,10 @@ export async function upsertSubscriptionFromStripe(
   const storeId = metadata.store_id || fallback.storeId || null;
   const price = firstPrice(subscription);
   const period = readPeriod(subscription);
-  const intro = readIntroDiscount(subscription);
   const startedAt = toDate(subscription.start_date) ?? new Date();
 
   const unitAmount = price?.unit_amount ?? PLATFORM_LIST_AMOUNT_CENTS;
+  const intro = await readIntroDiscount(subscription, unitAmount);
   const introMonths = intro.months;
   const introAmount =
     intro.amountOff !== null ? Math.max(0, unitAmount - intro.amountOff) : null;

@@ -1,7 +1,10 @@
 # The platform admin console
 
-The operator's view of the whole tenancy, at **`/platform`**. It is a different thing from
-`/admin`, and the distinction is the whole design:
+The operator's view of the whole tenancy, at **`/platform`**, plus one write surface:
+**`/platform/coupons`**, where an operator issues the signup coupons described in
+`docs/plans/platform-coupons.md` (schema, invariants, the `/join/<code>` link) and
+`docs/payments.md` §8 (how a coupon reaches Stripe). Every other screen under `/platform` is
+still read-only. It is a different thing from `/admin`, and the distinction is the whole design:
 
 | | `/admin` | `/platform` |
 |---|---|---|
@@ -56,12 +59,49 @@ Two properties worth knowing:
   into a generic 500 — a platform route's error text can name tables and store ids, and none of
   that belongs in an HTTP body.
 - `recordAdminAction(...)` writes to `platform_admin_audit`. Best-effort by design: an audit write
-  that fails logs and returns rather than taking the console down. The console is read-only, so a
-  lost row loses the record of a *view*, not of a change.
+  that fails logs and returns rather than taking the console down. That reasoning holds for every
+  **read** surface — a lost row loses the record of a *view*, and a view cannot be undone or redone,
+  so failing the request over it would make the console less useful for no safety gained.
 
 The "Admin" item in the merchant sidebar is a **convenience, not a control**. It is rendered from
 `isAdmin` on the client. A merchant who edits that value in memory, or simply types the URL, gets a
 403 from every `/api/platform/*` route.
+
+### Mutations audit differently, on purpose
+
+`POST /api/platform/coupons` and `PATCH /api/platform/coupons/[id]` are the console's first WRITE
+surface (`docs/plans/platform-coupons.md` §4C, invariant 11), and `recordAdminAction`'s reasoning
+does not carry over to them: a lost audit row for a *view* costs a gap in a log nobody can act on
+anyway, but a lost audit row for a coupon an operator just created — one that can discount a
+merchant's subscription for a year — is a change with no record it happened. Best-effort is the
+wrong trade-off the moment the action being recorded is irreversible and costs money.
+
+So these two routes do not call `recordAdminAction` at all. Each one writes the coupon change and
+its `platform_admin_audit` row from the same `db.transaction(...)` client, in that order, with no
+`try/catch` around the audit `INSERT`:
+
+```ts
+await db.transaction(async (client) => {
+  const result = await createPlatformCoupon(input, admin.userId, client);
+  if (result.reason === 'ok') {
+    // fail-hard: no try/catch. A failed audit write rolls back the coupon it would describe.
+    await client.query(
+      `INSERT INTO platform_admin_audit (admin_user_id, action, target_type, target_id, metadata)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [admin.userId, 'create_coupon', 'platform_coupon', result.coupon.id, /* … */]
+    );
+  }
+  return result;
+});
+```
+
+If the audit `INSERT` fails, the transaction rolls back and the coupon is never created: a change
+with no record of who made it is `CLAUDE.md`'s **Honest results** rule ("never return `success: true`
+for work that wrote nothing") applied to a write, not just a response — an unaudited mutation is work
+nobody can be held to, even with a row sitting in `platform_coupons`.
+
+The rule going forward: **any future write added to `/platform` follows this pattern, not
+`recordAdminAction`'s.** `recordAdminAction` stays exactly as it is — best-effort, for reads.
 
 ## Counting clicks honestly
 
@@ -211,4 +251,10 @@ Two rules the screens follow, both from `CLAUDE.md`:
   existing there happen in the same deploy.
 - The audit trail (`platform_admin_audit`) is append-only by convention. Nothing prunes it yet; if
   it ever grows enough to matter, that is a retention decision to make deliberately rather than a
-  cleanup job to add quietly.
+  cleanup job to add quietly. Since "Mutations audit differently, on purpose" above, a row here for
+  `create_coupon` / `deactivate_coupon` etc. is a guarantee, not a best-effort log: if the row isn't
+  there, the mutation didn't happen.
+- `platform_coupons` and `platform_coupon_redemptions` (migration `042_platform_coupons.sql`) are
+  not scoped by `store_id` any more than `platform_admin_audit` is — they are platform-wide by
+  definition, same as everything else this console reads. `/platform/coupons`'s own demo-exclusion
+  behaviour matches the rest of the console: `?includeDemo=1` puts demo stores' redemptions back.

@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { WizardContainer } from '@/components/wizard';
+import { Banner, WizardContainer } from '@/components/wizard';
 import { useOnboarding } from './useOnboarding';
 import { STEP_IDS, type StepId } from './lib/steps';
+import type { OnboardingCoupon, OnboardingCouponErrorReason } from './lib/types';
 import AccountStep from './steps/AccountStep';
 import StoreStep from './steps/StoreStep';
 import ShipStationStep from './steps/ShipStationStep';
@@ -100,6 +101,63 @@ function useStepHistory(
   }, [navigate]);
 }
 
+/** Human sentence for a coupon that could not be honoured. Signup always still works — see the type. */
+function describeCouponFailure(reason: OnboardingCouponErrorReason): string {
+  switch (reason) {
+    case 'expired':
+      return 'This invite link has expired.';
+    case 'exhausted':
+      return 'This invite link has already been fully claimed.';
+    case 'inactive':
+      return 'This invite link is no longer active.';
+    case 'already_claimed':
+      return 'Your account already has an offer applied.';
+    case 'unknown':
+    default:
+      return 'We couldn’t find that invite code.';
+  }
+}
+
+/**
+ * The `/join` link's offer (or its honest failure), rendered once at the wizard shell so it
+ * survives every step (docs/plans/platform-coupons.md §4A). Reads `api.state.coupon`, already
+ * re-validated server-side; this component does no validation of its own.
+ *
+ * States the card requirement up front on the success side (plan §14 decision 1): a friend told
+ * "no card needed" and then asked for one at billing is the exact failure this prevents.
+ *
+ * @param props.coupon - The coupon info from the current onboarding state.
+ * @returns The banner, or `null` when no link is in play.
+ */
+function CouponBanner({ coupon }: { coupon: OnboardingCoupon }): React.ReactElement | null {
+  if (coupon.offer) {
+    const cardNote =
+      coupon.requiresPaymentMethod === false
+        ? 'No card needed today.'
+        : 'A card will still be required at signup.';
+    return (
+      <Banner
+        tone="success"
+        title={coupon.attributed ? 'Your invite is reserved' : 'You have an invite offer'}
+      >
+        {/* `coupon.offer` has no closing full stop, so without one this reads as one run-on line:
+            "…then $19.99/month No card needed today." */}
+        {coupon.offer}. {cardNote}
+      </Banner>
+    );
+  }
+
+  if (coupon.errorReason) {
+    return (
+      <Banner tone="warning" title="That invite link didn’t work">
+        {describeCouponFailure(coupon.errorReason)} You can still sign up — standard pricing applies.
+      </Banner>
+    );
+  }
+
+  return null;
+}
+
 /**
  * The signup wizard.
  *
@@ -169,6 +227,7 @@ export default function OnboardingWizard(): React.ReactElement {
       }
       exitLabel={api.state.authenticated ? 'Save and finish later' : 'Back to site'}
     >
+      <CouponBanner coupon={api.state.coupon} />
       <Step api={api} />
     </WizardContainer>
   );
