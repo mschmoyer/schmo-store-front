@@ -19,23 +19,17 @@ export interface CouponPricingPageProps {
 
 /**
  * `/pricing`, for a visitor whose `/join/<CODE>` cookie names a coupon that is
- * still redeemable — see `docs/plans/platform-coupons.md` §4A / §14 decision 4.
+ * still redeemable — see docs/plans/platform-coupons.md §4A / §14 decision 4.
  *
- * Same shell as the standard `PricingPage` (same header, footer, comparison
- * table, FAQ and final CTA — none of that is about the intro offer, so none of
- * it changes) with the head band and the plan card replaced: the headline
- * states the coupon's own offer sentence rather than the fixed "$19.99 a
- * month", and {@link CouponPlanCard} quotes the coupon's real numbers. This is
- * a sibling component rather than a prop threaded through `PricingPage`,
- * for the same reason `CouponPlanCard` is a sibling of `PlanCard`: the
- * standard page's copy is written as fixed strings for the one offer that
- * never varies, and this is a different offer.
+ * Same shell as the standard `PricingPage`, with the head band and plan card
+ * replaced by the coupon's own offer sentence and {@link CouponPlanCard}'s
+ * real numbers — a sibling component rather than a prop on `PricingPage`,
+ * since that page's copy is fixed strings for the one offer that never
+ * varies.
  *
- * Every screen a coupon-holder reaches states the card requirement plainly —
- * the onboarding wizard's `CouponBanner` does it in the same words. A friend
- * promised "no card needed" by the `/join` link and then asked for one after
- * following it to `/pricing` and into signup would be exactly the failure
- * plan §14 decision 1 exists to prevent.
+ * States the card requirement plainly, matching the wording the onboarding
+ * wizard's `CouponBanner` uses — a friend promised "no card needed" and then
+ * asked for one at signup is the exact failure plan §14 decision 1 prevents.
  *
  * @param props - {@link CouponPricingPageProps}
  * @returns The coupon-quoting pricing page.

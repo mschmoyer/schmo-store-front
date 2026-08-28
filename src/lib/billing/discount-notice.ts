@@ -5,31 +5,24 @@ import {
 
 /**
  * The `/admin` and `/admin/billing` alert ladder for a platform coupon's free window, as one pure
- * function of `(discountEndsAt, hasPaymentMethod, now, status)`.
+ * function of `(discountEndsAt, hasPaymentMethod, now, status)`. See
+ * `docs/plans/platform-coupons.md` §5.1 for the ladder and §5.2 for the grace period.
  *
- * `docs/plans/platform-coupons.md` §5.1 specifies the ladder, and §5.2 explains why grace has to be
- * computed here rather than left to Stripe: with a card on file, Stripe's own dunning retries *are*
- * the grace period, and `isEntitled()` already counts `past_due` as entitled — a second,
- * product-level grace on top would give the merchant two clocks that disagree, so this module never
- * produces a grace state when a card is on file. Without a card, dunning retries against nothing,
- * so grace has to be a product decision, which is what {@link PLATFORM_DISCOUNT_GRACE_DAYS} is.
+ * Grace applies only without a card on file: with one, Stripe's own dunning retries *are* the grace
+ * period, and `isEntitled()` already counts `past_due` as entitled, so a second product-level grace
+ * would give the merchant two clocks that disagree. Without a card, dunning retries against nothing,
+ * so grace is a product decision ({@link PLATFORM_DISCOUNT_GRACE_DAYS}).
  *
  * This module owns both {@link PLATFORM_DISCOUNT_GRACE_DAYS} and
- * {@link PLATFORM_DISCOUNT_WARNING_DAYS} so the dashboard and the billing page read the same
- * constants instead of two screens quietly disagreeing about what day it is (§5.1).
+ * {@link PLATFORM_DISCOUNT_WARNING_DAYS} so the dashboard and billing page can't quietly disagree
+ * about what day it is.
  *
  * Zero dependencies — no Stripe, no database — like `intro-offer.ts` and `platform-coupons.ts`.
  *
- * ## A resolved ambiguity
- *
- * §5.1's table has a row for "coupon attributed, not yet subscribed", whose alert is about the
- * *reservation* lapsing (§6's 30-day attribution window) — a different clock from
- * `discount_ends_at`, which does not exist yet for a redemption that has not happened. That row is
- * out of scope for this function: it owns the free-window ladder only, keyed off a coupon that has
- * actually been **redeemed**. Callers pass `status` so this function can say `nothing-to-say` for
- * `'attributed'` and `'released'` redemptions rather than being asked to guess at a discount that
- * is not yet (or no longer) live; the reservation banner is a separate, simpler concern (a single
- * date, no card/no-card split) that belongs to whatever code reads the attribution row directly.
+ * `status` scopes this function to a **redeemed** discount only: `'attributed'` and `'released'`
+ * always resolve to `nothing-to-say`, because their alert is about the *reservation* lapsing (a
+ * different clock — see `coupon-windows.ts`) rather than a live discount window. That reservation
+ * banner is a separate concern owned by whatever code reads the attribution row directly.
  */
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -37,20 +30,18 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /**
  * How many days after `discount_ends_at` a no-card redemption is still shown as "in grace" rather
  * than "grace exhausted". Applies only when no payment method is on file — see the file header.
- * Proposed value from §5.2.
  */
 export { PLATFORM_DISCOUNT_GRACE_DAYS } from './coupon-windows';
 
 /**
  * How many days before `discount_ends_at` the dashboard starts saying anything at all. Outside this
- * window the ladder is silent on purpose (§5.1: "quiet for eleven months, clear for the last one").
+ * window the ladder is silent on purpose.
  */
 export { PLATFORM_DISCOUNT_WARNING_DAYS } from './coupon-windows';
 
 /**
- * The lifecycle state of a coupon redemption, mirroring the `status` column of
- * `platform_coupon_redemptions` (§7). Defined locally rather than imported so this module stays
- * dependency-free; it is a narrow, stable vocabulary unlikely to drift from the schema.
+ * The lifecycle state of a coupon redemption, mirroring `platform_coupon_redemptions.status` (§7).
+ * Defined locally rather than imported, to keep this module dependency-free.
  */
 export type RedemptionStatus = 'attributed' | 'redeemed' | 'released';
 
@@ -132,9 +123,8 @@ function daysUp(ms: number): number {
  *
  * @param discountEndsAt - When the free window closes. `null` means the discount never ends
  *   ("free forever"), which is always `nothing-to-say`.
- * @param hasPaymentMethod - Whether the merchant has a card on file. Determines whether a closing
- *   window is informational or actionable, and whether grace applies at all (§5.2: with a card,
- *   Stripe's own dunning is the grace).
+ * @param hasPaymentMethod - Whether the merchant has a card on file. Determines informational vs
+ *   actionable, and whether grace applies at all — see the file header.
  * @param now - Current time; injectable for tests.
  * @param status - The redemption's lifecycle state. Only `'redeemed'` can produce a notice here;
  *   see the file header for why `'attributed'` and `'released'` are out of scope.
@@ -164,7 +154,6 @@ export function resolveDiscountNotice(
       : { state: 'actionable', discountEndsAt, daysRemaining, dismissible: false };
   }
 
-  // The window has closed.
   if (hasPaymentMethod) {
     // Stripe already charged the card automatically. Nothing for the dashboard to say.
     return { state: 'nothing-to-say' };

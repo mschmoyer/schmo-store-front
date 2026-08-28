@@ -1,37 +1,26 @@
 /**
- * Redemption close-out for platform signup coupons (flow **A** — see
- * `docs/plans/platform-coupons.md` §6, phase 6).
+ * Redemption close-out for platform signup coupons.
  *
- * `attributeCoupon` (phase 4, `billing/coupon-claims.ts`) reserves a claim at signup — before any
- * money has moved. This module is what confirms it once Stripe reports a real subscription carrying
- * the coupon, moving the claim `attributed → redeemed` via `coupon-claims.ts`'s `markRedeemed`, the
- * one function in the codebase allowed to write that transition. Nothing here writes to
- * `platform_coupon_redemptions` directly.
+ * `attributeCoupon` (`billing/coupon-claims.ts`) reserves a claim at signup, before any money
+ * moves. This module confirms it once Stripe reports a real subscription carrying the coupon,
+ * moving the claim `attributed → redeemed` via `markRedeemed` — the only function allowed to write
+ * that transition. Nothing here writes to `platform_coupon_redemptions` directly.
  *
- * **Wired from `checkout.session.completed`'s platform-billing branch**
- * (`syncSubscriptionFromCheckout` in `../route.ts`), not from `customer.subscription.created`, even
- * though Stripe fires both for the same subscription. Two reasons, not one:
+ * **Wired from `checkout.session.completed`** (`syncSubscriptionFromCheckout` in `../route.ts`),
+ * not `customer.subscription.created`, though Stripe fires both: that sync already retrieves the
+ * subscription with `expand: ['discounts']` for the intro-discount fields, so reusing it costs
+ * nothing extra, and the Checkout Session is where our `owner_id` metadata lives — the same
+ * owner-resolution the subscription mirror already trusts, so the redemption ledger and the mirror
+ * can never attribute the same event to two different owners.
  *
- * 1. `syncSubscriptionFromCheckout` already retrieves the subscription with `expand: ['discounts']`
- *    to populate the subscription mirror's intro-discount fields, so reusing that same retrieve for
- *    the coupon coupon costs nothing extra — a second Stripe round trip is not needed.
- * 2. The Checkout Session is where our own `owner_id` metadata is set
- *    (`POST /api/billing/checkout`'s `metadata` and `subscription_data.metadata`, mirrored onto the
- *    subscription itself), and `session.metadata.owner_id` / `client_reference_id` is the exact
- *    owner-resolution `syncSubscriptionFromCheckout` already trusts for the subscription mirror.
- *    Piggybacking on it means the redemption ledger and the subscription mirror can never attribute
- *    the same event to two different owners.
+ * Not wired to `customer.subscription.updated`: `markRedeemed` only ever transitions
+ * `attributed → redeemed`, a safe no-op on an already-redeemed claim, so there's no reason to pay
+ * for the extra call on every renewal once the one call at creation has closed the loop.
  *
- * `customer.subscription.updated` (a later renewal, a plan change) is deliberately not wired to this
- * module: `markRedeemed` only ever transitions `attributed → redeemed`, so calling it again on an
- * already-redeemed claim is a safe no-op, but there is no reason to pay for the extra call on every
- * renewal when the one call at creation already closes the loop.
- *
- * **Never throws.** Every failure — no owner, no platform coupon on the discount, a Stripe lookup
- * that fails, an error out of `markRedeemed` — is caught and reported as a typed `outcome` rather
- * than propagated. That is `CLAUDE.md`'s "a coupon failure must never fail the webhook or lose the
- * subscription sync" rule made concrete: `syncSubscriptionFromCheckout` writes the subscription
- * mirror *before* calling here, and that write must stand no matter what happens next.
+ * **Never throws.** Every failure — no owner, no platform coupon, a failed Stripe lookup, an error
+ * out of `markRedeemed` — is caught and reported as a typed `outcome`, because
+ * `syncSubscriptionFromCheckout` writes the subscription mirror *before* calling here, and that
+ * write must stand no matter what happens next.
  */
 
 import type Stripe from 'stripe';
@@ -40,21 +29,17 @@ import { computeDiscountEndsAt } from '@/lib/billing/platform-coupons';
 import { markRedeemed, type Queryable } from '@/lib/billing/coupon-claims';
 
 /**
- * `metadata.scope` every Stripe coupon created by `stripe/platform-coupons.ts`'s
- * `describeStripeCouponFor` carries. Matching on this (rather than assuming "any coupon on this
- * subscription is ours") is what keeps the intro coupon — a different Stripe coupon, also
- * `discounts: [{ coupon }]` on the same kind of subscription — from ever being mistaken for a
- * platform signup coupon here.
+ * `metadata.scope` every Stripe coupon from `describeStripeCouponFor` carries. Matching on this
+ * (rather than assuming any coupon on the subscription is ours) keeps the intro coupon from ever
+ * being mistaken for a platform signup coupon.
  */
 const PLATFORM_SIGNUP_COUPON_SCOPE = 'platform_signup';
 
 /**
  * Every outcome {@link closeOutPlatformCouponRedemption} can report. Never a thrown error.
  *
- * `'coupon_mismatch'` (finding 14) means a live claim exists for this user, but for a *different*
- * coupon than the one Stripe just attached — `markRedeemed` refused rather than redeeming the wrong
- * row. This should not happen given the schema's one-live-claim-per-user constraint, but it is
- * checked and reported rather than assumed away.
+ * `'coupon_mismatch'` means a live claim exists for this user, but for a *different* coupon than
+ * the one Stripe just attached — `markRedeemed` refused rather than redeeming the wrong row.
  */
 export type CloseOutOutcome =
   | 'redeemed'
@@ -106,10 +91,9 @@ type LegacyDiscount = Stripe.Discount & { coupon?: string | Stripe.Coupon | null
  * necessary, and returning it only when its metadata marks it as one of our own platform signup
  * coupons.
  *
- * Mirrors the shape-handling in `billing/subscriptions.ts`'s `readIntroDiscount` — the coupon moved
+ * Mirrors the shape-handling in `billing/subscriptions.ts`'s `readIntroDiscount`: the coupon moved
  * from `discount.coupon` to `discount.source.coupon` across Stripe API versions, and either can
- * arrive as a bare id rather than an object — rather than assuming one fixed shape and breaking the
- * moment Stripe's response shape shifts again.
+ * arrive as a bare id rather than an object.
  *
  * @param subscription - The subscription to inspect.
  * @param retrieveCoupon - How to resolve an unexpanded coupon id.
@@ -146,24 +130,19 @@ function toDate(seconds: number | null | undefined): Date | null {
 
 /**
  * Close out a redemption once Stripe confirms a subscription carrying a platform signup coupon:
- * `attributed → redeemed` (plan §6), recording the Stripe subscription id, the Stripe coupon id, and
- * when the discount window closes.
+ * `attributed → redeemed`, recording the Stripe subscription id, coupon id, and when the discount
+ * window closes.
  *
- * `discountEndsAt` is derived from the subscription's actual start date (`subscription.start_date`,
- * not "now") and the coupon's `duration_in_months` via `billing/platform-coupons.ts`'s
- * `computeDiscountEndsAt` — `null` for a `forever` coupon, which is a meaningful fact ("this merchant
- * is never billed again for this offer"), not a missing value.
+ * `discountEndsAt` comes from the subscription's actual `start_date` (not "now") and the coupon's
+ * `duration_in_months` — `null` for a `forever` coupon, a meaningful fact, not a missing value.
  *
  * **Idempotent** end to end: redelivering the same webhook event calls this again with the same
- * facts, and `markRedeemed` leaves an already-`redeemed` claim untouched (`'already_redeemed'`),
- * never a second write and never an error.
+ * facts, and `markRedeemed` leaves an already-`redeemed` claim untouched, never a second write.
  *
- * Staff-review finding 14: `markRedeemed` is called with `expectedCouponId` read off the Stripe
- * coupon's own `platform_coupon_id` metadata (the same field `describeStripeCouponFor` stamps on
- * every coupon this feature creates) — not matched on `user_id` alone. And when `already_redeemed`
- * comes back for a *different* Stripe subscription than the claim already recorded, that is logged
- * distinctly: a second subscription trying to close out an already-spent redemption is worth seeing
- * in the logs, not a silent no-op indistinguishable from an ordinary webhook redelivery.
+ * `markRedeemed` is called with `expectedCouponId` read off the coupon's own `platform_coupon_id`
+ * metadata, not matched on `user_id` alone. When `already_redeemed` comes back for a *different*
+ * subscription than the claim recorded, that is logged distinctly — worth seeing, not a silent
+ * no-op indistinguishable from an ordinary redelivery.
  *
  * @param input - The subscription's owner and the Stripe subscription Stripe just confirmed.
  * @param options - Injectable boundaries for tests — see {@link CloseOutPlatformCouponRedemptionOptions}.
@@ -224,10 +203,8 @@ export async function closeOutPlatformCouponRedemption(
       result.reason === 'already_redeemed' &&
       result.claim.stripeSubscriptionId !== input.subscription.id
     ) {
-      // Finding 14: this is not an ordinary webhook redelivery (same subscription id redelivered) -
-      // it is a *different* subscription trying to close out a claim that already paid out on an
-      // earlier one. `markRedeemed` correctly refuses to redeem it a second time; this log line is
-      // what makes that a distinguishable event instead of indistinguishable from a normal retry.
+      // Not an ordinary redelivery (same subscription id) — a *different* subscription trying to
+      // close out a claim that already paid out on an earlier one. Worth a distinguishable log line.
       console.warn(
         `[stripe webhook] subscription ${input.subscription.id} carries platform coupon ${coupon.id}, ` +
           `but claim ${result.claim.id} was already redeemed by a different subscription ` +

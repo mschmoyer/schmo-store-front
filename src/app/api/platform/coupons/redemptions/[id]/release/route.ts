@@ -1,21 +1,15 @@
 /**
  * `POST /api/platform/coupons/redemptions/[id]/release` — the operator kill switch for a pending
- * claim (plan `docs/plans/platform-coupons.md` §6: "an operator releases it").
- *
- * Before this route existed, {@link releaseClaim} was exported and unit-tested but reachable from
- * no route and no UI — the console had no way to stop 300 people redeeming a coupon that leaked
- * publicly while their claims sat `attributed`. This is the write surface that closes that gap.
+ * claim: releasing a coupon that leaked publicly stops further redemptions while claims still sit
+ * `attributed`, without touching anyone already converted.
  *
  * Only an `attributed` claim can be released; releasing a `redeemed` one would misrepresent money
  * that already changed hands as a reservation that quietly expired, so {@link releaseClaim} refuses
- * it and this route surfaces that refusal as a `409`, never a `500` (plan §11, and the finding this
- * route fixes). Releasing an already-`released` claim is a no-op success — the same idempotency
- * `POST /api/platform/coupons` and `PATCH /api/platform/coupons/[id]` already give their own
- * operations.
+ * it and this route surfaces that as a `409`, never a `500`. Releasing an already-`released` claim
+ * is a no-op success, the same idempotency the sibling coupon routes give their own operations.
  *
  * Like the other mutating routes under `/api/platform/coupons`, the audit row is written on the
- * same transaction client as the release, uncaught, so a failed audit write rolls back the release
- * rather than leaving an unaccountable state change on the ledger.
+ * same transaction client as the release, uncaught, so a failed audit write rolls back the release.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -54,9 +48,7 @@ export async function POST(
       const result = await releaseClaim(id, RELEASE_REASON_OPERATOR_RELEASED, client);
 
       if (result.reason === 'ok') {
-        // In-transaction, fail-hard audit write — see the module note and the sibling coupon
-        // routes. Not `recordAdminAction`: that helper swallows its own errors by design for the
-        // console's read surfaces, and a write surface must not inherit that.
+        // In-transaction, fail-hard audit write — see the module note and the sibling coupon routes.
         await client.query(
           `INSERT INTO platform_admin_audit (admin_user_id, action, target_type, target_id, metadata)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -88,9 +80,8 @@ export async function POST(
       );
     }
 
-    // 'ok' and 'already_released' both carry a claim and both are a success from the caller's
-    // side: the seat is (now, or already) released. Distinguishing them in the response would ask
-    // the console to render two success states for the one fact an operator cares about.
+    // 'ok' and 'already_released' both respond as success — the seat is (now, or already)
+    // released, which is the one fact an operator cares about.
     return NextResponse.json({
       success: true,
       data: {

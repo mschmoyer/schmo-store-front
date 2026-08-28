@@ -1,15 +1,12 @@
 /**
  * POST /api/billing/coupon/preview
  *
- * Validates a platform signup coupon code and describes its offer — see
- * `docs/plans/platform-coupons.md` §4B. **Writes nothing.** A preview that consumed a single-use
- * coupon would burn it on a typo-and-retry, which is exactly why the plan calls for two endpoints
- * (this one, and `POST /api/billing/checkout { couponCode }`, which does the writing). This route
- * never calls `attributeCoupon` or touches `platform_coupon_redemptions`.
+ * Validates a platform signup coupon code and describes its offer. **Writes nothing** — never
+ * calls `attributeCoupon` or touches `platform_coupon_redemptions` — so a typo-and-retry can't burn
+ * a single-use coupon. `POST /api/billing/checkout { couponCode }` is the endpoint that writes.
  *
- * The actual decision — {@link previewPlatformCouponCode} — lives in `./decide.ts`, not here: see
- * that file's header for why (importing `requireMerchant` pulls in `jose`, which breaks Jest's
- * parser, so the pure logic has to live somewhere that import never reaches).
+ * The decision itself — {@link previewPlatformCouponCode} — lives in `./decide.ts`; see that file's
+ * header for why.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -24,10 +21,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Plan §9: "`/join/[code]` and `/api/billing/coupon/preview` are the two places an attacker can
- * guess codes. Both need rate limiting." This route sits behind `requireMerchant`, so the attacker
- * already needs a valid merchant session — but that merchant could still script guesses against a
- * friend-only code, so the limit is per authenticated user rather than per IP.
+ * This route sits behind `requireMerchant`, but an authenticated merchant could still script
+ * guesses against a friend-only code, so the limit is per user rather than per IP.
  */
 const PREVIEW_RATE_LIMIT = 20;
 /** Ten-minute fixed window for {@link PREVIEW_RATE_LIMIT}. */

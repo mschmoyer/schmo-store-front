@@ -32,12 +32,10 @@ export interface SubscriptionRecord {
   readonly introMonths: number;
   readonly introEndsAt: Date | null;
   /**
-   * The Stripe Coupon id backing the discount above, whatever it is — the intro coupon or a
-   * platform signup coupon (plan §3: a subscription only ever carries one). `null` when this
-   * subscription has never carried a discount. Despite the `intro_` column prefix — a naming debt
-   * the plan (§7) writes down rather than fixes mid-feature — this is "whichever discount is live",
-   * and callers like `GET /api/billing/status` use it to tell the two apart (D of phase 5: never
-   * describe a coupon in the intro offer's vocabulary).
+   * The Stripe Coupon id backing the discount above — the intro coupon or a platform signup coupon
+   * (plan §3: a subscription only ever carries one). `null` when never discounted. Despite the
+   * `intro_` column prefix — a naming debt the plan (§7) writes down rather than fixes mid-feature —
+   * this is "whichever discount is live"; `GET /api/billing/status` uses it to tell the two apart.
    */
   readonly introCouponId: string | null;
   readonly currentPeriodStart: Date | null;
@@ -252,24 +250,18 @@ interface PlatformCouponLookupRow extends Record<string, unknown> {
 
 /**
  * Look up the `platform_coupons` row backing a Stripe coupon id, shaped exactly as
- * `billing/platform-coupons.ts`'s pure model expects — so a caller (this module's
- * {@link readIntroDiscount} bug fix, and `GET /api/billing/status`'s vocabulary fix, phase 5 items
- * C and D) can hand the result straight to `describePlatformCoupon` / `requiresPaymentMethod`
- * without adapting field names.
+ * `billing/platform-coupons.ts`'s pure model expects, so a caller can hand the result straight to
+ * `describePlatformCoupon` / `requiresPaymentMethod` without adapting field names.
  *
- * This is the fix for `docs/plans/platform-coupons.md` §3 ("A bug this feature walks into"):
+ * The fix for `docs/plans/platform-coupons.md` §3 ("A bug this feature walks into"):
  * {@link readIntroDiscount}'s unexpanded-coupon-id branch used to treat *any* id other than the
- * intro coupon as unknown, writing `months: 0` / `amountOff: null` — which meant `intro_ends_at`
- * landed `NULL` for a merchant on a real, fully-tracked platform coupon (a free year, say), and
- * `/admin/billing` showed no end date and a wrong next-charge amount. A bare string id is common:
- * the webhook does pass `expand: ['discounts']`, but plenty of `subscriptions.retrieve` /
- * `subscriptions.list` calls elsewhere (before this phase, `GET /api/billing/status` was one of
- * them) do not, and Stripe hands back an unexpanded coupon id in that case.
+ * intro coupon as unknown, writing `months: 0` / `amountOff: null` — so a merchant on a real,
+ * fully-tracked platform coupon (a free year, say) got `intro_ends_at = NULL` and a wrong
+ * next-charge amount on `/admin/billing`. An unexpanded id is common whenever a caller doesn't pass
+ * `expand: ['discounts']` (before this phase, `GET /api/billing/status` didn't).
  *
- * Queried directly against `platform_coupons` with a raw `db.query` — mirroring every other
- * function in this file — rather than importing `platform/coupons.ts`'s record-returning helpers,
- * since this module already owns its own SQL against tables it does not otherwise share a module
- * with.
+ * Queried directly with a raw `db.query`, mirroring every other function in this file, rather than
+ * importing `platform/coupons.ts`'s record-returning helpers.
  *
  * @param stripeCouponId - The Stripe Coupon id from a subscription discount.
  * @returns The coupon, or `null` when no platform coupon has this Stripe id (an intro coupon, or a
@@ -319,11 +311,9 @@ async function lookupPlatformCouponEconomicsByStripeId(
 /**
  * Convert a percentage discount to cents against a given base amount, without throwing.
  *
- * `computeDiscountedAmountCents` (the model both this file and the console use) is strict about its
- * inputs, which is correct for code we fully control but too strict for a percentage read back off
- * a live Stripe object: a coupon manufactured outside this feature (a non-integer `percent_off`, an
- * out-of-range value) must degrade to "amount unknown" here rather than take down a webhook or the
- * status endpoint.
+ * `computeDiscountedAmountCents` is strict about its inputs, correct for code we fully control but
+ * too strict for a percentage read back off a live Stripe object: a coupon manufactured outside
+ * this feature must degrade to "amount unknown" here rather than take down a webhook.
  *
  * @param baseCents - The amount the percentage applies to, in integer cents.
  * @param percentOff - The percentage, as Stripe reports it.
@@ -392,29 +382,27 @@ async function readIntroDiscount(
     }
 
     // Not the intro coupon — look it up against `platform_coupons.stripe_coupon_id` before falling
-    // through to "unknown". This is the bug fix: previously any non-intro id landed here as
-    // `months: 0, amountOff: null`, below.
+    // through to "unknown" (the bug this function fixes).
     const platformCoupon = await lookupPlatformCouponEconomicsByStripeId(rawCoupon);
     if (platformCoupon) {
       return {
         couponId: rawCoupon,
         discountId: discount.id,
-        // `durationMonths === null` means the coupon runs forever — there is no window to record,
-        // so `months` stays the existing "no fixed length" sentinel (`0`) while `amountOff` is
-        // still recorded, so at least the current price is right even with no end date to compute.
+        // `durationMonths === null` means forever — no window to record, so `months` stays the
+        // "no fixed length" sentinel (`0`) while `amountOff` still gets the current price right.
         months: platformCoupon.durationMonths ?? 0,
         amountOff: safePercentToAmountOffCents(unitAmountCents, platformCoupon.percentOff),
       };
     }
 
-    // Unexpanded and unrecognized (some other Stripe coupon entirely): amounts stay unknown and
-    // the upsert preserves whatever is already stored — see the `COALESCE` clauses below.
+    // Unrecognized (some other Stripe coupon entirely): amounts stay unknown and the upsert
+    // preserves whatever is already stored — see the `COALESCE` clauses below.
     return { couponId: rawCoupon, discountId: discount.id, months: 0, amountOff: null };
   }
 
-  // Expanded. Platform coupons are `percent_off` (plan §2: percentage, not `amount_off`, so the
-  // figure survives a list-price change) while the intro coupon is `amount_off` — both must be
-  // read here, or every percent-based coupon would land `amountOff: null` even when fully expanded.
+  // Expanded. Platform coupons are `percent_off` (plan §2, so the figure survives a list-price
+  // change) while the intro coupon is `amount_off` — both must be read here, or a percent-based
+  // coupon would land `amountOff: null` even when fully expanded.
   return {
     couponId: rawCoupon.id,
     discountId: discount.id,

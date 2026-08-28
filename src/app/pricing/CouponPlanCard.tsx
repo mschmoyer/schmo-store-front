@@ -17,10 +17,8 @@ export interface CouponPlanCardProps {
 
 /**
  * Format cents as a bare dollar figure with no currency symbol and no trailing
- * `.00` (`900` → `"9"`, `999` → `"9.99"`, `0` → `"0"`) — the symbol is rendered
- * as its own element so it can be sized down independently, matching the
- * typographic split `PlanCard.module.css`'s `.priceSymbol` already does for
- * the standard offer's `$1`.
+ * `.00` (`900` → `"9"`, `999` → `"9.99"`, `0` → `"0"`) — the symbol renders as
+ * its own element, matching `.priceSymbol`'s split for the standard `$1`.
  *
  * @param cents - Amount in integer cents.
  * @returns The bare decimal figure.
@@ -34,22 +32,16 @@ function formatBareDollars(cents: number): string {
  * The plan card for a visitor who arrived via a `/join/<code>` link, quoting
  * that coupon's actual numbers in place of the standard intro offer.
  *
- * This is a sibling of `PlanCard`, not a prop added to it: `PlanCard`'s price
- * block is written as fixed copy ("$1 for your first 3 months, then
- * $19.99/mo") because the standard offer never varies, and threading coupon
- * data through it would turn one honest, literal card into a template for
- * arithmetic it doesn't otherwise need. Everything below the price block —
- * the Included / Not-included lists — is `PlanCard`'s own `PlanLists`,
- * imported rather than duplicated, so the two cards can never disagree about
- * what the plan includes.
+ * A sibling of `PlanCard`, not a prop added to it: `PlanCard`'s price block is
+ * fixed copy for the one offer that never varies. The Included / Not-included
+ * lists below the price block are `PlanCard`'s own `PlanLists`, imported
+ * rather than duplicated, so the two cards can't disagree about plan contents.
  *
- * Every number here comes from `lib/billing/platform-coupons`, the same
- * dependency-free model the operator console and the onboarding wizard quote
- * — see `docs/plans/platform-coupons.md` §2. `requiresPaymentMethod` decides
- * the card-collection line rather than reading `collectPaymentMethod`
- * directly, because a partial discount takes a card regardless of that flag
- * (plan §3) and a friend told "no card needed" who is then asked for one at
- * billing is the exact failure plan §14 decision 1 calls out.
+ * Numbers come from `lib/billing/platform-coupons` (docs/plans/platform-coupons.md
+ * §2). `requiresPaymentMethod`, not `collectPaymentMethod` directly, decides
+ * the card-collection line — a partial discount takes a card regardless of
+ * that flag (plan §3), and a friend told "no card needed" then asked for one
+ * at billing is the exact failure plan §14 decision 1 calls out.
  *
  * @param props - {@link CouponPlanCardProps}
  * @returns The coupon-quoting plan card.

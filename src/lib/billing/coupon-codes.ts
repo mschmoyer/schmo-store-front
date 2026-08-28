@@ -1,20 +1,15 @@
 /**
  * Platform coupon code generation.
  *
- * These codes get texted to a friend, read aloud, or copied off a whiteboard, so the alphabet is
- * Crockford-*ish*: uppercase letters and digits, with `0`, `O`, `1`, `I`, `L` removed because they
- * are genuinely ambiguous in those situations (a `0` and an `O` are indistinguishable read aloud in
- * a generic sans-serif UI; `1`, `I` and `l` collide in plenty of fonts and in handwriting). Real
- * Crockford base32 keeps `0` and `1` as digits and only drops `I`, `L`, `O`, `U`; this alphabet
- * drops one more pair of digits than that scheme does, on purpose, because the reading-aloud case
- * matters more here than squeezing out the last bit of density. Removing five characters from the
- * 36-character `[0-9A-Z]` pool leaves 31 symbols: `23456789ABCDEFGHJKMNPQRSTUVWXYZ`.
+ * The alphabet is Crockford-*ish* base32 with `0`, `O`, `1`, `I`, `L` removed — one more ambiguous
+ * pair than real Crockford drops, because these codes get read aloud or copied by hand and that
+ * matters more here than squeezing out the last bit of density. 31 symbols:
+ * `23456789ABCDEFGHJKMNPQRSTUVWXYZ`.
  *
- * **Entropy per code:** log2(31) ≈ 4.95 bits per character — see {@link bitsPerCharacter}. The
- * default length is 10, giving ≈49.5 bits of entropy (31^10 ≈ 8.2 * 10^14 possible codes) —
- * comfortably beyond what online guessing through a rate-limited endpoint (`/join/[code]`,
- * `/api/billing/coupon/preview`, per §9 of the plan) can exhaust, while still short enough to read
- * out over the phone.
+ * **Entropy per code:** log2(31) ≈ 4.95 bits/char — see {@link bitsPerCharacter} — not the round 5
+ * bits/char a 32-symbol alphabet would give. At the default length of 10 that's ≈49.5 bits,
+ * comfortably beyond what a rate-limited endpoint (`/join/[code]`, `/api/billing/coupon/preview`,
+ * §9 of the plan) can exhaust online.
  *
  * Generation uses `node:crypto`'s CSPRNG (`randomInt`), never `Math.random`, because a coupon
  * worth up to a year of the product is a credential, not a UI nicety.
@@ -23,9 +18,8 @@
 import { randomInt } from 'node:crypto';
 
 /**
- * The alphabet codes are drawn from: uppercase Crockford base32 with `0`, `O`, `1`, `I`, `L`
- * removed. Exported so tests (and anything validating pasted input) can check membership without
- * duplicating the literal.
+ * The alphabet codes are drawn from — see the file header. Exported so tests (and anything
+ * validating pasted input) can check membership without duplicating the literal.
  */
 export const COUPON_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 
@@ -54,14 +48,11 @@ export function bitsOfEntropy(length: number = DEFAULT_COUPON_CODE_LENGTH): numb
 }
 
 /**
- * Generate a random, human-shareable coupon code.
- *
- * Uses `crypto.randomInt`, which is uniformly distributed and cryptographically secure (unlike
- * `Math.random`), to pick each character independently from {@link COUPON_CODE_ALPHABET}.
+ * Generate a random, human-shareable coupon code from {@link COUPON_CODE_ALPHABET}.
  *
  * @param length - Number of characters to generate. Defaults to {@link DEFAULT_COUPON_CODE_LENGTH}.
- * @returns A code such as `"H7K4XPQ2MJ"`. Callers store it verbatim in `code` and normalize it
- *   (see `normalizeCouponCode` in `platform-coupons.ts`) into `code_normalized` for lookups.
+ * @returns A code such as `"H7K4XPQ2MJ"`. Callers normalize it via `normalizeCouponCode` (in
+ *   `platform-coupons.ts`) into `code_normalized` for lookups.
  * @throws Error when `length` is not a positive integer.
  */
 export function generateCouponCode(length: number = DEFAULT_COUPON_CODE_LENGTH): string {
@@ -77,11 +68,10 @@ export function generateCouponCode(length: number = DEFAULT_COUPON_CODE_LENGTH):
 }
 
 /**
- * Assert the alphabet contains none of the characters known to be ambiguous when read aloud,
- * handwritten, or rendered in an unspecified font. Exported so the invariant is checkable outside
- * this module's own test suite, not just asserted inside it.
+ * Assert the alphabet contains none of the characters known to be ambiguous (see the file header).
+ * Exported so the invariant is checkable outside this module's own tests.
  *
- * @returns `true`. Throws instead of returning `false`, since a failure here means the module's
+ * @returns `true`. Throws rather than returning `false`, since a failure here means the module's
  *   own constant is wrong, not that a caller passed bad input.
  * @throws Error naming the offending character if the alphabet has been edited to include one.
  */

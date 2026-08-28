@@ -3,19 +3,14 @@
 /**
  * The coupon creation form.
  *
- * Every rule the server enforces is checked here first, so an operator sees a named field error
- * instead of a request round-trip — and the server re-checks everything regardless (`CLAUDE.md`:
- * "Server truth"), so a client that skipped a check would fail loudly rather than silently, never
- * as a 500. The one rule worth calling out: `collectPaymentMethod: false` is only valid at
- * `percentOff === 100` (plan §3 — a partial discount still charges something today, so Stripe takes
- * a card regardless of the flag). The schema enforces it with a `CHECK` constraint; this form
- * enforces it before the request is even sent, and the server's `validateCreateCouponBody` enforces
- * it again — three layers for the one combination that would otherwise reach the database as a raw
- * constraint violation.
+ * Mirrors every server-side rule so an operator sees a named field error instead of a round-trip;
+ * the server (`validateCreateCouponBody`) re-checks regardless (`CLAUDE.md`: "Server truth"). The
+ * one rule worth flagging: `collectPaymentMethod: false` is only valid at `percentOff === 100`
+ * (plan §3 — a partial discount still charges something), enforced here, server-side, and by a DB
+ * `CHECK` constraint.
  *
- * The offer sentence at the foot of the form is rendered by {@link describePlatformCoupon} — the
- * same pure function the console's list and the merchant-facing surfaces use — so what an operator
- * previews here is never a re-derivation that could drift from what actually gets quoted.
+ * The offer preview renders through {@link describePlatformCoupon}, the same function the console
+ * list and merchant-facing surfaces use, so it can't drift from what actually gets quoted.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -187,14 +182,8 @@ export function CreateCouponModal({ opened, onClose, onCreated }: CreateCouponMo
   const [submitting, setSubmitting] = useState(false);
 
   const offer = useMemo(() => previewOffer(form), [form]);
-  // §3: the flag only does anything at 100% off. What actually keeps the form from holding the
-  // combination the schema forbids is `handlePercentOffChange` forcing `collectPaymentMethod` back
-  // to `true` the moment the percentage leaves 100 — the disabled state below only prevents
-  // *turning the switch off* while it is out of reach; it must never be the thing standing between
-  // an operator and a state that has already gone stale (staff review finding 7: the previous
-  // `disabled={!canSkipCard && !form.collectPaymentMethod}` disabled the switch exactly when it was
-  // already `false` and could no longer legally become `true` again through the UI, freezing the
-  // form on an unsubmittable combination with only Cancel — which wipes everything — as the way out).
+  // Only gates *turning the switch off*; `handlePercentOffChange` is what forces it back to `true`
+  // when percentage leaves 100 (see that function — finding 7).
   const canSkipCard = Number.parseInt(form.percentOff, 10) === 100;
 
   const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -203,12 +192,10 @@ export function CreateCouponModal({ opened, onClose, onCreated }: CreateCouponMo
   }, []);
 
   /**
-   * Percent-off has its own handler rather than going through {@link set} because it is the one
-   * field whose change can invalidate another: the moment the value stops being exactly `100`,
-   * `collectPaymentMethod` is no longer a legal `false` (§3 / the schema's
-   * `platform_coupons_no_card_needs_full_discount` CHECK), so it is forced back to `true` here,
-   * in the same update, rather than left for {@link canSkipCard}'s `disabled` prop to merely freeze
-   * in place (finding 7).
+   * Percent-off gets its own handler because leaving `100` invalidates `collectPaymentMethod:
+   * false` (the `platform_coupons_no_card_needs_full_discount` CHECK) — forced back to `true` here,
+   * in the same update, rather than left for the disabled switch to freeze in an illegal state
+   * with only Cancel (which wipes the form) as the way out (finding 7).
    *
    * @param value - The raw input value.
    */

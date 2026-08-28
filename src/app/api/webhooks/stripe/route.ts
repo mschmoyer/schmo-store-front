@@ -136,11 +136,8 @@ export async function syncSubscriptionFromCheckout(session: Stripe.Checkout.Sess
     storeId: session.metadata?.store_id ?? null,
   });
 
-  // The subscription mirror write above must stand regardless of what happens next: a platform
-  // coupon problem is never allowed to fail this webhook or roll back that sync. `closeOut...`
-  // itself never throws (see its own doc comment); the try/catch here is deliberate defense in
-  // depth against a future regression reintroducing one, per CLAUDE.md's "a coupon failure must
-  // never fail the webhook or lose the subscription sync".
+  // The subscription mirror write above must stand regardless of what happens next. closeOut...
+  // itself never throws; this try/catch is defense in depth against a future regression.
   try {
     const outcome = await closeOutPlatformCouponRedemption({ ownerId, subscription });
     if (outcome.outcome === 'error') {

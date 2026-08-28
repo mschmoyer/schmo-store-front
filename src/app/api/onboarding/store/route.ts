@@ -93,9 +93,8 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    // Learn the claim's store now that one exists (coupon-claims.ts's `backfillStoreId`). A coupon
-    // is attributed to the user at account creation, before any store — this is best-effort and
-    // must never fail store creation: a merchant with no live claim (the common case) gets a no-op.
+    // Coupon attribution happens at account creation, before any store exists; backfill it now.
+    // Best-effort — must never fail store creation. A merchant with no live claim is a no-op.
     if (storeId) {
       try {
         await backfillStoreId(context.session.userId, storeId);

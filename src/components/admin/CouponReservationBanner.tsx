@@ -1,37 +1,21 @@
 'use client';
 
 /**
- * The `/admin` banner for the *reservation* clock — `docs/plans/platform-coupons.md` §5.1's "Two
- * clocks, not one" note and §6's attribution window.
+ * The `/admin` banner for the *reservation* clock — docs/plans/platform-coupons.md §5.1's "Two
+ * clocks, not one" and §6's attribution window.
  *
- * A merchant who signed up through a `/join/<code>` link but has not yet subscribed holds an
- * `attributed` claim. Its deadline is `attributed_at + PLATFORM_CLAIM_RESERVATION_DAYS` (30 days,
- * `src/lib/billing/coupon-claims.ts`) — a completely different clock from `discount_ends_at`, which
- * does not exist for this merchant yet. `discount-notice.ts` deliberately returns
- * `'nothing-to-say'` for an `attributed` claim for exactly this reason (see that module's header),
- * so this banner is intentionally its own component rather than a sixth state bolted onto
- * {@link DiscountNoticeAlert} — the plan is explicit: "build it in phase 7 beside the ladder, not
- * inside it."
+ * An `attributed` claim (signed up via `/join/<code>`, not yet subscribed) runs on
+ * `attributed_at + PLATFORM_CLAIM_RESERVATION_DAYS` — a different clock from `discount_ends_at`,
+ * which doesn't exist yet for this merchant. `discount-notice.ts` returns `'nothing-to-say'` for an
+ * `attributed` claim for exactly this reason, so this is its own component rather than a sixth
+ * state on {@link DiscountNoticeAlert}.
  *
- * `PLATFORM_CLAIM_RESERVATION_DAYS` is **not imported** from `coupon-claims.ts` here: that module
- * pulls in `src/lib/database/connection` (a Node-only `pg`/`@neondatabase/serverless` client) at
- * module scope, which is safe in a server route but not in a `'use client'` bundle — the same class
- * of bug `CLAUDE.md`'s `JWT_SECRET` story describes ("a client component transitively imports that
- * module and a browser bundle has no environment"). The value is duplicated below as a documented
- * constant instead, the same call `discount-notice.ts` itself makes for `RedemptionStatus`
- * ("Defined locally rather than imported so this module stays dependency-free … unlikely to drift
- * from the schema").
+ * One shape only — a single deadline, no card/no-card split, no grace (§5.2.2: a lapsed
+ * reservation just frees the seat) — so always informational, never a task with a locking deadline.
  *
- * Unlike the free-window ladder, this clock has exactly one shape — a single reservation deadline,
- * no card/no-card split, no grace (§5.2.2: "grace is automatic, and nothing should be built for
- * it" — a lapsed reservation simply frees the seat for re-attribution). So there is only one state
- * to render, always informational: this is a heads-up, not a task the merchant must complete before
- * a deadline that locks anything.
- *
- * Renders as `role="alert"` — Mantine's `Alert` hardcodes that role on its root element
- * unconditionally regardless of any `role` prop passed in, so there is no way to render this as the
- * quieter `role="status"` short of not using that primitive. See `DiscountNoticeAlert.tsx`'s file
- * header, which documents the same constraint.
+ * Renders as `role="alert"`: Mantine's `Alert` hardcodes that role regardless of any `role` prop,
+ * so there's no way to get the quieter `role="status"` short of not using that primitive (same
+ * constraint noted in `DiscountNoticeAlert.tsx`).
  */
 
 import type React from 'react';
@@ -51,8 +35,8 @@ export interface CouponReservationBannerProps {
 }
 
 /**
- * Format a date the way `/admin/billing` does (`src/app/admin/billing/page.tsx`'s `formatDate`), so
- * this banner and {@link DiscountNoticeAlert} never quote a date two different ways.
+ * Format a date the way `/admin/billing` does, so this banner and {@link DiscountNoticeAlert}
+ * never quote a date two different ways.
  *
  * @param date - The date to format.
  * @returns e.g. `"September 26, 2026"`.

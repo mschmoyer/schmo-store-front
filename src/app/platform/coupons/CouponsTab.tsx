@@ -4,9 +4,8 @@
  * The Coupons tab: every platform signup coupon, filterable by status, with create, deactivate and
  * copy-link actions (plan §4C).
  *
- * Unlike the customers list this table is not paginated — `src/lib/platform/coupons.ts` documents
- * why: coupons are operator-issued, so the set is tens to low hundreds of rows, not tenancy-wide. A
- * pager here would be furniture.
+ * Not paginated — coupons are operator-issued, so the set is tens to low hundreds of rows, not
+ * tenancy-wide (see `src/lib/platform/coupons.ts`).
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -197,11 +196,9 @@ export function CouponsTab({ filter, onFilterChange }: CouponsTabProps): React.R
   return (
     <div className={styles.tab}>
       <div className={styles.toolbar}>
-        {/* A filter group, not tabs — it narrows this one table, it does not switch between
-            separate panels. `role="tab"` would obligate `aria-controls`, a `tabpanel` and
-            roving-tabindex arrow-key handling this control has no use for, so it wears
-            `aria-pressed` toggle-button semantics instead (staff review finding 10; matches the
-            same fix in `RedemptionsTab.tsx`). */}
+        {/* A filter group, not tabs — it narrows this one table rather than switching panels, so
+            it wears `role="group"` + `aria-pressed` instead of the tabs pattern's `aria-controls`/
+            roving-tabindex machinery (staff review finding 10; same fix in `RedemptionsTab.tsx`). */}
         <div className={styles.filterTabs} role="group" aria-label="Filter coupons by status">
           {filterTabs.map((option) => (
             <button

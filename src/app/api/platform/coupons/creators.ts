@@ -1,11 +1,10 @@
 /**
  * Resolving `platform_coupons.created_by` (a bare `users.id`) into a human name for the console.
  *
- * `src/lib/platform/coupons.ts` deliberately returns `createdBy` as a UUID and nothing more — it is
- * a persistence module, not a join against `users`, and it is out of scope for this phase to extend
- * (see the phase 3 task notes: the coupons library landed in phase 1 and is consumed here, not
- * edited). The console still has to show "created by" as a name per plan §4C, so this route-local
- * helper does the one small lookup that closes the gap, rather than the UI rendering a bare UUID.
+ * `src/lib/platform/coupons.ts` deliberately returns `createdBy` as a UUID and nothing more — it
+ * is a persistence module, not a join against `users`. The console still needs to show a name, so
+ * this route-local helper does the one small lookup that closes the gap, rather than the coupons
+ * library growing a `users` join it doesn't otherwise need.
  */
 
 import { db } from '@/lib/database/connection';

@@ -1,17 +1,13 @@
 /**
- * Resolution and idempotent provisioning of the Stripe Coupon behind one `platform_coupons` row
- * (flow **A** — a merchant subscribing to RebelShops; see `docs/plans/platform-coupons.md` §3).
+ * Resolve-or-create the Stripe Coupon behind one `platform_coupons` row (flow A — a merchant
+ * subscribing to RebelShops). Unlike the intro coupon (`stripe/prices.ts`), a platform coupon is
+ * one of many operator-created rows rather than a single well-known object: an existing Stripe
+ * coupon whose economics disagree with its row is never silently reused — it throws, because
+ * coupons are immutable in Stripe and reusing the wrong one means charging the wrong amount on a
+ * real invoice.
  *
- * Mirrors the resolve-or-create shape in `stripe/prices.ts`'s `ensureIntroCoupon`, with the one
- * difference §3 rule 3 calls out explicitly: the intro coupon is a single well-known object, but a
- * platform coupon is one of potentially hundreds, created by an operator through a form rather than
- * hand-provisioned once. So an existing Stripe coupon whose economics disagree with our row is never
- * silently reused — it throws, because coupons are immutable in Stripe and reusing the wrong one
- * means charging the wrong amount on a real invoice.
- *
- * This is flow A's own module, separate from `stripe/discounts.ts` (flow B — ephemeral, per-session,
- * one-time storefront coupons for a shopper's discount code). Do not merge the two; see the module
- * map in this directory's `CLAUDE.md`.
+ * Flow A's own module, separate from `stripe/discounts.ts` (flow B — ephemeral storefront coupons).
+ * Do not merge the two; see this directory's `CLAUDE.md`.
  */
 
 import type Stripe from 'stripe';
@@ -21,21 +17,18 @@ import { requiresPaymentMethod } from '@/lib/billing/platform-coupons';
 import { setStripeCouponId, type PlatformCouponRecord, type Queryable } from '@/lib/platform/coupons';
 
 /**
- * The fields this module reads off a `platform_coupons` row. Re-exported as an alias of
- * {@link PlatformCouponRecord} (rather than a narrower `Pick`) so a caller can pass the record it
- * already has from `platform/coupons.ts` straight through, and so it structurally satisfies
- * `billing/platform-coupons.ts`'s `PlatformCoupon` for the {@link requiresPaymentMethod} call inside
- * {@link deriveSubscriptionParams}.
+ * Fields this module reads off a `platform_coupons` row. Aliased to {@link PlatformCouponRecord}
+ * rather than narrowed via `Pick`, so a caller's existing record passes straight through and still
+ * satisfies `billing/platform-coupons.ts`'s `PlatformCoupon` shape for {@link requiresPaymentMethod}.
  */
 export type StripeCouponSource = PlatformCouponRecord;
 
 /**
  * Build the deterministic Stripe Coupon id for a platform coupon.
  *
- * Deriving the id from our own UUID — rather than letting Stripe assign one — is what makes
- * {@link ensureStripeCouponFor} safe to retry: two concurrent callers resolving the same row compute
- * the same id, so at most one `coupons.create` succeeds and a repeat is a lookup, never a second
- * object.
+ * Derived from our own UUID rather than letting Stripe assign one, so {@link ensureStripeCouponFor}
+ * is safe to retry: two concurrent callers resolving the same row compute the same id, so at most
+ * one `coupons.create` succeeds and a repeat is a lookup, never a second object.
  *
  * @param platformCouponId - The `platform_coupons.id` UUID.
  * @returns A stable, human-legible Stripe Coupon id.
@@ -45,25 +38,19 @@ export function deriveStripeCouponId(platformCouponId: string): string {
 }
 
 /**
- * The pure object {@link ensureStripeCouponFor} would send to `stripe.coupons.create`. Exported
- * separately so the shaping rules can be unit-tested without a Stripe client, and so
- * {@link ensureStripeCouponFor} has exactly one definition of that shape to build its create call
- * from — never a second, drifting copy.
+ * The pure object {@link ensureStripeCouponFor} sends to `stripe.coupons.create`. Exported
+ * separately so the shaping rules are unit-testable without a Stripe client, and so there is one
+ * definition of the shape rather than a second, drifting copy.
  *
- * Per plan §3:
- * - `percent_off` comes straight from the row.
- * - `duration` is `'forever'` when `durationMonths` is `null`, else `'repeating'` with
- *   `duration_in_months` set.
- * - `metadata` records what this coupon is and which row it backs, so a coupon found by browsing
- *   the Stripe dashboard is traceable back to us.
+ * `duration` is `'forever'` when `durationMonths` is `null`, else `'repeating'` with
+ * `duration_in_months` set. `metadata` traces a coupon found in the Stripe dashboard back to us.
  *
- * **`max_redemptions` is never set here — plan §3 rule 1, deliberately.** Setting it would give
- * Stripe a second counter that drifts from our redemption ledger the moment a checkout session is
- * attached and then abandoned (the discount would be "used" in Stripe's eyes without a completed
- * subscription on ours). Our ledger — `platform_coupon_redemptions`, gated by the `BEFORE INSERT`
- * trigger described in plan §7 — is what enforces the cap; Stripe's job here is only to price the
- * discount once it has already been allowed. If you are reading this because the cap seems to not be
- * enforced, look at the ledger and its trigger, not at this coupon.
+ * **`max_redemptions` is never set here, deliberately.** It would give Stripe a second counter
+ * that drifts from our redemption ledger the moment a checkout session is attached and then
+ * abandoned (the discount reads "used" in Stripe with no completed subscription on our side). The
+ * ledger — `platform_coupon_redemptions`, gated by a `BEFORE INSERT` trigger — enforces the cap;
+ * Stripe only prices the discount once it's already allowed. If the cap seems unenforced, look at
+ * the ledger and its trigger, not this coupon.
  *
  * @param coupon - The `platform_coupons` row to describe.
  * @returns The `stripe.coupons.create` params for this row.
@@ -92,9 +79,8 @@ export function describeStripeCouponFor(coupon: StripeCouponSource): Stripe.Coup
 /**
  * Narrow an unknown Stripe error to "the object does not exist".
  *
- * Duplicated from `stripe/prices.ts` rather than shared — each module in this directory owns its own
- * copy of this narrow-and-check, the way `discounts.ts` and `prices.ts` already do not import from
- * one another.
+ * Duplicated from `stripe/prices.ts` rather than shared — each module in this directory keeps its
+ * own copy, as `discounts.ts` and `prices.ts` already do.
  *
  * @param error - The thrown value.
  * @returns `true` for Stripe `resource_missing` errors.
@@ -144,13 +130,12 @@ function assertEconomicsMatch(coupon: StripeCouponSource, existing: Stripe.Coupo
  * Resolve-or-create the one Stripe Coupon backing a `platform_coupons` row, and persist its id.
  *
  * - If the row already has `stripeCouponId`, it is retrieved. A `resource_missing` response (the
- *   coupon was deleted from the Stripe dashboard) is treated as "not provisioned yet" rather than an
- *   error: a replacement is created and the new id is persisted, so a coupon deleted out-of-band
- *   cannot permanently wedge the feature.
+ *   coupon was deleted from the Stripe dashboard) is treated as "not provisioned yet": a replacement
+ *   is created and the new id persisted, so an out-of-band deletion cannot permanently wedge this.
  * - Otherwise it is created fresh, at the deterministic id from {@link deriveStripeCouponId}, and the
  *   id is persisted via `setStripeCouponId`.
  * - Either way, a retrieved coupon's economics are checked against the row via
- *   {@link assertEconomicsMatch} before it is returned — see that function and plan §3 rule 3.
+ *   {@link assertEconomicsMatch} before it is returned.
  *
  * @param coupon - The `platform_coupons` row to resolve.
  * @param stripe - Optional Stripe client. Defaults to the shared lazy singleton.
@@ -173,9 +158,8 @@ export async function ensureStripeCouponFor(
       if (!isResourceMissing(error)) {
         throw error;
       }
-      // Fall through: the stored id no longer resolves to anything in Stripe. Recreate below and
-      // persist whatever id comes back, so a dashboard deletion self-heals on next use instead of
-      // failing every checkout for this coupon forever.
+      // Fall through: recreate below and persist the new id, so a dashboard deletion self-heals
+      // on next use instead of failing every checkout for this coupon forever.
     }
   }
 
@@ -189,10 +173,9 @@ export interface PlatformCouponSubscriptionParams {
   /** The single discount to attach — plan §3's "a platform coupon replaces the intro offer". */
   readonly discounts: [{ readonly coupon: string }];
   /**
-   * Set to `'if_required'` only when the coupon should skip collecting a card — plan §3's
-   * "Collecting a card, or not". Omitted (rather than `undefined`-valued) for the default-collection
-   * case, so a caller can spread this straight into `checkout.sessions.create` params without
-   * needing to filter out an explicit `undefined`.
+   * Set to `'if_required'` only when the coupon should skip collecting a card. Omitted (rather
+   * than `undefined`-valued) for the default case, so a caller can spread this straight into
+   * `checkout.sessions.create` params without filtering out an explicit `undefined`.
    */
   readonly paymentMethodCollection?: 'if_required';
 }
@@ -201,10 +184,8 @@ export interface PlatformCouponSubscriptionParams {
  * Derive what a subscription Checkout Session needs to apply this coupon: the `discounts` entry, and
  * whether to pass `payment_method_collection: 'if_required'`.
  *
- * The card-collection decision is not re-derived here — `billing/platform-coupons.ts`'s
- * `requiresPaymentMethod` already encodes plan §3's rule that `collectPaymentMethod: false` only
- * changes anything at `percentOff === 100`, and this function defers to it rather than keeping a
- * second copy of that logic.
+ * Defers to `billing/platform-coupons.ts`'s `requiresPaymentMethod` for the card-collection
+ * decision rather than keeping a second copy of that logic.
  *
  * @param coupon - The `platform_coupons` row, already resolved to a Stripe coupon (its
  *   `stripeCouponId` must be set — call {@link ensureStripeCouponFor} first).

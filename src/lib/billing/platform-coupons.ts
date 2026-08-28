@@ -1,14 +1,12 @@
 /**
  * The platform signup coupon model, expressed as pure integer arithmetic.
  *
- * This is flow **A** money (a merchant subscribing to RebelShops), not flow **B** (a shopper's
- * storefront discount — see `src/lib/billing/coupons.ts`, which this module must never be confused
- * with). See `docs/plans/platform-coupons.md` §2 for the two-field model this file implements.
+ * Flow **A** money (a merchant subscribing to RebelShops), not flow **B** (a shopper's storefront
+ * discount — `src/lib/billing/coupons.ts`). See `docs/plans/platform-coupons.md` §2.
  *
- * Like `intro-offer.ts`, this module has **no dependencies** — no Stripe, no database — so the
- * offer sentence, the discount math and the validity rules can be unit tested directly and so the
- * server, the operator console and the merchant-facing pages all quote the same numbers. Every
- * money value here is integer cents; nothing in this file does float arithmetic on money.
+ * No dependencies — no Stripe, no database — like `intro-offer.ts`, so the offer sentence, the
+ * discount math and the validity rules are unit-testable and the server, operator console and
+ * merchant pages all quote the same numbers. Integer cents throughout; no float arithmetic on money.
  */
 
 import { PLATFORM_LIST_AMOUNT_CENTS, formatCents } from './intro-offer';
@@ -42,11 +40,9 @@ export interface PlatformCoupon {
 /**
  * Normalize a coupon code into the canonical lookup key: uppercased and trimmed.
  *
- * This is deliberately the *only* transformation applied. It does not strip internal whitespace,
- * punctuation, or otherwise "clean up" what someone typed — a code that differs in an internal
- * character is a different code, and silently coercing it would let two distinct-looking codes
- * collide. Case and surrounding whitespace are the only variance a human forwarding a code over
- * text or email reliably introduces.
+ * Deliberately the *only* transformation — stripping internal characters or punctuation would let
+ * two distinct-looking codes collide. Case and surrounding whitespace are the only variance a human
+ * forwarding a code over text or email reliably introduces.
  *
  * @param code - The code as typed, pasted, or issued.
  * @returns The normalized code, matching `code_normalized` in the schema.
@@ -56,13 +52,9 @@ export function normalizeCouponCode(code: string): string {
 }
 
 /**
- * Round half of a cent up, deliberately.
- *
- * `percentOff` is an integer percentage and `listCents` is an integer amount, so
- * `listCents * percentOff` is always an integer and `/ 100` is the only place a fraction can
- * appear. Rounding half-up (rather than half-to-even or truncating) matches `computeCouponDiscountCents`
- * in `coupons.ts` and `toCents` in `money.ts`, so the same $x.xx5 boundary resolves the same way
- * everywhere in this codebase that money is derived from a percentage.
+ * Round half of a cent up, deliberately — matches `computeCouponDiscountCents` in `coupons.ts` and
+ * `toCents` in `money.ts`, so the same $x.xx5 boundary resolves the same way everywhere in this
+ * codebase that money is derived from a percentage.
  *
  * @param listCents - Undiscounted amount, in integer cents.
  * @param percentOff - Percentage discount, 1-100.
@@ -95,9 +87,8 @@ export function computeDiscountedPriceCents(listCents: number, percentOff: numbe
 
 /**
  * The date a coupon's discount stops applying, mirroring `computeIntroEndDate`'s UTC-month
- * arithmetic so a merchant who redeems on the 31st of a month lands on whatever date
- * `Date.UTC`'s month rollover produces (e.g. Jan 31 + 1 month = Mar 3 in a non-leap year), rather
- * than a different rule invented for this feature.
+ * arithmetic (redeem on the 31st, land wherever `Date.UTC`'s rollover puts you — e.g. Jan 31 + 1
+ * month = Mar 3 in a non-leap year) rather than a rule invented for this feature.
  *
  * @param startedAt - When the discount began (subscription start / redemption time).
  * @param durationMonths - How many months the discount covers. `null` means the discount never

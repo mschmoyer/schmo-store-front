@@ -2,8 +2,7 @@
  * The wire shape every `/api/platform/coupons*` route sends for one coupon.
  *
  * One function, called from the list, create and update routes, so the three cannot drift into
- * describing a coupon three slightly different ways — the same reasoning `platform/customers.ts`
- * gives for owning "received" in one place.
+ * describing a coupon three slightly different ways.
  */
 
 import {

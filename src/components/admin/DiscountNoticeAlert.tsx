@@ -2,34 +2,26 @@
 
 /**
  * The `/admin` dashboard's rendering of `discount-notice.ts`'s free-window ladder —
- * `docs/plans/platform-coupons.md` §5.1/§5.2, phase 7 of §10.
+ * docs/plans/platform-coupons.md §5.1/§5.2, phase 7 of §10.
  *
- * This component owns **presentation only**. Every date computation — the warning threshold, the
- * grace window, which of the five states applies — comes from
- * {@link resolveDiscountNotice} in `src/lib/billing/discount-notice.ts`. That module is the single
- * place `PLATFORM_DISCOUNT_GRACE_DAYS` and the 30-day warning threshold are defined; duplicating
- * either constant here is exactly the "two screens quietly disagree about what day it is" bug that
- * module's header warns against.
+ * Presentation only: every date computation and which of the five states applies comes from
+ * {@link resolveDiscountNotice}, the single place `PLATFORM_DISCOUNT_GRACE_DAYS` and the warning
+ * threshold are defined — duplicating either here risks two screens disagreeing about what day it
+ * is. `'nothing-to-say'` renders nothing at all (§5.1: "quiet for eleven months, clear for the
+ * last one") — no placeholder, no empty card. Grace is messaging only (§5.2): nothing here
+ * disables a storefront, and every grace state says so.
  *
- * §5.1's rule: "quiet for eleven months, clear for the last one." `resolveDiscountNotice` returns
- * `'nothing-to-say'` for everything outside the last 30 days, and this component renders nothing at
- * all for that state — no placeholder, no empty card.
+ * Only `informational` (a card is on file, so the window closing is just information) is
+ * dismissible; `actionable`/`in-grace`/`grace-exhausted` (no card — this banner is the only place
+ * the product ever asks for one) are not, since dismissing a real task would let it silently drop.
+ * Dismissal is per-browser via `localStorage`, keyed to the exact `discountEndsAt` so a renewed or
+ * extended coupon isn't mistaken for an already-dismissed one; every access is wrapped in
+ * `try/catch` and fails open (keeps showing) since storage can throw (private windows, blocked
+ * site data).
  *
- * §5.2 is explicit that grace here is **messaging only**: nothing this component renders disables a
- * storefront, and every grace-adjacent state says so ("your storefront keeps running").
- *
- * Dismissal (§5.1: "informational alerts can be dismissed … a courtesy notice does not deserve a
- * table") is per-browser, via `localStorage`, and keyed to the exact `discountEndsAt` instant so a
- * merchant who dismisses this cycle's notice does not accidentally suppress a future one. Every
- * `localStorage` access is wrapped in `try/catch` — it throws in some browser contexts (private
- * windows, blocked site data) and a courtesy notice failing open (always showing) is the safe
- * failure direction.
- *
- * Every state renders as `role="alert"` — Mantine's `Alert` hardcodes that role on its root
- * element unconditionally (it assigns `role: "alert"` after spreading the rest of its props, so a
- * `role` passed in is silently discarded), so there is no way to render the informational state as
- * the quieter `role="status"` short of not using this primitive. Tests and callers should query
- * `role="alert"` for every state this component renders.
+ * Every state renders as `role="alert"` — Mantine's `Alert` hardcodes that role regardless of any
+ * `role` prop, so there is no way to get the quieter `role="status"` short of not using this
+ * primitive. Tests should query `role="alert"` for every state.
  */
 
 import React, { useState } from 'react';
@@ -44,24 +36,21 @@ import {
 export interface DiscountNoticeAlertProps {
   /** When the free window closes. `null` means the discount never ends. */
   discountEndsAt: Date | null;
-  /** Whether the merchant has a card on file — sets the weight of every §5.1 row. */
+  /** Whether the merchant has a card on file — with one the window closing is information; without one it's a task. */
   hasPaymentMethod: boolean;
   /** The redemption's lifecycle state. Only `'redeemed'` can produce a visible notice. */
   status: RedemptionStatus;
   /** Current time; injectable for tests. @default new Date() */
   now?: Date;
-  /**
-   * Opens the Stripe Billing Portal so the merchant can add a card — the only place in the product
-   * that asks for one (§5.1). Wired to `POST /api/billing/portal` by the caller.
-   */
+  /** Opens the Stripe Billing Portal to add a card. Wired to `POST /api/billing/portal` by the caller. */
   onAddPaymentMethod: () => void | Promise<void>;
   /** Disables the action button while a portal session is being created. */
   addingPaymentMethod?: boolean;
 }
 
 /**
- * Format a date the way `/admin/billing` does (`src/app/admin/billing/page.tsx`'s `formatDate`),
- * so the dashboard and the billing page never quote the same date two different ways.
+ * Format a date the way `/admin/billing` does, so the dashboard and billing page never quote the
+ * same date two different ways.
  *
  * @param date - The date to format.
  * @returns e.g. `"August 27, 2026"`.
@@ -107,8 +96,7 @@ function writeDismissed(key: string): void {
   try {
     window.localStorage.setItem(key, '1');
   } catch {
-    // Storage unavailable (private window, blocked site data). Failing open — the notice simply
-    // is not remembered as dismissed — is the safe direction for a courtesy notice.
+    // Storage unavailable — failing open (not remembered as dismissed) is safe for a courtesy notice.
   }
 }
 
@@ -129,10 +117,9 @@ export function DiscountNoticeAlert({
   const notice = resolveDiscountNotice(discountEndsAt, hasPaymentMethod, now ?? new Date(), status);
   const storageKey = notice.state === 'informational' ? dismissalKey(notice.discountEndsAt) : null;
 
-  // Adjusted during render rather than in an effect (React's "adjusting state when a prop
-  // changes" pattern — https://react.dev/learn/you-might-not-need-an-effect): `trackedKey` lets a
-  // change in *which* notice this is (a new `discountEndsAt`) re-check `localStorage` for that
-  // notice's own dismissal, without a `useEffect` that would run one render late.
+  // Adjusted during render, not in an effect (react.dev/learn/you-might-not-need-an-effect):
+  // `trackedKey` re-checks `localStorage` when `discountEndsAt` changes without a `useEffect`
+  // that would run one render late.
   const [dismissed, setDismissed] = useState(() => storageKey !== null && readDismissed(storageKey));
   const [trackedKey, setTrackedKey] = useState(storageKey);
   if (storageKey !== trackedKey) {

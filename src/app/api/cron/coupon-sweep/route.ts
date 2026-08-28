@@ -1,13 +1,9 @@
 /**
- * Vercel Cron target: release expired platform-coupon reservations.
- *
- * Plan §6 / §5.2.2 (`docs/plans/platform-coupons.md`): a reservation (`attributed`, not yet
- * `redeemed`) that nobody has converted within `PLATFORM_CLAIM_RESERVATION_DAYS` frees itself, so a
- * friend who wanders off and comes back later can re-claim the same link. Schedule is declared in
- * `vercel.json` under `crons`.
+ * Vercel Cron target: release expired platform-coupon reservations, so a friend who wanders off and
+ * comes back later can re-claim the same link. Schedule declared in `vercel.json` under `crons`.
  *
  * Vercel Cron issues a GET with `Authorization: Bearer ${CRON_SECRET}`. POST is also accepted so an
- * operator can trigger a sweep on demand, mirroring `/api/cron/inventory-snapshot`.
+ * operator can trigger a sweep on demand.
  */
 
 import { NextResponse } from 'next/server';

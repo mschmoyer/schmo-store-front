@@ -1,32 +1,14 @@
 /**
  * POST /api/billing/checkout
  *
- * Starts platform billing (flow A) for the signed-in merchant: a Stripe Checkout Session in
- * `subscription` mode for the $19.99/month price with exactly one discount attached.
+ * Starts platform billing for the signed-in merchant: a Stripe Checkout Session in `subscription`
+ * mode for the $19.99/month price with exactly one discount attached — see `./decide.ts` for the
+ * coupon/claim/intro-offer precedence and why that decision lives in its own module.
  *
- * Accepts an optional `{ couponCode }`. Precedence, highest first (plan §3):
- *
- *   1. A code supplied in this request.
- *   2. A coupon still `attributed` to this user (at signup, or from an earlier billing-form
- *      attempt) — {@link resolveActiveClaim}, filtered to `status === 'attributed'`. A `redeemed`
- *      claim is a *spent* redemption, not a live reservation, and is never honoured here — see the
- *      staff-review "Finding 1" note in `./decide.ts`.
- *   3. The standard intro offer.
- *
- * A platform coupon **replaces** the intro offer; it never stacks with it, and never with a
- * request. `allow_promotion_codes` is deliberately never used — see the comment beside
- * `discounts` below, which cost a production incident once already.
- *
- * A code supplied in this request is reserved via `attributeCoupon` (source `'billing_form'`)
- * before the Checkout Session is created, under the same `platform_coupon_redemptions` trigger
- * that guards a code clicked from `/join` — this is what makes `max_redemptions` hold for a code
- * typed here too, rather than only for links (plan §11 invariant 1: enforced in the database, not
- * by a read-then-write in this route).
- *
- * The actual precedence decision is `./decide.ts`'s {@link resolvePlatformCouponDiscount} — pulled
- * out of this route so it can be unit tested without `jose` (this route imports `requireMerchant`,
- * `decide.ts` does not). Every deactivated-or-expired-coupon check (staff-review "Finding 2") and
- * the redeemed-claim exclusion (Finding 1) live there, not here.
+ * A code supplied in this request is reserved via `attributeCoupon` before the Checkout Session is
+ * created, under the same `platform_coupon_redemptions` trigger that guards a code clicked from
+ * `/join` — this is what makes `max_redemptions` hold for a typed code too, enforced in the
+ * database rather than by a read-then-write here.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -88,8 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return auth.response;
   }
 
-  // `couponCode` is optional and the route must keep working for a bare `POST` with no body, which
-  // is what the billing page has always sent for the plain intro-offer path.
+  // Must keep working for a bare `POST` with no body — the plain intro-offer path sends none.
   let couponCode: string | undefined;
   try {
     const raw = await request.text();
@@ -166,9 +147,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const baseUrl = getAppBaseUrl();
 
-    // Exactly one discount reaches Stripe (plan §3: "a platform coupon replaces the intro offer,
-    // never stacks with it"). `amountDueTodayCents` / `offer` in the response below are derived
-    // from whichever branch below actually ran, never from a constant.
+    // Exactly one discount reaches Stripe — a platform coupon replaces the intro offer, never
+    // stacks with it. `amountDueTodayCents` / `offer` below are derived from whichever branch ran.
     let discounts: Stripe.Checkout.SessionCreateParams.Discount[];
     let paymentMethodCollection: Stripe.Checkout.SessionCreateParams.PaymentMethodCollection | undefined;
     let amountDueTodayCents: number;
@@ -177,8 +157,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (chosen.kind === 'platform_coupon') {
       const stripeCoupon = await ensureStripeCouponFor(chosen.coupon, stripe);
-      // `ensureStripeCouponFor` persists the id but returns only the Stripe object; build the
-      // updated record in memory rather than a second round trip to re-read it.
+      // Returns only the Stripe object; build the updated record in memory instead of re-reading it.
       const resolvedRecord: PlatformCouponRecord = {
         ...chosen.coupon,
         stripeCouponId: stripeCoupon.id,
@@ -194,7 +173,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         name: chosen.coupon.name,
         description: describePlatformCoupon(chosen.coupon),
       };
-      // Recorded so the webhook (phase 6) can identify which redemption this subscription closes.
+      // Recorded so the webhook can identify which redemption this subscription closes.
       discountMetadata = {
         discount_source: chosen.source,
         platform_coupon_id: chosen.coupon.id,
@@ -218,13 +197,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       line_items: [{ price: plan.priceId, quantity: 1 }],
       discounts,
       client_reference_id: merchant.userId,
-      // `allow_promotion_codes` is deliberately absent. Stripe rejects a session that carries it
-      // alongside `discounts` -- "You may only specify one of these parameters:
-      // allow_promotion_codes, discounts" -- and it rejects on the parameter being *present*, so
-      // passing `false` fails exactly like passing `true`. Since exactly one discount is always
-      // applied here (the coupon above, or the intro coupon), promotion codes are already
-      // impossible; the field bought us nothing and broke every subscription checkout. Do not
-      // reinstate it while `discounts` is set.
+      // `allow_promotion_codes` is deliberately absent: Stripe rejects a session carrying it
+      // alongside `discounts` even as `false` ("only specify one of ... discounts"), and broke
+      // every subscription checkout when both were set. Do not reinstate it while `discounts` is set.
       billing_address_collection: 'auto',
       subscription_data: {
         metadata: {
@@ -246,9 +221,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       cancel_url: `${baseUrl}/admin/billing?checkout=cancelled`,
     };
 
-    // `payment_method_collection: 'if_required'` only when a no-card coupon (§3 "Collecting a
-    // card, or not") applies; omitted entirely otherwise so Stripe's default collection behaviour
-    // is unchanged for the intro offer and every card-collecting coupon.
+    // Set only for a no-card coupon; omitted otherwise so Stripe's default collection is unchanged.
     if (paymentMethodCollection) {
       sessionParams.payment_method_collection = paymentMethodCollection;
     }

@@ -1,18 +1,15 @@
 /**
- * `PATCH /api/platform/coupons/[id]` — edit a coupon's name, notes, `redeemBy` or `isActive`
- * (plan §9, phase 3). This is also how the console deactivates a code: `{ isActive: false }`, no
- * separate endpoint — there is no `DELETE` here, matching the schema's `ON DELETE RESTRICT` on
- * redemption history (plan §3 rule 2).
+ * `PATCH /api/platform/coupons/[id]` — edit a coupon's name, notes, `redeemBy` or `isActive`. This
+ * is also how the console deactivates a code: `{ isActive: false }`, no separate endpoint, and no
+ * `DELETE` — matching the schema's `ON DELETE RESTRICT` on redemption history.
  *
  * Economics (`percentOff`, `durationMonths`, `collectPaymentMethod`) are never written. A patch
- * that names one of them is passed through to `updatePlatformCoupon` anyway — see
- * `./validation.ts` — specifically so that function's typed `economics_immutable` refusal reaches
- * the caller as a 409 naming the field, rather than the request either silently dropping the
- * attempt or hitting a database error.
+ * naming one is passed through to `updatePlatformCoupon` anyway (see `./validation.ts`) so that
+ * function's typed `economics_immutable` refusal reaches the caller as a 409 naming the field,
+ * rather than silently dropping the attempt or hitting a database error.
  *
  * Like `POST /api/platform/coupons`, this is a write surface: the audit row is inserted on the same
- * transaction client as the update, uncaught, so a failed audit write fails the whole request
- * instead of leaving an unaccountable change on the table.
+ * transaction client as the update, uncaught, so a failed audit write fails the whole request.
  */
 
 import { NextRequest, NextResponse } from 'next/server';

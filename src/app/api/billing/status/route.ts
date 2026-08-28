@@ -2,22 +2,14 @@
  * GET /api/billing/status
  *
  * Current platform-billing state for the signed-in merchant: plan, what they pay now, what they
- * will pay once any discount window closes, the next charge date, and whether Stripe is configured
- * at all.
+ * will pay once any discount window closes, the next charge date, and whether Stripe is configured.
  *
- * Phase 5 (plan §3, §5.3) extended this beyond "the intro offer" being the only discount that
- * exists:
+ * Not yet subscribed: `pendingOffer` names what Checkout would actually charge today, using the
+ * identical precedence as `POST /api/billing/checkout` so the two never disagree. Subscribed:
+ * `subscription.discount` says which discount is actually live and when it ends, rather than
+ * assuming every discount is the intro offer.
  *
- * - **Not yet subscribed** — `pendingOffer` names what Checkout will actually charge *today* if the
- *   merchant subscribes right now: a platform coupon already attributed to them (`resolveActiveClaim`),
- *   or the standard intro offer. `POST /api/billing/checkout` applies the identical precedence, so
- *   the price this route quotes and the price Checkout charges never disagree.
- * - **Subscribed** — `subscription.discount` says *which* discount is actually live (the intro offer,
- *   or a named platform coupon) and when it ends, rather than assuming every discount is the intro
- *   offer (the bug `readIntroDiscount` used to have — see `billing/subscriptions.ts`).
- *
- * This endpoint never throws because of a missing Stripe key - it answers `configured: false` and
- * lets the UI render the "payments not configured" state.
+ * Never throws on a missing Stripe key — answers `configured: false` instead.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -49,10 +41,7 @@ export const dynamic = 'force-dynamic';
 
 export type { PendingOfferSummary } from './decide';
 
-/**
- * What discount is currently on a subscription, named honestly — plan §5.3: no screen may describe
- * a coupon in the intro offer's vocabulary, and every discount must say which one it actually is.
- */
+/** What discount is currently on a subscription, named honestly — never a coupon in the intro offer's vocabulary. */
 export interface BillingDiscountSummary {
   /** Which mechanism this is. Drives whether the UI says "Intro pricing" or the coupon's own name. */
   readonly kind: 'intro' | 'platform_coupon';
@@ -67,9 +56,7 @@ export interface BillingDiscountSummary {
 }
 
 /**
- * Describe the discount actually on a subscription, if any — the single source both
- * `/api/billing/status` and (via this response) `/admin/billing` read from, so the two can never
- * independently decide "intro" when the subscription is really on a platform coupon.
+ * Describe the discount actually on a subscription, if any.
  *
  * @param subscription - The local subscription mirror.
  * @returns The discount summary, or `null` when the subscription has never carried one (full price
@@ -102,14 +89,11 @@ async function describeActiveDiscount(
 
   const platformCoupon = await lookupPlatformCouponByStripeCouponId(couponId);
   if (!platformCoupon) {
-    // Some other Stripe coupon (outside this feature, or one whose row we could not find). Say
-    // nothing definite rather than guessing at a name — `currentAmountCents` still reflects the
-    // real price either way.
+    // Some other Stripe coupon we couldn't resolve — say nothing rather than guess at a name.
     return null;
   }
 
-  // A `durationMonths === null` coupon runs forever, so it has no `endsAt` to compare against —
-  // it is "active" until the subscription itself ends, not until some date.
+  // A `durationMonths === null` coupon runs forever: "active" until the subscription ends, not a date.
   const isForever = platformCoupon.durationMonths === null;
 
   return {
@@ -139,7 +123,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     let subscription = await getSubscriptionForOwner(merchant.userId);
 
-    // If we have a customer but no mirrored subscription, ask Stripe once and adopt what it says.
     if (!subscription && configured) {
       const customerId = await getBillingCustomerId(merchant.userId);
       const stripe = customerId ? tryGetStripe('billing status') : null;
@@ -149,10 +132,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           customer: customerId,
           status: 'all',
           limit: 1,
-          // Without this, Stripe hands back an unexpanded coupon id and `readIntroDiscount`'s
-          // string branch has to look it up separately — see the fix note in
-          // `billing/subscriptions.ts`. This was the route the plan called out by name as the one
-          // that "calls `subscriptions.list` with no expansion at all".
+          // Without this, Stripe hands back an unexpanded coupon id and readIntroDiscount's string
+          // branch has to look it up separately — see the fix note in billing/subscriptions.ts.
           expand: ['data.discounts'],
         });
         const latest = remote.data[0];

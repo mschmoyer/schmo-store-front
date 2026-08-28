@@ -6,26 +6,22 @@
  *
  * Two things are deliberately **not** here. The coupon *lifecycle* — attribute, redeem, release —
  * is `src/lib/billing/coupon-claims.ts`; this module only ever reads the redemption ledger, never
- * transitions a row through it. And code *normalisation* and the offer sentence are
- * `src/lib/billing/platform-coupons.ts`, imported rather than re-implemented, so there is exactly
- * one definition of "what does `code_normalized` mean" in the codebase.
+ * transitions a row through it. Code *normalisation* and the offer sentence are
+ * `src/lib/billing/platform-coupons.ts`, imported rather than re-implemented.
  *
  * **This module owns the coupon-status vocabulary** — `active` / `inactive` / `expired` /
  * `exhausted` — the way `src/lib/platform/customers.ts` owns "received". A coupon's displayed
  * status is derived once, by {@link derivePlatformCouponStatus}, and both {@link listPlatformCoupons}'
- * filtering and its counts read through that single function. Two screens independently deciding
- * what "expired" means is exactly the defect `customers.ts` documents happening three times already
- * on this console; the fix here is the same seam.
+ * filtering and its counts read through that single function, so a tab's label can never disagree
+ * with its own count.
  *
  * **Demo exclusion follows the console's existing rule.** {@link listRedemptions} defaults to
  * excluding `stores.is_demo` and reuses {@link realStorePredicate}, {@link buildPagination} and
- * {@link describeScope} from `platform/customers.ts` rather than re-deciding what "demo" or
- * "pagination" mean — see `docs/platform-admin.md`.
+ * {@link describeScope} from `platform/customers.ts` — see `docs/platform-admin.md`.
  *
- * **Every write takes an injectable `Queryable`, defaulting to the real `db`** — see the `Queryable`
- * note in `coupon-claims.ts`, which this module mirrors rather than importing (a read/report module
- * depending on a lifecycle module's plumbing type would be a stranger dependency than the small
- * duplication).
+ * **Every write takes an injectable `Queryable`, defaulting to the real `db`** — mirrors, rather
+ * than imports, the note in `coupon-claims.ts`; a read/report module depending on a lifecycle
+ * module's plumbing type would be a stranger dependency than the small duplication.
  */
 
 import { db } from '@/lib/database/connection';
@@ -192,8 +188,8 @@ export type CreatePlatformCouponResult =
  *
  * The percent-off / duration / card-collection economics are set here and nowhere else — see
  * {@link updatePlatformCoupon}, which refuses to touch them. `redeemed_count` starts at `0` and
- * `stripe_coupon_id` starts `NULL`; the latter is filled in once, lazily, by
- * `src/lib/stripe/platform-coupons.ts` (phase 2), via {@link setStripeCouponId}.
+ * `stripe_coupon_id` starts `NULL`, filled in once, lazily, by `stripe/platform-coupons.ts` via
+ * {@link setStripeCouponId}.
  *
  * @param input - The coupon to create.
  * @param createdByUserId - The operator creating it, for `created_by`.
@@ -299,12 +295,8 @@ export const PLATFORM_COUPON_STATUSES: readonly PlatformCouponStatus[] = [
 ];
 
 /**
- * Derive a coupon's displayed status.
- *
- * The single definition behind both {@link listPlatformCoupons}' `active`/`expired`/`exhausted`
- * filters and its counts, so the tab a coupon is filed under and the count on that tab's label can
- * never disagree — the exact failure mode `platform/customers.ts` documents for "received" and
- * "customized" happening on this same console before a function owned the word.
+ * Derive a coupon's displayed status. The single definition behind both {@link listPlatformCoupons}'
+ * filters and its counts — see the module note.
  *
  * @param coupon - The fields needed to decide: whether the switch is on, when the link dies, and
  *                 how much capacity remains.
@@ -350,10 +342,9 @@ export interface PlatformCouponListResult {
  * List platform coupons, optionally narrowed to one status.
  *
  * Fetches every coupon and derives status in application code via
- * {@link derivePlatformCouponStatus} rather than duplicating the same three conditions as a second,
- * SQL-shaped definition — the coupons table is operator-issued and small (tens to low hundreds of
- * rows, not the tenancy-wide scale `platform/customers.ts` pages against), so one query plus an
- * in-memory filter is the simpler correct answer here.
+ * {@link derivePlatformCouponStatus} rather than duplicating the same conditions in SQL — the
+ * coupons table is operator-issued and small (tens to low hundreds of rows, not the tenancy-wide
+ * scale `platform/customers.ts` pages against), so one query plus an in-memory filter suffices.
  *
  * @param filter - `'active' | 'inactive' | 'expired' | 'exhausted' | 'all'`. Defaults to `'all'`.
  * @param executor - The query surface to run against. Defaults to the real database.
@@ -391,13 +382,11 @@ export async function listPlatformCoupons(
 /**
  * The fields {@link updatePlatformCoupon} may actually change.
  *
- * `percentOff`, `durationMonths` and `collectPaymentMethod` are present in this type **only** so an
- * attempt to set them can be detected and named in the refusal below — they are never written to
- * the database by this function. Plan §11 invariant 5 makes them immutable once anyone has
- * redeemed; this function goes one step further and never accepts them at all, because nothing in
- * the module map gives an operator a legitimate reason to edit a coupon's economics after creation
- * — a code with a wrong percentage before anyone has redeemed it is deactivated and replaced, not
- * patched, the same way the schema gives coupons no `DELETE` (see the module note).
+ * `percentOff`, `durationMonths` and `collectPaymentMethod` are present **only** so an attempt to
+ * set them can be detected and named in the refusal below — never written to the database. This
+ * function refuses them unconditionally, even pre-redemption: a wrong percentage is fixed by
+ * deactivating the coupon and creating a new one, not by patching it, the same way the schema gives
+ * coupons no `DELETE`.
  */
 export interface PlatformCouponPatch {
   name?: string;
@@ -427,8 +416,7 @@ export type UpdatePlatformCouponResult =
 /**
  * Edit a coupon's non-economic fields: name, notes, `redeem_by`, `is_active`.
  *
- * Refuses — with a typed reason, never a thrown error — any patch that touches `percentOff`,
- * `durationMonths` or `collectPaymentMethod`, whether or not the coupon has been redeemed yet. See
+ * Refuses — with a typed reason, never a thrown error — any patch that touches economics. See
  * {@link PlatformCouponPatch}.
  *
  * @param id - The coupon to edit.
@@ -487,9 +475,8 @@ export async function updatePlatformCoupon(
 }
 
 /**
- * Deactivate a coupon. There is no delete — see the module note and plan §3 rule 2: a coupon with
- * redemption history cannot be deleted (`ON DELETE RESTRICT`), and deactivating stops new
- * redemptions without touching anyone already on the offer (invariant 6).
+ * Deactivate a coupon. There is no delete: redemption history makes a coupon `ON DELETE RESTRICT`,
+ * and deactivating stops new redemptions without touching anyone already on the offer.
  *
  * @param id - The coupon to deactivate.
  * @param executor - The query surface to run against. Defaults to the real database.
@@ -513,9 +500,8 @@ export async function deactivatePlatformCoupon(
 /**
  * Record the Stripe Coupon resolved for a platform coupon.
  *
- * Written once, by `src/lib/stripe/platform-coupons.ts`'s resolve-or-create (phase 2). Plan §3 rule
- * 2: a Stripe coupon is never deleted, so once this is set it is never cleared, only (in principle)
- * replaced — which does not happen in the current design.
+ * Written once, by `src/lib/stripe/platform-coupons.ts`'s resolve-or-create. A Stripe coupon is
+ * never deleted, so once set this is never cleared.
  *
  * @param id - The platform coupon.
  * @param stripeCouponId - The Stripe Coupon id it resolves to.
@@ -539,10 +525,8 @@ export async function setStripeCouponId(
 }
 
 /**
- * The redemption-ledger statuses, exactly as `platform_coupon_redemptions.status` stores them, and
- * the SQL predicates over them for {@link listRedemptions} — this module's read-side ownership of
- * the vocabulary `coupon-claims.ts` writes. Aliased to `pcr`, the alias every query in this module
- * joins the table under.
+ * SQL predicates over `platform_coupon_redemptions.status`, for {@link listRedemptions}. Aliased to
+ * `pcr`, the alias every query in this module joins the table under.
  */
 export const REDEMPTION_ATTRIBUTED_PREDICATE = "pcr.status = 'attributed'";
 export const REDEMPTION_REDEEMED_PREDICATE = "pcr.status = 'redeemed'";
@@ -652,17 +636,12 @@ function toRedemptionListItem(row: RedemptionRow): PlatformRedemptionListItem {
  *
  * Joins `platform_coupons`, `users` and (optionally missing, hence `LEFT JOIN`) `stores` — a claim
  * attributed at signup has no store until `backfillStoreId` runs. Demo stores are excluded by
- * default via {@link realStorePredicate}, exactly like every other list on `/platform`
- * (`docs/platform-admin.md`); a `LEFT JOIN`-missing store passes that predicate on its own (`NULL
- * IS DISTINCT FROM TRUE` is `TRUE`), so a redemption with no store yet is correctly never treated as
- * a demo row.
+ * default via {@link realStorePredicate}; a `LEFT JOIN`-missing store passes that predicate on its
+ * own (`NULL IS DISTINCT FROM TRUE` is `TRUE`), so a storeless redemption is never misread as demo.
  *
- * Also `LEFT JOIN`s `subscriptions` on `stripe_subscription_id` for {@link
- * PlatformRedemptionListItem.subscriptionStatus} — phase 6 promised the redemptions tab would show
- * live subscription status and it never landed (staff review finding 13), leaving an operator
- * unable to tell a running free year from one that lapsed and was cancelled. Left, not inner: an
- * `attributed` or `released` claim has no subscription at all, and even a `redeemed` one can
- * momentarily have none if the row hasn't synced.
+ * Also `LEFT JOIN`s `subscriptions` for {@link PlatformRedemptionListItem.subscriptionStatus} — left,
+ * not inner, because an `attributed` or `released` claim has no subscription at all, and even a
+ * `redeemed` one can momentarily have none if the row hasn't synced yet.
  *
  * @param filter - Narrowing and paging options. See {@link ListRedemptionsFilter}.
  * @param executor - The query surface to run against. Defaults to the real database.
@@ -690,10 +669,8 @@ export async function listRedemptions(
   }
 
   const whereSql = `WHERE ${conditions.join(' AND ')}`;
-  // `LEFT JOIN subscriptions` on the Stripe subscription id the webhook wrote at redemption time
-  // (plan phase 6) — an `attributed` or `released` claim has none yet, and even a `redeemed` one
-  // can momentarily have none if its subscription row hasn't synced, so this must never become an
-  // inner join (see `toRedemptionListItem`'s `subscriptionStatus: null` fallback).
+  // Must stay a LEFT JOIN — see the function doc. `toRedemptionListItem` falls back to
+  // `subscriptionStatus: null` accordingly.
   const fromSql = `
     FROM platform_coupon_redemptions pcr
     JOIN platform_coupons pc ON pc.id = pcr.coupon_id

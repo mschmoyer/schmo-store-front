@@ -1,14 +1,7 @@
 /**
- * The pure decision behind `POST /api/billing/coupon/preview`, split out of `route.ts` so it can be
- * unit tested with no database and no Next.js request machinery.
- *
- * This mirrors why `PLATFORM_COUPON_COOKIE` lives in its own `coupon-cookie.ts` rather than
- * `onboarding/_lib/state.ts`: `route.ts` imports `requireMerchant` (`billing/auth.ts`), which
- * imports `src/lib/auth/session.ts`, which imports `jose` — an ESM package this repo's Jest
- * transform cannot parse. A test that merely imports `route.ts` to reach a pure function fails at
- * module load with `SyntaxError: Unexpected token 'export'` in `jose`'s bundle, not because
- * anything under test is wrong. Keeping the decision here, with only type-only and
- * dependency-free imports, is what makes it testable at all.
+ * The pure decision behind `POST /api/billing/coupon/preview`, split out of `route.ts` for the same
+ * `jose`-untestability reason as `coupon-cookie.ts` and `billing/checkout/decide.ts`: `route.ts`
+ * imports `requireMerchant` → `session.ts` → `jose`, which Jest cannot parse.
  */
 
 import type { PlatformCouponRecord } from '@/lib/platform/coupons';
@@ -34,12 +27,7 @@ export interface CouponPreviewOk {
   readonly offer: string;
   /** Whether Checkout will still ask for a card if this coupon is applied. */
   readonly requiresPaymentMethod: boolean;
-  /**
-   * What Checkout would actually charge today if this coupon is applied — so a caller (the
-   * "Subscribe for X" button on `/admin/billing`) can name the real price the moment a code is
-   * applied, rather than only after a round trip to `GET /api/billing/status`. Plan §5.3: a button
-   * that names a price must name the price that will actually be charged.
-   */
+  /** What Checkout would actually charge today, so the "Subscribe for X" button can name the real price immediately. */
   readonly amountDueTodayCents: number;
   readonly amountDueTodayFormatted: string;
 }
@@ -57,13 +45,8 @@ export type CouponPreviewResult = CouponPreviewOk | CouponPreviewFail;
 export type PlatformCouponLookup = (code: string) => Promise<PlatformCouponRecord | null>;
 
 /**
- * Decide what a coupon code means, without writing anything.
- *
- * Pure aside from the injected `lookup` — mirrors the shape of `decideJoin` in
- * `src/app/join/[code]/route.ts` so both surfaces that describe a coupon before it is redeemed
- * follow the same pattern. The reason vocabulary distinguishes `'unknown'` (resolves to nothing)
- * from `'inactive'` / `'expired'` / `'exhausted'` (resolves, but cannot be redeemed right now) —
- * the same line `/join/[code]`'s `JoinFailureReason` draws, rather than hiding which codes exist.
+ * Decide what a coupon code means, without writing anything. Pure aside from the injected
+ * `lookup`, mirroring `decideJoin` in `src/app/join/[code]/route.ts`.
  *
  * @param rawCode - The code exactly as the merchant typed it.
  * @param lookup - Resolves a code to a coupon. In production this is `getPlatformCouponByCode`.

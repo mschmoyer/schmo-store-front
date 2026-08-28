@@ -32,9 +32,8 @@ export async function GET(request: NextRequest) {
   try {
     const context = await requireOnboarding(request);
     if (!context) {
-      // No account yet: preview the `/join` cookie (or its dead-link reason on the query string)
-      // so the wizard can show the offer, or the honest failure, before there is anything to
-      // attribute it to. See `previewCouponForVisitor`'s doc — this writes nothing.
+      // No account yet: preview the coupon (writes nothing) so the wizard shows the offer or the
+      // honest failure before there is anything to attribute it to.
       const coupon = await previewCouponForVisitor(request);
       return NextResponse.json({ state: { ...ANONYMOUS_STATE, coupon } });
     }

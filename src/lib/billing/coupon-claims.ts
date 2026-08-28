@@ -2,8 +2,7 @@
  * The platform-coupon claim lifecycle (flow A signup coupons — see `docs/plans/platform-coupons.md`
  * §6). Every state transition a `platform_coupon_redemptions` row can go through lives in this
  * module and nowhere else: no other file writes `status`, `redeemed_at`, `released_at` or
- * `release_reason`. That is what makes the state machine below the complete picture rather than a
- * partial one another call site can quietly bypass.
+ * `release_reason`.
  *
  * ```
  *               signup with a code          subscription created with the coupon
@@ -15,30 +14,20 @@
  *                                      released
  * ```
  *
- * Three rules follow directly from that picture, and each is enforced here rather than trusted to
- * a caller:
+ * `redeemed` and `released` are terminal — neither transition reverses, and releasing a `redeemed`
+ * claim is refused (see {@link releaseClaim}) rather than misrepresenting a paid redemption as an
+ * expired reservation.
  *
- * 1. **`redeemed` and `released` are terminal.** {@link markRedeemed} on an already-`redeemed` claim
- *    is a no-op success (the Stripe webhook redelivers), never a second row and never an error.
- *    {@link releaseClaim} on an already-`released` claim is the same. Neither transition can be
- *    *reversed* — `redeemed → attributed` does not exist as an operation, and releasing a `redeemed`
- *    claim is refused rather than applied, because it would misrepresent a real, paid redemption as
- *    a reservation that quietly expired.
- * 2. **Our pre-checks are for a good error message; the database trigger is the actual guarantee.**
- *    Before inserting, {@link attributeCoupon} reads the coupon's `is_active` / `redeem_by` /
- *    `max_redemptions` vs `redeemed_count` and returns a specific reason without ever reaching SQL
- *    that could race. The `BEFORE INSERT` trigger described in §7 of the plan is what actually
- *    closes the race two concurrent signups create; a `RAISE` from it, or a unique-index violation
- *    from the "one live claim per user" indexes, is caught and translated into the same typed
- *    reason a normal pre-check failure would produce. A caller — a route rendering this to a human —
- *    never sees a raw Postgres error string, per `CLAUDE.md`'s "Secrets"/"Honest results" rules and
- *    the pattern in `src/lib/api/adminError.ts`.
- * 3. **Every write takes an injectable `Queryable`, defaulting to the real `db`.** Per `CLAUDE.md`
- *    ("Mocks: … inject it and test the real logic"), tests pass a fake `{ query }` and assert the
- *    real transition logic and the real SQL shape, rather than mocking this module away.
+ * Pre-checks here exist for a good error message; the `BEFORE INSERT` trigger (plan §7) is the
+ * actual race guard. A `RAISE` from it, or a unique-index violation, is caught and translated into
+ * the same typed reason a pre-check failure would produce — a caller never sees a raw Postgres error
+ * string (`CLAUDE.md` "Secrets"/"Honest results").
  *
- * This module does not touch `platform_coupons` except to read the handful of columns that gate a
- * new attribution. Creating, listing and deactivating coupons is `src/lib/platform/coupons.ts`.
+ * Every write takes an injectable `Queryable`, defaulting to the real `db`, so tests exercise the
+ * real transition logic and SQL shape rather than mocking this module away.
+ *
+ * Does not touch `platform_coupons` except to read the columns that gate a new attribution.
+ * Creating, listing and deactivating coupons is `src/lib/platform/coupons.ts`.
  */
 
 import { db } from '@/lib/database/connection';
@@ -234,21 +223,18 @@ interface CouponGateRow extends Record<string, unknown> {
 /**
  * Translate a failed insert into a typed reason.
  *
- * Reached only when the pre-checks in {@link attributeCoupon} already passed, so a `RAISE` here
- * almost always means a concurrent insert won the capacity race between the read and this write.
- * Migration 042's `platform_coupon_redemptions_check_capacity()` trigger prefixes each of its four
- * failures with a greppable tag — `platform_coupon_not_found`, `_inactive`, `_expired`,
- * `_exhausted` — precisely so a caller does not have to guess at its prose; this matches those tags
- * rather than sniffing free text, and only degrades to the conservative default (`'exhausted'`,
- * i.e. refuse the claim) for a message that carries none of them, which should not happen against
- * that trigger but is handled rather than assumed away. The raw error is logged server-side, never
- * returned — a route renders only the typed reason.
+ * Reached only when {@link attributeCoupon}'s pre-checks already passed, so a `RAISE` here almost
+ * always means a concurrent insert won the capacity race. Migration 042's
+ * `platform_coupon_redemptions_check_capacity()` trigger prefixes each of its four failures with a
+ * greppable tag — `platform_coupon_not_found`, `_inactive`, `_expired`, `_exhausted` — so this
+ * matches those tags rather than sniffing free text. A message carrying none of them (should not
+ * happen against that trigger) degrades to the conservative default, `'exhausted'`. The raw error is
+ * logged server-side, never returned.
  *
  * @param error - Whatever the insert threw.
  * @returns A failure {@link AttributeCouponResult}.
- * @throws The original error when it is not one of the two codes this state machine understands —
- *         an unrecognised failure is an operational fault, not an attribution outcome, and should
- *         500 rather than be reported as a coupon problem.
+ * @throws The original error when it is not one of the two codes understood here — an unrecognised
+ *   failure is an operational fault, should 500, not be reported as a coupon problem.
  */
 function mapAttributeInsertError(error: unknown): AttributeCouponResult {
   const code = pgErrorCode(error);
@@ -307,9 +293,8 @@ export async function attributeCoupon(
   );
 
   const coupon = gate.rows[0];
-  // A coupon id that does not resolve behaves like an inactive one: there is nothing here for the
-  // caller to attribute against, and 'inactive' is the closest of the five named reasons to "this
-  // code does not work" without inventing a sixth.
+  // A coupon id that does not resolve behaves like an inactive one — 'inactive' is the closest of
+  // the five named reasons to "this code does not work" without inventing a sixth.
   if (!coupon || coupon.is_active !== true) {
     return { reason: 'inactive' };
   }
@@ -340,8 +325,7 @@ export async function attributeCoupon(
 
     const row = inserted.rows[0];
     if (!row) {
-      // No RAISE, no conflict, and still nothing back — treat as a lost race rather than throwing
-      // an opaque error for what is, from the caller's side, the same "could not reserve it" fact.
+      // No RAISE, no conflict, still nothing back — treat as a lost race, not an opaque error.
       return { reason: 'exhausted' };
     }
     return { reason: 'ok', claim: toRecord(row) };
@@ -385,13 +369,12 @@ export interface MarkRedeemedInput {
   /** When the free window closes. `null` for a `duration_months IS NULL` (forever) coupon. */
   discountEndsAt: Date | null;
   /**
-   * The `platform_coupon_id` the caller read off Stripe metadata, when it has one — checkout writes
-   * this into both the Checkout Session and the subscription's own metadata specifically so this
-   * function can confirm it, per staff-review finding 14. When supplied, it must match the live
-   * claim's own `coupon_id` or the transition is refused as {@link MarkRedeemedResult}'s
-   * `'coupon_mismatch'` rather than silently redeeming whatever live claim this user happens to
-   * hold. Omit only when the caller genuinely has no coupon id to check (there is currently no such
-   * call site — every redemption reaches here from a subscription that already resolved one).
+   * The `platform_coupon_id` read off Stripe metadata, when available — checkout writes this to
+   * both the Checkout Session and the subscription's metadata specifically so this function can
+   * confirm it (staff-review finding 14). When supplied, it must match the live claim's own
+   * `coupon_id` or the transition is refused as {@link MarkRedeemedResult}'s `'coupon_mismatch'`
+   * rather than silently redeeming whatever live claim this user holds. Omit only when there is
+   * genuinely no coupon id to check — no call site currently does.
    */
   expectedCouponId?: string | null;
 }
@@ -413,17 +396,9 @@ export type MarkRedeemedResult =
 /**
  * Confirm a reservation: the `attributed → redeemed` transition in §6.
  *
- * Called from the Stripe webhook once a subscription carrying the coupon exists. **Idempotent**:
- * Stripe redelivers webhooks, and a second delivery for the same subscription must return the
- * already-redeemed row rather than raise or write a duplicate. A claim already in `redeemed` is
- * therefore left untouched and reported back as `'already_redeemed'` — the illegal direction,
- * `redeemed → attributed`, is not an operation this function (or any other) performs.
- *
- * Staff-review finding 14: this used to match a live claim on `user_id` alone. Since the schema
- * allows at most one live claim per user, that was correct in practice, but fragile in intent — it
- * trusted "whichever live claim this user holds" rather than confirming it is the one Stripe
- * actually attached. When `input.expectedCouponId` is supplied, the live claim's own `coupon_id`
- * must match it, or the transition is refused (`'coupon_mismatch'`) rather than applied.
+ * Called from the Stripe webhook once a subscription carrying the coupon exists. **Idempotent**: a
+ * redelivered webhook for the same subscription returns the already-redeemed row rather than
+ * raising or writing a duplicate.
  *
  * @param input - The user and the Stripe facts the webhook just learned.
  * @param executor - The query surface to run against. Defaults to the real database.
@@ -454,9 +429,8 @@ export async function markRedeemed(
     return { reason: 'already_redeemed', claim: toRecord(row) };
   }
 
-  // `liveClaimSql()` already excludes 'released', so the only other status reaching here is
-  // 'attributed'. The `AND status = 'attributed'` below is the guard against a concurrent
-  // redemption of the very same row winning first.
+  // liveClaimSql() already excludes 'released', so the only other status here is 'attributed';
+  // `AND status = 'attributed'` guards against a concurrent redemption winning first.
   const updated = await executor.query<PlatformCouponClaimRow>(
     `UPDATE platform_coupon_redemptions
         SET status = 'redeemed',
@@ -475,8 +449,8 @@ export async function markRedeemed(
     return { reason: 'ok', claim: toRecord(updatedRow) };
   }
 
-  // Lost the race: another call redeemed this exact row between the SELECT above and this UPDATE.
-  // Re-read and report the true, already-successful outcome rather than a bogus failure.
+  // Lost the race: another call redeemed this row between the SELECT and this UPDATE — re-read
+  // and report the true, already-successful outcome rather than a bogus failure.
   const recheck = await executor.query<PlatformCouponClaimRow>(
     `SELECT ${SELECT_COLUMNS} FROM platform_coupon_redemptions WHERE id = $1`,
     [row.id]
@@ -504,10 +478,8 @@ export type ReleaseClaimResult =
  * Release one claim: the `attributed → released` transition in §6, or a no-op when it is already
  * there.
  *
- * Used by the operator console ("release this reservation") and by {@link releaseExpiredClaims} for
- * the cron sweep. **Refuses** to release a `redeemed` claim — see {@link ReleaseClaimResult} — which
- * is the "illegal transitions … must be refused, not silently applied" requirement for this
- * function specifically.
+ * Used by the operator console and by {@link releaseExpiredClaims} for the cron sweep. Refuses to
+ * release a `redeemed` claim — see {@link ReleaseClaimResult}.
  *
  * @param id - The claim's id.
  * @param releaseReason - A short label for the ledger — e.g. `'reservation_expired'`,
@@ -548,8 +520,8 @@ export async function releaseClaim(
     return { reason: 'ok', claim: toRecord(updatedRow) };
   }
 
-  // Lost a race against a concurrent transition on the same row. Re-read and report what actually
-  // happened instead of a bare failure for a call that, in substance, already got its answer.
+  // Lost a race against a concurrent transition on the same row — re-read and report what
+  // actually happened.
   const recheck = await executor.query<PlatformCouponClaimRow>(
     `SELECT ${SELECT_COLUMNS} FROM platform_coupon_redemptions WHERE id = $1`,
     [id]
@@ -575,13 +547,12 @@ export interface ReleaseExpiredClaimsResult {
 /**
  * The cron sweep: release every `attributed` claim older than the reservation window.
  *
- * Plan §6 / §5.2.2: "a friend who wanders off and comes back on day 45 re-clicks the same link and
- * is re-attributed" — this is what frees the seat for that to happen. Nothing is deleted; the
- * released row stays in the ledger so "clicked 40 times, redeemed twice" stays answerable.
+ * Nothing is deleted — the released row stays in the ledger so "clicked 40 times, redeemed twice"
+ * stays answerable, and a friend who returns after the window re-attributes against the freed seat.
  *
- * A single `UPDATE … RETURNING` rather than a select-then-loop: the whole sweep is one round trip
- * and one atomic statement, so there is no window in which a row is read as still-attributed by a
- * concurrent {@link attributeCoupon} check and then released out from under it mid-sweep.
+ * A single `UPDATE … RETURNING` rather than select-then-loop: one round trip, one atomic statement,
+ * so no row can be read as still-attributed by a concurrent {@link attributeCoupon} check and then
+ * released out from under it mid-sweep.
  *
  * @param olderThanDays - Reservation age threshold in days. Defaults to
  *                         {@link PLATFORM_CLAIM_RESERVATION_DAYS}.
@@ -611,10 +582,9 @@ export async function releaseExpiredClaims(
 /**
  * Learn a claim's store once onboarding creates one.
  *
- * A coupon is attributed to a user at account creation, before a store exists — see §6. This fills
- * `store_id` in afterward, at `POST /api/onboarding/store`. It only ever fills a currently-`NULL`
- * `store_id` on the user's live claim, so a second call (or a call for a user who was attributed
- * with a store already known) is a safe no-op rather than an overwrite.
+ * A coupon is attributed to a user at account creation, before a store exists (§6); this fills
+ * `store_id` in afterward, at `POST /api/onboarding/store`. Only fills a currently-`NULL`
+ * `store_id`, so a repeat call is a safe no-op rather than an overwrite.
  *
  * @param userId - The user whose claim should learn its store.
  * @param storeId - The store that was just created.

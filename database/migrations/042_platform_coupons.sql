@@ -1,48 +1,36 @@
 -- Migration 042: platform signup coupons — flow A, not flow B.
 --
--- This is not `coupons`. The existing `coupons` table discounts a *shopper's* checkout on a
--- merchant's storefront (flow B, `store_id`-scoped, the merchant eats the discount). This table
--- discounts a *merchant's* subscription to RebelShops itself (flow A, platform-wide by definition,
--- RebelShops eats the discount). Every identifier here carries the `platform` prefix so the two
--- never get confused at a call site. See docs/plans/platform-coupons.md §1.
+-- Not `coupons`: that table discounts a *shopper's* checkout on a merchant's storefront
+-- (`store_id`-scoped, the merchant eats the discount). This table discounts a *merchant's*
+-- subscription to RebelShops itself (platform-wide, RebelShops eats the discount). Every
+-- identifier here carries the `platform` prefix so the two never get confused at a call site.
 --
--- One table, two behaviours, no `kind` enum (§2 of the plan):
+-- `platform_coupons` covers two behaviours with no `kind` enum: `max_redemptions` (NULL uncapped,
+-- 1 one-time, N capped) and `percent_off` + `duration_months` (a comp account is (100, NULL) —
+-- forever). `collect_payment_method = FALSE` skips a card at signup, but only means anything at
+-- 100% off — a partial discount still charges something today — so the schema refuses the
+-- dishonest combination outright (`platform_coupons_no_card_needs_full_discount`) rather than
+-- trusting a form to catch it.
 --
---   * `max_redemptions`: NULL is uncapped, 1 is a one-time code, N is capped at N.
---   * `percent_off` + `duration_months`: a year free is (100, 12); half off for six months is
---     (50, 6); a comp account is (100, NULL) — forever.
---   * `collect_payment_method`: FALSE skips taking a card at signup. It only does anything at
---     100% off — a partial discount still charges something today, so Stripe takes a card
---     regardless of the flag — which is why the schema refuses the dishonest combination outright
---     rather than trusting a form to catch it (invariant 13, `platform_coupons_no_card_needs_
---     full_discount`).
+-- `platform_coupon_redemptions` is a state machine: attributed (reservation at signup) → redeemed
+-- (Stripe confirms the subscription) or released (lapsed, or an operator freed it). Only
+-- attributed/redeemed hold capacity against `max_redemptions`; released gives it back. A coupon
+-- with redemption history cannot be deleted (`ON DELETE RESTRICT`) — deactivate it instead, which
+-- stops new redemptions without touching anyone already on it.
 --
--- `platform_coupon_redemptions` is a state machine, not a log of one thing happening once
--- (§6): attributed (a reservation, made at signup) → redeemed (Stripe confirms a subscription) or
--- released (the reservation lapsed, or an operator freed it). Only `attributed` and `redeemed` are
--- "live" — they hold capacity against `max_redemptions`; `released` gives it back. A coupon cannot
--- be deleted once it has redemption history (`ON DELETE RESTRICT` on `coupon_id`) — deactivate it
--- instead, which stops new redemptions without touching anyone already on it (§3 rule 2).
---
--- The capacity check is a trigger, not a call site, because a read-then-write check loses the race
--- when two friends click the same one-time link in the same second — exactly the class of bug
--- migrations 029 (`single_stock_writer`) and 030 (`stock_invariants`) exist to close for inventory,
--- and `npm run db:verify` treats these as behaviour the same way it treats those. The `BEFORE
--- INSERT` trigger below takes `SELECT … FOR UPDATE` on the parent coupon row before counting live
--- claims, so two concurrent inserts against the same coupon serialise on that row lock rather than
--- both reading "0 of 1 used" and both succeeding. It also refuses an insert against an inactive or
--- expired coupon, each with its own greppable error message, because those two things do not carry
--- a "grace" the way a reservation does (§5.2) — an expired link is meant to fail loudly.
+-- The capacity check is a trigger, not a call site: a read-then-write check loses the race when
+-- two people click the same one-time link in the same second — the class of bug migrations 029
+-- (`single_stock_writer`) and 030 (`stock_invariants`) exist to close for inventory, and
+-- `npm run db:verify` treats this the same way. The `BEFORE INSERT` trigger takes
+-- `SELECT … FOR UPDATE` on the parent coupon before counting live claims, so concurrent inserts
+-- against the same coupon serialise on that row lock instead of both reading "0 of 1 used" and
+-- both succeeding. It also refuses an insert against an inactive or expired coupon — an expired
+-- link fails loudly, with no grace period.
 --
 -- `redeemed_count` is a rollup of live claims, maintained by an `AFTER INSERT OR UPDATE OR DELETE`
--- trigger so the console never runs `COUNT(*)` over the redemption table to render a list of
--- coupons. `rebuild_platform_coupon_counts()` recomputes it from source, the same shape as
+-- trigger so the console never runs `COUNT(*)` over the redemption table to render a coupon list.
+-- `rebuild_platform_coupon_counts()` recomputes it from source, the same shape as
 -- `rebuild_storefront_click_daily()` in migration 040, for whenever it is suspected of drifting.
---
--- NOTE on the plan text (docs/plans/platform-coupons.md §7): the pseudocode there writes
--- `CONSTRAINT platform_coupons_no_card_needs_full_discount` inline in the middle of the column
--- list, which is not valid syntax for a table-level constraint. It is written here at the end of
--- the column list, where a table-level CONSTRAINT belongs — same name, same rule.
 
 BEGIN;
 
@@ -148,19 +136,18 @@ CREATE INDEX IF NOT EXISTS idx_pcr_time ON platform_coupon_redemptions (attribut
  *
  * Takes `SELECT ... FOR UPDATE` on the parent coupon before counting live claims, so two
  * concurrent inserts against the same coupon serialise on the row lock: the second transaction
- * blocks until the first commits or rolls back, then re-reads a count that already reflects the
- * first insert. A plain `SELECT` followed by an application-side `if count < max` check has no
- * such ordering and is exactly the race that oversells a one-time coupon.
+ * blocks until the first commits, then re-reads a count that already reflects the first insert.
+ * A plain `SELECT` followed by an application-side `if count < max` check has no such ordering
+ * and is exactly the race that oversells a one-time coupon.
  *
- * Three distinct, greppable failure reasons, because "the insert failed" is not an actionable
- * error message for an operator staring at a support ticket:
- *   - platform_coupon_not_found   — the coupon id does not exist (should be unreachable given the
- *     foreign key, kept as a defensive, clearly-labelled failure rather than a null-pointer style
- *     crash further down this function).
- *   - platform_coupon_inactive    — an operator deactivated the coupon.
- *   - platform_coupon_expired     — past `redeem_by`. No grace, by design (§5.2): a hidden fudge
- *     factor makes the printed expiry date a lie.
- *   - platform_coupon_exhausted   — `max_redemptions` reached by live (non-released) claims.
+ * Four distinct, greppable failure reasons — "the insert failed" is not actionable for an operator
+ * staring at a support ticket:
+ *   - platform_coupon_not_found — should be unreachable given the foreign key; a defensive,
+ *     clearly-labelled failure rather than a crash further down this function.
+ *   - platform_coupon_inactive  — an operator deactivated the coupon.
+ *   - platform_coupon_expired   — past `redeem_by`. No grace, by design: a hidden fudge factor
+ *     would make the printed expiry date a lie.
+ *   - platform_coupon_exhausted — `max_redemptions` reached by live (non-released) claims.
  */
 CREATE OR REPLACE FUNCTION platform_coupon_redemptions_check_capacity()
 RETURNS TRIGGER AS $$
@@ -213,11 +200,11 @@ CREATE TRIGGER trg_platform_coupon_redemptions_check_capacity
 /**
  * Keep `platform_coupons.redeemed_count` equal to the count of live claims against it.
  *
- * Recomputes from source on every write rather than incrementing/decrementing, so an insert, an
- * update that flips `status`, and a delete all converge on the same correct number regardless of
- * what path got there — the same reasoning migration 040 gives for not trying to increment a
- * distinct-visitor count. Handles the (currently unused, but not forbidden by the schema) case of
- * an update that moves a redemption to a different coupon by recomputing both sides.
+ * Recomputes from source on every write rather than incrementing/decrementing, so an insert, a
+ * `status` flip, and a delete all converge on the same correct number regardless of what path got
+ * there — the same reasoning migration 040 gives for not incrementing a distinct-visitor count.
+ * Also handles the (currently unused, but schema-legal) case of a redemption moving to a different
+ * coupon, by recomputing both sides.
  */
 CREATE OR REPLACE FUNCTION platform_coupon_redemptions_sync_count()
 RETURNS TRIGGER AS $$

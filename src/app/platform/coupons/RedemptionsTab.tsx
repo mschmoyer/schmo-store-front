@@ -2,14 +2,11 @@
 
 /**
  * The Redemptions tab: every coupon claim across every merchant, newest-attributed first (plan
- * §4C). This is the tab that answers "did my friends actually sign up" — the point of the whole
- * feature — so every row names who claimed the code, which store (if one exists yet), which
- * coupon, where the claim sits in the attributed → redeemed → released lifecycle, and when the
- * discount window closes.
+ * §4C) — who claimed, which store (if any yet), which coupon, its attributed → redeemed →
+ * released status, and when the discount window closes.
  *
- * Demo stores are excluded by default, per `docs/platform-admin.md`, and the scope line always
- * says how many were hidden — even when that number is zero — rather than leaving an operator to
- * infer it from a suspiciously round total.
+ * Demo stores are excluded by default (`docs/platform-admin.md`); the scope line always states
+ * how many were hidden, even when zero, rather than leaving it to be inferred from the total.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -61,8 +58,7 @@ export interface RedemptionsTabProps {
 
 /**
  * One redemption row, with the release action for an `attributed` claim (staff review finding 2:
- * `releaseClaim` existed and was tested but reachable from no route and no UI, so a coupon leaked
- * publicly left an operator with no way to stop pending claims).
+ * `releaseClaim` existed and was tested but unreachable from any route or UI).
  *
  * @param props.redemption - The row.
  * @param props.onReleased - Called after a successful release, so the caller can reload the list.
@@ -143,9 +139,9 @@ function RedemptionRow({
       </td>
       <td>{formatDate(redemption.attributedAt)}</td>
       <td>{formatDate(redemption.redeemedAt)}</td>
-      {/* Only a `redeemed` claim's window has a real "Forever"; `discount_ends_at` is NULL for
-          every `attributed` and `released` row for the unrelated reason that it hasn't been set
-          yet, not because the offer runs forever (staff review finding 6). */}
+      {/* `discount_ends_at` is NULL for `attributed`/`released` rows only because it hasn't been
+          set yet, not because the offer is forever — only `redeemed` can show "Forever" (staff
+          review finding 6). */}
       <td>
         {redemption.status === 'redeemed'
           ? redemption.discountEndsAt
@@ -153,9 +149,8 @@ function RedemptionRow({
             : 'Forever'
           : '—'}
       </td>
-      {/* Phase 6 promised this and it never landed: without it an operator cannot tell a running
-          free year from one that lapsed and was cancelled (staff review finding 13). Only a
-          `redeemed` claim ever has a Stripe subscription to report on. */}
+      {/* Without this an operator can't tell a running free year from a lapsed/cancelled one
+          (staff review finding 13). Only `redeemed` claims have a Stripe subscription to show. */}
       <td>
         {redemption.subscriptionStatus ? (
           <span className={styles.statusTag}>{redemption.subscriptionStatus.replace(/_/g, ' ')}</span>
@@ -214,10 +209,7 @@ export function RedemptionsTab({
   return (
     <div className={styles.tab}>
       <div className={styles.toolbar}>
-        {/* A filter group, not a tab set — it narrows one table's rows rather than switching
-            between separate panels, so it wears `aria-pressed` toggle-button semantics rather than
-            `role="tab"`, which would obligate `aria-controls`, a `tabpanel` and roving-tabindex
-            arrow-key handling this control has no use for (staff review finding 10). */}
+        {/* Filter group, not tabs — same reasoning as `CouponsTab.tsx` (staff review finding 10). */}
         <div className={styles.filterTabs} role="group" aria-label="Filter redemptions by status">
           {REDEMPTION_STATUS_FILTERS.map((option) => (
             <button
@@ -241,8 +233,7 @@ export function RedemptionsTab({
         />
       </div>
 
-      {/* A hidden store is a fact about the reading, per docs/platform-admin.md — said in words
-          whether or not the number is zero, rather than left for an operator to infer. */}
+      {/* Stated whether or not the count is zero — see file header. */}
       {data ? (
         <p className={styles.scopeNote} role="status">
           {data.scope.includeDemo

@@ -1,16 +1,14 @@
 /**
  * `GET /api/platform/coupons` and `POST /api/platform/coupons` — the operator console's coupon
- * list and creator (plan §9, phase 3).
+ * list and creator.
  *
  * Both delegate every query and every state transition to `src/lib/platform/coupons.ts`; this file
- * is what a route is actually for — proving the caller is a platform operator, turning a request
- * into validated input, and recording what happened. See `src/app/api/platform/customers/route.ts`,
- * whose shape this mirrors.
+ * proves the caller is a platform operator, turns a request into validated input, and records what
+ * happened — see `src/app/api/platform/customers/route.ts`, whose shape this mirrors.
  *
- * `POST` is the console's first WRITE surface (plan §4C), which changes the audit contract from the
- * best-effort `recordAdminAction` used for reads: the audit row here is written on the same
- * transaction client as the insert, with no `try/catch` around it, so a failed audit write rolls
- * back the coupon it would have described rather than leaving an unaccountable row behind.
+ * `POST` is a write, unlike the read-only routes on this console: its audit row is written on the
+ * same transaction client as the insert, with no `try/catch`, so a failed audit write rolls back
+ * the coupon it would have described rather than leaving an unaccountable row behind.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -33,9 +31,8 @@ import { parseCouponFilter, validateCreateCouponBody } from './validation';
 /**
  * How many server-generated codes to try before giving up.
  *
- * A generated code colliding with an existing one is astronomically unlikely at ~49.5 bits of
- * entropy (see `coupon-codes.ts`) — this exists only to turn "impossible" into "handled" rather than
- * leaving a single unlucky collision as an unrecoverable 500.
+ * A collision is astronomically unlikely at ~49.5 bits of entropy (`coupon-codes.ts`) — this turns
+ * "impossible" into "handled" rather than an unlucky collision surfacing as a 500.
  */
 const MAX_CODE_GENERATION_ATTEMPTS = 5;
 
@@ -98,10 +95,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { input } = validation;
 
     /**
-     * One attempt: one transaction, one code. Kept to a single insert per transaction because a
-     * unique-violation on the insert leaves the Postgres transaction in its aborted state — fine
-     * here since nothing else runs in that transaction afterward, but a reason not to retry with a
-     * different code *inside* the same `BEGIN`.
+     * One attempt: one transaction, one code. A unique-violation leaves the Postgres transaction
+     * aborted, so a retry with a different code must open a new `BEGIN`, not reuse this one.
      */
     const attempt = (code: string): Promise<CreatePlatformCouponResult> =>
       db.transaction(async (client) => {
@@ -121,9 +116,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
 
         if (result.reason === 'ok') {
-          // In-transaction, fail-hard audit write — see the module note. Not `recordAdminAction`:
-          // that helper swallows its own errors by design for the console's read surfaces, and a
-          // write surface must not inherit that.
+          // In-transaction, fail-hard audit write — see the module note. Not `recordAdminAction`,
+          // which swallows its own errors by design; a write surface must not inherit that.
           await client.query(
             `INSERT INTO platform_admin_audit (admin_user_id, action, target_type, target_id, metadata)
              VALUES ($1, $2, $3, $4, $5)`,

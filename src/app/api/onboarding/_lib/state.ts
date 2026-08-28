@@ -36,8 +36,7 @@ import { PLATFORM_COUPON_COOKIE } from './coupon-cookie';
 /** Cookie the login route already sets. Onboarding reuses it verbatim. */
 export { SESSION_COOKIE };
 
-// Re-exported so existing importers keep working; the constant itself lives in a
-// dependency-free module so `/join` need not import the JWT stack to name a cookie.
+// Re-exported for existing importers; lives in its own module — see coupon-cookie.ts.
 export { PLATFORM_COUPON_COOKIE } from './coupon-cookie';
 
 /** Every {@link OnboardingCouponErrorReason} value, for validating an untrusted query string. */
@@ -50,12 +49,12 @@ const COUPON_ERROR_REASONS: readonly OnboardingCouponErrorReason[] = [
 ];
 
 /**
- * Narrow an arbitrary string (typically `?coupon_error=` on the URL, which `/join` writes but a
- * visitor could also hand-edit) to a known reason.
+ * Narrow an arbitrary string (typically `?coupon_error=`, which a visitor could hand-edit) to a
+ * known reason.
  *
  * @param value - Candidate reason.
- * @returns The reason, or `null` when `value` does not name one — cosmetic input, so an unrecognised
- *   value is simply ignored rather than surfaced as a fifth, made-up state.
+ * @returns The reason, or `null` when `value` names none — ignored rather than surfaced as a
+ *   made-up state.
  */
 function asCouponErrorReason(value: string | null): OnboardingCouponErrorReason | null {
   return value && (COUPON_ERROR_REASONS as readonly string[]).includes(value)
@@ -64,8 +63,8 @@ function asCouponErrorReason(value: string | null): OnboardingCouponErrorReason 
 }
 
 /**
- * Read the `/join` cookie off a request, the same manual header-parse `readSession` uses (no
- * `next/headers` dependency, so this works from a plain `Request` in tests too).
+ * Read the `/join` cookie off a request, manually (no `next/headers`), so this works from a plain
+ * `Request` in tests too.
  *
  * @param request - Incoming request.
  * @returns The cookie's value, or `null` when absent.
@@ -86,8 +85,8 @@ function readPlatformCouponCookie(request: Request): string | null {
  * Describe a coupon for display, from the full database record.
  *
  * @param coupon - The coupon row.
- * @returns The `attributed: false` preview shape {@link previewCouponForVisitor} and
- *   {@link attributeCouponFromCookie} both build on.
+ * @returns The `attributed: false` shape both {@link previewCouponForVisitor} and
+ *   {@link attributeCouponFromCookie} build on.
  */
 function describeCouponOffer(coupon: PlatformCouponRecord): OnboardingCoupon {
   return {
@@ -100,12 +99,8 @@ function describeCouponOffer(coupon: PlatformCouponRecord): OnboardingCoupon {
 }
 
 /**
- * Preview a `/join` link for a visitor who does not have an account yet.
- *
- * Writes nothing — this never reserves a claim, it only describes one, so the wizard can render the
- * offer (or the honest failure) before there is a user row to attribute anything to. See plan §11
- * invariant 4 ("the cookie is a hint") and invariant 7 ("a failed coupon never becomes a silent
- * full-price signup").
+ * Preview a `/join` link for a visitor who does not have an account yet. Writes nothing — only
+ * describes the offer, since there is no user row yet to attribute anything to.
  *
  * @param request - Incoming request: read for the `/join` cookie, and for `?coupon_error=` on the
  *   URL when there is no cookie (the dead-link redirect `/join` produced).
@@ -132,11 +127,7 @@ export async function previewCouponForVisitor(request: Request): Promise<Onboard
   return errorReason ? { ...NO_ONBOARDING_COUPON, errorReason } : NO_ONBOARDING_COUPON;
 }
 
-/**
- * Fields written into `onboarding_sessions.data` to carry a coupon outcome across every later step
- * — see the module note on why this, not the cookie, is what the shell renders from once an account
- * exists.
- */
+/** Fields written into `onboarding_sessions.data` to carry a coupon outcome across every later step. */
 function couponDataPatch(outcome: OnboardingCoupon): Record<string, unknown> {
   return {
     couponCode: outcome.code,
@@ -148,15 +139,13 @@ function couponDataPatch(outcome: OnboardingCoupon): Record<string, unknown> {
 }
 
 /**
- * Attribute the `/join` cookie's code to a freshly created account — the `(none) → attributed`
- * transition in `coupon-claims.ts` — the moment there is a user row to hang it off.
+ * Attribute the `/join` cookie's code to a freshly created account, the moment there is a user row
+ * to hang it off. Called once from `POST /api/onboarding/account`, right after the user and
+ * session exist.
  *
- * **A coupon failure of any kind must never fail account creation.** Every failure this can produce
- * — the code does not exist, it is expired/inactive/exhausted, a race lost the last seat, even an
- * unexpected exception — is caught here and folded into the row's persisted `data.coupon*` fields
- * rather than thrown, so the merchant always gets their account and the wizard always gets an honest
- * answer about the discount (plan invariant 7). Called from `POST /api/onboarding/account`, once,
- * right after the user row and session exist.
+ * A coupon failure of any kind must never fail account creation: every failure this can produce —
+ * unknown code, expired/inactive/exhausted, a lost race, even an unexpected exception — is caught
+ * here and folded into the row's persisted `data.coupon*` fields rather than thrown.
  *
  * @param request - Incoming request, read for the `/join` cookie.
  * @param session - The just-created user.
@@ -194,8 +183,7 @@ export async function attributeCouponFromCookie(
       }
     }
   } catch (error) {
-    // Unrecognised failure — not one of attributeCoupon's typed reasons. Still never fails signup;
-    // 'unknown' is the closest honest thing to say without inventing a sixth reason for the wizard.
+    // Not one of attributeCoupon's typed reasons; 'unknown' avoids inventing a sixth for the wizard.
     console.error('[onboarding/account] coupon attribution failed:', error);
     outcome = { ...NO_ONBOARDING_COUPON, errorReason: 'unknown' };
   }
@@ -465,10 +453,8 @@ export async function buildState(
 
   const data = (row.data ?? {}) as Record<string, unknown>;
 
-  // Read back whatever `attributeCouponFromCookie` persisted at account creation — not the cookie.
-  // The cookie's one job was getting the code into that one request; from here on the row is the
-  // truth, which is what makes this survive every later step (and a closed tab) rather than only
-  // the request that happened to carry the cookie.
+  // Read back what `attributeCouponFromCookie` persisted — not the cookie — so this survives every
+  // later step and a closed tab, not just the one request that happened to carry the cookie.
   const coupon: OnboardingCoupon = {
     code: typeof data.couponCode === 'string' ? data.couponCode : null,
     offer: typeof data.couponOffer === 'string' ? data.couponOffer : null,

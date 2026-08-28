@@ -85,11 +85,8 @@ export interface PlatformRedemptionApiItem {
   releaseReason: string | null;
   discountEndsAt: string | null;
   /**
-   * The live Stripe subscription status (`active`, `past_due`, `canceled`, …) for a `redeemed`
-   * claim, or `null` when there is none yet — an `attributed` or `released` claim never has a
-   * subscription, and neither does a `redeemed` one whose subscription row hasn't synced. Phase 6
-   * promised this on the redemptions tab so an operator can tell a running free year from one that
-   * lapsed and was cancelled (staff review finding 13).
+   * The live Stripe subscription status (`active`, `past_due`, `canceled`, …), or `null` when
+   * there is none yet — only a `redeemed` claim ever has one, and only once it has synced.
    */
   subscriptionStatus: string | null;
   coupon: { id: string; code: string; name: string };

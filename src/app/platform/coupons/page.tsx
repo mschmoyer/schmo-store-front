@@ -3,15 +3,12 @@
 /**
  * `/platform/coupons` — the operator console's signup-coupon screen (plan §4C, phase 3).
  *
- * Two tabs. **Coupons** is where an operator issues and manages the platform-wide signup offers
- * that discount a merchant's RebelShops subscription — never a storefront discount, which is the
- * unrelated `coupons` table and `/admin/coupons`. **Redemptions** is where an operator answers "did
- * my friends actually sign up" by watching claims move through attributed → redeemed → released.
+ * Two tabs: **Coupons** manages platform-wide signup offers that discount a merchant's RebelShops
+ * subscription — never a storefront discount (the unrelated `coupons` table, `/admin/coupons`).
+ * **Redemptions** tracks claims through attributed → redeemed → released.
  *
- * Both tabs, and which one is open, live in the URL — the same reasoning
- * `src/app/platform/customers/page.tsx` gives: an operator's question about a subset of coupons or
- * redemptions should be bookmarkable and pasteable into a ticket, not lost the moment they navigate
- * away and back.
+ * Tab and filter state live in the URL, same reasoning as `src/app/platform/customers/page.tsx`:
+ * bookmarkable and pasteable into a ticket, not lost on navigating away and back.
  */
 
 import React, { Suspense, useCallback, useRef } from 'react';
@@ -51,12 +48,11 @@ function panelId(value: CouponsTabName): string {
 /**
  * The coupons screen, with its tab and filter state read from the URL.
  *
- * This is the one real tab switch on the page — **Coupons** and **Redemptions** are genuinely
- * separate panels, unlike the status filter buttons inside each tab (those are filter groups, not
- * tabs — see `RedemptionsTab.tsx`). So this is where the full WAI-ARIA tabs pattern belongs:
- * `aria-controls` pointing at a real `role="tabpanel"`, roving `tabIndex` (only the active tab is
- * in the page's Tab order), and Left/Right/Home/End moving both selection and focus together
- * (staff review finding 10 — this pattern was new to `/platform` and shipped with none of it).
+ * The one real tab switch on the page — Coupons and Redemptions are genuinely separate panels,
+ * unlike the status filter buttons inside each tab (those are filter groups — see
+ * `RedemptionsTab.tsx`). So this gets the full WAI-ARIA tabs pattern: `aria-controls` to a real
+ * `role="tabpanel"`, roving `tabIndex`, Left/Right/Home/End moving selection and focus together
+ * (staff review finding 10 — none of this existed before).
  *
  * @returns The screen.
  */

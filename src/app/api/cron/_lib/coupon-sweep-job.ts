@@ -1,12 +1,11 @@
 /**
- * Reservation sweep for platform signup coupons (flow A — `docs/plans/platform-coupons.md` §6).
+ * Reservation sweep for platform signup coupons.
  *
  * Releases every `attributed` claim older than the reservation window
  * (`PLATFORM_CLAIM_RESERVATION_DAYS`, 30 days) back to `released`, freeing the seat so someone else
- * — or the same person, re-clicking the same link on day 45 — can claim the code again. Every line
- * of the actual SQL and the state-machine rule ("a `redeemed` claim is never touched") lives in
- * `billing/coupon-claims.ts`'s `releaseExpiredClaims`; this module is only the cron-shaped wrapper
- * around it, the same way `inventory-snapshot-job.ts` wraps `inventorySnapshotService`.
+ * — or the same person, re-clicking the same link later — can claim the code again. The SQL and the
+ * state-machine rule ("a `redeemed` claim is never touched") live in `coupon-claims.ts`'s
+ * `releaseExpiredClaims`; this is only the cron-shaped wrapper around it.
  */
 
 import {
@@ -15,11 +14,8 @@ import {
 } from '@/lib/billing/coupon-claims';
 
 /**
- * Structured outcome of one sweep run.
- *
- * `releasedCount` is reported honestly, including `0` — per `CLAUDE.md`'s "Honest results", a run
- * that released nothing because nothing was due is still a successful run, and this shape makes that
- * distinguishable from a run that never happened rather than collapsing both into a bare `success`.
+ * Structured outcome of one sweep run. `releasedCount` is reported honestly, including `0` — a run
+ * that released nothing because nothing was due is still a successful run.
  */
 export interface CouponSweepResult {
   /** The reservation window, in days, actually used for this run. */
@@ -34,9 +30,8 @@ export interface CouponSweepResult {
 /**
  * Run the reservation sweep once.
  *
- * Safe to run more than once for the same window: a claim already released, redeemed, or not yet due
- * simply does not match `releaseExpiredClaims`'s `WHERE`, so a re-run (a retried cron invocation, an
- * operator triggering it by hand) releases only what is still actually due.
+ * Safe to re-run for the same window: a claim already released, redeemed, or not yet due simply
+ * does not match `releaseExpiredClaims`'s `WHERE`.
  *
  * @param windowDays - Reservation age threshold, in days. Defaults to
  *   {@link PLATFORM_CLAIM_RESERVATION_DAYS}.

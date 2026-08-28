@@ -79,11 +79,10 @@ export interface OnboardingTheme {
 }
 
 /**
- * Why a platform signup coupon (`docs/plans/platform-coupons.md` §4A) could not be honoured.
- * `'already_claimed'` covers the account-creation path only — a brand-new user already holding a
- * live claim — the four others mirror `CouponRedeemability['status']` from
- * `src/lib/billing/platform-coupons.ts`. Whatever the reason, signup itself always succeeds; this
- * only ever describes the discount.
+ * Why a platform signup coupon (docs/plans/platform-coupons.md §4A) could not be honoured.
+ * `'already_claimed'` is account-creation only (a new user already holding a live claim); the
+ * rest mirror `CouponRedeemability['status']` in `src/lib/billing/platform-coupons.ts`. Signup
+ * itself always succeeds regardless — this only ever describes the discount.
  */
 export type OnboardingCouponErrorReason =
   | 'unknown'

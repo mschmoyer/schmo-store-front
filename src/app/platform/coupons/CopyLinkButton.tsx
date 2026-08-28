@@ -3,13 +3,9 @@
 /**
  * The copy-link button.
  *
- * Plan §15 names this the thing that decides whether the whole feature gets used: the deliverable
- * of a signup coupon is a URL an operator pastes into a text message, and making them assemble
- * `https://<host>/join/` + code by hand is a small friction that gets it used less. The link is
- * built from `window.location.origin` at click time — on `rebelshops.com` that is the production
- * domain the operator actually wants to hand out; in local development it is `localhost`, which is
- * the honest link for that environment rather than a hardcoded production URL that would not work
- * from a dev session.
+ * A signup coupon's deliverable is a URL an operator pastes into a text message (plan §15); this
+ * saves them assembling it by hand. Built from `window.location.origin` at click time rather than
+ * a hardcoded domain, so it's still correct in local dev.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -27,9 +23,8 @@ export interface CopyLinkButtonProps {
  * Build the full `/join/<code>` URL for the host currently serving the page.
  *
  * @param code - The coupon's issued code.
- * @returns The absolute URL, or the path alone during server rendering (there is no `window` yet;
- *          the button only ever runs this at click time in the browser, so this branch is dead in
- *          practice and exists only so the function has no unsafe assumption baked in).
+ * @returns The absolute URL, or the path alone if there's no `window` (never happens in practice —
+ *          only called at click time — but keeps the function honest about its assumptions).
  */
 function buildJoinUrl(code: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';

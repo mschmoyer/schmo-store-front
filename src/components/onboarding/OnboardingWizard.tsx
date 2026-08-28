@@ -119,14 +119,12 @@ function describeCouponFailure(reason: OnboardingCouponErrorReason): string {
 }
 
 /**
- * The `/join` link's offer (or its honest failure), rendered once at the wizard shell so it survives
- * every step of the run rather than living inside one — see `docs/plans/platform-coupons.md` §4A and
- * the module note on why the step machine (`lib/steps.ts`) is the wrong place for this. Reads
- * `api.state.coupon`, which the server has already re-validated; this component does no validation
- * of its own.
+ * The `/join` link's offer (or its honest failure), rendered once at the wizard shell so it
+ * survives every step (docs/plans/platform-coupons.md §4A). Reads `api.state.coupon`, already
+ * re-validated server-side; this component does no validation of its own.
  *
- * A card requirement is stated up front on the success side, per plan §14 decision 1: a friend told
- * "no card needed" who is then asked for one at billing is the exact failure this exists to prevent.
+ * States the card requirement up front on the success side (plan §14 decision 1): a friend told
+ * "no card needed" and then asked for one at billing is the exact failure this prevents.
  *
  * @param props.coupon - The coupon info from the current onboarding state.
  * @returns The banner, or `null` when no link is in play.
@@ -142,8 +140,7 @@ function CouponBanner({ coupon }: { coupon: OnboardingCoupon }): React.ReactElem
         tone="success"
         title={coupon.attributed ? 'Your invite is reserved' : 'You have an invite offer'}
       >
-        {/* `describePlatformCoupon` returns a phrase, not a sentence — it has no closing full
-            stop, so running the card note straight onto it reads as one run-on line:
+        {/* `coupon.offer` has no closing full stop, so without one this reads as one run-on line:
             "…then $19.99/month No card needed today." */}
         {coupon.offer}. {cardNote}
       </Banner>

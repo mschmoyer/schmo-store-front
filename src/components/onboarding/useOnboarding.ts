@@ -60,13 +60,10 @@ export function useOnboarding(): OnboardingApi {
       /*
        * Forward `?coupon_error=` from the browser's URL to the state route.
        *
-       * `/join/<code>` redirects a dead link to `/create-store?coupon_error=expired` (or
-       * `exhausted` / `inactive` / `unknown`) and sets no cookie — there is nothing to remember,
-       * only something to say. The state route reads that reason off `request.url`, but its
-       * request is this fetch, not the page navigation, so without forwarding it the reason is
-       * dropped and the wizard renders no banner at all. That is exactly the silent full-price
-       * signup `docs/plans/platform-coupons.md` §11 invariant 7 forbids: a friend clicking a dead
-       * link would be quietly charged standard price with nothing on screen explaining why.
+       * `/join/<code>` redirects a dead link to `?coupon_error=expired` (etc.) and sets no
+       * cookie — the state route reads the reason off `request.url`, but that's this fetch, not
+       * the page navigation, so without forwarding it the wizard renders no banner and a friend
+       * gets silently charged full price (docs/plans/platform-coupons.md §11 invariant 7).
        */
       const couponError =
         typeof window === 'undefined'

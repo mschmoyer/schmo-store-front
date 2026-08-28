@@ -1,9 +1,6 @@
 /**
- * `GET /join/<code>` — the platform signup link (plan `docs/plans/platform-coupons.md` §4A/§9).
- *
- * A Route Handler, not a page: it never renders anything itself. It validates the code, sets a
- * cookie when (and only when) it is currently redeemable, and always redirects into the setup
- * wizard — never a 404, whatever the code turns out to be.
+ * `GET /join/<code>` — the platform signup link. Validates the code, sets a cookie when (and only
+ * when) it is currently redeemable, and always redirects into the setup wizard, never a 404.
  *
  * ```
  * GET /join/FRIENDS12
@@ -12,21 +9,13 @@
  *   └─ invalid → 302 → /create-store?coupon_error=unknown|expired|exhausted|inactive
  * ```
  *
- * Two invariants from plan §11 land here specifically:
+ * The cookie is a hint, not an entitlement: it carries the code only, and gets re-validated
+ * against the database at `POST /api/onboarding/account` before anything is reserved. A failed
+ * code still redirects into signup (with the reason on the query string) rather than erroring, so
+ * a dead or misbehaving link never silently becomes a full-price signup.
  *
- * - **4. The cookie is a hint.** It carries the code, not a claim and not a JWT. Nothing here
- *   reserves anything — that only happens later, server-side, at `POST /api/onboarding/account`
- *   (`attributeCouponFromCookie` in `../../api/onboarding/_lib/state.ts`), which re-validates the
- *   same code against the database rather than trusting this route's earlier verdict.
- * - **7. A failed coupon never becomes a silent full-price signup.** An unknown, expired,
- *   exhausted or deactivated code still redirects into signup, carrying the reason on the query
- *   string, so the wizard can say what happened instead of quietly charging standard price with no
- *   explanation.
- *
- * The decision itself — {@link decideJoin} — takes its coupon lookup as a parameter rather than
- * reaching for the database directly, so the whole valid/unknown/expired/exhausted/inactive table is
- * unit-testable by injecting a fake lookup, per this feature's test plan (§12), without touching
- * Postgres or mocking `getPlatformCouponByCode` itself.
+ * {@link decideJoin} takes its coupon lookup as a parameter so the whole
+ * valid/unknown/expired/exhausted/inactive table is unit-testable without touching Postgres.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -40,17 +29,12 @@ import {
 } from '@/app/api/onboarding/_lib/coupon-cookie';
 
 /**
- * Plan §9: "`/join/[code]` and `/api/billing/coupon/preview` are the two places an attacker can
- * guess codes. Both need rate limiting" — this route shipped with none (staff review finding 4).
- * Unlike the preview endpoint, `/join` is public and unauthenticated, so the key is the caller's IP
- * rather than a merchant id.
+ * `/join` is public and unauthenticated (unlike the coupon preview endpoint), so the rate-limit key
+ * is the caller's IP rather than a merchant id.
  *
- * `rateLimit` (`src/lib/ai/rate-limit.ts`) is an in-process fixed window — its own module says so.
- * On Vercel, where each request can land on a different serverless instance, this is a *soft*
- * limit: an attacker spread across instances sees up to `JOIN_RATE_LIMIT` requests per instance per
- * window, not globally. That is still worth having — it raises the cost of the single-instance case
- * and of any one warm instance being hammered — but it is not a guarantee, and nothing here should
- * be read as one.
+ * `rateLimit` (`src/lib/ai/rate-limit.ts`) is an in-process fixed window, so on Vercel this is a
+ * *soft* limit: an attacker spread across serverless instances sees up to `JOIN_RATE_LIMIT`
+ * requests per instance per window, not globally. Still worth having, but not a guarantee.
  */
 const JOIN_RATE_LIMIT = 20;
 /** Five-minute fixed window for {@link JOIN_RATE_LIMIT}. */
@@ -88,11 +72,8 @@ export function failureRedirect(reason: JoinFailureReason): JoinDecision {
  * redirect. Pure aside from the injected `lookup`, so every row of the decision table —
  * valid, unknown, expired, exhausted, inactive — is testable without a database.
  *
- * Never throws for a bad or missing code, and never for a lookup failure: both degrade to the
- * `unknown` redirect rather than a 500, because a dead or misbehaving link must still land the
- * visitor in signup (plan §11 invariant 7). It resolves the coupon exactly once and reasons from
- * that one snapshot — there is no re-check between the redeemability decision and the redirect, so
- * this function never claims two different things about the same request.
+ * A bad/missing code or a lookup failure both degrade to the `unknown` redirect rather than a
+ * 500 or a thrown error — a dead link must still land the visitor in signup.
  *
  * @param rawCode - The code exactly as it appeared in the URL segment.
  * @param lookup - Resolves a code to a coupon, or `null` when none matches. In production this is
@@ -114,8 +95,6 @@ export async function decideJoin(
   try {
     coupon = await lookup(code);
   } catch (error) {
-    // A code is never logged in full on a public-facing error path (plan §11 invariant 12) — and
-    // neither is a lookup failure here worth surfacing as anything other than "didn't work".
     console.error('[join] coupon lookup failed:', error);
     return failureRedirect('unknown');
   }
@@ -129,8 +108,7 @@ export async function decideJoin(
     return failureRedirect(redeemability.status);
   }
 
-  // The code as issued (case and punctuation as an operator typed it), not the raw URL segment —
-  // so the cookie and the confirmation query param always show what the coupon record itself says.
+  // Use the code as issued, not the raw URL segment, so cookie and query param match the record.
   return {
     cookieCode: coupon.code,
     redirectPath: `/create-store?coupon=${encodeURIComponent(coupon.code)}`,
@@ -150,11 +128,8 @@ export async function GET(
 ): Promise<NextResponse> {
   const { code } = await params;
 
-  // Rate-limited *before* the lookup runs, and on a trip this returns the same ordinary failure
-  // redirect a bad code gets — never a distinct rate-limit response, which would itself tell an
-  // attacker their guessing was noticed (plan §11 invariant 7's "never a silent tell" reasoning,
-  // applied to the oracle itself rather than to the discount). See the module note on why this is a
-  // soft, per-instance limit rather than a guarantee.
+  // On a trip, return the same ordinary failure redirect a bad code gets — never a distinct
+  // rate-limit response, which would itself tell an attacker their guessing was noticed.
   const ip = clientIpFromHeaders(request.headers) ?? 'unknown';
   const withinLimit = rateLimit(`join:${ip}`, JOIN_RATE_LIMIT, JOIN_RATE_WINDOW_MS).ok;
 

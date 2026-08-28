@@ -1,24 +1,16 @@
 /**
  * GET /api/billing/coupon/notice
  *
- * The single read the `/admin` dashboard's platform-coupon banners need — see
- * `docs/plans/platform-coupons.md` §5.1/§5.2 and phase 7 of §10. It reports whichever of the two
- * clocks the merchant's live claim is currently running on:
+ * The single read the `/admin` dashboard's platform-coupon banners need. Reports whichever of two
+ * clocks the merchant's live claim is running on:
  *
- *  - `'reservation'` — the claim is `attributed` but not yet subscribed. The clock is
- *    `attributed_at` plus {@link PLATFORM_CLAIM_RESERVATION_DAYS} (§6), which has nothing to do
- *    with a discount window that does not exist yet.
- *  - `'discount'` — the claim is `redeemed`. The clock is `discount_ends_at`, and the UI additionally
- *    needs to know whether a card is on file, which decides everything in §5.1's ladder.
- *  - `'none'` — no live claim (never had one, or it was released).
+ *  - `'reservation'` — `attributed` but not yet subscribed. Clock is `attributed_at` plus
+ *    {@link PLATFORM_CLAIM_RESERVATION_DAYS}.
+ *  - `'discount'` — `redeemed`. Clock is `discount_ends_at`; the UI also needs whether a card is on file.
+ *  - `'none'` — no live claim.
  *
- * Deliberately does **not** collapse these into one shape: the plan calls this out by name ("Two
- * clocks, not one") specifically to stop a future edit from folding a reservation deadline and a
- * discount deadline into a single "expiresAt" field that means two different things depending on
- * status. `src/lib/billing/discount-notice.ts` already declines to do that for the same reason.
- *
- * This route reads only; it writes nothing to `platform_coupon_redemptions` (that lifecycle is
- * entirely `src/lib/billing/coupon-claims.ts`'s, per that module's own header).
+ * Deliberately not collapsed into one shape — a single "expiresAt" would mean two different things
+ * depending on status. Reads only; the claim lifecycle itself lives in `coupon-claims.ts`.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -62,11 +54,9 @@ export type CouponNoticeData = CouponNoticeNone | CouponNoticeReservation | Coup
 /**
  * Whether the given Stripe customer has at least one card on file.
  *
- * A best-effort read for display purposes only — never the gate on an actual charge. On any Stripe
- * error this degrades to `false` (the more prominent, "please add a card" reading) rather than
- * failing the whole notice: an inflated "you still need to do this" is a false alarm the merchant
- * can dismiss by checking `/admin/billing`, while a missed "you still need to do this" is the
- * un-convertible no-card coupon the plan calls out as the risk phase 7 exists to close.
+ * Best-effort, display only — never the gate on an actual charge. On any Stripe error this
+ * degrades to `false` (the "please add a card" reading) rather than failing the whole notice: a
+ * false-alarm nudge is recoverable, a missed one leaves an un-convertible no-card coupon.
  *
  * @param customerId - The Stripe customer id to check.
  * @returns `true` when at least one card payment method is attached.

@@ -3,23 +3,15 @@
 /**
  * Mounts whichever platform-coupon banner applies to the signed-in merchant, or nothing.
  *
- * `docs/plans/platform-coupons.md` §5.1/§5.2, phase 7 of §10, wired into `/admin` per §4D. This is
- * the only piece of phase 7 that talks to the network: it reads `GET /api/billing/coupon/notice`
- * (added alongside this component) and renders exactly one of
- * {@link CouponReservationBanner} (the reservation clock) or {@link DiscountNoticeAlert} (the
- * free-window ladder) — never both, since a merchant can hold at most one live claim
- * (`idx_pcr_one_live_per_user`) and a claim is either `attributed` or `redeemed`, never both at
- * once.
+ * docs/plans/platform-coupons.md §5.1/§5.2, phase 7 of §10. Renders exactly one of
+ * {@link CouponReservationBanner} or {@link DiscountNoticeAlert} — never both, since a merchant
+ * holds at most one live claim (`idx_pcr_one_live_per_user`), either `attributed` or `redeemed`.
  *
- * A fetch failure is **not** silent (staff review finding 11 — it used to be, and invariant 14 is
- * exactly why that was wrong): "a redemption with a `discount_ends_at` and no stored card must
- * always render the banner" — for a no-card coupon this banner is the merchant's *only* route to a
- * payment method, and a `500` making it vanish with no trace defeats that invariant as completely as
- * never building the banner at all. So a failed fetch renders a small, dismissal-free inline notice
- * with a retry, rather than returning `null` and leaving the merchant with no sign anything was
- * supposed to be here. This is still deliberately quiet next to the dashboard's own error banner
- * (`fetchDashboardData` in `src/app/admin/page.tsx` owns that one) — no full-width alert, no page
- * disruption — but "quiet" and "invisible" are not the same thing.
+ * A fetch failure is deliberately not silent (staff review finding 11, invariant 14): for a
+ * no-card coupon this banner is the merchant's only route to a payment method, so vanishing on a
+ * failed fetch would defeat that invariant as completely as never building the banner. A failed
+ * fetch renders a small, dismissal-free retry notice instead — quieter than the dashboard's own
+ * error banner (`fetchDashboardData` in `src/app/admin/page.tsx`), but never invisible.
  */
 
 import type React from 'react';
@@ -129,9 +121,7 @@ export function CouponNotices(): React.ReactElement | null {
     }
   };
 
-  // Checked before the "nothing to show" case: a merchant who might be sitting on a no-card
-  // redemption with a closing discount window must see *something* here, never a silent gap —
-  // that gap is exactly what finding 11 flagged.
+  // Checked before "nothing to show": a silent gap here is exactly what finding 11 flagged.
   if (fetchFailed && !notice) {
     return (
       <Alert

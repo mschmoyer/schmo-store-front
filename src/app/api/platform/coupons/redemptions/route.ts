@@ -1,14 +1,13 @@
 /**
- * `GET /api/platform/coupons/redemptions` — the operator console's redemptions tab (plan §4C,
- * §9). Every redemption across every coupon, newest-attributed first: who, which store, which
- * coupon, attributed vs redeemed, when the discount ends, and its live subscription status.
+ * `GET /api/platform/coupons/redemptions` — the operator console's redemptions tab. Every
+ * redemption across every coupon, newest-attributed first: who, which store, which coupon,
+ * attributed vs redeemed, when the discount ends, and its live subscription status.
  *
- * A read, so — unlike the two mutating routes beside this one — `recordAdminAction` here is the
+ * A read, so — unlike the mutating routes beside this one — `recordAdminAction` here is the
  * ordinary best-effort call, exactly like `GET /api/platform/customers`.
  *
  * Demo stores are excluded by default and included with `?includeDemo=1`, matching every other
- * list on `/platform` (`docs/platform-admin.md`). `scope.demoStoresHidden` says how many were left
- * out — a hidden store is a fact about the reading, not something this response is allowed to hide.
+ * list on `/platform` (`docs/platform-admin.md`).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
