@@ -95,12 +95,10 @@ await db.transaction(async (client) => {
 });
 ```
 
-If the audit `INSERT` fails, the transaction rolls back and the coupon is never created — a request
-that changes the tenancy and leaves no record of who changed it is treated as not having happened at
-all, rather than as a successful mutation with an accounting gap. This is the direct consequence of
-`CLAUDE.md`'s **Honest results** rule ("never return `success: true` for work that wrote nothing")
-read together with the audit trail's purpose: an unaudited mutation on this console *is* work that
-effectively wrote nothing an operator can be held to, even though a row exists in `platform_coupons`.
+If the audit `INSERT` fails, the transaction rolls back and the coupon is never created: a change
+with no record of who made it is `CLAUDE.md`'s **Honest results** rule ("never return `success: true`
+for work that wrote nothing") applied to a write, not just a response — an unaudited mutation is work
+nobody can be held to, even with a row sitting in `platform_coupons`.
 
 The rule going forward: **any future write added to `/platform` follows this pattern, not
 `recordAdminAction`'s.** `recordAdminAction` stays exactly as it is — best-effort, for reads.

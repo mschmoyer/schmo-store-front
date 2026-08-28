@@ -231,11 +231,8 @@ narrative. This section is the contract: what a change here must not break.
   creates the row in `/platform/coupons`. A deterministic id derived from the row's UUID makes a
   retry idempotent, and a coupon deleted out from under us in the Stripe dashboard is recreated
   rather than wedging the feature.
-* **Immutable the instant it has a `stripe_coupon_id`.** Stripe coupons cannot be edited, so
-  `updatePlatformCoupon()` refuses `percentOff` / `durationMonths` / `collectPaymentMethod` in every
-  patch — this is stricter than `docs/plans/platform-coupons.md`'s original "immutable after the
-  first redemption," corrected once the code shipped this way. A pre-redemption typo is fixed by
-  deactivating the row and creating a new code.
+* **Immutable per rule 12 above** — stricter than `docs/plans/platform-coupons.md`'s original
+  "immutable after the first redemption," corrected once the code shipped this way.
 * **`collect_payment_method: false` becomes `payment_method_collection: 'if_required'`**, and only
   changes anything at `percent_off = 100` — a partial discount still owes something today and Stripe
   collects a card regardless. `requiresPaymentMethod()` (`billing/platform-coupons.ts`) is the one

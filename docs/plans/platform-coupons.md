@@ -1,23 +1,10 @@
 # Plan: platform signup coupons
 
-**Status:** built and reviewed. **Phases 1-8 landed 2026-08-27.** The schema, the Stripe
-resolution, the operator console, the `/join` link, the billing attach, the redemption close-out,
-the merchant's alert ladder, the docs and `/pricing` are all in and green: **1,445 unit tests across
-94 suites**, 21 schema invariants, a keyless production build, and all seven CI checks passing.
+**Status:** built, reviewed, and fixed. **Phases 1-8 landed 2026-08-27.** 1,445 unit tests across 94
+suites, 21 schema invariants, a keyless production build, all seven CI checks passing. The staff
+review found three HIGH money bugs (one root cause) plus several MEDIUMs; a later screenshot pass
+found one more that no test caught. All fixed — full list in §14, "Bugs found in review."
 
-**The staff review is complete.** It found nothing critical and three HIGH money bugs, all of them
-one root cause — a claim row was treated as an entitlement forever, and nothing re-validated the
-coupon behind it at the moment it was spent. A redeemed claim re-applied on every later checkout; a
-deactivated coupon did not stop the claims already attributed to it, and `releaseClaim` had no
-caller; a free-forever coupon quoted $19.99. All three are fixed, along with the MEDIUMs (`/join`
-rate limiting, the `$1.00` literal on the error path, "Forever" on unredeemed rows, and a create
-form that could be driven into a dead end).
-
-A screenshot pass afterwards found one more that no test caught: an expired invite link rendered
-**no banner at all**. `/join` redirected with `?coupon_error=expired` correctly and the wizard
-rendered the banner correctly when handed a reason — but the wizard fetched its state without
-forwarding the parameter, so the reason was dropped in between. Both halves were tested and passing;
-the wire between them was missing, and it took looking at the page to see it.
 **Goal:** hand a friend a link, they sign up, they get a year free, and the operator console can
 show who used what. Friends skip the card entirely; publicly-issued codes still take one.
 
@@ -28,20 +15,20 @@ show who used what. Friends skip the card entirely; publicly-issued codes still 
 RebelShops already has a table called `coupons`. It is not this feature and must not be extended
 into it.
 
-| | `coupons` (exists) | `platform_coupons` (this plan) |
-|---|---|---|
-| Money flow | **B** — storefront checkout | **A** — platform billing |
-| Who is discounted | A shopper buying from a merchant | A **merchant** subscribing to RebelShops |
-| Who loses the money | The merchant | RebelShops |
-| Scoped by | `store_id` | Nothing — it is platform-wide by definition |
-| Stripe shape | One-time coupon, `duration: 'once'`, `max_redemptions: 1`, created per checkout session (`stripe/discounts.ts`) | Long-lived coupon, `duration: 'repeating'` or `'forever'`, created once per code (`stripe/prices.ts` pattern) |
-| Admin surface | `/admin/coupons` — a merchant editing their own discount codes | `/platform/coupons` — the operator issuing signup offers |
+|                     | `coupons` (exists)                                                                                              | `platform_coupons` (this plan)                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Money flow          | **B** — storefront checkout                                                                                     | **A** — platform billing                                                                                      |
+| Who is discounted   | A shopper buying from a merchant                                                                                | A **merchant** subscribing to RebelShops                                                                      |
+| Who loses the money | The merchant                                                                                                    | RebelShops                                                                                                    |
+| Scoped by           | `store_id`                                                                                                      | Nothing — it is platform-wide by definition                                                                   |
+| Stripe shape        | One-time coupon, `duration: 'once'`, `max_redemptions: 1`, created per checkout session (`stripe/discounts.ts`) | Long-lived coupon, `duration: 'repeating'` or `'forever'`, created once per code (`stripe/prices.ts` pattern) |
+| Admin surface       | `/admin/coupons` — a merchant editing their own discount codes                                                  | `/platform/coupons` — the operator issuing signup offers                                                      |
 
 The same word means two unrelated things, so every new identifier in this feature carries the
 `platform` prefix. `/admin/coupons` is not touched. `src/lib/billing/coupons.ts` is not touched.
 
 **The console surface belongs at `/platform`, not `/admin`.** The request said "our admin portal",
-but `/admin` is the *merchant's* portal — one `store_id`, gated by an ordinary session. Issuing a
+but `/admin` is the _merchant's_ portal — one `store_id`, gated by an ordinary session. Issuing a
 coupon that costs RebelShops money is an operator action, and the operator's console is `/platform`,
 gated by `users.is_admin` re-read on every request. See `docs/platform-admin.md`.
 
@@ -52,17 +39,17 @@ gated by `users.is_admin` re-read on every request. See `docs/platform-admin.md`
 One table, two behaviours, no `kind` enum. What the request calls "one-time" and "multi-use" is a
 single nullable integer:
 
-| `max_redemptions` | Behaviour |
-|---|---|
-| `1` | One-time coupon. Burns on first redemption. |
-| `N` | Multi-use, capped at N. |
-| `NULL` | Multi-use, uncapped. |
+| `max_redemptions` | Behaviour                                   |
+| ----------------- | ------------------------------------------- |
+| `1`               | One-time coupon. Burns on first redemption. |
+| `N`               | Multi-use, capped at N.                     |
+| `NULL`            | Multi-use, uncapped.                        |
 
 The benefit is two fields, and they compose into everything asked for:
 
-| Field | Meaning |
-|---|---|
-| `percent_off` | 1–100. `100` is "free". |
+| Field             | Meaning                                                          |
+| ----------------- | ---------------------------------------------------------------- |
+| `percent_off`     | 1–100. `100` is "free".                                          |
 | `duration_months` | How many monthly invoices the discount covers. `NULL` = forever. |
 
 - **"One year free"** → `percent_off = 100`, `duration_months = 12`.
@@ -71,8 +58,8 @@ The benefit is two fields, and they compose into everything asked for:
 
 A third field decides whether signing up costs the merchant a card:
 
-| Field | Meaning |
-|---|---|
+| Field                    | Meaning                                                                                                                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `collect_payment_method` | `TRUE` (default) — Stripe takes a card at signup and charges automatically when the window closes. `FALSE` — no card, no friction, and nothing to charge later. |
 
 This is per coupon, not global: a code handed to a friend can skip the card while a code posted
@@ -80,7 +67,7 @@ publicly still takes one. §3 covers what it does to the Checkout Session, and �
 costs — a `FALSE` coupon **cannot** convert on its own, which is what makes the expiry warning in
 §4D part of the feature rather than a nicety.
 
-This is deliberately *not* two independent knobs ("months free" **and** "percent off"). A coupon
+This is deliberately _not_ two independent knobs ("months free" **and** "percent off"). A coupon
 that is free for 3 months and then 50% off for another 6 is two discounts on one subscription, which
 Stripe does not model as a coupon and which the `subscriptions` mirror has no columns for. If that
 offer is actually wanted, it is a follow-up that introduces Stripe subscription schedules. Confirmed
@@ -115,11 +102,11 @@ Three rules, each of which prevents a specific way this goes wrong:
 1. **No `max_redemptions` on the Stripe coupon.** Setting it would create a second counter that
    drifts from our ledger the first time a checkout session is abandoned after the discount was
    attached. Our redemption ledger gates; Stripe only prices.
-2. **Never delete a Stripe coupon.** Deleting one *ends the discount on every subscription still
-   using it*. Deactivating a code in our table stops new redemptions and touches nobody already on
+2. **Never delete a Stripe coupon.** Deleting one _ends the discount on every subscription still
+   using it_. Deactivating a code in our table stops new redemptions and touches nobody already on
    it. There is no "delete" in the console, only "deactivate".
 3. **Resolve-or-create, keyed on our UUID.** Same pattern as `ensureIntroCoupon`, with one
-   difference: this coupon must never be *reused* if its economics changed, because unlike the
+   difference: this coupon must never be _reused_ if its economics changed, because unlike the
    single platform plan there can be hundreds of these. Store `stripe_coupon_id` on the row once
    created, and make `percent_off` / `duration_months` immutable after the first redemption
    (§11, invariant 5).
@@ -129,13 +116,13 @@ Three rules, each of which prevents a specific way this goes wrong:
 `collect_payment_method` maps onto one Checkout Session parameter, not onto a different billing
 model:
 
-| Flag | Session | At the end of the window |
-|---|---|---|
-| `TRUE` | default collection | Stripe charges the stored card. The merchant does nothing. |
+| Flag    | Session                                    | At the end of the window                                                                                                  |
+| ------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `TRUE`  | default collection                         | Stripe charges the stored card. The merchant does nothing.                                                                |
 | `FALSE` | `payment_method_collection: 'if_required'` | Stripe has nothing to charge. The invoice goes unpaid, the subscription enters dunning, and the merchant must add a card. |
 
 **`FALSE` only does anything at `percent_off = 100`.** `if_required` skips collection when the
-amount due *today* is zero, so a 50%-off coupon still charges $9.99 at signup and Stripe takes a
+amount due _today_ is zero, so a 50%-off coupon still charges $9.99 at signup and Stripe takes a
 card regardless of the flag. A coupon that promised no card and then asked for one would be a lie
 told by a checkbox, so the schema forbids the combination outright
 (`CHECK (collect_payment_method OR percent_off = 100)`).
@@ -154,7 +141,7 @@ coupon ends. That is the right behaviour and it is already built.
 `src/app/api/billing/checkout/route.ts` carries this comment:
 
 > `allow_promotion_codes` is deliberately absent. Stripe rejects a session that carries it alongside
-> `discounts` […] it rejects on the parameter being *present*, so passing `false` fails exactly like
+> `discounts` […] it rejects on the parameter being _present_, so passing `false` fails exactly like
 > passing `true`.
 
 So the "enter a coupon code at billing" box **cannot** be Stripe Checkout's own promotion-code
@@ -187,7 +174,7 @@ const isKnownIntroCoupon = rawCoupon === resolveIntroCouponId();
 return { …, months: isKnownIntroCoupon ? PLATFORM_INTRO_MONTHS : 0, amountOff: … };
 ```
 
-Any coupon that is not *the* intro coupon records `months: 0` and `amountOff: null`. The upsert then
+Any coupon that is not _the_ intro coupon records `months: 0` and `amountOff: null`. The upsert then
 writes `intro_ends_at = NULL`, and `/admin/billing` shows a merchant on a free year no end date and
 a wrong "next charge". The webhook does pass `expand: ['discounts']`, which usually means the coupon
 arrives as an object — but the string branch exists because it happens, and
@@ -220,7 +207,7 @@ so a stray script cannot read which offer someone is on, and it is a **hint, nev
 every attach re-validates the code server-side. It carries the code, not a claim.
 
 Why the failure redirects instead of 404ing: a friend clicking a dead link should still be able to
-sign up, and should be *told* the link is dead rather than quietly charged the normal price. The
+sign up, and should be _told_ the link is dead rather than quietly charged the normal price. The
 wizard renders the reason. Silently dropping the discount is the exact class of bug `CLAUDE.md`
 calls out under **Honest results**.
 
@@ -256,7 +243,7 @@ Both figures exclude `is_demo` stores by default, with `?includeDemo=1`, like ev
 that console.
 
 **This is the first write surface in `/platform`.** The console has been read-only, which is why
-`recordAdminAction` is documented as best-effort — "a lost row loses the record of a *view*, not of
+`recordAdminAction` is documented as best-effort — "a lost row loses the record of a _view_, not of
 a change". That reasoning stops holding the moment an operator can issue a coupon. For mutating
 routes the audit write goes **inside the same transaction** as the change, and a failed audit write
 fails the request.
@@ -289,24 +276,24 @@ A countdown that runs for a year is furniture. People stop seeing it around week
 still there — unread — on the day it matters. So the dashboard says nothing at all while the free
 window is comfortably open, and earns the merchant's attention only when there is something to do.
 
-| Merchant's state | `/admin` dashboard | `/admin/billing` |
-|---|---|---|
-| Coupon attributed, not yet subscribed | Info alert: the offer and when the reservation lapses | Offer card, CTA showing the real first charge |
-| Redeemed, more than 30 days left | **Nothing** | One row: *"Friends & Family — free until 27 Aug 2027"* |
-| 30 days left, card on file | Info alert, dismissible | Row plus what happens on the date |
-| 30 days left, **no card** | Warning alert, **not** dismissible, action *Add a payment method* | Same, given prominence |
-| Window closed, in grace, no card | Escalated alert naming the grace date | Same |
-| Window closed, card on file | Nothing — it simply charged | Ordinary subscription row |
-| Grace exhausted | Honest state, still not a locked door | Same |
+| Merchant's state                      | `/admin` dashboard                                                | `/admin/billing`                                       |
+| ------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
+| Coupon attributed, not yet subscribed | Info alert: the offer and when the reservation lapses             | Offer card, CTA showing the real first charge          |
+| Redeemed, more than 30 days left      | **Nothing**                                                       | One row: _"Friends & Family — free until 27 Aug 2027"_ |
+| 30 days left, card on file            | Info alert, dismissible                                           | Row plus what happens on the date                      |
+| 30 days left, **no card**             | Warning alert, **not** dismissible, action _Add a payment method_ | Same, given prominence                                 |
+| Window closed, in grace, no card      | Escalated alert naming the grace date                             | Same                                                   |
+| Window closed, card on file           | Nothing — it simply charged                                       | Ordinary subscription row                              |
+| Grace exhausted                       | Honest state, still not a locked door                             | Same                                                   |
 
-**Two clocks, not one.** The first row of that table runs on the *reservation* clock (§6, 30 days
-from attribution) and every other row runs on the *discount window* clock (`discount_ends_at`, which
+**Two clocks, not one.** The first row of that table runs on the _reservation_ clock (§6, 30 days
+from attribution) and every other row runs on the _discount window_ clock (`discount_ends_at`, which
 does not exist until the redemption closes). `discount-notice.ts` owns the second only and returns
 "nothing to say" for an unredeemed claim. The reservation banner is a separate, simpler component
 reading `attributed_at` — build it in phase 7 beside the ladder, not inside it.
 
 **The card is what sets the weight.** With a card on file, the end of the free window is
-*information* — Stripe charges and the merchant does nothing. With no card it is a *task*, and the
+_information_ — Stripe charges and the merchant does nothing. With no card it is a _task_, and the
 banner is the only place in the product that will ever ask for one. Same calendar event, two
 different UIs, and conflating them either nags people who owe nothing or under-warns the ones who do.
 
@@ -324,7 +311,7 @@ period becomes a bug.
 **1. The code itself (`redeem_by`) — no grace, honest failure.**
 A hidden fudge factor makes the printed date a lie and leaves nobody able to reason about when a
 code actually dies. If a link should last longer, an operator edits `redeem_by` in the console; that
-is one click and it is *visible*. What the merchant gets instead of secret grace is a dead end with
+is one click and it is _visible_. What the merchant gets instead of secret grace is a dead end with
 a door in it: the wizard says the link has expired and offers signup at standard pricing rather than
 silently charging them full price and hoping they don't notice.
 
@@ -338,12 +325,12 @@ room and has not itself expired. This is worth writing down precisely so nobody 
 
 Start from an uncomfortable fact: **today grace is unlimited, by accident.** `stripe/CLAUDE.md`
 lists "No entitlement enforcement" as a known gap — nothing in this codebase disables a storefront
-whose merchant stopped paying. So the real question is not *should we add grace*, it is *what will
-grace mean when enforcement eventually lands, and what do we tell people before then*.
+whose merchant stopped paying. So the real question is not _should we add grace_, it is _what will
+grace mean when enforcement eventually lands, and what do we tell people before then_.
 
 The answer differs by card, which is why it cannot be left to Stripe:
 
-- **With a card**, Stripe's dunning *is* the grace. Failed payments retry on a configurable schedule
+- **With a card**, Stripe's dunning _is_ the grace. Failed payments retry on a configurable schedule
   that runs for weeks, and `isEntitled()` already counts `past_due` as entitled. Adding a second,
   product-level grace on top would give the merchant two clocks that disagree. Don't.
 - **Without a card**, dunning is theatre. There is no payment method to retry against, so five
@@ -355,43 +342,40 @@ So: define **one** grace window — `PLATFORM_DISCOUNT_GRACE_DAYS`, proposed at 
 For the card case it runs alongside dunning rather than after it.
 
 And then, deliberately: **use it for messaging only, for now.** Build the ladder in §5.1 on real
-dates; do not build enforcement. Enforcement is a platform-wide decision about every unpaid
-merchant, not a coupon feature, and making the coupon path the first thing that can switch a
-storefront off would be a strange place to introduce it. When enforcement does land, the dates
-merchants have been reading are already the right ones.
-
-One rule to carry into that future work: **a friend's storefront never goes dark without a person
-deciding it should.** Whatever enforcement eventually does elsewhere, the coupon path degrades to
-"storefront keeps serving, admin keeps asking".
+dates; do not build enforcement — that is a platform-wide decision about every unpaid merchant, not
+a coupon feature, and this path should not be the first thing that can switch a storefront off. When
+enforcement does land, the dates merchants have been reading are already the right ones. Until then,
+**a friend's storefront never goes dark without a person deciding it should** — the coupon path
+degrades to "storefront keeps serving, admin keeps asking".
 
 ### 5.3 The billing page currently uses the wrong words
 
 This is not cosmetic. `src/app/admin/billing/page.tsx` hardcodes the intro offer's vocabulary, so a
 coupon merchant reads copy written about a different product:
 
-| Line | Renders today | For a free-year merchant |
-|---|---|---|
-| ~516 | `Intro pricing · {introMonths} months` | *"Intro pricing · 12 months"* — it is not intro pricing |
-| ~527 | `After the intro period` | There is no intro period |
-| ~530 | `Intro pricing ends` | Nearly right, wrong noun |
+| Line | Renders today                                   | For a free-year merchant                                                        |
+| ---- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| ~516 | `Intro pricing · {introMonths} months`          | _"Intro pricing · 12 months"_ — it is not intro pricing                         |
+| ~527 | `After the intro period`                        | There is no intro period                                                        |
+| ~530 | `Intro pricing ends`                            | Nearly right, wrong noun                                                        |
 | ~590 | `Subscribe for ${offer?.introPrice ?? '$1.00'}` | A button reading **"Subscribe for $1.00"** on a checkout that charges **$0.00** |
 
 That last row is the **Honest results** rule in `CLAUDE.md` broken in the UI layer, and it ships the
-moment a 100%-off coupon reaches this page. The fix is neutral vocabulary — *"Your offer"*, *"Offer
-ends"*, *"Then"* — driven by the discount actually on the subscription rather than by a constant.
+moment a 100%-off coupon reaches this page. The fix is neutral vocabulary — _"Your offer"_, _"Offer
+ends"_, _"Then"_ — driven by the discount actually on the subscription rather than by a constant.
 Phase 5 owns it, alongside the `/api/billing/status` change already planned there.
 
 The merchant should also be able to **see which coupon they are on, by name**. The plan as written
 records the redemption for the operator and shows the merchant nothing, which means twelve mystery
-$0.00 invoices followed by a surprise charge. One row on the billing page — *"Friends & Family —
-free until 27 Aug 2027"* — closes that.
+$0.00 invoices followed by a surprise charge. One row on the billing page — _"Friends & Family —
+free until 27 Aug 2027"_ — closes that.
 
 ### 5.4 Leaving while free
 
 A friend who decides not to continue must be able to say so without first adding a card. Stripe's
 billing portal already handles cancellation, so nothing new is needed — but the UI must describe it
-correctly. `cancelAtPeriodEnd` on a fully-discounted subscription means *"free until the window
-closes, then gone"*, and the current page would render that as a next charge of nothing, which reads
+correctly. `cancelAtPeriodEnd` on a fully-discounted subscription means _"free until the window
+closes, then gone"_, and the current page would render that as a next charge of nothing, which reads
 like everything is fine.
 
 Two smaller truths worth knowing rather than fixing: the merchant receives a $0.00 Stripe invoice
@@ -420,11 +404,11 @@ So a redemption has three states:
                                    released
 ```
 
-| State | Written when | Counts against `max_redemptions`? |
-|---|---|---|
-| `attributed` | `POST /api/onboarding/account` succeeds with a valid code in the cookie | **Yes** — it is a reservation |
-| `redeemed` | Stripe confirms a subscription carrying that coupon (webhook) | Yes |
-| `released` | Reservation expires, or an operator releases it | No |
+| State        | Written when                                                            | Counts against `max_redemptions`? |
+| ------------ | ----------------------------------------------------------------------- | --------------------------------- |
+| `attributed` | `POST /api/onboarding/account` succeeds with a valid code in the cookie | **Yes** — it is a reservation     |
+| `redeemed`   | Stripe confirms a subscription carrying that coupon (webhook)           | Yes                               |
+| `released`   | Reservation expires, or an operator releases it                         | No                                |
 
 A reservation holds capacity so two people cannot both be told they have the last seat on a
 single-use code. Expiry (default 30 days, a constant, not a literal) is swept by the existing cron
@@ -518,14 +502,14 @@ attempt in the middle of this.
 
 ## 8. Modules to add
 
-| File | Owns |
-|---|---|
-| `src/lib/billing/platform-coupons.ts` | Pure model: normalisation, `describePlatformCoupon()` (the offer sentence), validity predicates. No Stripe, no database — unit-testable like `intro-offer.ts`. |
-| `src/lib/platform/coupons.ts` | Persistence and the operator's reads: create, deactivate, list, redemption list. Owns the vocabulary (`attributed`, `redeemed`, `released`) the way `platform/customers.ts` owns "received". |
-| `src/lib/billing/coupon-claims.ts` | The lifecycle: `attributeCoupon`, `markRedeemed`, `releaseExpired`, `resolveActiveClaim`. Every state transition, one place. |
-| `src/lib/stripe/platform-coupons.ts` | `ensureStripeCouponFor(row)` — resolve-or-create. Mirrors `stripe/prices.ts`; **must not** live in `stripe/discounts.ts`, which is flow B. |
-| `src/lib/billing/coupon-codes.ts` | Code generation: `crypto.randomBytes`, Crockford-ish alphabet with `0/O/1/I/L` removed. |
-| `src/lib/billing/discount-notice.ts` | The §5.1 ladder as one pure function of `(discountEndsAt, hasPaymentMethod, now)` → the state to render. Owns `PLATFORM_DISCOUNT_GRACE_DAYS` and the 30-day threshold, so two screens cannot disagree about what day it is. |
+| File                                  | Owns                                                                                                                                                                                                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/billing/platform-coupons.ts` | Pure model: normalisation, `describePlatformCoupon()` (the offer sentence), validity predicates. No Stripe, no database — unit-testable like `intro-offer.ts`.                                                              |
+| `src/lib/platform/coupons.ts`         | Persistence and the operator's reads: create, deactivate, list, redemption list. Owns the vocabulary (`attributed`, `redeemed`, `released`) the way `platform/customers.ts` owns "received".                                |
+| `src/lib/billing/coupon-claims.ts`    | The lifecycle: `attributeCoupon`, `markRedeemed`, `releaseExpired`, `resolveActiveClaim`. Every state transition, one place.                                                                                                |
+| `src/lib/stripe/platform-coupons.ts`  | `ensureStripeCouponFor(row)` — resolve-or-create. Mirrors `stripe/prices.ts`; **must not** live in `stripe/discounts.ts`, which is flow B.                                                                                  |
+| `src/lib/billing/coupon-codes.ts`     | Code generation: `crypto.randomBytes`, Crockford-ish alphabet with `0/O/1/I/L` removed.                                                                                                                                     |
+| `src/lib/billing/discount-notice.ts`  | The §5.1 ladder as one pure function of `(discountEndsAt, hasPaymentMethod, now)` → the state to render. Owns `PLATFORM_DISCOUNT_GRACE_DAYS` and the 30-day threshold, so two screens cannot disagree about what day it is. |
 
 Update: `stripe/CLAUDE.md` (module map, outbound call table, data model, event matrix),
 `docs/payments.md`, `docs/platform-admin.md`, `docs/decision-log.md`, `.env.example` if a variable
@@ -535,20 +519,20 @@ appears, `README.md`.
 
 ## 9. API surface
 
-| Method | Route | Auth | Purpose |
-|---|---|---|---|
-| GET | `/join/[code]` | public | Validate, set cookie, redirect into the wizard. |
-| POST | `/api/billing/coupon/preview` | `requireMerchant` | Describe a code. Writes nothing. |
-| POST | `/api/billing/checkout` | `requireMerchant` | **Extended** with optional `couponCode`. |
-| GET | `/api/billing/status` | `requireMerchant` | **Extended**: which discount is live, and its end date. |
-| GET | `/api/platform/coupons` | `requirePlatformAdmin` | List, with counts. |
-| POST | `/api/platform/coupons` | `requirePlatformAdmin` | Create. Audited in-transaction. |
-| PATCH | `/api/platform/coupons/[id]` | `requirePlatformAdmin` | Deactivate, rename, edit notes. Never the economics. |
-| GET | `/api/platform/coupons/redemptions` | `requirePlatformAdmin` | The redemptions tab. |
-| POST | `/api/onboarding/account` | public | **Extended**: attribute the cookie's code after the user row is written. |
-| POST | `/api/onboarding/store` | public | **Extended**: backfill `store_id` on the claim. |
-| POST | `/api/webhooks/stripe` | signature | **Extended**: `attributed` → `redeemed`. |
-| GET | `/api/cron/*` | cron secret | **Extended**: release expired reservations. |
+| Method | Route                               | Auth                   | Purpose                                                                  |
+| ------ | ----------------------------------- | ---------------------- | ------------------------------------------------------------------------ |
+| GET    | `/join/[code]`                      | public                 | Validate, set cookie, redirect into the wizard.                          |
+| POST   | `/api/billing/coupon/preview`       | `requireMerchant`      | Describe a code. Writes nothing.                                         |
+| POST   | `/api/billing/checkout`             | `requireMerchant`      | **Extended** with optional `couponCode`.                                 |
+| GET    | `/api/billing/status`               | `requireMerchant`      | **Extended**: which discount is live, and its end date.                  |
+| GET    | `/api/platform/coupons`             | `requirePlatformAdmin` | List, with counts.                                                       |
+| POST   | `/api/platform/coupons`             | `requirePlatformAdmin` | Create. Audited in-transaction.                                          |
+| PATCH  | `/api/platform/coupons/[id]`        | `requirePlatformAdmin` | Deactivate, rename, edit notes. Never the economics.                     |
+| GET    | `/api/platform/coupons/redemptions` | `requirePlatformAdmin` | The redemptions tab.                                                     |
+| POST   | `/api/onboarding/account`           | public                 | **Extended**: attribute the cookie's code after the user row is written. |
+| POST   | `/api/onboarding/store`             | public                 | **Extended**: backfill `store_id` on the claim.                          |
+| POST   | `/api/webhooks/stripe`              | signature              | **Extended**: `attributed` → `redeemed`.                                 |
+| GET    | `/api/cron/*`                       | cron secret            | **Extended**: release expired reservations.                              |
 
 `/join/[code]` and `/api/billing/coupon/preview` are the two places an attacker can guess codes.
 Both need rate limiting by IP, and generated codes need enough entropy that guessing is worse than
@@ -560,16 +544,16 @@ pointless. A code worth twelve months of product is not a public identifier.
 
 Each phase leaves the tree green and shippable.
 
-| # | Phase | Contains |
-|---|---|---|
-| 1 ✅ | **Schema and model** | Migration 042, triggers, `db:verify` invariants, `billing/platform-coupons.ts`, `coupon-codes.ts` + unit tests. No UI, no Stripe. |
-| 2 ✅ | **Stripe resolution** | `stripe/platform-coupons.ts`, resolve-or-create, degrades cleanly with no `STRIPE_SECRET_KEY`. |
-| 3 ✅ | **Operator console** | `/platform/coupons`, both tabs, create + deactivate + copy-link. Coupons exist and are visible before anything can redeem one. |
-| 4 ✅ | **The link** | `/join/[code]`, the cookie, wizard banner (success *and* the honest failure), attribution at account creation, `store_id` backfill. |
-| 5 ✅ | **Billing attach** | Preview endpoint, the code box on `/admin/billing`, `couponCode` on checkout, precedence, `collect_payment_method` → `payment_method_collection`, `billing/status` vocabulary, **the `readIntroDiscount` fix**. |
-| 6 ✅ | **Redemption close-out** | Webhook `attributed` → `redeemed`, `discount_ends_at`, reservation sweep on cron, redemption tab shows live subscription status. |
-| 7 ✅ | **The merchant's experience** | §5 — the alert ladder on `/admin` and `/admin/billing`, `PLATFORM_DISCOUNT_GRACE_DAYS`, the named-offer row, and the vocabulary fix in §5.3. Messaging only; no entitlement enforcement. |
-| 8 ✅ | **Docs and polish** | `docs/payments.md` (new §8), `src/lib/stripe/CLAUDE.md` (module map, outbound/inbound tables, data model, event matrix, a new "Platform signup coupons" section), `docs/platform-admin.md` ("The gate" corrected for the console's first write surface), `README.md`, this plan (§10/§14), `docs/decision-log.md`. `/pricing` reads the `/join` cookie server-side, re-validates it, and quotes the coupon's real offer and card requirement — `src/app/pricing/page.tsx`, `CouponPricingPage.tsx`, `CouponPlanCard.tsx`. No new environment variable — checked, none was added. |
+| #    | Phase                         | Contains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 ✅ | **Schema and model**          | Migration 042, triggers, `db:verify` invariants, `billing/platform-coupons.ts`, `coupon-codes.ts` + unit tests. No UI, no Stripe.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 2 ✅ | **Stripe resolution**         | `stripe/platform-coupons.ts`, resolve-or-create, degrades cleanly with no `STRIPE_SECRET_KEY`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 3 ✅ | **Operator console**          | `/platform/coupons`, both tabs, create + deactivate + copy-link. Coupons exist and are visible before anything can redeem one.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 4 ✅ | **The link**                  | `/join/[code]`, the cookie, wizard banner (success _and_ the honest failure), attribution at account creation, `store_id` backfill.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 5 ✅ | **Billing attach**            | Preview endpoint, the code box on `/admin/billing`, `couponCode` on checkout, precedence, `collect_payment_method` → `payment_method_collection`, `billing/status` vocabulary, **the `readIntroDiscount` fix**.                                                                                                                                                                                                                                                                                                                                                                  |
+| 6 ✅ | **Redemption close-out**      | Webhook `attributed` → `redeemed`, `discount_ends_at`, reservation sweep on cron, redemption tab shows live subscription status.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 7 ✅ | **The merchant's experience** | §5 — the alert ladder on `/admin` and `/admin/billing`, `PLATFORM_DISCOUNT_GRACE_DAYS`, the named-offer row, and the vocabulary fix in §5.3. Messaging only; no entitlement enforcement.                                                                                                                                                                                                                                                                                                                                                                                         |
+| 8 ✅ | **Docs and polish**           | `docs/payments.md` (new §8), `src/lib/stripe/CLAUDE.md` (module map, outbound/inbound tables, data model, event matrix, a new "Platform signup coupons" section), `docs/platform-admin.md` ("The gate" corrected for the console's first write surface), `README.md`, this plan (§10/§14), `docs/decision-log.md`. `/pricing` reads the `/join` cookie server-side, re-validates it, and quotes the coupon's real offer and card requirement — `src/app/pricing/page.tsx`, `CouponPricingPage.tsx`, `CouponPlanCard.tsx`. No new environment variable — checked, none was added. |
 
 Phases 1–3 are shippable on their own and let coupons be issued and tracked by hand before any
 customer-facing path exists.
@@ -597,7 +581,7 @@ Things that must hold, listed so a reviewer has something to check against.
    the moment `stripe_coupon_id` is set the Stripe coupon exists and Stripe coupons cannot be
    edited, so any window in which our row could drift from it is a window that ends in a wrong
    price on a real invoice. A pre-redemption typo is fixed by deactivating and re-creating, which
-   costs one dead row and one new code. The patch type still *accepts* those fields so an attempt
+   costs one dead row and one new code. The patch type still _accepts_ those fields so an attempt
    can be refused by name (`economics_immutable`) rather than silently ignored.
 6. **Deactivation never claws back an active discount.** It stops new redemptions. The Stripe coupon
    is never deleted.
@@ -679,7 +663,6 @@ unit tests and is blank in a browser.
   (`intro_*` describes whatever discount is live, coupon or intro); rename them in the same
   migration when someone does it.
 
-
 Written down rather than discovered later.
 
 - **A coupon cannot be applied to an already-active subscription.** It attaches at subscribe time.
@@ -711,24 +694,38 @@ Written down rather than discovered later.
 
 ## 14. Decisions taken
 
+### Bugs found in review
+
+One root cause produced three HIGH-severity money bugs: a claim row was treated as an entitlement
+forever, and nothing re-validated the coupon behind it at the moment it was spent. A redeemed claim
+re-applied on every later checkout; a deactivated coupon did not stop claims already attributed to
+it, and `releaseClaim` had no caller anywhere, so there was no kill switch for a leaked code; and a
+free-forever coupon quoted $19.99, because `months: 0` meant both "no discount" and "discount
+forever" and every consumer read the first. All are fixed, along with the MEDIUMs (`/join` rate
+limiting, the `$1.00` literal on the error path, "Forever" on unredeemed rows, and a create form
+that could be driven into a dead end).
+
+A screenshot pass afterwards found one more that no test caught: an expired invite link rendered
+**no banner at all**. `/join` redirected with `?coupon_error=expired` correctly and the wizard
+rendered the banner correctly when handed a reason — but the wizard fetched its state without
+forwarding the parameter, so the reason was dropped in between. Both halves were tested and passing;
+the wire between them was missing, and it took looking at the page to see it.
+
+### Decisions
+
 Answered 2026-08-27. Recorded here so the reasoning survives the conversation.
 
 **1. Card at signup is a per-coupon flag, not a global policy.**
-> *"Make this an option on the coupon. For friends I don't want to ask for a card. For everyone else
+
+> _"Make this an option on the coupon. For friends I don't want to ask for a card. For everyone else
 > you're right, need to take the card. We should also add UI to the customers dashboard letting them
-> know the coupon is about to expire."*
+> know the coupon is about to expire."_
 
-`collect_payment_method` (§2, §3), defaulting to `TRUE`. Friends get a link that asks for nothing;
-a code posted anywhere public still takes a card and converts on its own. The mechanic is one
-Checkout Session parameter, so both live on the same coupon shape — and because it only works at
-100% off, the schema refuses the dishonest combination.
-
-The expiry warning became §4D and phase 7. It is worth being blunt about why: for a no-card coupon
-that banner is not a courtesy, it is the entire conversion path. Nothing else in the product will
-ever ask that merchant for a card.
+`collect_payment_method` (§2, §3), defaulting to `TRUE`. The expiry warning this requested became
+§4D and phase 7 — see §13 for why it isn't optional for a no-card coupon.
 
 **2. One discount, two knobs.** `percent_off` + `duration_months`. Offers that change over time
-(free, *then* half price) would need Stripe subscription schedules and are out of scope.
+(free, _then_ half price) would need Stripe subscription schedules and are out of scope.
 
 **3. Reservations release after 30 days.** A clicked-but-abandoned single-use link frees itself, and
 the released row stays in the ledger so "clicked 40 times, redeemed twice" is still answerable.
@@ -748,7 +745,7 @@ the promise made at the link and the promise made at signup cannot disagree.
 ### Still open
 
 **What stops one friend claiming a multi-use code five times under different emails?** The plan
-enforces one live claim per *user*, which a new email address defeats in seconds. Options: leave it
+enforces one live claim per _user_, which a new email address defeats in seconds. Options: leave it
 and watch the redemptions tab; cap by email domain; require an operator to approve a redemption
 before the discount attaches. My recommendation is to leave it — these are going to people you know,
 and the redemptions tab is the control. Worth revisiting only if a code leaks somewhere public.
@@ -782,19 +779,19 @@ Ordered by what I think the value is per hour of work.
 
 Rough, assuming the phases above and no scope added.
 
-| Phase | Size |
-|---|---|
-| 1 Schema and model | Medium — the triggers and their `db:verify` behaviour are most of it |
-| 2 Stripe resolution | Small |
-| 3 Operator console | Medium — two tabs, a create form, first write surface in `/platform` |
-| 4 The link | Small |
-| 5 Billing attach | Medium — precedence, the card flag, the status vocabulary, the `readIntroDiscount` fix |
-| 6 Redemption close-out | Small |
+| Phase                       | Size                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| 1 Schema and model          | Medium — the triggers and their `db:verify` behaviour are most of it                          |
+| 2 Stripe resolution         | Small                                                                                         |
+| 3 Operator console          | Medium — two tabs, a create form, first write surface in `/platform`                          |
+| 4 The link                  | Small                                                                                         |
+| 5 Billing attach            | Medium — precedence, the card flag, the status vocabulary, the `readIntroDiscount` fix        |
+| 6 Redemption close-out      | Small                                                                                         |
 | 7 The merchant's experience | Medium — the ladder is small, but it touches two screens and rewrites the billing page's copy |
-| 8 Docs and polish | Small |
+| 8 Docs and polish           | Small                                                                                         |
 
-Phases 1–4 are the minimum that achieves the stated goal — *hand a friend a link, they sign up with
-a year free, and you can see that they did*. Phase 5 is what makes a code work for someone who is
+Phases 1–4 are the minimum that achieves the stated goal — _hand a friend a link, they sign up with
+a year free, and you can see that they did_. Phase 5 is what makes a code work for someone who is
 already halfway through signing up, and phase 6 is what makes the redemptions tab tell the truth
 rather than showing everyone stuck at `attributed`.
 
