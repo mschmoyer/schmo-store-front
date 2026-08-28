@@ -6,6 +6,8 @@
  * lives in `adminTable.module.css` and the Mantine theme.
  */
 
+/* The order detail view's "unshipped for N days" alert. The list used to carry
+   one too; it now states that on the "Needs shipping" tile instead. */
 .ageingAlert {
   border-radius: var(--radius-lg);
 }

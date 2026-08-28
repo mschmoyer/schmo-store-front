@@ -393,7 +393,9 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
   ledger, `[id]/pdf` renders the order document
 - `/api/admin/analytics` - Store performance data
 - `/api/admin/sync/*` - Operator-triggered ShipStation sync, run synchronously in the request
-  (`all`, `products`, `inventory`, `warehouses`, `inventory-warehouses`, `inventory-locations`)
+  (`all`, `products`, `inventory`, `warehouses`, `inventory-warehouses`, `inventory-locations`,
+  `shipments`). `shipments` is the only one that writes to `orders` — it pulls tracking and
+  shipment status back, and is what the orders list's Refresh button posts.
 - `/api/admin/sync/status` - Sync history and aggregate statistics
 - `/api/admin/integrations/shipstation` - Save, test and disconnect a store's ShipStation key
 - `/api/admin/ai/*` - AI content generation

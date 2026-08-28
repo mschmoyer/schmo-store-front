@@ -41,12 +41,74 @@ adminAuthFixture.describe('Admin orders — the page exists and leads with what 
   });
 
   adminAuthFixture('makes the ageing orders impossible to miss', async ({ adminPage }) => {
-    const banner = adminPage.getByText(/unshipped for more than \d+ days/);
-    await expect(banner).toBeVisible();
+    /*
+     * Read the figures from the API rather than restating them. The demo seed
+     * generates its stranded orders relative to today, so the count, the money
+     * and the age all move; what must hold is that whatever the summary says is
+     * what the merchant is shown.
+     */
+    const [response] = await Promise.all([
+      adminPage.waitForResponse(
+        (res) => res.url().includes('/api/admin/orders?') && res.status() === 200
+      ),
+      adminPage.goto('/admin/orders'),
+    ]);
+    const { summary } = (await response.json()).data;
 
-    // The money at stake and the age of the worst offender, both stated.
-    await expect(adminPage.getByText('$1,946.55').first()).toBeVisible();
-    await expect(adminPage.getByText(/73 days/).first()).toBeVisible();
+    // The seed exists to reproduce the audit's finding; no stranded orders here
+    // would mean the fixture, not the page, had stopped doing its job.
+    expect(summary.ageingCount).toBeGreaterThan(0);
+
+    // The money at stake and the age of the worst offender, both on the tiles.
+    const money = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(summary.unshippedValue);
+    await expect(adminPage.getByText(money).first()).toBeVisible();
+    await expect(
+      adminPage.getByText(new RegExp(`${summary.oldestUnshippedDays} days`)).first()
+    ).toBeVisible();
+
+    /*
+     * The full sentence used to be a full-width banner above the tiles. It is
+     * now the warning mark on the tile it describes — which means it has to be
+     * reachable and carry the same facts, not merely be gone.
+     */
+    const warning = adminPage.getByRole('img', { name: /unshipped for more than \d+ days/ });
+    await expect(warning).toBeVisible();
+    await expect(warning).toHaveAccessibleName(
+      new RegExp(
+        `^${summary.ageingCount} orders? ha[sv]e? been unshipped for more than ` +
+          `${summary.ageingThresholdDays} days`
+      )
+    );
+
+    await warning.hover();
+    await expect(
+      adminPage
+        .getByRole('tooltip')
+        .filter({ hasText: `oldest has been waiting ${summary.oldestUnshippedDays} days` })
+    ).toBeVisible();
+  });
+
+  adminAuthFixture('reloads on demand without leaving the page', async ({ adminPage }) => {
+    /*
+     * Orders are written here at checkout and never imported from ShipStation —
+     * the V2 contract has no order resource — so Refresh pulls shipment status
+     * onto rows the store already holds and reloads the list. What this checks
+     * is that pressing it re-reads the list in place; the ShipStation leg has no
+     * credential in a test environment and reports itself as not connected.
+     */
+    const before = await adminPage.locator('tbody tr').count();
+
+    const reload = adminPage.waitForResponse(
+      (response) => response.url().includes('/api/admin/orders?') && response.status() === 200
+    );
+    await adminPage.getByRole('button', { name: 'Refresh' }).click();
+    await reload;
+
+    await expect(adminPage.getByText('Orders refreshed')).toBeVisible();
+    await expect(adminPage.locator('tbody tr')).toHaveCount(before);
   });
 
   adminAuthFixture('sorts the longest-waiting order to the top', async ({ adminPage }) => {
