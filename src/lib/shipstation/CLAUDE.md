@@ -150,7 +150,7 @@ cannot catch.
 | POST | `/api/admin/integrations/test` | merchant session | Generic tester (`{ integrationType: 'shipstation' \| 'stripe' }`). Also hits `/v2/warehouses`, but with a raw `fetch` — see Known gaps. |
 | POST | `/api/onboarding/shipstation` | onboarding session | `{ apiKey }` validates live then saves; `{ skip: true }` records an honest skip. |
 | POST | `/api/admin/sync/all` | merchant session | All five operations in dependency order, synchronously. |
-| POST | `/api/admin/sync/{products,inventory,warehouses,inventory-warehouses,inventory-locations}` | merchant session | One operation. All five are `createSyncRoute(...)` — a name and an operation, nothing else. |
+| POST | `/api/admin/sync/{products,inventory,warehouses,inventory-warehouses,inventory-locations,shipments}` | merchant session | One operation. All six are `createSyncRoute(...)` — a name and an operation, nothing else. `shipments` is the only one that writes to `orders`; the admin orders list's Refresh button posts it. |
 | GET/POST | `/api/admin/sync/status` | merchant session | `sync_logs` history and aggregate statistics. |
 | GET/POST | `/api/cron/sync` | `Authorization: Bearer $CRON_SECRET` (or `SYNC_AUTH_TOKEN`) | **Schedules**, does not execute. Enqueues one job per store per operation. |
 | POST | `/api/jobs/process` | `Authorization: Bearer $CRON_SECRET` | Drains `job_queue`. 25 jobs/batch, 50 s work budget. |

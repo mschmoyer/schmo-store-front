@@ -35,7 +35,13 @@ export function syncErrorResponse(error: unknown, context: string): NextResponse
   }
 
   if (error instanceof ShipStationNotConnectedError) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    // The `code` is echoed for the same reason the class carries one: a caller that wants to treat
+    // "not connected" differently from "the sync failed" — the orders list reports it as a prompt
+    // to connect, not as an error — should not have to match on message text to tell them apart.
+    return NextResponse.json(
+      { success: false, code: error.code, error: error.message },
+      { status: 400 }
+    );
   }
 
   if (error instanceof ShipStationKeyError) {

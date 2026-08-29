@@ -1,5 +1,53 @@
 # Decision Log
 
+## 2026-08-28
+
+### Orders list: a refresh that says what it refreshes, and the ageing banner as a mark
+
+**User request**: "do these orders match up with the orders from the ShipStation integration? We
+need a refresh button on this page to fetch new orders… the '5 orders unshipped for more than 7
+days' banner at the top takes up way too much valuable screen real-estate. Make that a tooltip on
+'Needs shipping' with an exclamation point style warning icon if it is an issue."
+
+- [x] `/api/admin/sync/shipments` — the sixth single-operation sync route - 2026-08-28
+- [x] `OrdersRefreshButton` — pull fulfilment, then reload - 2026-08-28
+- [x] `StatCard` gains `warning`; the ageing banner becomes a mark on the tile - 2026-08-28
+
+**Orders are not imported from ShipStation, and no button can make them be.** The question behind
+the request has a factual answer worth recording: `/admin/orders` reads the local `orders` table,
+which is written at checkout. The V2 contract has no order resource — orders reach ShipStation only
+as a pushed shipment (`create_sales_order: true`), and what comes back is fulfilment, matched to an
+order on `external_shipment_id`. So the two lists do not "match up" by construction: ShipStation
+holds a subset (the orders we pushed) and never the source. Refresh therefore pulls **shipment
+status and tracking** onto orders the store already holds, and the button's tooltip says exactly
+that rather than implying an import that cannot happen.
+
+**The `shipments` operation had no manual route.** Five of the six `SYNC_OPERATIONS` had an
+`/api/admin/sync/*` route; `shipments` — the only one that writes to `orders` — had none, so a
+merchant whose webhook had never fired had no way to ask for tracking. `createSyncRoute(['shipments'],
+'Shipments')` closes that with no new writer.
+
+**No pre-flight connection probe.** The first cut copied `ShipStationSyncButton` and read
+`/api/admin/integrations` on mount to decide whether to disable itself. Dropped: reloading the list
+is worth doing with or without ShipStation, a state read at mount is stale by the time the button is
+pressed, and the sync route already distinguishes the cases. `syncErrorResponse` now echoes
+`ShipStationNotConnectedError.code` in the body so the client can tell "not connected" from "the
+sync failed" without matching on message text — which is what the class comment says the
+discriminator is for.
+
+**Reports orders updated, not shipments read.** "12 shipments seen, 0 orders changed" answers a
+question nobody asked and overstates the work. The list reloads whatever the ShipStation leg did: a
+failed sync is a reason to show an error, not to leave the merchant on stale rows.
+
+**The ageing banner was the fourth statement of the same fact.** A full-width red alert sat above
+the tiles saying "5 orders unshipped for more than 7 days" while the "Needs shipping" tile, the
+"Late (over 7 days)" tile and a rose rule on every late row all said it too — permanently, in the
+space the four figures belong in, to a merchant who had already read it. It is now `StatCard`'s
+`warning` prop: an `IconAlertTriangle` in the label's text flow, tooltip and accessible name
+carrying the full sentence, rendered only when `ageingCount > 0`. Focusable with `tabIndex`, because
+a hover-only warning is a warning only for people using a mouse — the same reasoning as
+`ShipStationSyncButton`'s `aria-disabled`.
+
 ## 2026-08-27
 
 ### Plan: platform signup coupons

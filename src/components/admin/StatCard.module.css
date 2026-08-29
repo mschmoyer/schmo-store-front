@@ -128,3 +128,21 @@
      card already states, and a full-width ink bar reads as an underline. */
   background: var(--text-muted);
 }
+
+/*
+ * The warning mark sits in the label's text flow rather than in the head's
+ * right-hand slot, so it reads as "this label has a problem" and cannot be
+ * mistaken for the decorative icon it would otherwise sit next to.
+ */
+.warning {
+  display: inline-flex;
+  vertical-align: -3px;
+  margin-left: 4px;
+  color: var(--danger-text);
+  border-radius: var(--radius-sm);
+}
+
+.warning:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

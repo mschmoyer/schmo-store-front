@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   ActionIcon,
@@ -27,6 +27,7 @@ import {
 import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { OrdersRefreshButton } from '@/components/admin/OrdersRefreshButton';
 import { StatCard, StatGrid } from '@/components/admin/StatCard';
 import { StatGridSkeleton, TableSkeleton } from '@/components/admin/AdminSkeletons';
 import { Badge, EmptyState, Price } from '@/components/ui';
@@ -76,6 +77,17 @@ const STATUS_TONE: Record<string, 'neutral' | 'mint' | 'amber' | 'rose'> = {
 };
 
 /**
+ * Formats a dollar amount for prose — tooltip text and the refunded line, where
+ * `Price` would put a block-level display figure into the middle of a sentence.
+ *
+ * @param amount - Amount in major units, as the orders API returns it.
+ * @returns e.g. `$1,946.55`.
+ */
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+}
+
+/**
  * Formats an order date as the merchant reads it: the date, plus how long ago.
  *
  * @param iso - ISO timestamp from the API.
@@ -98,11 +110,11 @@ function formatDate(iso: string): string {
  * were invisible to the person responsible for them.
  *
  * The whole design follows from that: the default filter is **Needs shipping**
- * rather than All, ageing orders sort to the top regardless of filter, an
- * unmissable banner states the count and the money at stake, and every ageing
- * row carries its age in days next to the order number. A merchant who opens
- * this page and reads nothing but the first two inches of it still learns the
- * one thing they needed to know.
+ * rather than All, ageing orders sort to the top regardless of filter, the
+ * "Needs shipping" tile carries a warning mark stating the count and the money
+ * at stake, and every ageing row carries its age in days next to the order
+ * number. A merchant who opens this page and reads nothing but the first two
+ * inches of it still learns the one thing they needed to know.
  *
  * @returns The orders route.
  */
@@ -185,37 +197,32 @@ export default function OrdersPage(): React.ReactElement {
     void fetchOrders();
   }, [fetchOrders]);
 
-  const ageingBanner = useMemo(() => {
-    if (summary.ageingCount === 0) return null;
-
-    return (
-      <Alert
-        icon={<IconAlertTriangle size={18} />}
-        color="red"
-        variant="light"
-        title={`${summary.ageingCount} order${summary.ageingCount === 1 ? '' : 's'} unshipped for more than ${summary.ageingThresholdDays} days`}
-        className={styles.ageingAlert}
-      >
-        <Text size="sm">
-          {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-            summary.ageingValue
-          )}{' '}
-          of paid orders is waiting to go out, and the oldest has been waiting{' '}
-          <strong>{summary.oldestUnshippedDays} days</strong>. These are at the top of the list
-          below.
-        </Text>
-      </Alert>
-    );
-  }, [summary]);
+  /*
+   * The same sentence that used to be a full-width red banner above the tiles.
+   * It said one thing, permanently, in the space where the four figures belong,
+   * and it said it to a merchant who had already seen it — while the tile it
+   * was about, the row rule on every late order, and the "Late" tile were all
+   * still there saying it again. It is now a mark on the tile it describes, so
+   * the detail is one hover or one tab-stop away and the screen leads with the
+   * numbers.
+   */
+  const ageingWarning =
+    summary.ageingCount > 0
+      ? `${summary.ageingCount} order${summary.ageingCount === 1 ? ' has' : 's have'} been unshipped ` +
+        `for more than ${summary.ageingThresholdDays} days — ` +
+        `${formatCurrency(summary.ageingValue)} waiting to go out, and the oldest has been ` +
+        `waiting ${summary.oldestUnshippedDays} days. They are at the top of the list below.`
+      : undefined;
 
   return (
     <Stack gap="lg">
       <AdminPageHeader
         title="Orders"
         description="Everything customers have bought, oldest unshipped first."
+        actions={
+          <OrdersRefreshButton sessionToken={session?.sessionToken ?? null} onRefresh={fetchOrders} />
+        }
       />
-
-      {ageingBanner}
 
       {loading && orders.length === 0 ? (
         <StatGridSkeleton count={4} />
@@ -243,6 +250,7 @@ export default function OrdersPage(): React.ReactElement {
             }
             tone={summary.unshippedCount > 0 ? 'warning' : 'neutral'}
             icon={<IconTruckDelivery size={16} />}
+            warning={ageingWarning}
           />
           <StatCard
             label={`Late (over ${summary.ageingThresholdDays} days)`}
@@ -384,11 +392,7 @@ export default function OrdersPage(): React.ReactElement {
                       <Price value={order.totalAmount} size="sm" />
                       {order.refundedAmount > 0 ? (
                         <Text size="xs" c="dimmed">
-                          refunded{' '}
-                          {new Intl.NumberFormat('en-US', {
-                            style: 'currency',
-                            currency: 'USD',
-                          }).format(order.refundedAmount)}
+                          refunded {formatCurrency(order.refundedAmount)}
                         </Text>
                       ) : null}
                     </Table.Td>

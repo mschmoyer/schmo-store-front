@@ -2,6 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { Tooltip } from '@mantine/core';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { Price } from '@/components/ui';
 import styles from './StatCard.module.css';
 
@@ -22,6 +24,14 @@ export interface StatCardProps {
   meta?: React.ReactNode;
   /** A small line-art mark. Rendered in `--text-subtle`, never tinted. */
   icon?: React.ReactNode;
+  /**
+   * Something wrong with this number, stated in full and in plain sentences.
+   *
+   * Draws a warning mark beside the label carrying this text as its tooltip and
+   * as its accessible name. Pass it only when the condition holds — an always-on
+   * mark is furniture, and the reader stops seeing it.
+   */
+  warning?: string;
   /**
    * Colours the figure. `neutral` is the default and the right answer almost
    * always — §2 reserves the signal for money, stock and success, and a card
@@ -57,6 +67,7 @@ export function StatCard({
   format = 'number',
   meta,
   icon,
+  warning,
   tone = 'neutral',
   progress,
   href,
@@ -64,7 +75,21 @@ export function StatCard({
   const body = (
     <>
       <div className={styles.head}>
-        <span className={styles.label}>{label}</span>
+        <span className={styles.label}>
+          {label}
+          {warning ? (
+            <Tooltip label={warning} withArrow multiline w={280} position="bottom-start">
+              {/*
+               * Focusable, and the tooltip text is repeated as the accessible
+               * name. A hover-only warning is a warning only for people using a
+               * mouse, and this one replaced a banner that everybody could read.
+               */}
+              <span className={styles.warning} tabIndex={0} role="img" aria-label={warning}>
+                <IconAlertTriangle size={15} />
+              </span>
+            </Tooltip>
+          ) : null}
+        </span>
         {icon ? (
           <span className={styles.icon} aria-hidden="true">
             {icon}
