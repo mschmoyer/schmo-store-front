@@ -48,6 +48,7 @@ above it should notice the change. The whole migration hinges on reimplementing 
 requireAuth(request)
   → Clerk auth() resolves clerk_user_id
   → SELECT id, email, …, store_id FROM users JOIN stores … WHERE clerk_user_id = $1
+    (no row yet → just-in-time creation, §3)
   → same UserSession shape as today
 ```
 
@@ -66,7 +67,9 @@ middleware file today, and **this Next.js 16 has breaking conventions** — conf
 matcher syntax against `node_modules/next/dist/docs/` before writing it, per the repo rule. Matcher
 covers `/admin`, `/platform`, `/onboarding`, `/api/**` except public storefront and webhook routes;
 `/store/**` and marketing pages stay outside it entirely so an unconfigured Clerk cannot take a
-storefront down.
+storefront down. The middleware is convenience (redirects, session refresh), **not the security
+boundary**: every protected route keeps its own `requireAuth`/`requirePlatformAdmin` call, so a
+matcher mistake fails to a 401, never to an open route.
 
 **Sign-in/up UI.** Replace the form logic in `/login` and the account step of onboarding with
 Clerk's components (or `useSignIn` for a custom look — the design system will fight `<SignIn/>`
@@ -74,12 +77,25 @@ theming; budget for the hook-based route). Google OAuth is a dashboard toggle pl
 The `/login/page.tsx` comment about the missing "Forgot password?" link finally gets deleted for
 the right reason.
 
-**Signup → provisioning.** Today `/api/onboarding/account` creates the `users` row and the session
-in one transaction. After: Clerk creates the credential, then our `user.created` webhook (Svix
-signature verified — treat like the Stripe webhook, idempotent on event id) upserts the `users` row.
-The onboarding route keeps doing store provisioning, keyed by the authenticated Clerk user. Webhook
-also handles `user.updated` (email change) and `user.deleted` (set `is_active = false`, never
-delete — FKs and audit history point here).
+**Signup → provisioning: just-in-time, webhook as reconciliation.** Today `/api/onboarding/account`
+creates the `users` row and the session in one transaction. A webhook-only replacement has a race
+baked in: Clerk delivers `user.created` asynchronously, and the freshly signed-up merchant hits
+onboarding before it lands — a 401 on their first authenticated request. So the authoritative
+creation path is **just-in-time in `requireAuth`**: a valid Clerk session whose `clerk_user_id` has
+no `users` row upserts one right there, from the verified session claims. The `user.created` /
+`user.updated` / `user.deleted` webhook (Svix signature verified — treat like the Stripe webhook,
+idempotent on event id) then only reconciles: email changes, and `user.deleted` → `is_active =
+false`, never a row delete — FKs and audit history point here. The onboarding route keeps doing
+store provisioning, keyed by the authenticated Clerk user.
+
+**Linking rule (the account-takeover guard).** The *only* join key between Clerk and `users` is
+`clerk_user_id`. Email is never a lookup key on an authenticated path: an attacker who registers a
+Clerk account claiming a merchant's address must never bind to that merchant's row. The single
+exception is the one-shot import script (§ below), which runs offline against users we created, and
+even there the write is refused if the target row already carries a different `clerk_user_id`. JIT
+creation of a *new* row on an email that already exists un-linked is a hard error surfaced to
+support, not an auto-link — and Clerk is configured to require verified email before a session
+exists at all.
 
 **Kill the Bearer/localStorage transport.** `AdminContext` and the fetch hooks stop storing any
 token; Clerk's cookie rides along automatically, same-origin. This deletes the standing XSS-steals-
@@ -103,15 +119,28 @@ protected APIs — it must not throw at import time. That is the exact regressio
 adjacent, so this needs the same treatment and an e2e test proving the customizer still renders
 keyless. Auth itself still fails closed: no keys means nobody signs in, never "everybody does".
 
-**Local dev and seeds.** A Clerk dev instance (test keys, fake SMS/email) goes into `dev-local`'s
-generated `.env.local` via a documented manual step — the keys are per-developer and cannot be
-committed. `seed-demo.js` keeps writing `users` rows; demo sign-in works once the seeded emails are
-imported to the dev instance (extend the import script to cover seeds). `rebeldev` as the shared
-password will fail Clerk's breached-password check — expect to pick a new demo password.
+**Local dev and seeds: the seeded demo account dies.** Today every seeded user shares the
+published password `rebeldev` — a credential that lives in this repository and in every setup
+banner. That was already only tolerable because nothing real sat behind it, and Clerk's
+breached-password check would reject it anyway. So this plan removes it rather than porting it:
 
-**E2e.** Playwright signs in through the real form today. Clerk's bot detection will block that;
-`@clerk/testing` issues testing tokens for exactly this. The e2e job gains dev-instance keys as CI
-secrets — the one exception to the keyless build job, which stays keyless.
+- `seed-demo.js` keeps creating the demo *stores* and their `users` rows (they are FK targets for
+  `stores.owner_id` and the order history), but writes no usable credential. `password_hash` is
+  `NOT NULL` until phase 5 drops it, so the seed writes a literal `'!'` sentinel — not a valid
+  bcrypt hash, so `bcrypt.compare` can never return true against it. Seeded data stops being
+  signable-in by construction, and no Clerk import touches it.
+- The demo account becomes a **real Clerk account**: created once through the actual signup flow
+  in each environment's Clerk instance (its owner holds the credential; nothing is committed), then
+  linked to the seeded demo store by backfilling `clerk_user_id` on the seeded owner row —
+  `seed-demo.js` grows a `--link-owner <email>` step for exactly this, idempotent like the rest.
+- `setup:local` and the README stop printing `demo@schmostore.com / rebeldev`; they print the
+  link-owner instruction instead. `docs/demo-data.md` is updated to match.
+
+**E2e.** Playwright signs in through the real form with the seeded credential today; both halves
+of that go away (Clerk's bot detection blocks scripted form login, and the seeded credential no
+longer exists). `@clerk/testing` issues testing tokens for exactly this, against a dedicated test
+user in the dev instance, linked to a seeded store the same `--link-owner` way. The e2e job gains
+dev-instance keys as CI secrets — the one exception to the keyless build job, which stays keyless.
 
 ## 5. Phases
 
@@ -123,9 +152,14 @@ Each lands green on its own; the dual-read window is deliberate so a bad step ro
    Old login untouched; Clerk sessions recognised by a new `resolveUser` helper that falls back to
    the legacy JWT. Both worlds valid.
 3. **Front door.** `/login` and onboarding account step on Clerk; Google enabled; new signups are
-   Clerk-native. Import script run for existing + seeded users. Old `/api/auth/login` returns 410.
+   Clerk-native. Import script run for existing real users; seeded users are deliberately not
+   imported (§4). Only after the import is verified complete — every active real user carries a
+   `clerk_user_id` — does `/api/auth/login` flip to 410; the other order locks merchants out.
 4. **The 80 routes.** `requireAuth` internals swapped to Clerk-only; Bearer/localStorage transport
    deleted; `AdminContext` simplified. This is one focused PR — the call sites do not change.
+   Removing the legacy fallback does not expire legacy JWTs already in the wild (they live 7 days
+   and cannot be revoked — the defect this plan exists to fix), so **rotate `JWT_SECRET` in the
+   same deploy**: every outstanding legacy token dies at once instead of trickling out.
 5. **Demolition.** `session.ts` signing, `password.ts`, `admin/auth/login`, legacy fallback,
    `JWT_SECRET` and its lazy-check machinery, dead columns (`password_hash` →
    `email_verification_token` → `password_reset_*`, which were never wired to anything). Update
