@@ -6,8 +6,8 @@ import NativeLoginForm from '@/components/auth/NativeLoginForm';
 import styles from '@/components/auth/AuthScreen.module.css';
 
 export const metadata: Metadata = {
-  title: 'Legacy sign-in · RebelShops',
-  description: 'Email and password sign-in for RebelShops stores that predate Clerk.',
+  title: 'Sign in · RebelShops',
+  description: 'Sign in to your RebelShops store.',
 };
 
 /**
@@ -28,26 +28,21 @@ export default function NativeLoginPage() {
     notFound();
   }
 
-  return (
-    <NativeLoginForm
-      banner={
-        <div className={styles.legacyBanner} role="note">
-          <div>
-            <p className={styles.legacyBannerTitle}>Legacy sign-in</p>
-            <p className={styles.legacyBannerText}>
-              Email and password only, with no password reset.{' '}
-              {isClerkConfigured() ? (
-                <>
-                  Reset, Google and two-factor are on the{' '}
-                  <Link href="/login">main sign-in page</Link>.
-                </>
-              ) : (
-                'It is the fallback door, kept open while sign-in moves to an identity provider.'
-              )}
-            </p>
-          </div>
-        </div>
-      }
-    />
-  );
+  // The "legacy / fallback" framing only makes sense when Clerk is the primary door and this is the
+  // secondary one — then the banner earns its place by pointing at reset/Google/2FA on `/login`.
+  // When Clerk is off, this page *is* the sign-in page (every deployment without Clerk keys, and
+  // every rollback), so it must not disown itself as deprecated and half-broken. No banner then.
+  const banner = isClerkConfigured() ? (
+    <div className={styles.legacyBanner} role="note">
+      <div>
+        <p className={styles.legacyBannerTitle}>Legacy sign-in</p>
+        <p className={styles.legacyBannerText}>
+          Email and password only, with no password reset. Reset, Google and two-factor are on the{' '}
+          <Link href="/login">main sign-in page</Link>.
+        </p>
+      </div>
+    </div>
+  ) : undefined;
+
+  return <NativeLoginForm banner={banner} />;
 }

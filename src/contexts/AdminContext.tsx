@@ -172,19 +172,20 @@ function AdminProviderInner({ children, clerkSignOut }: AdminProviderInnerProps)
   };
 
   const logout = async () => {
-    try {
-      // Both sessions have to end, and either may be the live one during the migration window:
-      // ours is the httpOnly cookie this route clears, Clerk's is Clerk's own. Signing out of one
-      // and leaving the other is how a "logged out" merchant walks straight back into /admin.
-      await fetch('/api/admin/auth/logout', { method: 'POST', credentials: 'include' });
-      await clerkSignOut?.();
-    } catch (error) {
-      console.error('Logout failed:', error);
-    } finally {
-      setUser(null);
-      setSession(null);
-      router.push('/login');
+    // Both sessions have to end, and either may be the live one during the migration window: ours is
+    // the httpOnly cookie this route clears, Clerk's is Clerk's own. Signing out of one and leaving
+    // the other is how a "logged out" merchant walks straight back into /admin — so both are always
+    // attempted even if the first fails (a chained `await` would skip the second on a throw).
+    const results = await Promise.allSettled([
+      fetch('/api/admin/auth/logout', { method: 'POST', credentials: 'include' }),
+      clerkSignOut?.() ?? Promise.resolve(),
+    ]);
+    for (const result of results) {
+      if (result.status === 'rejected') console.error('Logout: a sign-out step failed:', result.reason);
     }
+    setUser(null);
+    setSession(null);
+    router.push('/login');
   };
 
   const forceLogout = () => {

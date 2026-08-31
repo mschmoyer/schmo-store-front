@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { SignUp, useUser } from '@clerk/nextjs';
-import { Spinner } from '@/components/ui';
+import { Button, Spinner } from '@/components/ui';
 import { Banner, StepPanel } from '@/components/wizard';
 import { clerkAppearance } from '@/components/auth/clerkAppearance';
 import { STEPS } from '../lib/steps';
@@ -36,12 +36,16 @@ export default function ClerkAccountStep({ api }: { api: OnboardingApi }): React
   const { submit } = api;
   const claimed = React.useRef(false);
   const [failure, setFailure] = React.useState<string | null>(null);
+  const [retrying, setRetrying] = React.useState(false);
+  const retryRef = React.useRef<HTMLButtonElement>(null);
 
   const provision = React.useCallback(async () => {
     if (claimed.current) return;
     claimed.current = true;
     setFailure(null);
+    setRetrying(true);
     const error = await submit('/api/onboarding/account', {});
+    setRetrying(false);
     if (error) {
       claimed.current = false;
       setFailure(error.message);
@@ -53,6 +57,12 @@ export default function ClerkAccountStep({ api }: { api: OnboardingApi }): React
     void provision();
   }, [isLoaded, isSignedIn, provision]);
 
+  // Move focus to the retry button when a failure appears, so a keyboard or screen-reader user is
+  // taken straight to the only action — the failure panel has no other focusable control.
+  React.useEffect(() => {
+    if (failure) retryRef.current?.focus();
+  }, [failure]);
+
   if (isLoaded && isSignedIn) {
     return (
       <StepPanel
@@ -61,13 +71,25 @@ export default function ClerkAccountStep({ api }: { api: OnboardingApi }): React
         banner={
           failure ? (
             <Banner tone="danger" title="We couldn’t finish setting up your account">
-              {failure} Press Enter to try again.
+              {failure}
             </Banner>
           ) : null
         }
       >
-        <div className={styles.fields} aria-busy={!failure} aria-live="polite">
-          {failure ? null : (
+        <div className={styles.fields} aria-busy={retrying} aria-live="polite">
+          {failure ? (
+            // A real, focusable control — "Press Enter" was inoperable here: the failure panel had
+            // no focusable element for an implicit submit to fire from, and meant nothing on touch.
+            <Button
+              ref={retryRef}
+              variant="primary"
+              type="button"
+              onClick={() => void provision()}
+              loading={retrying}
+            >
+              Try again
+            </Button>
+          ) : (
             <p>
               <Spinner size="sm" /> Setting up your account…
             </p>
