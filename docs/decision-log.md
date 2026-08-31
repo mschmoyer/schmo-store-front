@@ -4200,6 +4200,9 @@ headline "82% click-to-order", which is arithmetically correct and reads as a li
       `orders.application_fee_amount` (decimal dollars — do not mix the units).
 - [ ] Alerts view over `integration_alerts`, which already models an inbox.
 - [ ] Monthly merchant cohort retention — write the query now, render it at three cohorts.
+- [ ] Clerk auth migration — plan written (`docs/plans/clerk-integration.md`, 2026-08-31), replaces
+      homegrown JWT/bcrypt auth: adds reset, Google, MFA, rate limiting, revocation; keeps `users`
+      as the identity spine and the DB as the authorization truth. Awaiting go/no-go spike.
 
 ---
 
