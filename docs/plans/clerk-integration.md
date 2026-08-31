@@ -1,6 +1,7 @@
 # Plan: replace homegrown auth with Clerk
 
-**Status:** proposed. Nothing here is built.
+**Status:** in progress — being implemented in one pass on `claude/auth-system-review-nbf4mz`
+(Clerk keys exist in Vercel for preview and production; this session builds keyless).
 
 **Goal:** merchants sign in through Clerk — email/password, Google, password reset, MFA, bot and
 brute-force protection all handled by the vendor — while everything Clerk must never know about
@@ -97,6 +98,14 @@ creation of a *new* row on an email that already exists un-linked is a hard erro
 support, not an auto-link — and Clerk is configured to require verified email before a session
 exists at all.
 
+**The native-login escape hatch.** The legacy email/password system does not die at cutover; it
+moves to `/native-login` behind `ENABLE_NATIVE_LOGIN` (`true`/`false`; unset defaults to enabled
+outside production, disabled in production). The flag gates the page, `/api/auth/login`,
+`/api/admin/auth/login` (404 when off) *and* legacy-JWT acceptance in `requireAuth` — off means
+legacy sessions stop authenticating, not just that the form hides. This supersedes the phased
+410/secret-rotation choreography below: the kill switch is an env var flip, and local dev and e2e
+run keyless on the native path.
+
 **Kill the Bearer/localStorage transport.** `AdminContext` and the fetch hooks stop storing any
 token; Clerk's cookie rides along automatically, same-origin. This deletes the standing XSS-steals-
 a-session risk and the dual-transport bug class `platform-admin.ts`'s comment complains about.
@@ -119,28 +128,23 @@ protected APIs — it must not throw at import time. That is the exact regressio
 adjacent, so this needs the same treatment and an e2e test proving the customizer still renders
 keyless. Auth itself still fails closed: no keys means nobody signs in, never "everybody does".
 
-**Local dev and seeds: the seeded demo account dies.** Today every seeded user shares the
-published password `rebeldev` — a credential that lives in this repository and in every setup
-banner. That was already only tolerable because nothing real sat behind it, and Clerk's
-breached-password check would reject it anyway. So this plan removes it rather than porting it:
+**Local dev and seeds: the demo credential becomes dev-only, and production gets a real account.**
+Today every seeded user shares the published password `rebeldev`. With the native-login escape
+hatch above, that credential's blast radius shrinks to environments where `ENABLE_NATIVE_LOGIN`
+resolves true — development and e2e, where the seeds live and Clerk keys don't. In production the
+flag defaults off, so the seeded credential is unusable there by construction, and the demo account
+is a **real Clerk account**: created once through the actual signup flow (its owner holds the
+credential; nothing committed), linked to the seeded owner row by backfilling `clerk_user_id` via
+`scripts/import-users-to-clerk.mjs --link-owner`. Seeded users are never imported to Clerk. The
+JIT sentinel rule still applies where no password should exist: `password_hash` is `NOT NULL`, so
+credential-less rows (e.g. JIT-created Clerk users) carry a literal `'!'` — not a valid bcrypt
+hash, so `bcrypt.compare` can never return true against it.
 
-- `seed-demo.js` keeps creating the demo *stores* and their `users` rows (they are FK targets for
-  `stores.owner_id` and the order history), but writes no usable credential. `password_hash` is
-  `NOT NULL` until phase 5 drops it, so the seed writes a literal `'!'` sentinel — not a valid
-  bcrypt hash, so `bcrypt.compare` can never return true against it. Seeded data stops being
-  signable-in by construction, and no Clerk import touches it.
-- The demo account becomes a **real Clerk account**: created once through the actual signup flow
-  in each environment's Clerk instance (its owner holds the credential; nothing is committed), then
-  linked to the seeded demo store by backfilling `clerk_user_id` on the seeded owner row —
-  `seed-demo.js` grows a `--link-owner <email>` step for exactly this, idempotent like the rest.
-- `setup:local` and the README stop printing `demo@schmostore.com / rebeldev`; they print the
-  link-owner instruction instead. `docs/demo-data.md` is updated to match.
-
-**E2e.** Playwright signs in through the real form with the seeded credential today; both halves
-of that go away (Clerk's bot detection blocks scripted form login, and the seeded credential no
-longer exists). `@clerk/testing` issues testing tokens for exactly this, against a dedicated test
-user in the dev instance, linked to a seeded store the same `--link-owner` way. The e2e job gains
-dev-instance keys as CI secrets — the one exception to the keyless build job, which stays keyless.
+**E2e.** Playwright keeps signing in through the native form with the seeded credential — keyless,
+via `/native-login`, with `ENABLE_NATIVE_LOGIN` resolving true in dev and CI. Testing the
+Clerk-configured branch end-to-end (`@clerk/testing` tokens against a dev instance) is future work
+once CI carries dev-instance keys; the keyless render of `/login` and the customizer is what the
+suite proves today.
 
 ## 5. Phases
 
