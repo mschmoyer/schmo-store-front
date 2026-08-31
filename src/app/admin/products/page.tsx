@@ -177,7 +177,9 @@ export default function ProductsAdminPage(): React.ReactElement {
   const searchRef = useRef<HTMLInputElement>(null);
   const firstLoad = useRef(true);
 
-  const token = session?.sessionToken;
+  /* Whether the admin shell has verified a session. The requests below authenticate with the
+     httpOnly session cookie; this only keeps the page from firing them before there is one. */
+  const signedIn = Boolean(session);
   /* The storefront preview link needs the store's public slug, which the session carries under
    * different names depending on where it was created. */
   const storeSlug =
@@ -187,13 +189,13 @@ export default function ProductsAdminPage(): React.ReactElement {
 
   const authFetch = useCallback(
     async (url: string, init?: RequestInit) => {
-      if (!token) throw new Error('Your session has expired. Sign in again.');
+      if (!signedIn) throw new Error('Your session has expired. Sign in again.');
       const response = await fetch(url, {
         ...init,
+        credentials: 'include',
         headers: {
           ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
           ...init?.headers,
-          Authorization: `Bearer ${token}`
         }
       });
       const payload = await response.json().catch(() => ({}));
@@ -202,11 +204,11 @@ export default function ProductsAdminPage(): React.ReactElement {
       }
       return payload;
     },
-    [token]
+    [signedIn]
   );
 
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!signedIn) return;
     if (firstLoad.current) setLoading(true);
     else setRefreshing(true);
     setError(null);
@@ -224,20 +226,20 @@ export default function ProductsAdminPage(): React.ReactElement {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiQuery, authFetch, token]);
+  }, [apiQuery, authFetch, signedIn]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!signedIn) return;
     authFetch('/api/admin/categories')
       .then((payload) => setCategories(payload.options ?? []))
       /* A failed category list is not worth an error banner over the whole page — the filter just
        * stays empty, which is what it was before this endpoint existed. */
       .catch(() => setCategories([]));
-  }, [authFetch, token]);
+  }, [authFetch, signedIn]);
 
   /* Debounced search. One timer, cleared on every keystroke, so exactly one request is made per
    * pause — the previous version raced its own debounce against an effect and fired roughly two
@@ -392,11 +394,7 @@ export default function ProductsAdminPage(): React.ReactElement {
       if (onlySelected && selected.size > 0) query.set('ids', [...selected].join(','));
 
       try {
-        await downloadWithAuth(
-          `/api/admin/products/export?${query.toString()}`,
-          token,
-          'products.csv'
-        );
+        await downloadWithAuth(`/api/admin/products/export?${query.toString()}`, 'products.csv');
       } catch (caught) {
         notifications.show({
           title: 'Could not export',
@@ -405,7 +403,7 @@ export default function ProductsAdminPage(): React.ReactElement {
         });
       }
     },
-    [apiQuery, selected, token]
+    [apiQuery, selected, signedIn]
   );
 
   const viewCounts: Record<CatalogViewKey, number | undefined> = {
@@ -945,7 +943,6 @@ export default function ProductsAdminPage(): React.ReactElement {
       <ImportModal
         opened={importOpen}
         onClose={() => setImportOpen(false)}
-        token={token}
         onImported={load}
       />
     </Stack>

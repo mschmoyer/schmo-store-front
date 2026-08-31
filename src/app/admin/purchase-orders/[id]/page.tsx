@@ -202,15 +202,11 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     setError(null);
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
-      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrderId}`, {
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
-      });
+      const response = await fetch(`/api/admin/purchase-orders/${purchaseOrderId}`, { credentials: 'include' });
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -249,7 +245,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     } finally {
       setLoading(false);
     }
-  }, [purchaseOrderId, session?.sessionToken]);
+  }, [purchaseOrderId, session]);
   
   /**
    * Update purchase order
@@ -260,15 +256,14 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     setSaving(true);
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify(formData)
       });
@@ -311,15 +306,14 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     if (!purchaseOrder) return;
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({ status })
       });
@@ -377,8 +371,8 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     }
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       /*
@@ -399,7 +393,6 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify({
           items: itemsToReceive.map((line) => ({ ...line, location_id: receiveLocationId })),
@@ -465,15 +458,12 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
     if (!purchaseOrder) return;
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       const response = await fetch(`/api/admin/purchase-orders/${purchaseOrder.id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
       });
       
       if (!response.ok) {
@@ -526,17 +516,15 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
   
   // Fetch data on component mount
   useEffect(() => {
-    if (isAuthenticated && session?.sessionToken) {
+    if (isAuthenticated && session) {
       fetchPurchaseOrder();
     }
-  }, [isAuthenticated, session?.sessionToken, fetchPurchaseOrder]);
+  }, [isAuthenticated, session, fetchPurchaseOrder]);
 
   /* The store's stock locations, so a delivery can be received into the right one. */
   useEffect(() => {
-    if (!session?.sessionToken) return;
-    fetch('/api/admin/inventory/locations', {
-      headers: { Authorization: `Bearer ${session.sessionToken}` }
-    })
+    if (!session) return;
+    fetch('/api/admin/inventory/locations', { credentials: 'include' })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         const rows = payload?.locations ?? [];
@@ -552,7 +540,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
         );
       })
       .catch(() => setLocations([]));
-  }, [session?.sessionToken]);
+  }, [session]);
   
   if (loading) {
     return (

@@ -70,7 +70,6 @@ export interface AdjustStockModalProps {
    * only defensible default.
    */
   activeLocationId?: string | null;
-  token?: string;
   /** Called after a successful adjustment so the grid can refresh. */
   onAdjusted: () => void | Promise<void>;
 }
@@ -89,7 +88,6 @@ export function AdjustStockModal({
   onClose,
   locations,
   activeLocationId,
-  token,
   onAdjusted
 }: AdjustStockModalProps): React.ReactElement {
   const [mode, setMode] = useState<'move' | 'count' | 'hold'>('move');
@@ -145,10 +143,8 @@ export function AdjustStockModal({
 
     /* Only fetched when it can matter. A single-location store's roll-up *is* its location
      * balance, and a request per dialog open would be pure waste. */
-    if (locations.length > 1 && token) {
-      fetch(`/api/admin/inventory/${target.product_id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+    if (locations.length > 1) {
+      fetch(`/api/admin/inventory/${target.product_id}`, { credentials: 'include' })
         .then((response) => (response.ok ? response.json() : null))
         .then((payload) => {
           const rows = payload?.data?.locations ?? [];
@@ -205,7 +201,7 @@ export function AdjustStockModal({
     (mode === 'hold' && !releasing && holdReason === 'quarantine');
 
   const submit = async () => {
-    if (!target || !token) return;
+    if (!target) return;
 
     if (mode === 'move' && !reason) {
       setError('Choose what happened to these units');
@@ -261,7 +257,7 @@ export function AdjustStockModal({
 
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
 

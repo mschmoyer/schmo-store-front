@@ -36,12 +36,7 @@ export default function EditBlogPostPage() {
       setError(null);
 
       try {
-        const token = localStorage.getItem('admin_token');
-        const response = await fetch(`/api/blog/admin/${postId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await fetch(`/api/blog/admin/${postId}`, { credentials: 'include' });
         const data = await response.json();
         
         if (data.success && data.data) {
@@ -64,12 +59,10 @@ export default function EditBlogPostPage() {
     setSaving(true);
     
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/api/blog/admin/${postId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(postData),
       });

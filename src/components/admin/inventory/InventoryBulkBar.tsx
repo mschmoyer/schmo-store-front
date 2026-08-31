@@ -53,7 +53,6 @@ export interface BulkTarget {
 export interface InventoryBulkBarProps {
   selected: BulkTarget[];
   onClear: () => void;
-  token?: string;
   /** Refresh the grid after anything is written. */
   onChanged: () => void | Promise<void>;
   suppliers: Array<{ value: string; label: string }>;
@@ -68,7 +67,6 @@ export interface InventoryBulkBarProps {
 export function InventoryBulkBar({
   selected,
   onClear,
-  token,
   onChanged,
   suppliers
 }: InventoryBulkBarProps): React.ReactElement | null {
@@ -114,12 +112,11 @@ export function InventoryBulkBar({
    * @param success - What to say when it worked.
    */
   const run = async (body: Record<string, unknown>, success: string) => {
-    if (!token) return;
     setBusy(true);
     try {
       const response = await fetch('/api/admin/products/bulk', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...body, product_ids: selected.map((r) => r.product_id) })
       });
       const payload = await response.json();
@@ -153,7 +150,7 @@ export function InventoryBulkBar({
 
   /** Raise one purchase order covering every selected line with a quantity. */
   const createPurchaseOrder = async () => {
-    if (!token || !supplierId) return;
+    if (!supplierId) return;
 
     const orderable = lines.filter((line) => line.quantity > 0);
     if (orderable.length === 0) {
@@ -169,7 +166,7 @@ export function InventoryBulkBar({
     try {
       const response = await fetch('/api/admin/purchase-orders', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           supplier_id: supplierId,
           order_date: new Date().toISOString().slice(0, 10),

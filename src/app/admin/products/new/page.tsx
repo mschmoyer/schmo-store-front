@@ -48,7 +48,6 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 export default function NewProductPage(): React.ReactElement {
   const router = useRouter();
   const { session } = useAdmin();
-  const token = session?.sessionToken;
 
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -64,12 +63,12 @@ export default function NewProductPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/categories', { headers: { Authorization: `Bearer ${token}` } })
+    if (!session) return;
+    fetch('/api/admin/categories', { credentials: 'include' })
       .then((response) => response.json())
       .then((payload) => setCategories(payload.options ?? []))
       .catch(() => setCategories([]));
-  }, [token]);
+  }, [session]);
 
   const save = useCallback(
     async (openAfter: boolean) => {
@@ -92,7 +91,6 @@ export default function NewProductPage(): React.ReactElement {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
           },
           body: JSON.stringify({
             name: name.trim(),
@@ -136,7 +134,7 @@ export default function NewProductPage(): React.ReactElement {
         setSaving(false);
       }
     },
-    [categoryId, cost, description, name, price, publish, router, sku, stock, token]
+    [categoryId, cost, description, name, price, publish, router, sku, stock]
   );
 
   return (

@@ -108,14 +108,7 @@ export default function ShipStationIntegrationPage() {
 
   const fetchConfig = useCallback(async () => {
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-      
-      const response = await fetch('/api/admin/integrations/shipstation', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await fetch('/api/admin/integrations/shipstation', { credentials: 'include' });
       
       if (response.ok) {
         const data = await response.json();
@@ -207,14 +200,10 @@ export default function ShipStationIntegrationPage() {
     setTestResult(null);
     
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-      
       const response = await fetch('/api/admin/integrations/shipstation/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           username: form.values.username,
@@ -265,14 +254,10 @@ export default function ShipStationIntegrationPage() {
     setError(null);
     
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-      
       const response = await fetch('/api/admin/integrations/shipstation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           ...values,

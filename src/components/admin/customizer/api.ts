@@ -1,10 +1,10 @@
 /**
  * Thin client for the storefront-theme admin API.
  *
- * Every call carries the admin session token the rest of the admin uses
- * (`localStorage.admin_token`, as `AdminContext` sets it). The store is taken
- * from the session server-side, never from anything sent here — a caller cannot
- * address someone else's shop.
+ * Every call is same-origin, so the browser attaches the httpOnly session cookie
+ * itself; nothing here reads or carries a token. The store is taken from the
+ * session server-side, never from anything sent here — a caller cannot address
+ * someone else's shop.
  */
 
 import type {
@@ -75,27 +75,17 @@ export class ThemeApiError extends Error {
 }
 
 /**
- * Read the admin session token.
- * @returns The token, or null when signed out
- */
-function token(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('admin_token');
-}
-
-/**
  * Perform an authenticated JSON request against the theme API.
  * @param path - Absolute API path
  * @param init - Fetch options
  * @returns The `data` payload
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const auth = token();
   const response = await fetch(path, {
     ...init,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(auth ? { Authorization: `Bearer ${auth}` } : {}),
       ...(init.headers ?? {}),
     },
   });

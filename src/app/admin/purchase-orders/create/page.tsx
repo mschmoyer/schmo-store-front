@@ -148,33 +148,27 @@ export default function CreatePurchaseOrderPage() {
    * — this page used to collect a name as free text, which is why it could never submit.
    */
   const fetchSuppliers = useCallback(async () => {
-    if (!session?.sessionToken) return;
+    if (!session) return;
     try {
-      const response = await fetch('/api/admin/suppliers?active_only=true', {
-        headers: { Authorization: `Bearer ${session.sessionToken}` }
-      });
+      const response = await fetch('/api/admin/suppliers?active_only=true', { credentials: 'include' });
       const payload = await response.json();
       const rows = payload?.data?.suppliers ?? payload?.suppliers ?? payload?.data ?? [];
       setSuppliers(Array.isArray(rows) ? rows : []);
     } catch {
       setSuppliers([]);
     }
-  }, [session?.sessionToken]);
+  }, [session]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
-      const response = await fetch('/api/admin/products?limit=100', {
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
-      });
+      const response = await fetch('/api/admin/products?limit=100', { credentials: 'include' });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -196,7 +190,7 @@ export default function CreatePurchaseOrderPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.sessionToken]);
+  }, [session]);
   
   /**
    * Filter products based on search query
@@ -324,8 +318,8 @@ export default function CreatePurchaseOrderPage() {
     setSubmitting(true);
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       /* The shape the route actually accepts. It was posting `supplier` where `supplier_id` is
@@ -349,7 +343,6 @@ export default function CreatePurchaseOrderPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify(requestBody)
       });
@@ -398,11 +391,11 @@ export default function CreatePurchaseOrderPage() {
   
   // Fetch products on component mount
   useEffect(() => {
-    if (isAuthenticated && session?.sessionToken) {
+    if (isAuthenticated && session) {
       fetchProducts();
       fetchSuppliers();
     }
-  }, [isAuthenticated, session?.sessionToken, fetchProducts]);
+  }, [isAuthenticated, session, fetchProducts]);
   
   const totals = calculateTotals();
   

@@ -164,7 +164,7 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
 
   // Fetch dead stock data
   const fetchDeadStockData = useCallback(async (isRefresh = false) => {
-    if (!session?.sessionToken) return;
+    if (!session) return;
     setLoading(!isRefresh);
     setRefreshing(isRefresh);
     setError(null);
@@ -181,7 +181,6 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.sessionToken}`
         }
       });
 
@@ -207,14 +206,14 @@ export default function DeadStockAnalysisReport({ }: DeadStockAnalysisReportProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [threshold60Days, threshold90Days, threshold180Days, threshold365Days, customThreshold, session?.sessionToken]);
+  }, [threshold60Days, threshold90Days, threshold180Days, threshold365Days, customThreshold, session]);
 
   // Initial load and threshold changes
   useEffect(() => {
-    if (session?.sessionToken) {
+    if (session) {
       fetchDeadStockData();
     }
-  }, [threshold60Days, threshold90Days, threshold180Days, threshold365Days, customThreshold, fetchDeadStockData, session?.sessionToken]);
+  }, [threshold60Days, threshold90Days, threshold180Days, threshold365Days, customThreshold, fetchDeadStockData, session]);
 
   // Filter and sort data
   const filteredAndSortedData = useMemo(() => {

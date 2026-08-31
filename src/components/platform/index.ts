@@ -4,9 +4,9 @@
  * Import from here rather than from the individual modules:
  *   import { usePlatformData, PlatformPanel } from '@/components/platform';
  *
- * `usePlatformData` in particular is the console's single door to `/api/platform/*` — it carries
- * the Bearer token, aborts superseded requests and turns a failure into a typed error rather than
- * a zero. Any screen added to this console should read through it, not through a bare `fetch`.
+ * `usePlatformData` in particular is the console's single door to `/api/platform/*` — it sends the
+ * session cookie, aborts superseded requests and turns a failure into a typed error rather than a
+ * zero. Any screen added to this console should read through it, not through a bare `fetch`.
  *
  * The customer-facing screens under `./customers` keep their own barrel; nothing here re-exports
  * them, so the two lanes can move independently.
@@ -15,7 +15,6 @@
 /* -- Data ---------------------------------------------------------------- */
 export {
   usePlatformData,
-  readAdminToken,
   type PlatformDataState,
   type PlatformErrorKind,
   type PlatformFetchError,

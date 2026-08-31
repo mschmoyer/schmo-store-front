@@ -1,10 +1,10 @@
-import { cookies } from 'next/headers';
+import { headers } from 'next/headers';
 
 import { StorefrontShell } from '@/components/store/StorefrontShell';
 import { SectionList } from '@/components/store/sections';
 import { EmptyCatalogue } from '@/components/store/states/EmptyStates';
 import { SectionHeading, StoreBand, StoreContainer } from '@/components/store/ui';
-import { verifySession } from '@/lib/auth/session';
+import { resolveSession } from '@/lib/auth/session';
 import { db } from '@/lib/database/connection';
 
 import { loadStorefront, type SearchParams } from '../_lib/load';
@@ -33,9 +33,12 @@ interface StorePageProps {
  */
 async function isStoreOwner(storeId: string): Promise<boolean> {
   try {
-    const token = (await cookies()).get('session')?.value;
-    if (!token) return false;
-    const session = await verifySession(token);
+    // Resolve through the shared path so a merchant signed in with Clerk is recognised as their own
+    // store's owner too — reading the legacy `session` cookie directly saw no one once Clerk was the
+    // sign-in, so owners got the shopper view of their own shop and self-views counted as shopper
+    // traffic. auth() reads request context in a server component, so the synthetic Request only
+    // needs to carry the incoming headers (the cookie for the legacy path).
+    const session = await resolveSession(new Request('http://internal', { headers: await headers() }));
     if (!session?.userId) return false;
 
     // The fast path. The slow path exists because the session JWT is minted

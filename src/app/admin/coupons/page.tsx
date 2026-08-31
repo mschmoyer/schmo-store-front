@@ -177,19 +177,21 @@ export default function CouponsPage(): React.ReactElement {
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [form, setForm] = useState<CouponForm>(BLANK_FORM);
 
-  const authHeaders = useMemo(
-    () => (session?.sessionToken ? { Authorization: `Bearer ${session.sessionToken}` } : undefined),
-    [session?.sessionToken]
-  );
+  /*
+   * The session cookie authenticates every call below; this only says whether the shell has
+   * finished verifying, so the page does not fire six requests before it knows there is a session
+   * at all. It used to be a Bearer header built from `localStorage`, which is gone.
+   */
+  const signedIn = Boolean(session);
 
   const fetchCoupons = useCallback(async () => {
-    if (!authHeaders) return;
+    if (!signedIn) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('/api/admin/coupons', { headers: authHeaders });
+      const response = await fetch('/api/admin/coupons', { credentials: 'include' });
       const result = await response.json().catch(() => null);
 
       if (!response.ok || !result?.success) {
@@ -208,17 +210,17 @@ export default function CouponsPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [authHeaders]);
+  }, [signedIn]);
 
   /* Targeting options. A failure here is not fatal — the editor falls back to
      whole-order coupons rather than blocking the page. */
   const fetchTargets = useCallback(async () => {
-    if (!authHeaders) return;
+    if (!signedIn) return;
 
     try {
       const [productsRes, categoriesRes] = await Promise.all([
-        fetch('/api/admin/products?limit=200', { headers: authHeaders }),
-        fetch('/api/admin/categories', { headers: authHeaders }),
+        fetch('/api/admin/products?limit=200', { credentials: 'include' }),
+        fetch('/api/admin/categories', { credentials: 'include' }),
       ]);
 
       if (productsRes.ok) {
@@ -244,7 +246,7 @@ export default function CouponsPage(): React.ReactElement {
     } catch (err) {
       console.error('Error fetching coupon targeting options:', err);
     }
-  }, [authHeaders]);
+  }, [signedIn]);
 
   useEffect(() => {
     void fetchCoupons();
@@ -281,7 +283,7 @@ export default function CouponsPage(): React.ReactElement {
   };
 
   const save = async () => {
-    if (!authHeaders) return;
+    if (!signedIn) return;
 
     if (!form.code.trim()) {
       notifications.show({ title: 'Code required', message: 'Give the coupon a code shoppers can type.', color: 'red' });
@@ -316,7 +318,8 @@ export default function CouponsPage(): React.ReactElement {
         editing ? `/api/admin/coupons/${editing.id}` : '/api/admin/coupons',
         {
           method: editing ? 'PUT' : 'POST',
-          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         }
       );
@@ -350,13 +353,13 @@ export default function CouponsPage(): React.ReactElement {
   };
 
   const remove = async (coupon: Coupon) => {
-    if (!authHeaders) return;
+    if (!signedIn) return;
     if (!window.confirm(`Delete ${coupon.code}? Shoppers using it will be turned away.`)) return;
 
     try {
       const response = await fetch(`/api/admin/coupons/${coupon.id}`, {
         method: 'DELETE',
-        headers: authHeaders,
+        credentials: 'include',
       });
       const result = await response.json().catch(() => null);
 

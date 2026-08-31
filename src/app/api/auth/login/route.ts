@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { verifyPassword } from '@/lib/auth/password';
 import { SESSION_COOKIE, createSession } from '@/lib/auth/session';
+import { isNativeLoginEnabled } from '@/lib/auth/clerk-config';
 
 interface LoginRequest {
   email: string;
@@ -9,6 +10,14 @@ interface LoginRequest {
 }
 
 export async function POST(req: NextRequest) {
+  // 404, not 403, and before the body is read: when the legacy login is switched off this endpoint
+  // does not exist, and a disabled password endpoint should not confirm which addresses it knows
+  // or how long a hash comparison takes. Logout is deliberately not gated — clearing a cookie must
+  // always work, whatever else is off.
+  if (!isNativeLoginEnabled()) {
+    return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  }
+
   try {
     const body: LoginRequest = await req.json();
     

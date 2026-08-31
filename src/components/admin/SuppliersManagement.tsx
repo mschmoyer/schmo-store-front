@@ -79,10 +79,7 @@ export default function SuppliersManagement() {
 
   const fetchSuppliers = useCallback(async () => {
     try {
-      const token = localStorage.getItem('admin_token');
-      const response = await fetch('/api/admin/suppliers', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetch('/api/admin/suppliers', { credentials: 'include' });
       
       if (response.ok) {
         const result = await response.json();
@@ -133,10 +130,8 @@ export default function SuppliersManagement() {
     if (!supplierToDelete) return;
 
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/api/admin/suppliers/${supplierToDelete.id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       });
       
       if (response.ok) {

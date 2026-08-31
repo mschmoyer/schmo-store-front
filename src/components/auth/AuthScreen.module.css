@@ -173,3 +173,49 @@
   box-shadow: var(--focus-ring);
   border-radius: var(--radius-xs);
 }
+
+/*
+ * Legacy-path banner. Only `/native-login` renders it: that route is the
+ * escape hatch kept alive while Clerk is the front door, and it has to say so
+ * or a merchant who bookmarks it never discovers reset, Google or MFA.
+ */
+.legacyBanner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  background: var(--warning-subtle);
+  border: 1px solid var(--warning-border);
+  color: var(--warning-text);
+  margin-bottom: 20px;
+}
+
+.legacyBannerTitle {
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.legacyBannerText {
+  margin: 0;
+}
+
+/* The keyless "not configured" state reuses the card; it has no form inside. */
+.notice {
+  width: 100%;
+  max-width: 460px;
+}
+
+/*
+ * Well for Clerk's own card. It draws its own width and internal padding, so
+ * this only centres it and caps the measure; `clerkAppearance` strips Clerk's
+ * border and shadow so the widget reads as one card rather than two.
+ */
+.clerkWell {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  justify-content: center;
+}

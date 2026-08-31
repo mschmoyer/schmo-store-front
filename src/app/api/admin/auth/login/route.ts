@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { verifyPassword } from '@/lib/auth/password';
 import { createSession } from '@/lib/auth/session';
+import { isNativeLoginEnabled } from '@/lib/auth/clerk-config';
 import { z } from 'zod';
 
 const LoginSchema = z.object({
@@ -10,6 +11,12 @@ const LoginSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  // The legacy password login, behind ENABLE_NATIVE_LOGIN — same gate and same reasoning as
+  // /api/auth/login: 404 before the body is read, so a switched-off endpoint reveals nothing.
+  if (!isNativeLoginEnabled()) {
+    return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  }
+
   try {
     const body = await request.json();
     

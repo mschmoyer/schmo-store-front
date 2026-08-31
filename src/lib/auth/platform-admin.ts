@@ -20,11 +20,15 @@
  * deliberately best-effort: an audit write that fails must not take the console down with it, so
  * it logs and returns rather than throwing. The console is read-only, so a lost audit row loses a
  * record of a *view*, not of a change.
+ *
+ * *Who* the caller is comes from `session.ts`'s shared `resolveSession` — Clerk first, the legacy
+ * JWT only while native login is enabled. This guard used to resolve the transports itself, and
+ * the two copies were free to drift; they no longer can.
  */
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
-import { getSessionFromRequest, getSessionFromCookies } from '@/lib/auth/session';
+import { resolveSession } from '@/lib/auth/session';
 
 /** A signed-in user who carries `users.is_admin = true`. */
 export interface PlatformAdmin {
@@ -50,25 +54,6 @@ export class PlatformAdminError extends Error {
     this.reason = reason;
     this.status = reason === 'unauthenticated' ? 401 : 403;
   }
-}
-
-/**
- * Resolve the caller's session from either transport the app uses.
- *
- * The merchant admin sends a `Bearer` token from `localStorage`; server-rendered navigation and
- * anything hit directly from the browser sends the `session` cookie. A route that checked only one
- * of them would work in exactly half the app, which has already happened here more than once.
- *
- * @param request - The incoming request.
- * @returns The session, or `null` if neither transport carried a valid one.
- */
-async function resolveSession(request: Request) {
-  const fromHeader = await getSessionFromRequest(request);
-  if (fromHeader) return fromHeader;
-
-  const cookieHeader = request.headers.get('cookie');
-  if (!cookieHeader) return null;
-  return getSessionFromCookies(cookieHeader);
 }
 
 /**

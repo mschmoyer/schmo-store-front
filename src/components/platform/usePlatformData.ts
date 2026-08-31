@@ -9,10 +9,9 @@ import type { PlatformResponse } from './types';
  * Three things are centralised here because getting any of them wrong on one screen and right on
  * another is how a console starts lying:
  *
- * 1. **Authentication.** The merchant shell keeps its JWT in `localStorage` under `admin_token` and
- *    sends it as a Bearer header (see `src/contexts/AdminContext.tsx`); the same session also
- *    exists as an httpOnly `session` cookie. Both are sent, so the console keeps working if either
- *    one is the only survivor.
+ * 1. **Authentication.** One transport: the httpOnly `session` cookie, which a same-origin fetch
+ *    attaches on its own. The Bearer copy this used to read out of `localStorage` is gone — see
+ *    `src/contexts/AdminContext.tsx`.
  * 2. **Failure is never zero.** A rejected fetch, a 403 and a 404 are three different facts and
  *    none of them is "0 orders". Callers get a typed error and are expected to render it — §
  *    "Honest results" in CLAUDE.md exists because this codebase has shipped the other thing.
@@ -55,31 +54,6 @@ export interface PlatformDataState<T> {
   fetchedAt: number | null;
   /** Re-runs the request. Wire this to the retry button. */
   reload: () => void;
-}
-
-/**
- * Reads the merchant session token from `localStorage`.
- *
- * @returns The stored JWT, or `null` on the server and when no token is stored.
- */
-export function readAdminToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem('admin_token');
-  } catch {
-    /* Private-mode browsers throw on access. The session cookie still carries the request. */
-    return null;
-  }
-}
-
-/**
- * Builds the request headers for a platform call.
- *
- * @returns A header bag carrying the Bearer token when one is available.
- */
-function authHeaders(): HeadersInit {
-  const token = readAdminToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /**
@@ -177,7 +151,6 @@ export function usePlatformData<T>(path: string | null): PlatformDataState<T> {
     const run = async () => {
       try {
         const response = await fetch(path, {
-          headers: authHeaders(),
           credentials: 'include',
           signal: controller.signal,
         });

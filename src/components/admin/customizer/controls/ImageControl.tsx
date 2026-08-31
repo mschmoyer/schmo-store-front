@@ -58,14 +58,12 @@ export function ImageControl({
     setUploading(true);
     setUploadError(null);
     try {
-      const token = localStorage.getItem('admin_token');
       const body = new FormData();
       // The route takes a batch under `files`, and reports on each one. This
       // control uploads a single image, so it reads the first result back.
       body.append('files', file);
       const response = await fetch('/api/admin/media', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body,
       });
       const result = await response.json().catch(() => null);

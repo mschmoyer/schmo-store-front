@@ -51,8 +51,6 @@ interface ImportReport {
 export interface ImportModalProps {
   opened: boolean;
   onClose: () => void;
-  /** Session token for the request. */
-  token?: string;
   /** Called after a successful import so the grid can refresh. */
   onImported: () => void | Promise<void>;
 }
@@ -63,7 +61,7 @@ export interface ImportModalProps {
  * @param props - {@link ImportModalProps}
  * @returns The modal.
  */
-export function ImportModal({ opened, onClose, token, onImported }: ImportModalProps): React.ReactElement {
+export function ImportModal({ opened, onClose, onImported }: ImportModalProps): React.ReactElement {
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,7 +69,7 @@ export function ImportModal({ opened, onClose, token, onImported }: ImportModalP
 
   const send = useCallback(
     async (dryRun: boolean) => {
-      if (!file || !token) return;
+      if (!file) return;
       setBusy(true);
       setError(null);
 
@@ -81,7 +79,6 @@ export function ImportModal({ opened, onClose, token, onImported }: ImportModalP
 
         const response = await fetch(`/api/admin/products/import?dry_run=${dryRun}`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
           body: form
         });
         const payload = await response.json();
@@ -107,7 +104,7 @@ export function ImportModal({ opened, onClose, token, onImported }: ImportModalP
         setBusy(false);
       }
     },
-    [file, onImported, token]
+    [file, onImported]
   );
 
   const reset = () => {

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AdminUser } from '@/lib/types/admin';
-import { readAdminToken } from './usePlatformData';
 
 /**
  * The console's door check.
@@ -15,7 +14,7 @@ import { readAdminToken } from './usePlatformData';
  * own memory gets the chrome and six 403s.
  *
  * The flag is re-read from the database by `/api/admin/auth/verify` rather than trusted from the
- * seven-day session JWT, so a revocation takes effect on the next page load in both directions.
+ * session, so a revocation takes effect on the next page load in both directions.
  */
 
 /** Where the viewer stands. Each value maps to one thing the shell renders. */
@@ -76,9 +75,7 @@ export function usePlatformAccess(): PlatformAccess {
 
     const verify = async () => {
       try {
-        const token = readAdminToken();
         const response = await fetch('/api/admin/auth/verify', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
           credentials: 'include',
           signal: controller.signal,
         });

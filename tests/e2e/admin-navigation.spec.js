@@ -120,12 +120,12 @@ test.describe('Admin Login (without fixture)', () => {
     
     await loginPage.goto();
     await loginPage.login('invalid@email.com', 'wrongpassword');
-    
-    // Should stay on the login page
-    await expect(page).toHaveURL(/\/login/);
-    
+
+    // Should stay on the sign-in page
+    await expect(page).toHaveURL(/\/native-login/);
+
     // No assertion on the error message itself: the login page's error markup is not pinned
-    // down by a contract, so probing for it would be a guess. Staying on /login is the
+    // down by a contract, so probing for it would be a guess. Staying on the form is the
     // behaviour that actually matters and is asserted above.
     console.log('✓ Invalid credentials handled appropriately');
   });

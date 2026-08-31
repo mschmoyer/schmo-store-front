@@ -126,7 +126,6 @@ export default function SupplierModal({
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('admin_token');
       const url = supplier 
         ? `/api/admin/suppliers/${supplier.id}`
         : '/api/admin/suppliers';
@@ -136,7 +135,6 @@ export default function SupplierModal({
       const response = await fetch(url, {
         method,
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)

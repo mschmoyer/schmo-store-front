@@ -563,12 +563,12 @@ export async function isMerchantSelfView(storeId: string): Promise<boolean> {
   try {
     // Imported lazily: `next/headers` is only resolvable inside a request scope, and this module's
     // pure half is unit-tested outside one.
-    const { cookies } = await import('next/headers');
-    const token = (await cookies()).get('session')?.value;
-    if (!token) return false;
-
-    const { verifySession } = await import('@/lib/auth/session');
-    const session = await verifySession(token);
+    const { headers } = await import('next/headers');
+    // Resolve through the shared path so a Clerk-signed-in merchant is recognised as a self-view too;
+    // the legacy cookie alone saw no one under Clerk, so every owner self-view inflated shopper
+    // traffic. auth() reads request context, so the synthetic Request only carries the headers.
+    const { resolveSession } = await import('@/lib/auth/session');
+    const session = await resolveSession(new Request('http://internal', { headers: await headers() }));
     if (!session?.userId) return false;
     if (session.storeId === storeId) return true;
 

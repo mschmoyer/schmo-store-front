@@ -1,186 +1,48 @@
-'use client';
+import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { isClerkConfigured, isNativeLoginEnabled } from '@/lib/auth/clerk-config';
+import ClerkSignInScreen from '@/components/auth/ClerkSignInScreen';
+import SignInUnavailable from '@/components/auth/SignInUnavailable';
 
-import * as React from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Button, Input } from '@/components/ui';
-import { validateEmail } from '@/components/onboarding/lib/password';
-import styles from './Login.module.css';
-
-/** Warning triangle for the failure alert. */
-function AlertMark(): React.ReactElement {
-  return (
-    <svg className={styles.alertIcon} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 1.9 15 14.3H1L8 1.9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M8 6.3v3.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="8" cy="11.7" r="0.85" fill="currentColor" />
-    </svg>
-  );
-}
+export const metadata: Metadata = {
+  title: 'Sign in · RebelShops',
+  description: 'Sign in to your RebelShops store.',
+};
 
 /**
- * `/login` — sign in.
- *
- * Deliberately says the same thing whether the email is unknown or the password
- * is wrong: **"That email and password don't match."** Anything more specific
- * turns this form into an account-enumeration oracle. The server already returns
- * one message for both cases; this screen does not undo that by rendering
- * different copy per status code.
- *
- * @returns The sign-in page
+ * Read per request. Both the Clerk-vs-native branch and the `CLERK_SECRET_KEY` half of
+ * `isClerkConfigured()` are runtime facts, and `ENABLE_NATIVE_LOGIN` is a rollback lever that must
+ * take effect without a redeploy — a statically prerendered `/login` would freeze all three at
+ * build time and serve the wrong door (or a stale "not configured" card) at runtime.
  */
-export default function LoginPage(): React.ReactElement {
-  const router = useRouter();
-  const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [touched, setTouched] = React.useState<{ email?: boolean; password?: boolean }>({});
-  const [failure, setFailure] = React.useState<{ title: string; body: string } | null>(null);
-  const [busy, setBusy] = React.useState(false);
+export const dynamic = 'force-dynamic';
 
-  const emailError = validateEmail(email);
-  const passwordError = password ? null : 'This field is required';
-  const isValid = !emailError && !passwordError;
+/**
+ * `/login` — the front door.
+ *
+ * A server component so the branch is decided where `CLERK_SECRET_KEY` is actually readable: a
+ * client component would only ever see the publishable half and would render a widget no route
+ * can verify a session from. Both branches are static markup with no environment access at module
+ * scope, which is what keeps the keyless production build green.
+ *
+ * The legacy password form is not here. It lives at `/native-login`, behind `ENABLE_NATIVE_LOGIN`,
+ * so that "the sign-in page" always means Clerk and the escape hatch has to be chosen on purpose.
+ *
+ * @returns The sign-in page.
+ */
+export default function LoginPage() {
+  if (isClerkConfigured()) {
+    return <ClerkSignInScreen />;
+  }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setTouched({ email: true, password: true });
-    if (!isValid || busy) return;
+  // Clerk is off. If the native escape hatch is open it is the *working* door, so send people
+  // straight to it rather than showing a "sign-in is not configured" card with a secondary link
+  // buried under it — every logout, expiry and unauthenticated bounce lands on `/login`, and in a
+  // Clerk-off deployment that card is the only thing they would see. The bleak "nothing to sign in
+  // to" state is reserved for when native login is also disabled and there genuinely is no door.
+  if (isNativeLoginEnabled()) {
+    redirect('/native-login');
+  }
 
-    setBusy(true);
-    setFailure(null);
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
-      });
-
-      if (!response.ok) {
-        // 401 and 404 are the same message on purpose: never confirm whether an
-        // address has an account here.
-        setFailure(
-          response.status === 401 || response.status === 400 || response.status === 404
-            ? {
-                title: 'That didn’t work',
-                body: 'That email and password don’t match. Check both and try again.',
-              }
-            : {
-                title: 'Something broke on our end',
-                body: 'We’ve been notified. Try again in a moment.',
-              }
-        );
-        // Clear the password but un-touch the field: showing "This field is
-        // required" under an empty box we just emptied ourselves is noise on top
-        // of the real message.
-        setPassword('');
-        setTouched((current) => ({ ...current, password: false }));
-        return;
-      }
-
-      const result = (await response.json()) as { token?: string; storeSlug?: string };
-      if (result.token && typeof window !== 'undefined') {
-        // MUST be `admin_token`. AdminContext and every admin screen read that
-        // key; this page previously wrote `authToken`, which nothing read. A
-        // successful sign-in therefore landed on /admin, found no token, and
-        // bounced the merchant to a second sign-in screen. Same credentials,
-        // same session, twice — because two pages disagreed on one string.
-        localStorage.setItem('admin_token', result.token);
-      }
-      router.push(result.storeSlug ? `/admin?store=${result.storeSlug}` : '/create-store');
-    } catch {
-      setFailure({
-        title: 'We couldn’t reach the server',
-        body: 'Check your connection and try again.',
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className={styles.page}>
-      <header className={styles.masthead}>
-        <Link href="/" className={styles.brand} aria-label="RebelShops home">
-          <Image
-            src="/brand/logo-horizontal.svg"
-            alt="RebelShops"
-            width={134}
-            height={22}
-            priority
-            className={styles.brandMark}
-          />
-        </Link>
-      </header>
-
-      <main className={styles.main}>
-        <form className={styles.card} onSubmit={handleSubmit} noValidate>
-          <span className={styles.eyebrow}>Welcome back</span>
-          <h1 className={styles.title}>Sign in</h1>
-          <p className={styles.subtitle}>Your store, your catalog and your orders.</p>
-
-          {failure ? (
-            <div className={styles.alert} role="alert" aria-live="assertive">
-              <AlertMark />
-              <div className={styles.alertBody}>
-                <p className={styles.alertTitle}>{failure.title}</p>
-                <p className={styles.alertText}>{failure.body}</p>
-              </div>
-            </div>
-          ) : null}
-
-          <div className={styles.fields}>
-            <Input
-              label="Email"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              placeholder="you@company.com"
-              required
-              autoFocus
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                setFailure(null);
-              }}
-              onBlur={() => setTouched((current) => ({ ...current, email: true }))}
-              error={touched.email ? (emailError ?? undefined) : undefined}
-            />
-
-            {/* No "Forgot password?" link: there is no reset flow behind it yet,
-                and a link that goes nowhere is worse than no link. */}
-            <Input
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setFailure(null);
-              }}
-              onBlur={() => setTouched((current) => ({ ...current, password: true }))}
-              error={touched.password ? (passwordError ?? undefined) : undefined}
-            />
-          </div>
-
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            fullWidth
-            className={styles.submit}
-            loading={busy}
-            disabled={!isValid}
-          >
-            Sign in
-          </Button>
-
-          <p className={styles.footer}>
-            No store yet? <Link href="/create-store">Start for $1</Link>
-          </p>
-        </form>
-      </main>
-    </div>
-  );
+  return <SignInUnavailable nativeLoginEnabled={false} />;
 }

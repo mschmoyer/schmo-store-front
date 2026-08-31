@@ -21,17 +21,7 @@ export function PrivateStoreAlert({ storeSlug, isPrivate }: PrivateStoreAlertPro
   useEffect(() => {
     const checkOwnership = async () => {
       try {
-        const token = localStorage.getItem('admin_token');
-        if (!token) {
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await fetch('/api/admin/auth/verify', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await fetch('/api/admin/auth/verify', { credentials: 'include' });
 
         if (response.ok) {
           const data = await response.json();

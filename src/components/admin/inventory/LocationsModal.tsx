@@ -50,7 +50,6 @@ interface Location {
 export interface LocationsModalProps {
   opened: boolean;
   onClose: () => void;
-  token?: string;
   /** Called after any change, so the grid's location filter and totals refresh. */
   onChanged: () => void | Promise<void>;
 }
@@ -73,7 +72,6 @@ const TYPES = [
 export function LocationsModal({
   opened,
   onClose,
-  token,
   onChanged
 }: LocationsModalProps): React.ReactElement {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -84,11 +82,8 @@ export function LocationsModal({
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!token) return;
     try {
-      const response = await fetch('/api/admin/inventory/locations', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await fetch('/api/admin/inventory/locations', { credentials: 'include' });
       const payload = await response.json();
       if (!response.ok || !payload?.success) throw new Error(payload?.error ?? 'Could not load');
       setLocations(payload.locations);
@@ -96,7 +91,7 @@ export function LocationsModal({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load locations');
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (opened) void load();
@@ -110,14 +105,12 @@ export function LocationsModal({
    * @param successMessage - What to say when it worked.
    */
   const send = async (url: string, init: RequestInit, successMessage?: string) => {
-    if (!token) return;
     setBusy(true);
     setError(null);
     try {
       const response = await fetch(url, {
         ...init,
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
           ...(init.headers ?? {})
         }

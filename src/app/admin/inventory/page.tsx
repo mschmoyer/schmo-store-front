@@ -186,17 +186,19 @@ export default function InventoryPage(): React.ReactElement {
   const searchRef = useRef<HTMLInputElement>(null);
   const firstLoad = useRef(true);
 
-  const token = session?.sessionToken;
+  /* Whether the admin shell has verified a session. The requests below authenticate with the
+     httpOnly session cookie; this only keeps the page from firing them before there is one. */
+  const signedIn = Boolean(session);
 
   const authFetch = useCallback(
     async (url: string, init?: RequestInit) => {
-      if (!token) throw new Error('Your session has expired. Sign in again.');
+      if (!signedIn) throw new Error('Your session has expired. Sign in again.');
       const response = await fetch(url, {
         ...init,
+        credentials: 'include',
         headers: {
           ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
           ...init?.headers,
-          Authorization: `Bearer ${token}`
         }
       });
       const payload = await response.json().catch(() => ({}));
@@ -205,11 +207,11 @@ export default function InventoryPage(): React.ReactElement {
       }
       return payload;
     },
-    [token]
+    [signedIn]
   );
 
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!signedIn) return;
     if (firstLoad.current) setLoading(true);
     else setRefreshing(true);
     setError(null);
@@ -230,14 +232,14 @@ export default function InventoryPage(): React.ReactElement {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiQuery, authFetch, token]);
+  }, [apiQuery, authFetch, signedIn]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!signedIn) return;
     authFetch('/api/admin/categories')
       .then((payload) => setCategories(payload.options ?? []))
       .catch(() => setCategories([]));
@@ -251,7 +253,7 @@ export default function InventoryPage(): React.ReactElement {
         )
       )
       .catch(() => setSuppliers([]));
-  }, [authFetch, token]);
+  }, [authFetch, signedIn]);
 
   useEffect(() => {
     if (searchDraft === params.search) return;
@@ -310,7 +312,7 @@ export default function InventoryPage(): React.ReactElement {
     query.delete('page');
     query.delete('limit');
     try {
-      await downloadWithAuth(`/api/admin/inventory/export?${query}`, token, 'inventory.csv');
+      await downloadWithAuth(`/api/admin/inventory/export?${query}`, 'inventory.csv');
     } catch (caught) {
       notifications.show({
         title: 'Could not export',
@@ -318,7 +320,7 @@ export default function InventoryPage(): React.ReactElement {
         color: 'red'
       });
     }
-  }, [apiQuery, token]);
+  }, [apiQuery, signedIn]);
 
   const viewCounts: Record<InventoryViewKey, number | undefined> = {
     all: stats?.total,
@@ -919,7 +921,6 @@ export default function InventoryPage(): React.ReactElement {
         onClose={() => setAdjusting(null)}
         locations={locationOptions}
         activeLocationId={params.locationId || null}
-        token={token}
         onAdjusted={load}
       />
 
@@ -939,7 +940,6 @@ export default function InventoryPage(): React.ReactElement {
             supplier_id: row.supplier_id
           }))}
         onClear={() => setSelectedIds([])}
-        token={token}
         onChanged={load}
         suppliers={suppliers}
       />
@@ -947,7 +947,6 @@ export default function InventoryPage(): React.ReactElement {
       <LocationsModal
         opened={locationsOpen}
         onClose={closeLocations}
-        token={token}
         onChanged={load}
       />
 
@@ -956,14 +955,12 @@ export default function InventoryPage(): React.ReactElement {
         onClose={() => setTransferring(null)}
         locations={locationOptions}
         activeLocationId={params.locationId || null}
-        token={token}
         onTransferred={load}
       />
 
       <LedgerDrawer
         product={viewingHistory}
         onClose={() => setViewingHistory(null)}
-        token={token}
       />
     </Stack>
   );

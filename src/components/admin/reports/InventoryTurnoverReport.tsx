@@ -133,7 +133,7 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
   // Fetch turnover data
   const fetchTurnoverData = useCallback(async (isRefresh = false) => {
     if (!dateRange[0] || !dateRange[1]) return;
-    if (!session?.sessionToken) return;
+    if (!session) return;
 
     setLoading(!isRefresh);
     setRefreshing(isRefresh);
@@ -149,7 +149,6 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         }
       });
 
@@ -173,14 +172,14 @@ export default function InventoryTurnoverReport({ }: InventoryTurnoverReportProp
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateRange, session?.sessionToken]);
+  }, [dateRange, session]);
 
   // Initial load
   useEffect(() => {
-    if (dateRange[0] && dateRange[1] && session?.sessionToken) {
+    if (dateRange[0] && dateRange[1] && session) {
       fetchTurnoverData();
     }
-  }, [dateRange, fetchTurnoverData, session?.sessionToken]);
+  }, [dateRange, fetchTurnoverData, session]);
 
   // Filter and sort data
   const filteredAndSortedData = useMemo(() => {

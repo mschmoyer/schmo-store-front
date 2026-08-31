@@ -70,7 +70,6 @@ export interface LedgerDrawerProps {
   /** The product to show history for, or null when closed. */
   product: { product_id: string; sku: string; name: string } | null;
   onClose: () => void;
-  token?: string;
 }
 
 /**
@@ -79,20 +78,18 @@ export interface LedgerDrawerProps {
  * @param props - {@link LedgerDrawerProps}
  * @returns The drawer.
  */
-export function LedgerDrawer({ product, onClose, token }: LedgerDrawerProps): React.ReactElement {
+export function LedgerDrawer({ product, onClose }: LedgerDrawerProps): React.ReactElement {
   const [movements, setMovements] = useState<Movement[]>([]);
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!product || !token) return;
+    if (!product) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/admin/inventory/${product.product_id}/ledger?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await fetch(`/api/admin/inventory/${product.product_id}/ledger?limit=100`, { credentials: 'include' });
       const payload = await response.json();
       if (!response.ok || payload?.success === false) {
         throw new Error(payload?.error ?? 'Could not load the history');
@@ -104,7 +101,7 @@ export function LedgerDrawer({ product, onClose, token }: LedgerDrawerProps): Re
     } finally {
       setLoading(false);
     }
-  }, [product, token]);
+  }, [product]);
 
   useEffect(() => {
     void load();

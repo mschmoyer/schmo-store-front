@@ -215,12 +215,10 @@ export default function AIPage() {
 
     setIsApplying(true);
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/api/admin/store-config', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
@@ -314,12 +312,10 @@ export default function AIPage() {
         ? {} // Will process all products for the store
         : { storeId: user.storeId };
 
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(`/api/admin/ai/${featureId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(requestBody)
       });

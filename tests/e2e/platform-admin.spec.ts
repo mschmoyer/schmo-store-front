@@ -53,7 +53,8 @@ const REFUSAL_PATTERN =
  * @returns Resolves once `/admin` has rendered its dashboard heading.
  */
 async function signIn(page: Page, credentials: { email: string; password: string }): Promise<void> {
-  await page.goto('/login');
+  // `/native-login`, not `/login`: the front door is Clerk's now, and this environment is keyless.
+  await page.goto('/native-login');
   await page.waitForSelector('input[type="email"]', { timeout: 15000 });
   await page.fill('input[type="email"]', credentials.email);
   await page.fill('input[type="password"]', credentials.password);

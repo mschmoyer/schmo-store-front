@@ -6,7 +6,8 @@ import { redirect } from 'next/navigation';
  * There were two sign-in screens. `/login` wrote its session under one
  * localStorage key and `/admin` read another, so signing in on the marketing
  * site succeeded, landed on `/admin`, found nothing, and bounced the merchant
- * to *this* page to sign in a second time with the same credentials.
+ * to *this* page to sign in a second time with the same credentials. (Both keys
+ * are gone now — the session is an httpOnly cookie and nothing mirrors it.)
  *
  * This page was also the last piece of pre-design-system UI in the product — a
  * `linear-gradient(135deg, #667eea 0%, #764ba2 100%)` panel, which is why the

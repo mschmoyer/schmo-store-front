@@ -153,7 +153,7 @@ export default function OrdersPage(): React.ReactElement {
   }, [search]);
 
   const fetchOrders = useCallback(async () => {
-    if (!session?.sessionToken) return;
+    if (!session) return;
 
     setLoading(true);
     setError(null);
@@ -163,9 +163,7 @@ export default function OrdersPage(): React.ReactElement {
       if (status) query.set('status', status);
       if (debouncedSearch) query.set('search', debouncedSearch);
 
-      const response = await fetch(`/api/admin/orders?${query.toString()}`, {
-        headers: { Authorization: `Bearer ${session.sessionToken}` },
-      });
+      const response = await fetch(`/api/admin/orders?${query.toString()}`, { credentials: 'include' });
 
       const result = await response.json().catch(() => null);
 
@@ -191,7 +189,7 @@ export default function OrdersPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [session?.sessionToken, page, status, debouncedSearch]);
+  }, [session, page, status, debouncedSearch]);
 
   useEffect(() => {
     void fetchOrders();
@@ -220,7 +218,7 @@ export default function OrdersPage(): React.ReactElement {
         title="Orders"
         description="Everything customers have bought, oldest unshipped first."
         actions={
-          <OrdersRefreshButton sessionToken={session?.sessionToken ?? null} onRefresh={fetchOrders} />
+          <OrdersRefreshButton signedIn={Boolean(session)} onRefresh={fetchOrders} />
         }
       />
 
