@@ -1,7 +1,10 @@
 # Plan: replace homegrown auth with Clerk
 
-**Status:** in progress — being implemented in one pass on `claude/auth-system-review-nbf4mz`
-(Clerk keys exist in Vercel for preview and production; this session builds keyless).
+**Status:** implemented on `claude/auth-system-review-nbf4mz` (PR #16), keyless-validated. Clerk
+keys exist in Vercel for preview and production; this session built and tested with none, so the
+Clerk-configured branch is exercised for the first time in preview. Phases 1–4 below are landed; the
+phase-5 demolition (removing the legacy path, dropping dead columns) is deliberately deferred behind
+the `ENABLE_NATIVE_LOGIN` escape hatch until Clerk is proven in production.
 
 **Goal:** merchants sign in through Clerk — email/password, Google, password reset, MFA, bot and
 brute-force protection all handled by the vendor — while everything Clerk must never know about
