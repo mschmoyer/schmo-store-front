@@ -18,9 +18,10 @@ class AdminLoginPage {
    * Navigate to admin login page
    */
   async goto() {
-    // The sign-in route is `/login`. `/admin/login` has never existed, so every
-    // spec using this page object was testing a 404.
-    await this.page.goto('/login');
+    // `/login` is now the identity provider's door and renders no form of its own — a labelled
+    // "not configured" state in an environment with no Clerk keys, which is what CI and the dev
+    // container are. The email/password form this page object drives lives at `/native-login`.
+    await this.page.goto('/native-login');
   }
 
   /**

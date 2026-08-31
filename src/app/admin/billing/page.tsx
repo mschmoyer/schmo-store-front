@@ -147,16 +147,6 @@ const TOKENS = {
 };
 
 /**
- * Read the admin bearer token the admin shell stores after login.
- *
- * @returns The token, or `null` when signed out.
- */
-function readToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('admin_token');
-}
-
-/**
  * Format an ISO date for display.
  *
  * @param iso - ISO-8601 timestamp, or `null`.
@@ -415,13 +405,10 @@ function BillingContent(): React.ReactElement {
   const [couponBusy, setCouponBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const token = readToken();
-    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-
     try {
       const [billingResponse, connectResponse] = await Promise.all([
-        fetch('/api/billing/status', { headers }),
-        fetch('/api/connect/status', { headers }),
+        fetch('/api/billing/status', { credentials: 'include' }),
+        fetch('/api/connect/status', { credentials: 'include' }),
       ]);
 
       if (billingResponse.status === 401 || connectResponse.status === 401) {
@@ -462,14 +449,10 @@ function BillingContent(): React.ReactElement {
       setError(null);
 
       try {
-        const token = readToken();
-        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-        if (body) {
-          headers['Content-Type'] = 'application/json';
-        }
         const response = await fetch(url, {
           method: 'POST',
-          headers,
+          credentials: 'include',
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
           body: body ? JSON.stringify(body) : undefined,
         });
         const json = await response.json();
@@ -502,13 +485,10 @@ function BillingContent(): React.ReactElement {
     setCouponPreview(null);
 
     try {
-      const token = readToken();
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (token) headers.Authorization = `Bearer ${token}`;
-
       const response = await fetch('/api/billing/coupon/preview', {
         method: 'POST',
-        headers,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
       });
       const json = await response.json();

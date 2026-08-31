@@ -8,7 +8,7 @@
  */
 
 import { db } from '@/lib/database/connection';
-import { SESSION_COOKIE, verifySession, type UserSession } from '@/lib/auth/session';
+import { SESSION_COOKIE, resolveSession, type UserSession } from '@/lib/auth/session';
 import {
   asStepId,
   completeStep as advance,
@@ -209,22 +209,19 @@ export interface OnboardingContext {
 }
 
 /**
- * Read the signed-in user from the request's session cookie.
+ * Read the signed-in user from whichever transport is currently valid.
+ *
+ * Delegates to {@link resolveSession} so onboarding sees exactly what `requireAuth` sees: a Clerk
+ * session when Clerk is configured, and a legacy cookie/Bearer token *only* while native login is
+ * enabled. Reading the cookie directly here was a kill-switch bypass — a stale legacy JWT kept
+ * authenticating the ShipStation-credential and store-create steps after `ENABLE_NATIVE_LOGIN` was
+ * turned off — and it left the Clerk sign-up path 401ing at step 2 because it never consulted Clerk.
  *
  * @param request - Incoming request
  * @returns The session, or null when signed out
  */
 export async function readSession(request: Request): Promise<UserSession | null> {
-  const header = request.headers.get('cookie');
-  if (!header) return null;
-  const match = header
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE}=`));
-  if (!match) return null;
-  const token = decodeURIComponent(match.slice(SESSION_COOKIE.length + 1));
-  if (!token) return null;
-  return verifySession(token);
+  return resolveSession(request);
 }
 
 const DEFAULT_IMPORT: ImportProgress = {

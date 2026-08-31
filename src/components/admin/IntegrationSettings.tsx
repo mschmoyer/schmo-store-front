@@ -188,12 +188,10 @@ export function IntegrationSettings({ integration, onUpdate, onDisconnected, loa
     setTestResult(null);
     
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/api/admin/integrations/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           integrationType: integration.integrationType,
@@ -262,10 +260,9 @@ export function IntegrationSettings({ integration, onUpdate, onDisconnected, loa
     if (!endpoints.connectedTest) return;
     setTestingStored(true);
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(endpoints.connectedTest, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
       const data = await response.json();
@@ -307,10 +304,8 @@ export function IntegrationSettings({ integration, onUpdate, onDisconnected, loa
 
     setDisconnecting(true);
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(endpoints.disconnect, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.success === false) {
@@ -353,11 +348,9 @@ export function IntegrationSettings({ integration, onUpdate, onDisconnected, loa
       setSyncing({ products: true, inventory: true });
       
       try {
-        const token = localStorage.getItem('admin_token');
         const response = await fetch('/api/admin/sync/all', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });
@@ -394,11 +387,9 @@ export function IntegrationSettings({ integration, onUpdate, onDisconnected, loa
       setSyncing(prev => ({ ...prev, [type]: true }));
       
       try {
-        const token = localStorage.getItem('admin_token');
         const response = await fetch(`/api/admin/sync/${type}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });

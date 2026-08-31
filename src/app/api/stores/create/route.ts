@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
 import { hashPassword } from '@/lib/auth/password';
+import { isNativeLoginEnabled } from '@/lib/auth/clerk-config';
 import { v4 as uuidv4 } from 'uuid';
 
 interface CreateStoreRequest {
@@ -16,13 +17,21 @@ interface CreateStoreRequest {
 }
 
 export async function POST(req: NextRequest) {
+  // This route mints a password account, so it is part of the legacy login surface and dies with
+  // it: when native login is off (production default) it 404s like the other native auth routes,
+  // rather than remaining an anonymous account factory that can squat a merchant's email before
+  // they sign up through Clerk.
+  if (!isNativeLoginEnabled()) {
+    return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  }
+
   try {
     const body: CreateStoreRequest = await req.json();
-    
+
     // Validate required fields
     const requiredFields = ['email', 'password', 'firstName', 'lastName', 'storeName', 'storeSlug', 'storeDescription', 'heroTitle', 'heroDescription'];
     const missingFields = requiredFields.filter(field => !body[field as keyof CreateStoreRequest]);
-    
+
     if (missingFields.length > 0) {
       return NextResponse.json(
         { message: `Missing required fields: ${missingFields.join(', ')}` },
@@ -30,10 +39,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if email already exists (exact match only)
+    // Normalise the email so the uniqueness check and the stored value match how Clerk linking
+    // looks users up (`lower(email)`). Exact-case matching here let `Merchant@x.com` slip past a
+    // row holding `merchant@x.com`.
+    const email = body.email.trim().toLowerCase();
+
+    // Check if email already exists
     const existingUser = await db.query(
-      'SELECT id FROM users WHERE email = $1',
-      [body.email]
+      'SELECT id FROM users WHERE lower(email) = $1',
+      [email]
     );
 
     if (existingUser.rows.length > 0) {
@@ -66,7 +80,7 @@ export async function POST(req: NextRequest) {
       await client.query(
         `INSERT INTO users (id, email, password_hash, first_name, last_name, email_verified, is_active) 
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [userId, body.email, hashedPassword, body.firstName, body.lastName, false, true]
+        [userId, email, hashedPassword, body.firstName, body.lastName, false, true]
       );
 
       // Create store

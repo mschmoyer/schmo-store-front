@@ -24,8 +24,8 @@ import { notifications } from '@mantine/notifications';
 import { IconRefresh } from '@tabler/icons-react';
 
 export interface OrdersRefreshButtonProps {
-  /** Admin session bearer token. `null` while the session is still resolving. */
-  sessionToken: string | null;
+  /** False while the admin shell is still resolving the session; the button stays disabled. */
+  signedIn: boolean;
   /** Reload the list. Awaited, so the button stays busy until the rows land. */
   onRefresh: () => Promise<void>;
 }
@@ -47,14 +47,14 @@ type ShipmentPull =
 /**
  * Pull shipments back from ShipStation for the caller's store.
  *
- * @param sessionToken - Admin session bearer token.
  * @returns What happened, distinguishing a store with no integration from a
  *   sync that ran and failed.
  */
-async function pullShipments(sessionToken: string): Promise<ShipmentPull> {
+async function pullShipments(): Promise<ShipmentPull> {
   const response = await fetch('/api/admin/sync/shipments', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
     body: '{}',
   });
 
@@ -84,7 +84,7 @@ async function pullShipments(sessionToken: string): Promise<ShipmentPull> {
  * @returns The refresh button.
  */
 export function OrdersRefreshButton({
-  sessionToken,
+  signedIn,
   onRefresh,
 }: OrdersRefreshButtonProps): React.ReactElement {
   const [refreshing, setRefreshing] = useState(false);
@@ -100,7 +100,7 @@ export function OrdersRefreshButton({
     setRefreshing(true);
 
     try {
-      const shipments = sessionToken ? await pullShipments(sessionToken) : null;
+      const shipments = signedIn ? await pullShipments() : null;
 
       await onRefresh();
 
@@ -147,7 +147,7 @@ export function OrdersRefreshButton({
         variant="default"
         onClick={() => void refresh()}
         loading={refreshing}
-        disabled={!sessionToken}
+        disabled={!signedIn}
       >
         Refresh
       </Button>

@@ -269,10 +269,9 @@ test.describe('Admin catalogue', () => {
      * removing an image takes its URL off every product that used it, so the suite cannot leave a
      * demo product pointing at a URL that now 404s.
      */
-    const token = await page.evaluate(() => window.localStorage.getItem('admin_token'));
-    const deleted = await page.request.delete(`/api/admin/media/${src.split('/').pop()}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    // No Authorization header: `page.request` shares the page's cookie jar, so the session cookie
+    // authenticates this exactly as it does the app's own fetches.
+    const deleted = await page.request.delete(`/api/admin/media/${src.split('/').pop()}`);
     expect(deleted.status()).toBe(200);
     expect((await deleted.json()).detached_from_products).toBe(1);
 

@@ -134,15 +134,11 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     setError(null);
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
-      const response = await fetch(`/api/admin/products/${id}`, {
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
-      });
+      const response = await fetch(`/api/admin/products/${id}`, { credentials: 'include' });
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -170,23 +166,19 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [session?.sessionToken]);
+  }, [session]);
 
   /**
    * Fetch categories for form dropdown
    */
   const fetchCategories = useCallback(async () => {
     try {
-      if (!session?.sessionToken) {
-        console.error('No authentication token available for categories');
+      if (!session) {
+        console.error('Not signed in; skipping the categories fetch');
         return;
       }
 
-      const response = await fetch('/api/admin/categories', {
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
-      });
+      const response = await fetch('/api/admin/categories', { credentials: 'include' });
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -196,7 +188,7 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     } catch (err) {
       console.error('Error fetching categories:', err);
     }
-  }, [session?.sessionToken]);
+  }, [session]);
 
   /**
    * Save product changes
@@ -208,15 +200,14 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     setFormErrors({});
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       const response = await fetch(`/api/admin/products/${productId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         },
         body: JSON.stringify(updatedProduct)
       });
@@ -271,15 +262,12 @@ export default function ProductEditPage({ params }: ProductEditPageProps) {
     if (!productId) return;
     
     try {
-      if (!session?.sessionToken) {
-        throw new Error('No authentication token available');
+      if (!session) {
+        throw new Error('You are not signed in.');
       }
 
       const response = await fetch(`/api/admin/products/${productId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session.sessionToken}`
-        }
       });
       
       if (!response.ok) {

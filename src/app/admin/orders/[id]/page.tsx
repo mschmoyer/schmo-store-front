@@ -112,15 +112,13 @@ export default function OrderDetailPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrder = useCallback(async () => {
-    if (!session?.sessionToken || !orderId) return;
+    if (!session || !orderId) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/admin/orders/${orderId}`, {
-        headers: { Authorization: `Bearer ${session.sessionToken}` },
-      });
+      const response = await fetch(`/api/admin/orders/${orderId}`, { credentials: 'include' });
       const result = await response.json().catch(() => null);
 
       if (!response.ok || !result?.success) {
@@ -139,7 +137,7 @@ export default function OrderDetailPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [session?.sessionToken, orderId]);
+  }, [session, orderId]);
 
   useEffect(() => {
     void fetchOrder();

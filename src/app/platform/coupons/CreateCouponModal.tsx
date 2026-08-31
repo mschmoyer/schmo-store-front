@@ -238,14 +238,10 @@ export function CreateCouponModal({ opened, onClose, onCreated }: CreateCouponMo
       setSubmitting(true);
 
       try {
-        const token = typeof window === 'undefined' ? null : window.localStorage.getItem('admin_token');
         const response = await fetch('/api/platform/coupons', {
           method: 'POST',
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(validation.payload),
         });
         const payload = (await response.json().catch(() => null)) as

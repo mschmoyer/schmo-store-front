@@ -177,7 +177,7 @@ export default function ImageGalleryManager({
   const handleFileUpload = async () => {
     if (!uploadFiles.length) return;
 
-    if (!session?.sessionToken) {
+    if (!session) {
       notifications.show({
         title: 'Not signed in',
         message: 'Your session has expired. Sign in again to upload images.',
@@ -213,7 +213,6 @@ export default function ImageGalleryManager({
 
       const response = await fetch('/api/admin/media', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${session.sessionToken}` },
         body: form
       });
       const payload = await response.json();
@@ -345,12 +344,11 @@ export default function ImageGalleryManager({
      */
     const mediaId = mediaIdFromUrl(selectedImage.url);
 
-    if (mediaId && session?.sessionToken) {
+    if (mediaId && session) {
       try {
         const response = await fetch(`/api/admin/media/${mediaId}`, {
           method: 'PATCH',
           headers: {
-            Authorization: `Bearer ${session.sessionToken}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ alt_text: imageAlt })

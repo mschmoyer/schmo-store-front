@@ -173,12 +173,10 @@ export default function BlogPostForm({
     // that vanished when the tab closed. Only a URL the server actually stored
     // is set, and when uploads are not configured we say so rather than fake it.
     try {
-      const token = localStorage.getItem('admin_token');
       const body = new FormData();
       body.append('file', file);
       const response = await fetch('/api/admin/media', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body,
       });
       const result = await response.json().catch(() => null);

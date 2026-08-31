@@ -41,7 +41,6 @@ export interface TransferStockModalProps {
   locations: Array<{ value: string; label: string }>;
   /** The location the grid is filtered to, used as the origin. */
   activeLocationId?: string | null;
-  token?: string;
   onTransferred: () => void | Promise<void>;
 }
 
@@ -64,7 +63,6 @@ export function TransferStockModal({
   onClose,
   locations,
   activeLocationId,
-  token,
   onTransferred
 }: TransferStockModalProps): React.ReactElement {
   const [from, setFrom] = useState<string | null>(null);
@@ -84,10 +82,7 @@ export function TransferStockModal({
     setError(null);
     setBalances([]);
 
-    if (!token) return;
-    fetch(`/api/admin/inventory/${target.product_id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    fetch(`/api/admin/inventory/${target.product_id}`, { credentials: 'include' })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => setBalances(payload?.data?.locations ?? []))
       .catch(() => setBalances([]));
@@ -134,7 +129,7 @@ export function TransferStockModal({
     }));
 
   const submit = async () => {
-    if (!target || !token || !from || !to) {
+    if (!target || !from || !to) {
       setError('Choose where the stock is moving from and to');
       return;
     }
@@ -148,7 +143,7 @@ export function TransferStockModal({
     try {
       const response = await fetch(`/api/admin/inventory/${target.product_id}/transfer`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           from_location_id: from,
           to_location_id: to,

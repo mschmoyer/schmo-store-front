@@ -13,11 +13,9 @@
  * as its own kind so the detail screen can render a real not-found state with a
  * way back to the list.
  *
- * Everything else matches the shared hook on purpose: the bearer token is read
- * from `localStorage` exactly as `AdminContext` writes it, the session cookie
- * goes along so the request still authenticates when the token was never
- * written, and a superseded request is aborted so the numbers on screen always
- * belong to the query the URL is showing.
+ * Everything else matches the shared hook on purpose: the httpOnly session
+ * cookie is the only credential, and a superseded request is aborted so the
+ * numbers on screen always belong to the query the URL is showing.
  *
  * The rest of the classification exists because HTTP status carries meaning the
  * console has to act on, and collapsing it to one "something went wrong" banner
@@ -120,13 +118,9 @@ export function usePlatformFetch<T>(url: string | null): PlatformFetchState<T> {
 
     const run = async (): Promise<void> => {
       try {
-        const token =
-          typeof window === 'undefined' ? null : window.localStorage.getItem('admin_token');
-
         const response = await fetch(url, {
           credentials: 'include',
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
 
         /* A missing route handler answers with Next's HTML 404 page, so the

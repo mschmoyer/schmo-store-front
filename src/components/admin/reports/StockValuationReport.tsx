@@ -181,7 +181,7 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
   // Fetch valuation data
   const fetchValuationData = useCallback(async (isRefresh = false) => {
     if (!dateRange[0] || !dateRange[1]) return;
-    if (!session?.sessionToken) return;
+    if (!session) return;
 
     setLoading(!isRefresh);
     setRefreshing(isRefresh);
@@ -198,7 +198,6 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.sessionToken}`
         }
       });
 
@@ -221,14 +220,14 @@ export default function StockValuationReport({ }: StockValuationReportProps) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dateRange, comparePrevious, session?.sessionToken]);
+  }, [dateRange, comparePrevious, session]);
 
   // Initial load
   useEffect(() => {
-    if (dateRange[0] && dateRange[1] && session?.sessionToken) {
+    if (dateRange[0] && dateRange[1] && session) {
       fetchValuationData();
     }
-  }, [dateRange, comparePrevious, fetchValuationData, session?.sessionToken]);
+  }, [dateRange, comparePrevious, fetchValuationData, session]);
 
   // Export to CSV
   const exportToCSV = () => {

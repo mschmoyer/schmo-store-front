@@ -20,11 +20,6 @@ import { COUPON_FILTERS } from './useCouponsParams';
 import type { PlatformCouponApiItem, PlatformCouponFilter, PlatformCouponsPayload } from './types';
 import styles from './coupons.module.css';
 
-/** Session-carried admin bearer token, matching `usePlatformFetch`'s own read of it. */
-function adminToken(): string | null {
-  return typeof window === 'undefined' ? null : window.localStorage.getItem('admin_token');
-}
-
 /**
  * Format a coupon's live-claim count against its cap.
  *
@@ -87,14 +82,10 @@ function CouponRow({
     setDeactivating(true);
     setRowError(null);
     try {
-      const token = adminToken();
       const response = await fetch(`/api/platform/coupons/${coupon.id}`, {
         method: 'PATCH',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: false }),
       });
       const payload = (await response.json().catch(() => null)) as

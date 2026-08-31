@@ -5,8 +5,11 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import '@/styles/mantine-overrides.css';
 import { ColorSchemeScript, mantineHtmlProps } from '@mantine/core';
+import { ClerkProvider } from '@clerk/nextjs';
 import { AppProviders } from '@/components/ui/AppProviders';
 import { generateLandingPageMeta } from '@/components/seo/LandingPageMeta';
+import { ClerkAvailabilityProvider } from '@/components/auth/ClerkAvailability';
+import { isClerkConfigured } from '@/lib/auth/clerk-config';
 
 /**
  * Typography per design-system §3. Every family is loaded with `display: swap`
@@ -58,7 +61,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return (
+  /*
+   * Both keys, not just the publishable one. A deployment with only the public half would mount
+   * the provider and sign people in against an instance no route can verify a session from — the
+   * merchant lands on a dead end with no explanation instead of the labelled "not configured"
+   * state. One verdict, decided on the server where both halves are readable, and published to the
+   * client tree so `useClerk`/`useUser` are only ever called where a provider actually exists.
+   */
+  const clerkReady = isClerkConfigured();
+
+  const tree = (
     // The font variables must sit on <html>, not <body>: globals.css declares
     // `--font-sans: var(--font-inter), …` on :root, and a var() that is not
     // resolvable at that element makes the whole declaration invalid at
@@ -101,8 +113,20 @@ export default function RootLayout({
         */}
       </head>
       <body className="antialiased">
-        <AppProviders>{children}</AppProviders>
+        <ClerkAvailabilityProvider available={clerkReady}>
+          <AppProviders>{children}</AppProviders>
+        </ClerkAvailabilityProvider>
       </body>
     </html>
   );
+
+  // The unconfigured branch returns the exact tree it returned before Clerk arrived.
+  // `<ClerkProvider>` demands a key at render and would otherwise throw in the root layout — which
+  // is every page, including storefronts that must never depend on our identity provider being
+  // configured. This is the same failure shape as the module-scope `JWT_SECRET` const that took
+  // the customizer down: a throw one level below the whole app.
+  //
+  // `dynamic` opts the provider into resolving auth state per request instead of at build time, so
+  // static marketing pages are not forced to know about a session.
+  return clerkReady ? <ClerkProvider dynamic>{tree}</ClerkProvider> : tree;
 }

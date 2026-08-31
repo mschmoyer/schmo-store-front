@@ -29,11 +29,14 @@ const adminAuthFixture = base.extend({
   /**
    * A page already signed in to the admin.
    *
-   * Signs in through the real login form rather than injecting a token, so the
+   * Signs in through the real login form rather than injecting a session, so the
    * fixture also exercises the auth path every merchant uses.
+   *
+   * `/native-login`, not `/login`: the front door is Clerk's now and renders no form of its own,
+   * and this environment has no Clerk keys.
    */
   adminPage: async ({ page }, use) => {
-    await page.goto('/login');
+    await page.goto('/native-login');
 
     await page.waitForSelector('input[type="email"]', { timeout: 15000 });
     await page.fill('input[type="email"]', DEFAULT_EMAIL);

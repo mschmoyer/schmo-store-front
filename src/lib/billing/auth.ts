@@ -8,7 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/database/connection';
-import { getSessionFromCookies, getSessionFromRequest, type UserSession } from '@/lib/auth/session';
+import { resolveSession, type UserSession } from '@/lib/auth/session';
 
 /** A signed-in merchant plus the store they own. */
 export interface MerchantContext {
@@ -27,23 +27,17 @@ export type MerchantResult =
   | { readonly ok: false; readonly response: NextResponse };
 
 /**
- * Resolve the signed-in user from a request, checking the bearer token then the cookie.
+ * Resolve the signed-in user from whichever transport is currently valid.
+ *
+ * Delegates to {@link resolveSession}: Clerk when configured, and a legacy cookie/Bearer token only
+ * while native login is enabled. Resolving the token directly here bypassed the `ENABLE_NATIVE_LOGIN`
+ * kill switch on the entire billing and Connect money path, and never accepted a Clerk session.
  *
  * @param request - The inbound request.
  * @returns The user session, or `null` when unauthenticated.
  */
 export async function getUserSession(request: Request): Promise<UserSession | null> {
-  const fromHeader = await getSessionFromRequest(request);
-  if (fromHeader) {
-    return fromHeader;
-  }
-
-  const cookieHeader = request.headers.get('cookie');
-  if (!cookieHeader) {
-    return null;
-  }
-
-  return await getSessionFromCookies(cookieHeader);
+  return resolveSession(request);
 }
 
 /**

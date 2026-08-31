@@ -75,11 +75,6 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
   const fetchExecutiveSummary = useCallback(async () => {
     try {
       setSummaryLoading(true);
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        return;
-      }
-
       const params = new URLSearchParams();
       params.append('days', dateRange);
       
@@ -88,11 +83,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
         params.append('endDate', endDate);
       }
 
-      const response = await fetch(`/api/admin/analytics/executive-summary?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await fetch(`/api/admin/analytics/executive-summary?${params.toString()}`, { credentials: 'include' });
 
       if (response.ok) {
         const result = await response.json();
@@ -110,12 +101,6 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
   const fetchTrendData = useCallback(async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        setError('Authentication required');
-        return;
-      }
-
       const params = new URLSearchParams();
       params.append('days', dateRange);
       
@@ -124,11 +109,7 @@ export default function TrendDashboard({ dateRange, onDateRangeChange }: TrendDa
         params.append('endDate', endDate);
       }
 
-      const response = await fetch(`/api/admin/analytics/trends?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await fetch(`/api/admin/analytics/trends?${params.toString()}`, { credentials: 'include' });
 
       if (response.ok) {
         const result = await response.json();

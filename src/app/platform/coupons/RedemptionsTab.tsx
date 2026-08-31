@@ -22,11 +22,6 @@ import type {
 } from './types';
 import styles from './coupons.module.css';
 
-/** Session-carried admin bearer token, matching `CouponsTab`'s own read of it. */
-function adminToken(): string | null {
-  return typeof window === 'undefined' ? null : window.localStorage.getItem('admin_token');
-}
-
 const STATUS_LABEL: Record<PlatformCouponClaimStatus, string> = {
   attributed: 'Attributed',
   redeemed: 'Redeemed',
@@ -86,11 +81,9 @@ function RedemptionRow({
     setReleasing(true);
     setRowError(null);
     try {
-      const token = adminToken();
       const response = await fetch(`/api/platform/coupons/redemptions/${redemption.id}/release`, {
         method: 'POST',
         credentials: 'include',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const payload = (await response.json().catch(() => null)) as
         | { success?: boolean; error?: string }

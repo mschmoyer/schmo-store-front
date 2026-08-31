@@ -58,14 +58,7 @@ export function ShipStationSyncButton({
    */
   const readConnection = useCallback(async () => {
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        setConnected(false);
-        return;
-      }
-      const response = await fetch('/api/admin/integrations', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await fetch('/api/admin/integrations', { credentials: 'include' });
       if (!response.ok) {
         setConnected(false);
         return;
@@ -94,10 +87,9 @@ export function ShipStationSyncButton({
   const sync = async () => {
     setSyncing(true);
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body ?? {})
       });
       const payload = (await response.json().catch(() => ({}))) as {

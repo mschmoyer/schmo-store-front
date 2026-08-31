@@ -84,7 +84,9 @@ npm run snapshot:inventory # inventory snapshot CLI entry point
 errors. `npx tsc --noEmit` is the only thing that enforces them, and CI runs it as a separate job.
 Do not treat a green build as a green typecheck.
 
-Sign-in for seeded data: `demo@schmostore.com` / `rebeldev`. Every seeded user shares that password.
+Sign-in for seeded data: **`/native-login`**, `demo@schmostore.com` / `rebeldev`. Every seeded user
+shares that password. `/login` is the Clerk door and renders a labelled "not configured" state in
+any environment without Clerk keys — which a session container is.
 
 Playwright starts the dev server itself (`webServer` in `playwright.config.js`) and reuses one that
 is already running, so `npm run test:e2e` no longer depends on remembering to start it. The

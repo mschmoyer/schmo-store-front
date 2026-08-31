@@ -139,15 +139,7 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = useCallback(async () => {
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await fetch('/api/admin/dashboard', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetch('/api/admin/dashboard', { credentials: 'include' });
 
       if (response.ok) {
         const result = await response.json();
@@ -172,11 +164,9 @@ export default function AdminDashboard() {
 
     setUpdatingVisibility(true);
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch('/api/admin/store/visibility', {
         method: 'PUT',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ isPublic: !data.stats.store.isPublic }),

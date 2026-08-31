@@ -30,11 +30,6 @@ function renderNotices(): void {
 
 beforeEach(() => {
   mockedFetch.mockReset();
-  window.localStorage.setItem('admin_token', 'test-token');
-});
-
-afterEach(() => {
-  window.localStorage.removeItem('admin_token');
 });
 
 describe('CouponNotices: rendering a fetch failure instead of nothing', () => {
@@ -100,13 +95,14 @@ describe('CouponNotices: rendering a fetch failure instead of nothing', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it('never fetches without a stored token, and shows nothing', async () => {
-    window.localStorage.removeItem('admin_token');
+  it('shows nothing when the caller is not signed in — a 401 is not a failure to report here', async () => {
+    // There is no client-readable credential any more: the session is an httpOnly cookie, so
+    // "signed out" can only be learned from the response. The banner must not appear for it.
+    mockedFetch.mockResolvedValueOnce({ status: 401, ok: false, json: async () => ({}) });
 
     renderNotices();
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mockedFetch).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

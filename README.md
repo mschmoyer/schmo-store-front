@@ -73,7 +73,9 @@ npm run dev-local -- --fresh   # also re-seed demo data
 npm run dev-local -- --setup   # set up but do not start the server
 ```
 
-**Sign in:** `demo@schmostore.com` / `rebeldev` — every seeded user shares that password.
+**Sign in:** at **`/native-login`**, with `demo@schmostore.com` / `rebeldev` — every seeded user
+shares that password. `/login` is Clerk's sign-in and renders a labelled "not configured" state
+without Clerk keys, which is what a local container has.
 
 ### On a bare container (Claude Code on the web, CI sandboxes)
 

@@ -19,14 +19,16 @@ jest.mock('../../../../../../../../lib/database/connection', () => ({
   validateUUID: (value: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value),
 }));
+// `platform-admin` resolves the caller through session.ts's shared `resolveSession` — Clerk first,
+// the legacy JWT only while native login is enabled. Mocking that one function stands in for every
+// transport, which is the point of there being one.
 jest.mock('../../../../../../../../lib/auth/session', () => ({
-  getSessionFromRequest: jest.fn(),
-  getSessionFromCookies: jest.fn(),
+  resolveSession: jest.fn(),
 }));
 
 import { NextRequest } from 'next/server';
 import { db, validateUUID } from '@/lib/database/connection';
-import { getSessionFromRequest } from '@/lib/auth/session';
+import { resolveSession } from '@/lib/auth/session';
 import { POST } from '../route';
 
 const REDEMPTION_ID = '11111111-1111-1111-1111-111111111111';
@@ -76,7 +78,7 @@ function params(id: string = REDEMPTION_ID): { params: Promise<{ id: string }> }
 
 // `jest.mocked` rather than a `jest.MockedFunction<...>` cast: this repo has no `@types/jest`, so
 // the `jest` *namespace* does not exist at type level even though the global value does.
-const mockedGetSession = jest.mocked(getSessionFromRequest);
+const mockedGetSession = jest.mocked(resolveSession);
 const mockedDb = db as unknown as { query: ReturnType<typeof jest.fn>; transaction: ReturnType<typeof jest.fn> };
 
 beforeEach(() => {

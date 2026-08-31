@@ -1,35 +1,25 @@
 /**
  * Downloading an authenticated file from the admin.
  *
- * The admin authenticates with a bearer token held in memory, not a cookie, so the obvious
- * approach — pointing `window.location` at the export URL — arrives unauthenticated and 401s. The
- * other obvious approach is putting the token in the query string, which writes a live credential
- * into browser history, the referrer, and every access log between here and the server. Neither is
- * acceptable for a file a merchant downloads several times a day.
+ * Pointing `window.location` at the export URL would in fact authenticate — the session is an
+ * httpOnly cookie the browser sends on a top-level navigation too — but it gives up every failure
+ * mode: a 401 or a 500 replaces the merchant's page with a JSON error document, and there is no
+ * hook left to show a notification or keep them where they were.
  *
- * So the request is a normal authenticated `fetch` and the response becomes an object URL. The
- * server still streams — that is what keeps a serverless function from assembling a large
- * catalogue in memory — and the browser holds the finished file, which it is well suited to.
+ * So the request is a normal `fetch` and the response becomes an object URL. The server still
+ * streams — that is what keeps a serverless function from assembling a large catalogue in memory —
+ * and the browser holds the finished file, which it is well suited to.
  */
 
 /**
- * Fetch a file with the session token and hand it to the browser as a download.
+ * Fetch a file as the signed-in merchant and hand it to the browser as a download.
  *
  * @param url - The endpoint to download from.
- * @param token - The session token.
  * @param fallbackFilename - Used when the response carries no `Content-Disposition`.
  * @throws Error with a message suitable for showing the merchant.
  */
-export async function downloadWithAuth(
-  url: string,
-  token: string | undefined,
-  fallbackFilename: string
-): Promise<void> {
-  if (!token) {
-    throw new Error('Your session has expired. Sign in again.');
-  }
-
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+export async function downloadWithAuth(url: string, fallbackFilename: string): Promise<void> {
+  const response = await fetch(url, { credentials: 'include' });
 
   if (!response.ok) {
     /* The error body is JSON even though the success body is a file, so a failure reads as a

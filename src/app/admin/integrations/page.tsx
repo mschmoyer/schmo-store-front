@@ -46,14 +46,7 @@ export default function IntegrationsPage() {
    */
   const fetchIntegrations = React.useCallback(async () => {
       try {
-        const token = localStorage.getItem('admin_token');
-        if (!token) return;
-        
-        const response = await fetch('/api/admin/integrations', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await fetch('/api/admin/integrations', { credentials: 'include' });
         
         if (response.ok) {
           const data = await response.json();
@@ -146,14 +139,10 @@ export default function IntegrationsPage() {
     setError(null);
     
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) return;
-      
       const response = await fetch('/api/admin/integrations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           integrationType,

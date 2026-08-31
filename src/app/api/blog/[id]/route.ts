@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { blogUtils } from '@/lib/blog';
 import { BlogAPIResponse } from '@/types/blog';
-import { getSessionFromRequest } from '@/lib/auth/session';
+import { resolveSession } from '@/lib/auth/session';
 
 // GET /api/blog/[id] - Get a single blog post by ID
 export async function GET(
@@ -17,7 +17,7 @@ export async function GET(
     
     // If no storeId in params, try to get from authenticated user session
     if (!storeId) {
-      const user = await getSessionFromRequest(request);
+      const user = await resolveSession(request);
       if (user?.storeId) {
         storeId = user.storeId;
       } else {

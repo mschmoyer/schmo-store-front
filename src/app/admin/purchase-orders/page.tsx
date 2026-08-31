@@ -91,7 +91,7 @@ export default function PurchaseOrdersPage() {
    * — "avoid using mocks unless explicitly requested".
    */
   const fetchPurchaseOrders = useCallback(async () => {
-    if (!session?.sessionToken || !session?.storeId) return;
+    if (!session || !session?.storeId) return;
 
     try {
       setLoading(true);
@@ -104,9 +104,7 @@ export default function PurchaseOrdersPage() {
       });
       if (statusFilter) query.set('status', statusFilter);
 
-      const response = await fetch(`/api/admin/purchase-orders?${query.toString()}`, {
-        headers: { Authorization: `Bearer ${session.sessionToken}` },
-      });
+      const response = await fetch(`/api/admin/purchase-orders?${query.toString()}`, { credentials: 'include' });
 
       const result = await response.json().catch(() => null);
 
@@ -138,7 +136,7 @@ export default function PurchaseOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.sessionToken, session?.storeId, page, statusFilter, searchTerm]);
+  }, [session, session?.storeId, page, statusFilter, searchTerm]);
 
   useEffect(() => {
     void fetchPurchaseOrders();

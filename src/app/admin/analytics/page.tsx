@@ -154,17 +154,8 @@ export default function AnalyticsPage() {
   const fetchAnalyticsData = useCallback(async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        setError('Authentication required');
-        return;
-      }
 
-      const response = await fetch(`/api/admin/analytics?days=${dateRange}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await fetch(`/api/admin/analytics?days=${dateRange}`, { credentials: 'include' });
 
       if (response.ok) {
         const result = await response.json();

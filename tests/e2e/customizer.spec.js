@@ -23,21 +23,23 @@ const EMAIL = 'demo@schmostore.com';
 const PASSWORD = 'rebeldev';
 
 /**
- * Sign in over the API and seed the token the admin shell reads.
+ * Sign in over the API.
+ *
+ * Nothing is seeded into `localStorage` any more: the session is the httpOnly cookie this response
+ * sets, and `page.request` shares the browser context's cookie jar, so the page is authenticated
+ * from here on with no token to plant.
+ *
+ * `/api/auth/login`, not `/api/admin/auth/login`: only the former sets the `session` cookie. The
+ * admin twin returns a token in JSON and sets no cookie, which was invisible while this helper
+ * planted that token in `localStorage`, and is the whole credential now that it does not.
  *
  * @param {import('@playwright/test').Page} page - The page to authenticate
  */
 async function signIn(page) {
-  const response = await page.request.post('/api/admin/auth/login', {
+  const response = await page.request.post('/api/auth/login', {
     data: { email: EMAIL, password: PASSWORD },
   });
   expect(response.ok()).toBeTruthy();
-  const token = (await response.json())?.data?.session?.sessionToken;
-  expect(token).toBeTruthy();
-  await page.addInitScript((value) => {
-    localStorage.setItem('admin_token', value);
-    localStorage.setItem('adminToken', value);
-  }, token);
 }
 
 /**

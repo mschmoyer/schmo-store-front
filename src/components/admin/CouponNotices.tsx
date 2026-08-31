@@ -29,20 +29,6 @@ type CouponNotice =
   | { kind: 'discount'; discountEndsAt: string | null; hasPaymentMethod: boolean };
 
 /**
- * Read the admin bearer token, the same way `src/app/admin/page.tsx` and
- * `src/app/admin/billing/page.tsx` do.
- *
- * @returns The token, or `null` when signed out or storage is unavailable.
- */
-function readToken(): string | null {
-  try {
-    return window.localStorage.getItem('admin_token');
-  } catch {
-    return null;
-  }
-}
-
-/**
  * The platform-coupon notices for `/admin` — a reservation banner, a discount-window alert, or
  * nothing.
  *
@@ -61,16 +47,13 @@ export function CouponNotices(): React.ReactElement | null {
    * @returns Nothing; the outcome is written to `notice` / `fetchFailed`.
    */
   const loadNotice = useCallback(async (): Promise<void> => {
-    const token = readToken();
-    if (!token) {
-      // No session yet — not a fetch failure to report. `/admin`'s own auth flow owns this case.
-      return;
-    }
-
     try {
-      const response = await fetch('/api/billing/coupon/notice', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetch('/api/billing/coupon/notice', { credentials: 'include' });
+      if (response.status === 401) {
+        // Not signed in yet. That is not a fetch failure to report here — `/admin`'s own auth flow
+        // owns it — and since the session moved to an httpOnly cookie it is the only way to know.
+        return;
+      }
       if (!response.ok) {
         setFetchFailed(true);
         return;
@@ -101,12 +84,11 @@ export function CouponNotices(): React.ReactElement | null {
   }, [loadNotice]);
 
   const openBillingPortal = async (): Promise<void> => {
-    const token = readToken();
     setAddingPaymentMethod(true);
     try {
       const response = await fetch('/api/billing/portal', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
       });
       const json = await response.json();
       if (json.success && json.data?.url) {

@@ -1,5 +1,81 @@
 # Decision Log
 
+## 2026-08-31
+
+### Clerk migration, server side (docs/plans/clerk-integration.md phase 2)
+
+Session resolution is now Clerk first, legacy JWT second, and the legacy half exists only while
+`ENABLE_NATIVE_LOGIN` says so (default: on outside production, off in it). `requireAuth`,
+`getSessionFromRequest`, `getSessionFromCookies`, `verifySession`, `createSession` and
+`UserSession` all keep their signatures, so none of the ~80 call sites moved;
+`platform-admin.ts` dropped its private copy of the transport walk for the shared
+`session.ts:resolveSession`, and its database `is_admin` re-check is untouched.
+
+Decisions worth recording:
+
+- **Provisioning is just-in-time and refuses to link by email.** `clerk-user.ts` looks up
+  `users.clerk_user_id` and nothing else. A Clerk account whose verified address already belongs to
+  an unlinked row — or to a row carrying a *different* Clerk id — is a 401 plus a server log naming
+  `scripts/import-users-to-clerk.mjs`, never an auto-link. That is the account-takeover guard.
+- **The Clerk webhook does not use the Stripe idempotency ledger.** `webhook_events` has a
+  `provider` column, but `claimWebhookEvent` hardcodes `'stripe'` and types its input as a Stripe
+  event; widening it is a change to the money path for no gain. The three Clerk handlers are
+  naturally idempotent instead (`UPDATE … WHERE clerk_user_id = $1`, and `user.created` is a no-op
+  because JIT is authoritative). The trade — out-of-order `user.updated` deliveries — is written up
+  in the route header.
+- **`user.deleted` deactivates.** `is_active = FALSE`, never a row delete: every FK and the audit
+  history point at `users.id`.
+- **`src/proxy.ts`, not `middleware.ts`** — the Next 16 convention. It delegates to
+  `clerkMiddleware()` only when both keys are set and passes through otherwise, so the keyless CI
+  build and every storefront are unaffected. It is convenience; `requireAuth` remains the boundary.
+- **Two ESM-only dependencies are stubbed in Jest** (`jose`, `svix`): `next/jest` hard-codes
+  `/node_modules/` into `transformIgnorePatterns`, so neither can be loaded in a test. The svix
+  stub implements the real Standard Webhooks HMAC so the signature assertions still mean something.
+
+TODO from this phase:
+
+- [ ] Run the import script against production once Clerk keys are live, then set
+      `ENABLE_NATIVE_LOGIN=false` and rotate `JWT_SECRET` in the same deploy (plan phase 4).
+- [ ] `clerk_user_id` becomes `NOT NULL` when the legacy login is demolished (plan phase 5).
+- [ ] E2e sign-in still uses the legacy form; `@clerk/testing` tokens are phase 3 work.
+
+### Clerk migration, front end (same plan, phases 3 and 4)
+
+`/login` is Clerk's door and the legacy form moved to `/native-login`; the `localStorage` Bearer
+transport is gone from every screen.
+
+- **`<ClerkProvider>` is conditional on the publishable key, in the root layout.** Keyless returns
+  the byte-identical tree it returned before, because the layout is every page — storefronts
+  included — and a provider that demands a key at render is the `JWT_SECRET` module-const failure
+  again, one level lower. The provider carries `dynamic` so static marketing pages are not dragged
+  into per-request auth. Proven by a keyless `npm run build`.
+- **`/login` branches server-side on `isClerkConfigured()`,** not on the publishable key: a client
+  can only see the public half, and a widget no route can verify a session from is worse than a
+  labelled empty state. Unconfigured renders "Sign-in is not configured for this environment" with
+  a link to `/native-login` only when that route exists.
+- **`/native-login` 404s when the flag is off,** matching the routes behind it. It keeps its
+  reset-less form on purpose: reset is Clerk's, on `/login`, and this is the escape hatch.
+- **Clerk's components use hash routing** (`<SignIn/>`, `<SignUp/>`), so the migration adds no
+  catch-all segments and the onboarding wizard's own `?step=` history has no second router to fight.
+- **`appearance` maps to literal light-palette hexes, not `var(--token)`.** Clerk parses colours to
+  derive a ramp; a CSS variable is opaque to that. Safe because the product pins `data-theme="light"`.
+- **The Clerk signup step POSTs an empty body to `/api/onboarding/account`.** Clerk already told the
+  server who this is; an email sent from the browser would be an unverified claim. The response is
+  the same onboarding state the native path gets, so resume and step navigation are unchanged.
+- **Both Clerk-hook call sites are guarded by a component split, not a conditional hook.**
+  `useClerk`/`useUser` throw outside a provider, so `AdminProvider` and `AccountStep` each pick a
+  subtree on `hasClerkPublishableKey()` — a bundler-inlined constant, so hook order is stable.
+- **`AdminSession.sessionToken` is deleted, not emptied.** Roughly forty call sites built an
+  `Authorization` header from it or from `localStorage.admin_token`; all now rely on the httpOnly
+  cookie a same-origin fetch sends anyway. Where a token doubled as a "signed in yet?" gate it
+  became a `signedIn` boolean, and where it gated a whole component's props (`ImportModal`, the
+  four inventory modals, `LedgerDrawer`) the prop is gone. `CouponNotices` learns "signed out" from
+  a 401 instead, which is now the only way to learn it.
+- **Logout ends both sessions.** `/api/auth/logout` plus `clerk.signOut()` when a provider is
+  mounted; ending one and leaving the other is how a "logged out" merchant walks back into `/admin`.
+- **E2e signs in at `/native-login`** and plants nothing in `localStorage` — `page.request` shares
+  the browser context's cookie jar, so the API sign-in authenticates the page directly.
+
 ## 2026-08-28
 
 ### Orders list: a refresh that says what it refreshes, and the ageing banner as a mark

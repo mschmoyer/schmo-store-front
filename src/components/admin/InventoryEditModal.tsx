@@ -140,11 +140,6 @@ export default function InventoryEditModal<TItem extends InventoryItem>({
     setError(null);
 
     try {
-      const token = localStorage.getItem('admin_token');
-      if (!token) {
-        throw new Error('Authentication required');
-      }
-
       // Calculate the new stock quantity based on adjustment
       let newStockQuantity = values.stock_quantity;
       let quantityChange = 0;
@@ -175,7 +170,6 @@ export default function InventoryEditModal<TItem extends InventoryItem>({
       const response = await fetch(`/api/admin/inventory/${item.id}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(updateData)

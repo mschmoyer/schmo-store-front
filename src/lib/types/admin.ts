@@ -18,10 +18,16 @@ export interface AdminUser {
   };
 }
 
+/**
+ * What the admin shell knows about the live session.
+ *
+ * Carries no token by design. The session travels as an httpOnly cookie that same-origin `fetch`
+ * attaches on its own; the `sessionToken` this used to expose was a second copy in `localStorage`,
+ * readable by any script on the origin and replayed as a Bearer header by every admin screen.
+ */
 export interface AdminSession {
   id: string;
   storeId: string;
-  sessionToken: string;
   expiresAt: Date;
   createdAt: Date;
 }

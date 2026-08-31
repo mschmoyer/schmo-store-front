@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionFromRequest } from '@/lib/auth/session';
+import { resolveSession } from '@/lib/auth/session';
 import { isPlatformAdmin } from '@/lib/auth/platform-admin';
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getSessionFromRequest(request);
+    const user = await resolveSession(request);
     
     if (!user) {
       return NextResponse.json({
