@@ -4276,9 +4276,20 @@ headline "82% click-to-order", which is arithmetically correct and reads as a li
       `orders.application_fee_amount` (decimal dollars — do not mix the units).
 - [ ] Alerts view over `integration_alerts`, which already models an inbox.
 - [ ] Monthly merchant cohort retention — write the query now, render it at three cohorts.
-- [ ] Clerk auth migration — plan written (`docs/plans/clerk-integration.md`, 2026-08-31), replaces
-      homegrown JWT/bcrypt auth: adds reset, Google, MFA, rate limiting, revocation; keeps `users`
-      as the identity spine and the DB as the authorization truth. Awaiting go/no-go spike.
+- [x] Clerk auth migration — implemented on `claude/auth-system-review-nbf4mz` (PR #16, 2026-08-31).
+      Clerk as identity provider, `users` table as the identity spine, DB as the authorization
+      truth; legacy login retained at `/native-login` behind `ENABLE_NATIVE_LOGIN`. Built keyless;
+      reviewed by adversarial auth/security/UX passes with fixes folded in. See
+      `docs/plans/clerk-integration.md`.
+- [ ] Clerk follow-ups (not in PR #16):
+      - Mid-session expiry: `AdminContext` verifies once on mount; have the shared fetch layer call
+        `forceLogout()` on a 401 and revalidate on focus, so a lapsed session collapses the shell
+        instead of lingering (UX review finding 5; `forceLogout` is currently wired to nothing).
+      - Phase-5 demolition: drop the legacy path and the dead `password_reset_*` /
+        `email_verification_token` columns once Clerk is proven in production.
+      - End-to-end test the Clerk-configured branch with `@clerk/testing` tokens + dev-instance CI
+        keys (the keyless branch is what CI proves today).
+      - `admin-orders.spec.js`: pin its assertions to the deterministic seed (pre-existing failure).
 
 ---
 
