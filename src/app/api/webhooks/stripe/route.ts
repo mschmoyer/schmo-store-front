@@ -31,6 +31,7 @@ import {
   markWebhookFailed,
   markWebhookHandled,
 } from '@/lib/billing/webhook-events';
+import { scheduleStoreDrain } from '@/lib/services/afterResponse';
 import { getStripe, isStripeConfigured } from '@/lib/stripe/client';
 import { summarizeAccount } from '@/lib/stripe/connect';
 import {
@@ -107,6 +108,13 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<void> {
   console.log(
     `Storefront order ${order.orderNumber} ${order.alreadyExisted ? 'already existed for' : 'created from'} session ${session.id}`
   );
+
+  // A new order may have enqueued its ShipStation push (`createPaidOrder` → `enqueueOrderPush`).
+  // Nothing drains the queue on a short schedule any more, so drain this store's queue once Stripe
+  // has its 200. A redelivery (`alreadyExisted`) enqueued nothing and schedules nothing.
+  if (!order.alreadyExisted) {
+    scheduleStoreDrain(snapshot.storeId);
+  }
 }
 
 /**

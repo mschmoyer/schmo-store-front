@@ -15,6 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { scheduleStoreDrain } from '@/lib/services/afterResponse';
 import { jobQueueService } from '@/lib/services/jobQueueService';
 import { orderStatusService } from '@/lib/services/orderStatusService';
 import { parseShipStationWebhookPayload } from '@/lib/shipstation/webhookPayload';
@@ -109,6 +110,12 @@ export async function POST(
             }
           );
         }
+
+        // Either branch may have enqueued work for this store: a processed shipment queues the
+        // customer's shipped/delivered email, an unprocessed one queues itself for retry. No cron
+        // drains the queue on a short schedule any more (Neon scale-to-zero), so drain this
+        // store's queue once the 200 has gone back to ShipStation.
+        scheduleStoreDrain(storeId);
 
         return NextResponse.json({
           success: true,

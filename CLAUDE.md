@@ -183,6 +183,13 @@ Vercel, region `iad1`. Migrations run from the build command in `vercel.json`
 a broken production. Cron schedules are declared in `vercel.json` under `crons`; per-route
 `maxDuration` and memory live in the same file. `docs/deployment-vercel.md` is the full runbook.
 
+**Crons are daily on purpose.** Production Postgres is Neon, which scales to zero when idle; frequent
+crons kept it awake for stores nobody visits. Freshness is driven by traffic instead: a storefront
+view schedules `refreshStoreIfStale` in `after()` (throttled per store), and a route that enqueues
+store-scoped `job_queue` work calls `scheduleStoreDrain(storeId)` (`src/lib/services/afterResponse.ts`).
+If you add a route that enqueues a job, add the drain too — nothing else will pick it up until the
+next visit or the daily safety net. Do not add a sub-daily cron without weighing the database cost.
+
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit tests, a migrations job that proves
 re-running is a no-op and the seed is idempotent, a production build with no integration keys, and
 an **end-to-end job** (Chromium; `storefront.spec.js` and `customizer.spec.js`).

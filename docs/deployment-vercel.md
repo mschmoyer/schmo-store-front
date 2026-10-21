@@ -17,7 +17,7 @@ Cron. `docs/heroku-scheduler-setup.md` has been deleted.
 | Database           | Neon serverless Postgres, region `aws-us-east-1`               |
 | DB driver          | `@neondatabase/serverless` in production, `pg` locally         |
 | Migrations         | `node database/migrate.js`, run from the Vercel build command  |
-| Scheduled jobs     | Vercel Cron → `/api/cron/sync`, `/api/cron/inventory-snapshot` |
+| Scheduled jobs     | Daily Vercel Cron safety net → `/api/jobs/process`, `/api/cron/inventory-snapshot`, `/api/cron/coupon-sweep`; per-store refresh on storefront visit |
 | Readiness probe    | `GET /api/health`                                              |
 
 ### Why `iad1`
@@ -246,14 +246,30 @@ the domain is correct before the first production deploy.
 
 Declared in `vercel.json`:
 
-| Path                            | Schedule (UTC) | Replaces                      |
+| Path                            | Schedule (UTC) | Purpose                       |
 | ------------------------------- | -------------- | ----------------------------- |
-| `/api/cron/sync`                | `0 * * * *` (hourly) | Heroku Scheduler → `npm run sync:background` |
-| `/api/cron/inventory-snapshot`  | `10 7 * * *` (daily 07:10 UTC ≈ 03:10 ET) | Heroku Scheduler → `npm run snapshot:inventory` |
+| `/api/jobs/process`             | `20 8 * * *` (daily 08:20) | Safety-net drain of `job_queue`, unscoped: NULL-`store_id` jobs, elapsed retries, stores nobody visited |
+| `/api/cron/inventory-snapshot`  | `25 8 * * *` (daily 08:25) | Today's inventory snapshot for every active store that does not have one yet |
+| `/api/cron/coupon-sweep`        | `30 8 * * *` (daily 08:30) | Releases signup-coupon reservations nobody converted |
 
-> **Plan limits.** Hobby allows 2 cron jobs at daily granularity only. The
-> hourly sync requires **Pro**. On Hobby, change the sync schedule to something
-> like `0 7 * * *`.
+**Why everything is daily and clustered.** Production Postgres is Neon, which
+scales to zero after ~5 idle minutes. The old `*/5` queue drain and hourly
+`/api/cron/sync` kept it awake 24/7 for stores nobody visits. Since 2026-10-21
+freshness is driven by traffic instead: a storefront view runs
+`refreshStoreIfStale` in `after()` (at most once per 10 minutes per store —
+drain that store's queue, enqueue a ShipStation sync if the last one is over an
+hour old, snapshot inventory if today's is missing), and any request that
+enqueues store-scoped work (Stripe webhook, free checkout, ShipStation webhook)
+drains that store's queue after responding. The three crons sit within ten
+minutes of each other so the database wakes once a day for them.
+
+`/api/cron/sync` is **no longer scheduled**. The route remains for operators
+(see 6.3); jobs it enqueues are drained by the next visit to each store, the
+daily drain, or a manual `POST /api/jobs/process`.
+
+> **Plan limits.** Hobby allows daily-granularity crons only, and fires each
+> one at an arbitrary minute within its hour — the ten-minute clustering above
+> only holds on Pro. All three schedules are daily, so they are valid on Hobby.
 
 Cron jobs only run on the **production** deployment. They are not triggered on
 previews.
@@ -284,8 +300,10 @@ CRON_SECRET=... NEXT_PUBLIC_BASE_URL=https://rebelshops.com npm run snapshot:inv
 # Backfill one date
 npm run snapshot:inventory -- 2026-08-01
 
-# Or straight over HTTP
+# Or straight over HTTP — sync only *enqueues*; drain to actually run it
 curl -sS -X POST https://rebelshops.com/api/cron/sync \
+  -H "Authorization: Bearer $CRON_SECRET"
+curl -sS -X POST https://rebelshops.com/api/jobs/process \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 

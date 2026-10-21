@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { storefrontUrl } from '@/lib/seo/siteUrl';
 import { notFound } from 'next/navigation';
+import { connection } from 'next/server';
+
+import { scheduleStoreRefresh } from '@/lib/services/afterResponse';
 
 import { StorefrontClickTracker } from '@/components/store/StorefrontClickTracker';
 import { isMerchantSelfView } from '@/lib/analytics/storefront-clicks';
@@ -37,6 +40,13 @@ import { getStoreBySlug } from '../_lib/queries';
  * in six pages that would each drift. The tracker is a client leaf that renders nothing — see
  * `components/store/StorefrontClickTracker.tsx` — so nothing above it stops being server-rendered.
  *
+ * And it is where a visit refreshes the store, for the same reason: one node, once per page view.
+ * The refresh (drain this store's queue, enqueue a ShipStation sync if stale, take today's inventory
+ * snapshot) replaced the crons that kept the scale-to-zero database awake for shops nobody visits.
+ * It runs in `after()` and is throttled in the database, so the visitor never waits on it. Demo
+ * stores are not excluded: the loaded store record does not carry `is_demo`, and an extra query on
+ * the render path to skip a throttled, at-most-six-times-an-hour side effect is the wrong trade.
+ *
  * @param props.children - The page being rendered
  * @param props.params - The route's store slug
  * @returns The children, plus the tracking leaf
@@ -48,9 +58,20 @@ export default async function StoreLayout({
   children: React.ReactNode;
   params: Promise<{ storeSlug: string }>;
 }) {
+  // Opt in to request-time rendering explicitly. Every page below already reads `searchParams` and
+  // the self-view check reads cookies, so this changes nothing today; it pins the guarantee the
+  // refresh below depends on. `after()` does not make a route dynamic by itself — in a statically
+  // rendered route its callback runs at build or revalidate time, not on a visit.
+  await connection();
+
   const { storeSlug } = await params;
   const lookup = await getStoreBySlug(storeSlug, { allowUnpublished: true });
   if (!lookup.ok) notFound();
+
+  // Refresh-on-visit: replaces the */5 and hourly crons that kept Neon awake for unvisited stores.
+  // Entirely post-response (throttle check included), so the visitor waits for none of it.
+  // Customizer preview iframes render this layout too; that is fine, the throttle absorbs reloads.
+  scheduleStoreRefresh(lookup.store.id);
 
   const ownerViewing = await isMerchantSelfView(lookup.store.id);
 

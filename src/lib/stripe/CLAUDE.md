@@ -88,9 +88,12 @@ Flow B — storefront checkout ────────────────�
                          + application_fee_amount
                          → checkout_sessions row (server-priced snapshot)
             total == 0 → no Stripe at all; order written here, synchronously
+                         (then after(): drain the store's job_queue, as below)
       → shopper pays
       → webhook: checkout.session.completed → createPaidOrder()
             orders + order_items + inventory movement, one transaction
+            → enqueueOrderPush() after commit (ShipStation; no-op without an integration)
+      → after() the 200: drainStoreQueue(storeId) — new orders only, never on a redelivery
       → /store/<slug>/order-success → GET /api/checkout/confirm?session_id=...
             resolves against our tables, never the query string
 
@@ -338,9 +341,11 @@ have since been fixed and are kept so the list reads as history.
 - **Shipping is a flat placeholder.** Three hardcoded rates, free standard over $50. No live rates,
   no weight or destination sensitivity.
 - **US-only checkout.** US states + 5-digit ZIP; Connect accounts default to `country: 'US'`.
-- **No fulfilment hand-off.** `orderPush.enqueueOrderPush` exists in the ShipStation library and
-  `jobQueueService` can run `shipstation_order_push` jobs — but **nothing calls `enqueueOrderPush`**,
-  so a paid order is never pushed. Wiring it into `createPaidOrder` is the missing link.
+- ~~No fulfilment hand-off~~ — **wired.** `createPaidOrder` enqueues the ShipStation push after its
+  transaction commits, and both order-writing routes drain the store's queue in `after()`
+  (`scheduleStoreDrain`, `src/lib/services/afterResponse.ts`) — there is no frequent queue cron any
+  more, so a route that enqueues must drain. The drain is post-response: it can never fail or slow
+  the webhook's 200.
 - **No refund UI.** `charge.refunded` is recorded when a refund is issued from the Stripe dashboard;
   there is no in-app way to issue one, and a refund does not restock.
 - **No entitlement enforcement.** `subscriptions.status` is recorded and displayed; nothing disables

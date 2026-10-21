@@ -39,23 +39,19 @@
       "maxDuration": 60,
       "memory": 1024
     },
-    "src/app/api/shipstation/webhook/route.ts": {
+    "src/app/api/shipstation/webhook/**/route.ts": {
       "maxDuration": 60,
       "memory": 1024
     }
   },
   "crons": [
     {
-      "path": "/api/cron/sync",
-      "schedule": "0 * * * *"
-    },
-    {
       "path": "/api/jobs/process",
-      "schedule": "*/5 * * * *"
+      "schedule": "20 8 * * *"
     },
     {
       "path": "/api/cron/inventory-snapshot",
-      "schedule": "10 7 * * *"
+      "schedule": "25 8 * * *"
     },
     {
       "path": "/api/cron/coupon-sweep",
