@@ -437,11 +437,18 @@ export async function recordSyncStatus(
   status: 'running' | 'completed' | 'failed',
   errorMessage?: string | null
 ): Promise<void> {
+  // `$1::text` in BOTH positions, and that is not decoration. Bound bare, Postgres deduces the
+  // parameter as `character varying` from the assignment to `sync_status` and as `text` from the
+  // comparison against an untyped literal, then refuses the statement outright:
+  // `inconsistent types deduced for parameter $1 - DETAIL: text versus character varying`.
+  // `recordSyncStatus(storeId, 'running')` is the first thing every manual and background sync
+  // does, so this failed the run before a single page was fetched. One explicit type, used
+  // consistently, is what makes the deduction unambiguous.
   await db.query(
     `UPDATE store_integrations
-        SET sync_status = $1,
+        SET sync_status = $1::text,
             sync_error_message = $2,
-            last_sync_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE last_sync_at END,
+            last_sync_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE last_sync_at END,
             updated_at = NOW()
       WHERE store_id = $3 AND integration_type = 'shipstation'`,
     [status, errorMessage ?? null, storeId]

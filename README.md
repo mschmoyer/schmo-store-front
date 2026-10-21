@@ -424,10 +424,12 @@ Agent instructions live beside the code they govern: `CLAUDE.md` at the root,
 
 ### Integration and scheduled
 - `/api/shipstation/webhook/[storeToken]` - Per-store ShipStation webhook receiver
-- `/api/cron/sync` - Vercel Cron: schedules a ShipStation sync per store
-- `/api/cron/inventory-snapshot` - Vercel Cron: daily inventory snapshot
+- `/api/cron/sync` - Operator trigger (no longer scheduled): enqueues a ShipStation sync per store
+- `/api/cron/inventory-snapshot` - Vercel Cron (daily safety net): inventory snapshot
 - `/api/cron/coupon-sweep` - Vercel Cron: releases signup-coupon reservations nobody converted
-- `/api/jobs/process` - Drains `job_queue` (sync pages, order pushes, notifications)
+- `/api/jobs/process` - Vercel Cron (daily safety net): drains `job_queue` (sync pages, order pushes,
+  notifications). Day to day, a storefront visit refreshes its store (throttled to once per 10
+  minutes, after the response) and webhooks/checkout drain the store's queue after responding
 - `/api/health` - Liveness
 
 ### Authentication
@@ -472,7 +474,7 @@ The application uses PostgreSQL with a comprehensive schema including:
 - `npm run test:e2e:ui` - Run Playwright with interactive UI
 
 ### Background Services
-- `npm run sync:background` - Run background sync (invoked by Vercel Cron via `/api/cron/sync`)
+- `npm run sync:background` - Trigger `/api/cron/sync` by hand (enqueues a ShipStation sync per store; no longer on a cron)
 
 ### Integration Checks
 - `npm run shipstation:probe` - Probe every ShipStation V2 endpoint the app depends on
@@ -545,8 +547,9 @@ Production runs on Vercel at **rebelshops.com**.
 3. Migrations run from the build command in `vercel.json`
    (`node database/migrate.js && npm run build`), so a missing connection string fails the deploy
    before Next.js ever builds.
-4. Cron schedules are declared in `vercel.json` under `crons`; Vercel calls
-   `GET /api/cron/sync` with `Authorization: Bearer $CRON_SECRET`.
+4. Cron schedules are declared in `vercel.json` under `crons` — three daily jobs, clustered so the
+   scale-to-zero database wakes once; Vercel calls each with `Authorization: Bearer $CRON_SECRET`.
+   ShipStation freshness comes from storefront visits, not a schedule.
 
 See `docs/deployment-vercel.md` for the full runbook.
 

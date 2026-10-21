@@ -33,6 +33,7 @@ import {
 } from '@/lib/billing/cart-pricing';
 import { centsToDecimalString } from '@/lib/billing/money';
 import { createPaidOrder } from '@/lib/billing/orders';
+import { scheduleStoreDrain } from '@/lib/services/afterResponse';
 import {
   computeApplicationFeeCents,
   getPaymentAccountForStore,
@@ -332,6 +333,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         paymentMethod: 'free',
         paymentProvider: 'none',
       });
+
+      // The free order may have enqueued its ShipStation push; drain this store's queue after the
+      // shopper has their confirmation rather than waiting for the next visit or the daily cron.
+      if (!order.alreadyExisted) {
+        scheduleStoreDrain(store.id);
+      }
 
       return NextResponse.json({
         success: true,

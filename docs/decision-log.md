@@ -1,5 +1,89 @@
 # Decision Log
 
+## 2026-10-21
+
+### Refresh on visit: stop keeping Neon awake for stores nobody visits
+
+**Problem**: production Postgres is Neon, which scales to zero after ~5 idle minutes. Vercel Cron hit
+`/api/jobs/process` every 5 minutes and `/api/cron/sync` hourly for every store, so the database
+never slept — paying compute around the clock for stores with no traffic, on a platform that has
+almost none yet.
+
+**Decision**: freshness follows traffic.
+
+- [x] Storefront trigger: `/store/[storeSlug]/layout.tsx` calls `scheduleStoreRefresh(store.id)`
+      → `after()` → `refreshStoreIfStale` (`src/lib/services/storeRefresh.ts`): an atomic per-store
+      throttle (≤ once / 10 min), then drain that store's queue (bounded), enqueue a ShipStation sync
+      if the last one is over 60 min old, and take today's inventory snapshot if it is missing -
+      2026-10-21
+- [x] Event-driven drains: every route that enqueues store-scoped `job_queue` work drains that
+      store's queue in `after()` (`scheduleStoreDrain`, `src/lib/services/afterResponse.ts`) — the
+      Stripe webhook and free checkout (order push), the per-store ShipStation webhook (customer
+      notifications, retry of an unprocessed delivery) - 2026-10-21
+- [x] `vercel.json`: hourly `/api/cron/sync` and `*/5` `/api/jobs/process` removed; one daily
+      cluster — `/api/jobs/process` 08:20, `/api/cron/inventory-snapshot` 08:25 (was 07:10),
+      `/api/cron/coupon-sweep` 08:30 (unchanged) — so the database wakes once a day for them -
+      2026-10-21
+- [x] Docs: ShipStation and Stripe instruction files, deployment runbook, README, root CLAUDE.md -
+      2026-10-21
+- [x] Version 3.14.0 - 2026-10-21
+
+**Why `after()` and why in the layout.** The layout is the one server node that wraps every
+storefront page exactly once, the same reason the click tracker lives there. Everything, including
+the throttle check, runs after the response, so a visitor pays zero added latency. `after()` does
+not make a route dynamic on its own — in a static route its callback runs at build or revalidate,
+not on a visit — so the layout now calls `connection()`. That changes nothing today (every page
+reads `searchParams`, the layout reads cookies), but pins the guarantee the refresh depends on.
+
+**`storeRefresh` is imported lazily inside the `after()` callback.** It reaches the queue, the
+ShipStation library and the snapshot service; the layout and the route modules that schedule drains
+are imported by unit tests with `pg` mocked, and a static import would pull that whole graph into
+each at module load. Scheduling never throws — `after()` outside a request scope is logged, not
+propagated; a refresh is never worth a failed page view or webhook.
+
+**Demo stores are not skipped.** The store record the layout already has does not carry `is_demo`,
+and adding a query to the render path to skip a throttled side effect is the wrong trade. A demo
+store has no ShipStation key, so its sync is a no-op; the throttle write and the snapshot still run,
+at most six times an hour, only while someone is looking at it.
+
+**Customizer preview.** The preview iframe renders this layout, so a merchant editing their theme
+triggers a refresh too — absorbed by the throttle. Nothing new reaches a client bundle: the layout
+is a server component, and the scheduling module is server-only.
+
+**Trade-offs, accepted knowingly**:
+
+- **Snapshots gap on no-visit days.** The daily cron still snapshots every active store, so this
+  only bites if the cron itself fails; the per-visit snapshot is the redundancy, not the primary.
+- **Bots count as visits**, capped by the throttle at 6 refreshes / hour / store.
+- **Freshness only for visited stores.** A store nobody looks at is not synced. Nobody is looking at
+  it, which is the point.
+- **The first visitor after a quiet spell sees pre-refresh data.** Their visit triggers the refresh
+  for the next one.
+- **A long catalogue sync chains slowly** — page jobs advance on visits, enqueue-time drains and the
+  daily cron. Fine at today's catalogue sizes and traffic.
+- **The daily drain is one 25-job batch in a 50 s budget.** Enough for now; if the cron's summary
+  shows a full batch or `budgetExhausted`, loop it or schedule it more often.
+
+**Not changed**: `/api/cron/sync` still exists for operators (`npm run sync:background`); its jobs
+are drained by the next visit, the daily cron, or a manual `POST /api/jobs/process`.
+
+Open:
+- [x] **Jobs stuck in `processing` are recovered.** A killed invocation (timeout, deploy) used to
+      leave claimed rows `processing` forever, blocking their dedupe key. Every drain now first
+      returns `processing` rows older than `STALE_PROCESSING_MINUTES` (15, above the 300 s longest
+      `maxDuration`) to `retrying`, counting the killed run as an attempt, or to `failed` when out
+      of attempts (`buildRecoverStaleJobsQuery` in `jobQueueService`)
+- [ ] `users.last_login` is read (platform customers view) but never written — would have been the
+      natural "is anyone here" signal; write it at sign-in
+- [ ] Revisit the whole scheme when real traffic exists: a frequent drain may be cheaper than
+      per-visit work once the database is awake anyway
+- [ ] `POST /api/admin/sync/status` takes `storeId` from the request body and, without one, runs
+      `runFullSync()` for **every** store, behind only `requireAuth` — any merchant can schedule
+      another tenant's sync. No UI calls it. Scope it to `user.storeId` or delete it
+- [x] `vercel.json` `functions` configured the retired `src/app/api/shipstation/webhook/route.ts`
+      instead of the live `[storeToken]` route; now `src/app/api/shipstation/webhook/**/route.ts`
+      (a glob, because `[storeToken]` would be read as a character class), 60 s
+
 ## 2026-08-28
 
 ### Orders list: a refresh that says what it refreshes, and the ageing banner as a mark
@@ -194,6 +278,33 @@ production build registers `/pricing` as dynamic with no console errors during s
 fallback.
 
 ## 2026-08-26
+
+### ShipStation "Sync data" failed on its first statement
+
+- [x] Fix `inconsistent types deduced for parameter $1` in `recordSyncStatus` - 2026-08-26
+- [x] Add rule 9 to `src/lib/shipstation/CLAUDE.md` - 2026-08-26
+- [x] Scan every query in `src/` for the same shape; no other instance - 2026-08-26
+- [ ] Make `recordSyncStatus` reachable in tests; `db.query` is not injectable here, so this
+      defect had no unit-test surface at all
+
+**User Request**: "When i try sync data in the shipstation integration I get: {"success":false,
+"error":"inconsistent types deduced for parameter $1"}"
+
+**Decision**: `recordSyncStatus` bound `$1` twice - once assigned to `sync_status`
+(`character varying`) and once compared against the untyped literal `'completed'`. Postgres deduces
+`varchar` from the first and `text` from the second and refuses the statement rather than coercing.
+Both positions are now `$1::text`.
+
+The severity came from position, not complexity: `manualSync.ts:211` calls
+`recordSyncStatus(storeId, 'running')` as its *first* action, and `syncOrchestrator.ts:229` does the
+same, so **every** sync - manual button, hourly cron, background run - died before fetching a single
+page. Reproduced through the Neon driver (broken query errors, `$1::text` returns `running`), then
+swept the whole of `src/` for any other query assigning a parameter to a column and comparing the
+same parameter to a literal. There are none.
+
+Worth noting the shape of the failure: it is invisible to typecheck, to lint, and to the unit suite,
+because the SQL is a string and `db.query` is not injectable in this module. It surfaces only when a
+real Postgres parses it.
 
 ### First live exercise of the Stripe integration, and the four bugs it found
 
@@ -1534,11 +1645,14 @@ separate faults sat between the API and the database, and each one reported succ
 - [x] **Version bumped** to 2.3.0
 
 Open:
-- [ ] **Nothing drains `job_queue`.** The hourly `/api/cron/sync` still enqueues rows that no cron
+- [x] *(Superseded 2026-10-21: event-driven drains plus a daily safety-net cron — see that entry.)*
+      **Nothing drains `job_queue`.** The hourly `/api/cron/sync` still enqueues rows that no cron
       processes, and the five stuck `pending` rows still block re-enqueue for their dedupe keys. Add
       `{ "path": "/api/jobs/process", "schedule": "*/5 * * * *" }` to `vercel.json` (check plan cron
       limits first), or drop the scheduler until it has a drain
-- [ ] **The scheduler itself throws.** The 00:00 UTC run logged
+- [x] *(Fixed 2026-08-26: the throwing statement was `recordSyncStatus`, which
+      `enqueueStoreSync` runs after queueing — not the `job_queue` insert.)*
+      **The scheduler itself throws.** The 00:00 UTC run logged
       `inconsistent types deduced for parameter $1` (`42P08`, `text versus character varying`) after
       queueing its five jobs, so `runFullSync` reported `0 job(s) enqueued` for a store it had just
       enqueued five jobs for. Needs an explicit cast in the `job_queue` insert

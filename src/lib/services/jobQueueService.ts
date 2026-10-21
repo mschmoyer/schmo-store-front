@@ -104,7 +104,112 @@ export interface DrainSummary {
   failed: number;
   /** True when the pass stopped on its time budget with work still waiting. */
   budgetExhausted: boolean;
+  /**
+   * True when an unscoped pass did nothing because another unscoped pass was already running in
+   * this process. Distinguishes "nothing to do" from "did not look".
+   */
+  skippedBusy: boolean;
+  /** Set when the pass itself failed (e.g. the claim query threw), as opposed to a job failing. */
+  error?: string;
   durationMs: number;
+}
+
+/** Options for one drain pass. */
+export interface ProcessJobsOptions {
+  /** Maximum rows claimed. */
+  batchSize?: number;
+  /** Stop starting new jobs once this much wall-clock time has passed. */
+  budgetMs?: number;
+  /**
+   * Only claim this store's jobs. Omit to drain every tenant's work (the cron path).
+   *
+   * Jobs enqueued with a NULL `store_id` never match a scoped pass, so they are drained only by an
+   * unscoped one. Every production enqueue path tags its store; the exception is the operator's
+   * test notification in `/api/admin/integrations/monitoring` (plus any row that predates
+   * migration 022).
+   */
+  storeId?: string;
+}
+
+/**
+ * Build the `SELECT ... FOR UPDATE SKIP LOCKED` that picks due jobs to claim.
+ *
+ * Exported so the store-scoping predicate can be tested as the SQL that actually runs, without a
+ * database. `store_id` is a UUID column (migration 022), so the parameter is cast `::uuid`
+ * explicitly rather than left for Postgres to deduce.
+ *
+ * @param batchSize - Maximum rows to claim.
+ * @param storeId - When given, only that store's jobs are eligible.
+ * @returns Query text and positional values.
+ */
+export function buildClaimJobsQuery(
+  batchSize: number,
+  storeId?: string
+): { text: string; values: Array<number | string> } {
+  const storeFilter = storeId !== undefined ? 'AND store_id = $2::uuid' : '';
+  const text = `SELECT id FROM job_queue
+          WHERE status IN ('pending', 'retrying')
+            AND (scheduled_at IS NULL OR scheduled_at <= NOW())
+            ${storeFilter}
+          ORDER BY
+            CASE priority
+              WHEN 'urgent' THEN 1
+              WHEN 'high' THEN 2
+              WHEN 'medium' THEN 3
+              WHEN 'low' THEN 4
+              ELSE 5
+            END,
+            created_at ASC
+          LIMIT $1::int
+          FOR UPDATE SKIP LOCKED`;
+
+  return { text, values: storeId !== undefined ? [batchSize, storeId] : [batchSize] };
+}
+
+/**
+ * How long a job may sit in `processing` before a drain treats its invocation as dead.
+ *
+ * A claimed job is marked `processing` before it runs. If Vercel kills the invocation at
+ * `maxDuration` — likelier now that drains also run in `after()` on storefront and webhook
+ * requests — nothing ever moves the row on, and the partial unique index on `dedupe_key` then
+ * blocks re-enqueueing the same sync page or order push forever. The longest `maxDuration` in
+ * `vercel.json` is 300 s, so 15 minutes cannot reclaim a job that is still genuinely running.
+ */
+export const STALE_PROCESSING_MINUTES = 15;
+
+/**
+ * Build the statement that returns jobs abandoned in `processing` to the pool.
+ *
+ * The killed run counts as an attempt: the job goes to `retrying` if it has attempts left, else to
+ * `failed`, so a job that reliably outlives its function cannot loop forever.
+ *
+ * @param staleMinutes - Age of `started_at` after which a `processing` row is abandoned.
+ * @param storeId - When given, only that store's jobs are recovered.
+ * @returns Query text and positional values.
+ */
+export function buildRecoverStaleJobsQuery(
+  staleMinutes: number,
+  storeId?: string
+): { text: string; values: Array<number | string> } {
+  const storeFilter = storeId !== undefined ? 'AND store_id = $2::uuid' : '';
+  const text = `UPDATE job_queue
+          SET status = CASE
+                WHEN COALESCE(attempts, 0) + 1 >= COALESCE(max_attempts, 3) THEN 'failed'
+                ELSE 'retrying'
+              END,
+              attempts = COALESCE(attempts, 0) + 1,
+              error_message = 'Abandoned in processing: the invocation running it did not finish',
+              scheduled_at = NOW(),
+              completed_at = CASE
+                WHEN COALESCE(attempts, 0) + 1 >= COALESCE(max_attempts, 3) THEN NOW()
+                ELSE completed_at
+              END,
+              updated_at = NOW()
+          WHERE status = 'processing'
+            AND started_at < NOW() - make_interval(mins => $1::int)
+            ${storeFilter}`;
+
+  return { text, values: storeId !== undefined ? [staleMinutes, storeId] : [staleMinutes] };
 }
 
 /**
@@ -200,34 +305,46 @@ export class JobQueueService {
    * invocations (which Vercel makes easy to arrange) take disjoint work instead of both running the
    * same job. Without it, a redelivered webhook notification could be emailed to a customer twice.
    *
+   * A `storeId` scopes the claim to one tenant's jobs — the visit-driven refresh and webhooks use
+   * that to drain only the store they are serving. Scoped passes skip the in-process `isProcessing`
+   * guard: on Fluid compute concurrent requests share this singleton, and a storefront refresh for
+   * store A must not turn a webhook drain for store B into a silent no-op. `SKIP LOCKED` already
+   * guarantees concurrent passes claim disjoint rows, so the guard only exists to stop the legacy
+   * `startProcessing` interval from overlapping itself, and is kept for unscoped passes.
+   *
    * @param options - `batchSize` caps rows claimed; `budgetMs` stops the pass before a serverless
-   *   invocation is killed mid-job, leaving the remainder for the next cron tick.
+   *   invocation is killed mid-job, leaving the remainder for the next cron tick; `storeId` limits
+   *   the pass to one store (jobs with a NULL `store_id` are only drained by unscoped passes).
    * @returns What the pass accomplished.
    */
-  async processJobs(
-    options: { batchSize?: number; budgetMs?: number } = {}
-  ): Promise<DrainSummary> {
+  async processJobs(options: ProcessJobsOptions = {}): Promise<DrainSummary> {
     const started = Date.now();
     const batchSize = options.batchSize ?? this.BATCH_SIZE;
     const budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
+    const scoped = options.storeId !== undefined;
 
     const summary: DrainSummary = {
       claimed: 0,
       completed: 0,
       failed: 0,
       budgetExhausted: false,
+      skippedBusy: false,
       durationMs: 0
     };
 
-    if (this.isProcessing) {
+    if (!scoped && this.isProcessing) {
+      summary.skippedBusy = true;
       summary.durationMs = Date.now() - started;
       return summary;
     }
 
-    this.isProcessing = true;
+    if (!scoped) {
+      this.isProcessing = true;
+    }
 
     try {
-      const jobs = await this.claimJobs(batchSize);
+      await this.recoverStaleJobs(options.storeId);
+      const jobs = await this.claimJobs(batchSize, options.storeId);
       summary.claimed = jobs.length;
 
       if (jobs.length === 0) {
@@ -256,10 +373,36 @@ export class JobQueueService {
       return summary;
     } catch (error) {
       console.error('Error processing job queue:', error);
+      summary.error = error instanceof Error ? error.message : 'Unknown error';
       return summary;
     } finally {
-      this.isProcessing = false;
+      if (!scoped) {
+        this.isProcessing = false;
+      }
       summary.durationMs = Date.now() - started;
+    }
+  }
+
+  /**
+   * Return jobs abandoned in `processing` to the pool before claiming. Runs on every drain, so the
+   * visit, webhook and daily paths all heal what a killed invocation left behind. Best-effort: a
+   * failure here is logged and must not stop the drain.
+   *
+   * @param storeId - When given, only that store's jobs are recovered.
+   * @returns Number of rows recovered.
+   */
+  private async recoverStaleJobs(storeId?: string): Promise<number> {
+    try {
+      const { text, values } = buildRecoverStaleJobsQuery(STALE_PROCESSING_MINUTES, storeId);
+      const result = await db.query(text, values);
+      const recovered = result.rowCount ?? 0;
+      if (recovered > 0) {
+        console.warn(`Recovered ${recovered} job(s) abandoned in processing`);
+      }
+      return recovered;
+    } catch (error) {
+      console.error('Error recovering stale jobs:', error);
+      return 0;
     }
   }
 
@@ -267,27 +410,13 @@ export class JobQueueService {
    * Atomically claim due jobs, marking them `processing`.
    *
    * @param batchSize - Maximum rows to claim.
+   * @param storeId - When given, only that store's jobs are claimed.
    * @returns The claimed jobs.
    */
-  private async claimJobs(batchSize: number): Promise<JobQueueRow[]> {
+  private async claimJobs(batchSize: number, storeId?: string): Promise<JobQueueRow[]> {
+    const claim = buildClaimJobsQuery(batchSize, storeId);
     return db.transaction(async (client) => {
-      const due = await client.query<{ id: string }>(
-        `SELECT id FROM job_queue
-          WHERE status IN ('pending', 'retrying')
-            AND (scheduled_at IS NULL OR scheduled_at <= NOW())
-          ORDER BY
-            CASE priority
-              WHEN 'urgent' THEN 1
-              WHEN 'high' THEN 2
-              WHEN 'medium' THEN 3
-              WHEN 'low' THEN 4
-              ELSE 5
-            END,
-            created_at ASC
-          LIMIT $1
-          FOR UPDATE SKIP LOCKED`,
-        [batchSize]
-      );
+      const due = await client.query<{ id: string }>(claim.text, claim.values);
 
       const ids = due.rows.map((row) => row.id);
       if (ids.length === 0) {

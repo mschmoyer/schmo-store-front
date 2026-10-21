@@ -2,7 +2,9 @@
 
 Scope: `src/lib/shipstation/**`, `src/app/api/shipstation/**`, `src/app/api/admin/sync/**`,
 `src/app/api/admin/integrations/shipstation/**`, `src/app/api/cron/sync`, `src/app/api/jobs/process`,
-`src/app/api/onboarding/shipstation`, `scripts/shipstation-probe.mjs`.
+`src/app/api/onboarding/shipstation`, `scripts/shipstation-probe.mjs`. The scheduling side —
+`src/lib/services/storeRefresh.ts` (refresh-on-visit) and `src/lib/services/afterResponse.ts`
+(post-response drains) — decides *when* this library runs; read [When sync runs](#when-sync-runs).
 
 Read this before changing anything in that surface. Most of what looks like an obvious improvement
 here was already tried and reverted — see `docs/audits/shipstation-audit.md` for the findings each
@@ -57,12 +59,18 @@ These are not style preferences. Each one closes a defect that reached productio
    a run is not.
 6. **Never fail a checkout on a ShipStation error.** The local order is authoritative and is
    written first; the push to ShipStation is a queued job, never an inline call. Regressing this
-   loses paid sales — it already did once. (The queued push is built but not yet wired; see
-   [Known gaps](#known-gaps). When you wire it, wire it as a job, not as a call.)
+   loses paid sales — it already did once. `createPaidOrder` enqueues the push after its
+   transaction commits; the route then drains the store's queue in `after()`, post-response.
 7. **Never report success for work that wrote nothing.** No `catch { log(); continue; }` around a
    per-record write. `/api/admin/sync/all` used to return `success: true` unconditionally.
 8. **Never claim a connection test passed without a live call.** The test is
    `GET /v2/warehouses` against the real key. Regex and length checks are not tests (P0-2).
+9. **Give a reused query parameter one explicit type.** A parameter bound both to a column and to a
+   bare literal gets its type deduced twice, and Postgres rejects the statement rather than picking:
+   `inconsistent types deduced for parameter $1 - DETAIL: text versus character varying`. This took
+   out `recordSyncStatus`, which is the first statement every manual and background sync runs, so
+   *every* sync failed before fetching a page. Cast it (`$1::text`) in **every** position, not just
+   the one that looks ambiguous.
 
 ## How the pieces fit
 
@@ -75,21 +83,26 @@ Merchant pastes V2 API key
               → POST /v2/environment/webhooks  (URL + x-rebelshops-webhook-secret header)
 
 Catalogue in ────────────────────────────────────────────────────────────────
-  Vercel Cron (hourly) → GET /api/cron/sync → backgroundSyncService.runFullSync()
+  Storefront view → /store/[storeSlug]/layout.tsx → after(): storeRefresh.refreshStoreIfStale()
+      → atomic per-store throttle (≤ once / 10 min); then, for that store only:
+          drain its job_queue (bounded) · enqueueStoreSync() if last sync > 60 min ·
+          today's inventory snapshot if missing
       → syncOrchestrator.enqueueStoreSync()
             one job_queue row per operation, seeded at lastPageCompleted + 1
-  POST /api/jobs/process   ⚠ NOT SCHEDULED — no cron entry exists; see Known gaps
-      → jobQueueService.processJobs() → syncOrchestrator.processSyncPageJob()
+      → jobQueueService.processJobs({ storeId }) → syncOrchestrator.processSyncPageJob()
           → sync.runSyncPage(operation, page) → shipStationFetch → one transaction
           → on success, enqueues the next page; on the last page, closes the run
+  Vercel Cron (daily 08:20 UTC) → /api/jobs/process → processJobs() unscoped — safety net
+  Operator POST /api/cron/sync → runFullSync() — every store; NOT scheduled any more
   Admin "Sync" button → POST /api/admin/sync/* → manualSync.runManualSync()
       → the same sync.runSyncPage writers, looped inside the request, bounded
-      → this path does NOT use the queue, which is why it works today
+      → this path does NOT use the queue, so it does not wait for any drain
 
 Orders out ──────────────────────────────────────────────────────────────────
-  Paid order written locally
-      ⚠ NOTHING CALLS enqueueOrderPush — the chain below is unreachable today
-      → orderPush.enqueueOrderPush() → job_queue
+  Paid order written locally (billing/orders.createPaidOrder, from the Stripe webhook or a
+  free checkout in /api/checkout/session)
+      → orderPush.enqueueOrderPush() → job_queue   (after the transaction commits)
+      → route: after() → storeRefresh.drainStoreQueue(storeId)
       → orderPush.processOrderPushJob() → POST /v2/shipments (create_sales_order: true)
       → orders.fulfillment_sync_status: pending → queued → pushed | failed
 
@@ -97,7 +110,26 @@ Shipments in ──────────────────────�
   ShipStation → POST /api/shipstation/webhook/<store-token>
       → webhookSecurity.authenticateWebhook() (token → store, secret header, optional HMAC)
       → webhookPayload.parseShipStationWebhookPayload() → orderStatusService
+          (queues shipped/delivered emails; an unprocessed delivery queues itself for retry)
+      → after(): storeRefresh.drainStoreQueue(storeId)
 ```
+
+### When sync runs
+
+Production Postgres is Neon, which scales to zero after ~5 idle minutes. Until 2026-10-21 an hourly
+`/api/cron/sync` and a `*/5` `/api/jobs/process` kept it awake around the clock, mostly for stores
+nobody was looking at. Now work is driven by events:
+
+- **A storefront view** refreshes that store, after the response, at most once per
+  `STORE_REFRESH_INTERVAL_MINUTES`. A store nobody visits is not synced — by design.
+- **A request that enqueues store-scoped work** drains that store's queue after responding, via
+  `scheduleStoreDrain` in `src/lib/services/afterResponse.ts`. **If you add a route that enqueues
+  a job, add the drain**, or the job waits for the next visit or the daily cron.
+- **One daily cron** drains the queue unscoped, for NULL-`store_id` jobs, elapsed retries and
+  unvisited stores.
+
+The first visitor after a quiet spell sees pre-refresh data; the refresh they trigger is for the next
+one.
 
 ## Module map
 
@@ -152,8 +184,9 @@ cannot catch.
 | POST | `/api/admin/sync/all` | merchant session | All five operations in dependency order, synchronously. |
 | POST | `/api/admin/sync/{products,inventory,warehouses,inventory-warehouses,inventory-locations,shipments}` | merchant session | One operation. All six are `createSyncRoute(...)` — a name and an operation, nothing else. `shipments` is the only one that writes to `orders`; the admin orders list's Refresh button posts it. |
 | GET/POST | `/api/admin/sync/status` | merchant session | `sync_logs` history and aggregate statistics. |
-| GET/POST | `/api/cron/sync` | `Authorization: Bearer $CRON_SECRET` (or `SYNC_AUTH_TOKEN`) | **Schedules**, does not execute. Enqueues one job per store per operation. |
-| POST | `/api/jobs/process` | `Authorization: Bearer $CRON_SECRET` | Drains `job_queue`. 25 jobs/batch, 50 s work budget. |
+| GET/POST | `/api/cron/sync` | `Authorization: Bearer $CRON_SECRET` (or `SYNC_AUTH_TOKEN`) | **Schedules**, does not execute. Enqueues one job per store per operation. **No longer on a cron** — operator trigger only; per-store sync now comes from storefront visits. |
+| GET/POST | `/api/jobs/process` | `Authorization: Bearer $CRON_SECRET` | Drains `job_queue`, unscoped. 25 jobs/batch, 50 s work budget. **Daily** safety-net cron (08:20 UTC); store-scoped drains happen in `after()` on the requests that enqueue. |
+| — | `/store/[storeSlug]` (layout) | none (public storefront) | Not an API route, but it is the main sync trigger: `after()` → `refreshStoreIfStale(store.id)`. |
 | GET/POST | `/api/admin/integrations/monitoring` | merchant session | Health, metrics, queue stats, retry hatch. |
 
 ## Credentials
@@ -230,7 +263,8 @@ run that dies at page 37 resumes at 38.
 
 Two callers, one set of writers:
 
-- **Scheduled** — `/api/cron/sync` enqueues; `/api/jobs/process` drains one page per job.
+- **Queued** — `refreshStoreIfStale` (or an operator's `/api/cron/sync`) enqueues; the store's
+  `after()` drain, or the daily `/api/jobs/process`, runs one page per job.
 - **Manual** — `/api/admin/sync/*` loops the same `runSyncPage` inline, capped at `PAGE_CAP` (50)
   pages per operation and `DEFAULT_BUDGET_MS` (240 s, inside the 300 s `maxDuration` from
   `vercel.json`). Exceeding either sets `truncated` in the response rather than dying mid-write.
@@ -293,14 +327,10 @@ Per-store ShipStation keys are **never** environment variables — the platform 
 
 Live at the time of writing. Confirm against `docs/decision-log.md` before acting.
 
-- **Nothing drains `job_queue` on a schedule.** `vercel.json` declares crons for `/api/cron/sync`
-  and `/api/cron/inventory-snapshot`, but not `/api/jobs/process` — so the hourly sync enqueues
-  rows nothing processes, and stuck `pending` rows block re-enqueue for their dedupe keys. The
-  admin sync button works because `manualSync` bypasses the queue entirely. Fix is a cron entry
-  (`*/5 * * * *`), subject to plan cron limits.
-- **`runFullSync` throws after enqueuing.** `inconsistent types deduced for parameter $1`
-  (`42P08`, text vs varchar) in the `job_queue` insert, so it reports `0 enqueued` for a store it
-  just enqueued five jobs for. Needs an explicit cast.
+- **The queue drains only when something happens.** Since 2026-10-21 there is no frequent drain:
+  sync pages chain through visits, the enqueuing request's `after()` drain, and one daily cron. A
+  long catalogue sync on a store with one visit a day can take days to finish. Acceptable while
+  traffic is near zero; revisit with real traffic.
 - **`v2Api.ts` is not held to the rules on this page.** It bypasses `shipStationFetch` (no retry,
   no backoff), reads credentials with raw `Buffer.from(..., 'base64')`, and logs
   `first_6_chars` / `last_4_chars` of the key (`v2Api.ts:288`, `:446`) plus the full shipment
@@ -311,9 +341,3 @@ Live at the time of writing. Confirm against `docs/decision-log.md` before actin
 - **`src/app/api/admin/integrations/test/route.ts` calls `fetch` directly** (`:85`) instead of
   `shipStationFetch`, so it has no retry or rate-limit handling. It does make a real call, so it
   is honest — just not hardened. Prefer `/api/admin/integrations/shipstation/test`.
-- **`enqueueOrderPush` has no callers.** `jobQueueService` handles `shipstation_order_push` and
-  `processOrderPushJob` is complete, but nothing enqueues a job, so no paid order is ever pushed to
-  ShipStation. The hook belongs in `billing/orders.ts::createPaidOrder`.
-- **`vercel.json` `functions` config points at the retired webhook route**
-  (`src/app/api/shipstation/webhook/route.ts`), not the live `[storeToken]` one, and sets no limit
-  for `/api/jobs/process` despite that route's comment assuming a 60 s budget.

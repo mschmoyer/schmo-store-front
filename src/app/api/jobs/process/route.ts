@@ -7,6 +7,14 @@
  * "Queued shipped notification for order X", which reads as success. This endpoint is the missing
  * half.
  *
+ * Since 2026-10-21 it is the *daily safety net*, not the primary drain. It ran every five minutes,
+ * which kept the scale-to-zero Neon database awake around the clock; store-scoped work is now
+ * drained by the request that enqueued it (`scheduleStoreDrain` in `lib/services/afterResponse.ts`)
+ * and by storefront visits (`refreshStoreIfStale`). This unscoped pass catches what those cannot:
+ * jobs with a NULL `store_id`, retries whose backoff elapsed with nobody visiting, and stores with
+ * no traffic. One 25-job batch a day is enough at current volume; if the daily summary starts
+ * reporting `budgetExhausted` or a full batch, loop or raise the schedule.
+ *
  * It is called by Vercel Cron, authenticated with `CRON_SECRET` exactly like the existing
  * `/api/cron/*` routes: constant-time bearer comparison, 401 on mismatch, 503 when no secret is
  * configured. It never defaults open.
